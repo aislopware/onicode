@@ -5645,13 +5645,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           const existing = links.find(visible);
           if (existing === undefined) return thread;
           const ended = existing.endedWatch;
-          // The caller read finished CI on a head the last watch never saw, so its checks start
-          // from that read: its pass is not news, though a failure still is.
+          // The caller read CI passing on a head the last watch never saw, so its checks start
+          // from that read: its pass is not news, though a failure still is. A last watch still
+          // owed its baseline keeps it, and the new head then ends that baseline.
           const readHead =
             command.type === "thread.pull-request.watch" &&
-            command.checksPending === false &&
+            command.checksPassed === true &&
             command.headSha !== undefined &&
             ended !== undefined &&
+            ended.awaitingBaseline === undefined &&
             command.headSha !== ended.headSha
               ? command.headSha
               : undefined;
@@ -5673,7 +5675,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                       passedChecks: [],
                       conflicting: false,
                       // Watching again must not repeat check or conflict news the last watch told.
-                      ...(readHead !== undefined && { passed: true }),
+                      ...(readHead !== undefined && {
+                        passed: true,
+                        conflicting: ended?.conflicting ?? false,
+                        rebaseRequired: ended?.rebaseRequired,
+                      }),
                       ...(lastWatch && {
                         headSha: lastWatch.headSha,
                         // A fresh read found CI running with nothing failing, so the failures the

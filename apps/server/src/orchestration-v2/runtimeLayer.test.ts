@@ -5509,12 +5509,32 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       label: "rewatched passing",
       atStart: "passing",
       lastHeadSha: "0ld0000000",
-      start: { checksPending: false, headSha: "ad70160aaa" },
+      start: { checksPending: false, checksPassed: true, headSha: "ad70160aaa" },
       reads: [
         { lint: "success", test: "success" },
         { lint: "success", test: "failure" },
       ],
       told: [[], ["test"]],
+    },
+    // A finished read that failed says nothing of a pass, so a rerun's pass is news.
+    {
+      label: "rewatched failing",
+      atStart: "failing",
+      lastHeadSha: "0ld0000000",
+      start: { checksPending: false, headSha: "ad70160aaa" },
+      reads: [{ lint: "success", test: "success" }],
+      told: [[]],
+      tellsPass: true,
+    },
+    // The last watch stopped before its first read, so this head's failure is after its baseline.
+    {
+      label: "passing, last watch unread",
+      atStart: "passing",
+      lastHeadSha: "0ld0000000",
+      lastUnread: true,
+      start: { checksPending: false, checksPassed: true, headSha: "ad70160aaa" },
+      reads: [{ lint: "success", test: "failure" }],
+      told: [["test"]],
     },
   ] as const)("reports only failures after a watch that starts on $label CI", (row) =>
     Effect.gen(function* () {
@@ -5588,7 +5608,11 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           threadId,
           ...key,
           startedAt: last.startedAt,
-          watch: { ...told, headSha: row.lastHeadSha, failedChecks: ["test"] },
+          watch: {
+            ...("lastUnread" in row ? last : told),
+            headSha: row.lastHeadSha,
+            failedChecks: "lastUnread" in row ? [] : ["test"],
+          },
         });
         yield* orchestrator.dispatch({
           type: "thread.pull-request.watch",
@@ -5650,7 +5674,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         yield* reactor.sweep;
         yield* worker.drain();
         const wakes = (yield* texts).slice(before);
-        assert.equal(wakes.length, names.length === 0 ? 0 : 1);
+        assert.equal(wakes.length, names.length === 0 && !("tellsPass" in row) ? 0 : 1);
         // The finished section lists every failing check, so only the failed one counts here.
         const failedSections = wakes.map((text) => text.split("- Every check has finished")[0]!);
         for (const name of ["lint", "test"]) {

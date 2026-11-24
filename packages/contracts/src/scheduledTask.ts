@@ -153,7 +153,7 @@ const ScheduledTaskExpected = Schema.Struct({
   schedule: ScheduledTaskSchedule,
   // Older clients send only the fields above; an omitted field is not checked.
   projectId: Schema.optional(ProjectId),
-  /** Checked only when the save changes the stored thread, so a first run's binding refuses nothing. */
+  /** Null is checked only when the save changes the stored thread, so a first run's binding refuses nothing. */
   threadId: Schema.optional(Schema.NullOr(ThreadId)),
   threadMode: Schema.optional(ScheduledTaskThreadMode),
   workspaceStrategy: Schema.optional(OrchestrationV2ThreadLaunchWorkspaceStrategy),

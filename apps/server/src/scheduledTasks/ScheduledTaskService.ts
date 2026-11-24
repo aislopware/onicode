@@ -1280,10 +1280,12 @@ export const layer = Layer.effect(
       const unboundModeDenial = input.enabled
         ? managedRuntimeModeDenial(managedPolicy.summary, input.runtimeMode)
         : undefined;
-      // A save that leaves the stored thread in place cannot undo another client's binding.
+      // A first run binds an unbound task, which a save that keeps the binding cannot undo.
       const changesThread = threadId !== (existingTask?.threadId ?? null);
       const loadedThreadId =
-        changesThread || threadMode === "new_thread" ? input.expected?.threadId : undefined;
+        input.expected?.threadId != null || changesThread || threadMode === "new_thread"
+          ? input.expected?.threadId
+          : undefined;
       const expectedThreadId =
         options?.expectedThreadId !== undefined
           ? options.expectedThreadId

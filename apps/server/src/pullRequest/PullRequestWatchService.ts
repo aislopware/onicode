@@ -235,6 +235,7 @@ const make = Effect.gen(function* () {
         ...(watching && start?.checksPending !== undefined
           ? { checksPending: start.checksPending }
           : {}),
+        ...(watching && start?.checksState === "passing" ? { checksPassed: true } : {}),
         ...(watching && start?.headSha !== undefined ? { headSha: start.headSha } : {}),
       })
       .pipe(
@@ -283,6 +284,7 @@ const make = Effect.gen(function* () {
     return {
       ...command,
       ...(start.checksPending !== undefined && { checksPending: start.checksPending }),
+      ...(start.checksState === "passing" && { checksPassed: true }),
       ...(start.headSha !== undefined && { headSha: start.headSha }),
     };
   }, pullRequests.withSharedProjectReads);

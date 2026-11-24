@@ -1440,11 +1440,20 @@ it.effect("a run interrupted right after it reserves the task does not block the
 
 it.effect("an editor's save is refused once the fields it loaded changed elsewhere", () =>
   Effect.gen(function* () {
+    // Runs between a worktree save's read of the task and its commit.
+    let beforeCommit: Effect.Effect<unknown> = Effect.void;
     const layer = ScheduledTaskService.layer.pipe(
       Layer.provide(
         Layer.mergeAll(
           ManagedPolicy.layerTest(),
-          Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
+          Layer.mock(ThreadLaunchService.ThreadLaunchService)({
+            isNonGitProject: () =>
+              Effect.suspend(() => {
+                const run = beforeCommit;
+                beforeCommit = Effect.void;
+                return run;
+              }).pipe(Effect.as(false)),
+          }),
           Layer.mock(ThreadManagementService.ThreadManagementService)({
             getThreadShell: () => Effect.succeed(threadShell(ProjectId.make("project:test"))),
           }),
@@ -1526,6 +1535,20 @@ it.effect("an editor's save is refused once the fields it loaded changed elsewhe
         assert.include(stale.message, "changed while saving", JSON.stringify(change));
         assert.deepEqual((yield* service.list()).tasks, [changed]);
       }
+      // Rebound after the save read the task, it is refused at commit.
+      const worktree = { type: "worktree", baseRef: "main" } as const;
+      yield* service.upsert({ ...bound, workspaceStrategy: worktree });
+      beforeCommit = service
+        .upsert({ ...bound, workspaceStrategy: worktree, threadId: ThreadId.make("thread:b") })
+        .pipe(Effect.orDie);
+      const raced = yield* service
+        .upsert({
+          ...edit,
+          workspaceStrategy: worktree,
+          expected: { ...edit.expected, workspaceStrategy: worktree },
+        })
+        .pipe(Effect.flip);
+      assert.include(raced.message, "The task's thread changed while saving");
       // A thread the first run bound meanwhile is kept, so it refuses nothing.
       yield* service.upsert(bound);
       const unbound = { ...edit, threadId: null, expected: { ...edit.expected, threadId: null } };
