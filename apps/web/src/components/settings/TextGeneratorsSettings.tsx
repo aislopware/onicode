@@ -60,6 +60,7 @@ import { Spinner } from "../ui/spinner";
 import { Switch } from "../ui/switch";
 import { WizardFooter, WizardHeader, WizardPanel, WizardPopup, WizardSteps } from "../ui/wizard";
 import { SecretSourceInput, useSecretSources } from "./SecretSourceInput";
+import { clearSearchOnEscape } from "./searchFieldEscape";
 import { useSearchableSetting } from "./settingsSearch";
 import { SETTINGS_PICKER_TRIGGER_CLASSNAME, SettingsRow, SettingsSection } from "./settingsLayout";
 
@@ -665,12 +666,14 @@ function TextGeneratorModelList({
     <div className="grid gap-2">
       {models.length > 8 ? (
         <Input
-          type="search"
+          type="text"
+          role="searchbox"
           placeholder={gt("Search models")}
           aria-label={gt("Search models")}
           autoFocus
           value={query}
           onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => clearSearchOnEscape(event, query, () => setQuery(""))}
         />
       ) : null}
       <div className="max-h-80 overflow-y-auto rounded-lg border divide-y divide-border">

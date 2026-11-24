@@ -9776,7 +9776,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             resolveAttachmentPath: host.resolveAttachmentPath,
             resolveExtractedTextPath: host.resolveExtractedTextPath,
           });
-          const isNativeSlashCommand = userText.trimStart().startsWith("/");
+          const isNativeSlashCommand = ProviderAdapter.opensWithSlashCommand(userText);
           const attachmentBlocks = yield* promptAttachmentBlocks(
             messageText,
             turnInput.message.attachments,
@@ -10713,7 +10713,9 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
         const steerWithPrompt = Effect.fn("AcpAdapterV2.steerWithPrompt")(function* (
           turnInput: ProviderAdapter.ProviderAdapterV2SteerInput,
         ) {
-          const isNativeSlashCommand = turnInput.message.text.trimStart().startsWith("/");
+          const isNativeSlashCommand = ProviderAdapter.opensWithSlashCommand(
+            turnInput.message.text,
+          );
           const text = yield* providerMessageTextWithAttachmentPaths({
             text: turnInput.message.text,
             attachments: turnInput.message.attachments,
@@ -11175,7 +11177,9 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                 resolveExtractedTextPath: host.resolveExtractedTextPath,
               });
               const images = yield* imageAttachmentBlocks(turnInput.message.attachments);
-              const isNativeSlashCommand = turnInput.message.text.trimStart().startsWith("/");
+              const isNativeSlashCommand = ProviderAdapter.opensWithSlashCommand(
+                turnInput.message.text,
+              );
               const compactionMarker = (yield* Ref.get(compactionMarkers)).get(
                 context.nativeThreadId,
               );

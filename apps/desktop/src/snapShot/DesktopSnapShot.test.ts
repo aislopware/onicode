@@ -454,6 +454,23 @@ const readAccessibleWindowText = async (
   platform: NodeJS.Platform,
   sourceTitle: string,
 ) => (await readAccessibleWindowContext(active, platform, sourceTitle))?.accessibleText;
+type AccessibilityTreeFixture = {
+  readonly name?: string;
+  readonly value?: string;
+  readonly children: ReadonlyArray<AccessibilityTreeFixture>;
+};
+const capturing = (root: AccessibilityTreeFixture, truncated: { byNodes?: boolean } = {}) => {
+  const nodes: Array<{ element: { name?: string; value?: string } }> = [];
+  const visit = ({ children, ...element }: AccessibilityTreeFixture) => {
+    nodes.push({ element });
+    for (const child of children) visit(child);
+  };
+  visit(root);
+  return vi.fn(async () => ({
+    nodes,
+    truncated: { byDepth: false, byNodes: false, byTime: false, byCancel: false, ...truncated },
+  }));
+};
 accessibilityProcessReadMock.mockImplementation((request) => ({
   started: Promise.resolve(),
   result: readAccessibleWindowContext(
@@ -999,7 +1016,7 @@ it.effect("captures and reads Windows windows in physical pixels on a scaled dis
         children: async () => [],
       },
     ],
-    tree: async () => ({ name, value, children: [] }),
+    capture: capturing({ name, value, children: [] }),
   });
   activeWindowMock.mockReset().mockResolvedValue(active);
   screenToDipRectMock.mockImplementation(() => ({ x: 5, y: 10, width: 400, height: 300 }));
@@ -1097,7 +1114,7 @@ it.effect.each([
               children: async () => [],
             },
           ],
-          tree: async () => ({ name: "Editor", value: "Verified text", children: [] }),
+          capture: capturing({ name: "Editor", value: "Verified text", children: [] }),
         },
       ],
     });
@@ -1336,7 +1353,7 @@ it.each(["client", "frame"] as const)(
           role: "window",
           name: "Editor",
           bounds: rootArea === "client" ? clientBounds : bounds,
-          tree: async () => ({ name: "Editor", children: [{ name: "Save", children: [] }] }),
+          capture: capturing({ name: "Editor", children: [{ name: "Save", children: [] }] }),
           children: async () => [
             {
               role: "button",
@@ -1376,7 +1393,7 @@ it.each(["darwin", "win32", "linux"] as const)(
       role: "window",
       name: "Editor",
       bounds,
-      tree: async () => ({
+      capture: capturing({
         name: "Editor",
         children: [
           { name: "Save", children: [] },
@@ -1433,11 +1450,11 @@ it.each(["darwin", "win32"] as const)(
   "still requires matching accessibility screen positions on %s",
   async (platform) => {
     vi.stubEnv("XDG_SESSION_TYPE", "wayland");
-    const tree = vi.fn(async () => ({ value: "Wrong window", children: [] }));
+    const capture = capturing({ value: "Wrong window", children: [] });
     const window = {
       name: "Editor",
       bounds: { x: 0, y: 0, width: 700, height: 520 },
-      tree,
+      capture,
     };
     accessibilityByPidMock.mockReset().mockResolvedValue({ children: async () => [window] });
     accessibilityForegroundMock
@@ -1455,7 +1472,7 @@ it.each(["darwin", "win32"] as const)(
           "Editor",
         ),
       );
-      assert.lengthOf(tree.mock.calls, 0);
+      assert.lengthOf(capture.mock.calls, 0);
     } finally {
       vi.unstubAllEnvs();
     }
@@ -1463,12 +1480,13 @@ it.each(["darwin", "win32"] as const)(
 );
 
 it.each([
-  ["darwin", "", "value", 650],
-  ["linux", "wayland", "value", 650],
-  ["darwin", "", "name", 100],
+  ["darwin", "", "value", 650, false],
+  ["linux", "wayland", "value", 650, false],
+  ["darwin", "", "name", 100, false],
+  ["darwin", "", "value", 650, true],
 ] as const)(
-  "preserves long text outside the scroll view on %s %s (%s)",
-  async (platform, session, field, lines) => {
+  "preserves long text outside the scroll view on %s %s (%s, capture cut by nodes: %s)",
+  async (platform, session, field, lines, cutByNodes) => {
     const text = `${"Document line\n".repeat(lines)}End of document`;
     vi.stubEnv("XDG_SESSION_TYPE", session);
     const bounds = { x: 0, y: 0, width: 800, height: 600 };
@@ -1476,7 +1494,15 @@ it.each([
       role: "window",
       name: "Editor",
       bounds,
-      tree: async () => ({ name: "Editor", children: [{ [field]: text, children: [] }] }),
+      capture: capturing(
+        {
+          name: "Editor",
+          children: [
+            field === "name" ? { name: text, children: [] } : { value: text, children: [] },
+          ],
+        },
+        { byNodes: cutByNodes },
+      ),
       children: async () => [
         { role: "text_area", [field]: text, bounds, children: async () => [] },
       ],
@@ -1494,7 +1520,7 @@ it.each([
       assert.deepEqual(result?.accessibility, {
         format: "flat-text",
         text: `Editor\n${text}`,
-        truncated: false,
+        truncated: cutByNodes,
       });
     } finally {
       vi.unstubAllEnvs();
@@ -1507,13 +1533,13 @@ it.each([
   { names: ["⠋ onicode", "⠙ onicode"], expected: undefined },
 ])("reads a changing Wayland title only when unambiguous: $names", async ({ names, expected }) => {
   vi.stubEnv("XDG_SESSION_TYPE", "wayland");
-  const tree = vi.fn(async () => ({ value: "Verified text", children: [] }));
+  const capture = capturing({ value: "Verified text", children: [] });
   accessibilityByPidMock.mockReset().mockResolvedValue({
     children: async () =>
       names.map((name) => ({
         name,
         bounds: { x: 0, y: 0, width: 700, height: 520 },
-        tree,
+        capture,
       })),
   });
   try {
@@ -1530,7 +1556,7 @@ it.each([
       expected,
     );
     assert.deepEqual(accessibilityByPidMock.mock.calls, [[123, { timeout: 0 }]]);
-    assert.lengthOf(tree.mock.calls, expected ? 1 : 0);
+    assert.lengthOf(capture.mock.calls, expected ? 1 : 0);
   } finally {
     vi.unstubAllEnvs();
   }
@@ -1546,7 +1572,7 @@ it.each([
     role: "window",
     name: `${title} - ${suffix}`,
     bounds,
-    tree: async () => ({ name: title, children: [{ name: "New issue", children: [] }] }),
+    capture: capturing({ name: title, children: [{ name: "New issue", children: [] }] }),
     children: async () => [{ role: "button", name: "New issue", bounds, children: async () => [] }],
   };
   accessibilityByPidMock.mockReset().mockImplementation(async (pid: number) => ({
@@ -1576,7 +1602,7 @@ it("does not borrow another Chrome process context when the captured PID has no 
     role: "window",
     name: `${title} - Google Chrome – Profile`,
     bounds,
-    tree: async () => ({
+    capture: capturing({
       name: title,
       children: [{ name: "Other process private text", children: [] }],
     }),
@@ -1602,15 +1628,15 @@ it("does not borrow another Chrome process context when the captured PID has no 
 it("reads Flatpak app text from the AT-SPI proxy when the compositor PID misses", async () => {
   vi.stubEnv("XDG_SESSION_TYPE", "wayland");
   const bounds = { x: 0, y: 0, width: 1_920, height: 1_048 };
-  const tree = vi.fn(async () => ({
+  const capture = capturing({
     name: "Issue — Zen Browser",
     children: [{ name: "New Tab", children: [] }],
-  }));
+  });
   const proxyWindow = {
     role: "window",
     name: "Issue — Zen Browser",
     bounds,
-    tree,
+    capture,
     children: async () => [],
   };
   accessibilityByPidMock
@@ -1626,7 +1652,7 @@ it("reads Flatpak app text from the AT-SPI proxy when the compositor PID misses"
           role: "window",
           name: "Files",
           bounds,
-          tree: async () => ({ name: "Files", children: [] }),
+          capture: capturing({ name: "Files", children: [] }),
         },
       ],
     },
@@ -1647,7 +1673,7 @@ it("reads Flatpak app text from the AT-SPI proxy when the compositor PID misses"
     );
     assert.deepEqual(accessibilityByPidMock.mock.calls, [[207651, { timeout: 0 }]]);
     assert.lengthOf(accessibilityListMock.mock.calls, 1);
-    assert.lengthOf(tree.mock.calls, 1);
+    assert.lengthOf(capture.mock.calls, 1);
   } finally {
     accessibilityListMock.mockReset().mockResolvedValue([]);
     vi.unstubAllEnvs();
@@ -1657,17 +1683,17 @@ it("reads Flatpak app text from the AT-SPI proxy when the compositor PID misses"
 it("reads GTK4 app text from one unnamed PID-scoped window of the captured size", async () => {
   vi.stubEnv("XDG_SESSION_TYPE", "wayland");
   const bounds = { x: 0, y: 0, width: 1_920, height: 1_048 };
-  const tree = vi.fn(async () => ({
+  const capture = capturing({
     name: "System Monitor",
     children: [{ name: "CPU", children: [] }],
-  }));
+  });
   accessibilityByPidMock.mockReset().mockResolvedValue({
     children: async () => [
       {
         role: "group",
         name: null,
         bounds,
-        tree,
+        capture,
         children: async () => [
           { role: "page_tab_list", name: "Processes", bounds, children: async () => [] },
         ],
@@ -1690,7 +1716,7 @@ it("reads GTK4 app text from one unnamed PID-scoped window of the captured size"
     );
     assert.deepEqual(accessibilityByPidMock.mock.calls, [[210600, { timeout: 0 }]]);
     assert.lengthOf(accessibilityListMock.mock.calls, 0);
-    assert.lengthOf(tree.mock.calls, 1);
+    assert.lengthOf(capture.mock.calls, 1);
   } finally {
     accessibilityListMock.mockReset().mockResolvedValue([]);
     vi.unstubAllEnvs();
@@ -1700,17 +1726,17 @@ it("reads GTK4 app text from one unnamed PID-scoped window of the captured size"
 it("does not guess GTK4 app text when two unnamed PID windows share the captured size", async () => {
   vi.stubEnv("XDG_SESSION_TYPE", "wayland");
   const bounds = { x: 0, y: 0, width: 1_920, height: 1_048 };
-  const tree = vi.fn(async () => ({ value: "Wrong window", children: [] }));
+  const capture = capturing({ value: "Wrong window", children: [] });
   accessibilityByPidMock.mockReset().mockResolvedValue({
     children: async () => [
-      { role: "group", name: null, bounds, tree },
-      { role: "group", name: null, bounds: { ...bounds, x: 12 }, tree },
+      { role: "group", name: null, bounds, capture },
+      { role: "group", name: null, bounds: { ...bounds, x: 12 }, capture },
     ],
   });
   accessibilityListMock.mockReset().mockResolvedValue([
     {
       pid: 99,
-      children: async () => [{ role: "window", name: "System Monitor", bounds, tree }],
+      children: async () => [{ role: "window", name: "System Monitor", bounds, capture }],
     },
   ]);
   try {
@@ -1726,7 +1752,7 @@ it("does not guess GTK4 app text when two unnamed PID windows share the captured
       ),
     );
     assert.lengthOf(accessibilityListMock.mock.calls, 0);
-    assert.lengthOf(tree.mock.calls, 0);
+    assert.lengthOf(capture.mock.calls, 0);
   } finally {
     accessibilityListMock.mockReset().mockResolvedValue([]);
     vi.unstubAllEnvs();
@@ -1741,7 +1767,7 @@ it("keeps a truncated element tree when the flat text read fails", async () => {
         role: "window",
         name: "Editor",
         bounds,
-        tree: async () => {
+        capture: async () => {
           throw new Error("Text read failed");
         },
         children: async () => [

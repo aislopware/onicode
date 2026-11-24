@@ -106,4 +106,33 @@ describe("attachTimelineViewport", () => {
     ]);
     viewport.dispose();
   });
+
+  it("leaves scroll keys on media controls to the player", async () => {
+    // A plain scroller; the viewport needs no routes.
+    await using screen = await render(
+      <div data-testid="timeline" style={{ height: 300, overflowY: "auto" }}>
+        <video data-testid="video" controls />
+        <audio data-testid="audio" controls />
+        <div data-testid="row" tabIndex={0} style={{ height: 1200 }} />
+      </div>,
+      { router: false },
+    );
+    const timeline = screen.getByTestId("timeline").element() as HTMLElement;
+    const viewport = attachTimelineViewport(timeline);
+    const keys: unknown[] = [];
+    viewport.subscribe((navigation) => keys.push(navigation));
+    const press = (testId: string, key: string) => {
+      const target = screen.getByTestId(testId).element() as HTMLElement;
+      target.focus();
+      target.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+    };
+
+    press("video", "ArrowUp");
+    press("audio", "Home");
+    press("video", " ");
+    press("row", "ArrowUp");
+
+    expect(keys).toEqual([{ source: "key", key: "ArrowUp", direction: "up" }]);
+    viewport.dispose();
+  });
 });

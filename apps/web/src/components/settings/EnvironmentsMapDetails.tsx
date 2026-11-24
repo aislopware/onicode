@@ -16,6 +16,7 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { accessConfig } from "./linkAccess";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { clearSearchOnEscape } from "./searchFieldEscape";
 import { formatAccessTimestamp } from "./ConnectionsSettings.logic";
 import { EnvironmentRow, EnvironmentTransportLabel } from "./EnvironmentRow";
 import {
@@ -431,11 +432,13 @@ function StackDetails({
           <div className="w-56">
             <Input
               size="compact"
-              type="search"
+              type="text"
+              role="searchbox"
               value={query}
               aria-label={gt("Filter these machines by name")}
               placeholder={gt("Filter by name")}
               onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => clearSearchOnEscape(event, query, () => setQuery(""))}
             />
           </div>
           {needle === "" ? null : (

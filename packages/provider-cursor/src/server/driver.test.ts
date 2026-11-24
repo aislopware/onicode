@@ -133,11 +133,16 @@ it.layer(layerTest)("CursorDriver", (it) => {
           }),
         );
         expect((yield* instance.snapshot.refresh).auth.status).toBe("unauthenticated");
+        // A rename keeps the instance live, and the key a sign-in creates takes the new name.
+        instance.rename!("Work Cursor");
         yield* instance.auth!.start("client");
         yield* instance.auth!.subscribe("client").pipe(
           Stream.filter((state) => state.phase === "succeeded"),
           Stream.runHead,
           Effect.map(Option.getOrThrow),
+        );
+        expect(login).toHaveBeenCalledWith(
+          expect.objectContaining({ apiKeyName: "Onicode - Work Cursor" }),
         );
         expect(requests).toContainEqual({
           url: "https://api.cursor.com/v1/me",

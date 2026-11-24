@@ -1857,6 +1857,25 @@ export function useComposerSend(input: ComposerSendInput) {
   };
 
   const onSendLatest = useStableCallback(onSend);
+  // The composer handle is app-wide: once this view unmounts it is another thread's or none, and
+  // the draft's workspace default lands through a render this view no longer gets.
+  const isShown = () => currentRouteThreadKeyRef.current === routeThreadKey;
+  const notifyLeftBeforeSend = () => {
+    // A draft sent or discarded meanwhile was the user's own doing.
+    if (!draftId || detachedDraftSendState(draftId, undefined) === "gone") return;
+    toastManager.add(
+      stackedThreadToast({
+        type: "warning",
+        title: m(msg("Message not sent")),
+        actionProps: {
+          children: m(msg("Open draft")),
+          onClick: () => {
+            void navigate({ to: "/draft/$draftId", params: { draftId } });
+          },
+        },
+      }),
+    );
+  };
   // Held until the send it waited for settles, by which time local dispatch shows the send.
   const markSendPreparing = () => {
     const threadKey = activeThreadKey;
@@ -1875,7 +1894,11 @@ export function useComposerSend(input: ComposerSendInput) {
       .finally(() => {
         sendInFlightRef.current = false;
       })
-      .then((ready) => (ready ? onSendLatest(...args) : undefined))
+      .then((ready) => {
+        if (!ready) return;
+        if (!isShown()) return notifyLeftBeforeSend();
+        return onSendLatest(...args);
+      })
       .finally(donePreparing);
   };
   const sendWithEnvironmentRefreshLatest = useStableCallback(sendWithEnvironmentRefresh);
@@ -1897,8 +1920,11 @@ export function useComposerSend(input: ComposerSendInput) {
         donePreparing();
         throw error;
       });
-    if (status === "ready") return sendWithEnvironmentRefreshLatest(...args).finally(donePreparing);
+    if (status === "ready" && isShown()) {
+      return sendWithEnvironmentRefreshLatest(...args).finally(donePreparing);
+    }
     donePreparing();
+    if (status === "ready") return notifyLeftBeforeSend();
     // A draft sent or discarded meanwhile was the user's own doing.
     if (draftId && detachedDraftSendState(draftId, undefined) === "gone") return;
     toastManager.add(

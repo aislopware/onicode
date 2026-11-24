@@ -14,7 +14,7 @@ import {
   revealInFileExplorerLabelForKind,
   revealInFileExplorerLabelForOs,
 } from "~/components/preview/fileExplorerLabel";
-import { useEditorMenuIcons } from "./editorMenuIcons";
+import { editorMenuIcons } from "./editorMenuIcons";
 import { readLocalApi } from "./localApi";
 import {
   openRemoteEditorUrl,
@@ -65,6 +65,11 @@ export function resolveFileContextMenuAbsolutePath(target: FileContextMenuTarget
 
 const EDITOR_LABEL_BY_ID = new Map(EDITORS.map((editor) => [editor.id, editor.label]));
 
+const NO_EDITOR_ICONS: ReadonlyMap<EditorId, string> = new Map();
+
+const openWithEditorIds = (editorIds: ReadonlyArray<EditorId>) =>
+  editorIds.filter((id) => id !== "file-manager");
+
 export interface FileContextMenuCapabilities {
   readonly revealLabel: string | undefined;
   readonly canOpenDefault: boolean;
@@ -93,7 +98,7 @@ function buildFileContextMenuItems(input: {
       icon: "folder-tree",
     });
   }
-  const editorIds = input.capabilities.editorIds.filter((id) => id !== "file-manager");
+  const editorIds = openWithEditorIds(input.capabilities.editorIds);
   if (editorIds.length > 0) {
     items.push({
       id: "open-with",
@@ -142,8 +147,6 @@ export function useFileContextMenu(environmentId: EnvironmentId | null) {
     canOpenDefault: isLocalExec && availableEditors.includes("file-manager"),
     editorIds: availableEditors,
   };
-  const editorIcons = useEditorMenuIcons(availableEditors);
-
   const editorFailureTitle = (editor: EditorId) =>
     resolve(
       msg("Could not open in {editor}", {
@@ -200,32 +203,32 @@ export function useFileContextMenu(environmentId: EnvironmentId | null) {
     });
   };
 
+  const buildItems = async (
+    target: FileContextMenuTarget,
+  ): Promise<readonly ContextMenuItem<FileContextMenuAction>[]> => {
+    const hasAbsolutePath = resolveFileContextMenuAbsolutePath(target) !== null;
+    const editorIcons = hasAbsolutePath
+      ? await editorMenuIcons(openWithEditorIds(capabilities.editorIds))
+      : NO_EDITOR_ICONS;
+    return buildFileContextMenuItems({ hasAbsolutePath, capabilities, editorIcons, resolve });
+  };
+
   const show = async (
     target: FileContextMenuTarget,
     position?: { x: number; y: number },
     source?: ContextMenuSource,
   ): Promise<void> => {
     const api = readLocalApi();
-    const items = buildFileContextMenuItems({
-      hasAbsolutePath: resolveFileContextMenuAbsolutePath(target) !== null,
-      capabilities,
-      editorIcons,
-      resolve,
-    });
-    if (items.length === 0 || api === undefined) return;
+    if (api === undefined) return;
+    const items = await buildItems(target);
+    if (items.length === 0) return;
     const clicked = await api.contextMenu.show(items, position, source);
     if (clicked === null) return;
     await activate(clicked as FileContextMenuAction, target);
   };
 
   return {
-    buildItems: (target: FileContextMenuTarget) =>
-      buildFileContextMenuItems({
-        hasAbsolutePath: resolveFileContextMenuAbsolutePath(target) !== null,
-        capabilities,
-        editorIcons,
-        resolve,
-      }),
+    buildItems,
     capabilities,
     activate,
     show,

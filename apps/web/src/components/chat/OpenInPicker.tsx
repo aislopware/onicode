@@ -259,7 +259,13 @@ export const OpenInPicker = memo(function OpenInPicker({
       disabled={
         !preferredEditor || !openInCwd || !canOpenEditor || isEditorUnavailable(preferredEditor)
       }
-      {...(enableShortcut && !backgroundThread ? { [OPEN_FAVORITE_EDITOR_ATTRIBUTE]: "" } : {})}
+      {...(enableShortcut && !backgroundThread
+        ? {
+            [OPEN_FAVORITE_EDITOR_ATTRIBUTE]: isEditorUnavailable(preferredEditor)
+              ? "unavailable"
+              : "",
+          }
+        : {})}
       onClick={() => {
         if (!preferredEditor) return;
         const label = editorLabelForPlatform(preferredEditor, navigator.platform);

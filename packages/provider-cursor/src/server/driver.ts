@@ -109,10 +109,11 @@ export const CursorDriver: ProviderDriver<
       driverKind: DRIVER_KIND,
       instanceId,
     });
+    let liveDisplayName = displayName;
     const stampIdentity = withInstanceIdentity({
       instanceId,
       driverKind: DRIVER_KIND,
-      displayName: displayName ?? "Cursor",
+      displayName,
       accentColor,
       continuationGroupKey: continuationIdentity.continuationKey,
     });
@@ -138,7 +139,7 @@ export const CursorDriver: ProviderDriver<
     );
     const auth = yield* makeCursorAuth({
       instanceId,
-      displayName: displayName ?? "Cursor",
+      displayName: () => liveDisplayName || "Cursor",
       enabled,
       ...(processEnv.CURSOR_API_KEY ? { apiKey: processEnv.CURSOR_API_KEY } : {}),
       store: credentials.store,
@@ -304,6 +305,9 @@ export const CursorDriver: ProviderDriver<
       displayName,
       accentColor,
       enabled,
+      rename: (next) => {
+        liveDisplayName = next;
+      },
       auth: auth.controller,
       snapshot,
       snapshotForCwd: (cwd) =>

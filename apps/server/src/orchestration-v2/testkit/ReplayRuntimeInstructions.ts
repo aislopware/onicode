@@ -1,5 +1,6 @@
 import type { ProviderDriverKind, ProviderReplayTranscript } from "@onicode/contracts";
 
+import { opensWithSlashCommand } from "@onicode/provider-core/server/ProviderAdapter";
 import { buildRuntimeInstructions } from "@onicode/provider-core/server/runtimeInstructions";
 
 export function materializeReplayTranscriptRuntimeInstructions(
@@ -289,7 +290,7 @@ export function materializeReplayTranscriptRuntimeInstructions(
         const firstText = promptPartText(prompt[0])?.trim();
         // Like the adapter, native slash commands go out without instructions. Where the agent
         // compacts through the prompt, a successful `/compact` makes the next prompt resend them.
-        if (firstText?.startsWith("/") === true) {
+        if (firstText !== undefined && opensWithSlashCommand(firstText)) {
           pendingPrompt = {
             sessionId: promptSessionId,
             notes: undefined,

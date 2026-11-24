@@ -1,36 +1,25 @@
 import type { EditorId } from "@onicode/contracts";
-import { useAtomValue } from "@effect/atom-react";
-import { Atom } from "effect/reactivity";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 
-import { editorIconOptions } from "./components/editorIcons";
-import { useTheme } from "./hooks/useTheme";
+import { type EditorIconOption, editorIconOptions } from "./components/editorIcons";
 
 const ICON_PIXELS = 32;
 const SVG_NS = "http://www.w3.org/2000/svg";
-const NO_ICONS: ReadonlyMap<EditorId, string> = new Map();
+
+const iconClassName = (option: EditorIconOption) =>
+  option.kind === "brand" ? "size-4 text-foreground" : "size-4 text-muted-foreground";
 
 // Logos are styled by Tailwind and the theme, so render them in the document and inline the
 // computed paint before rasterizing; native menus only accept bitmaps.
-async function rasterizeEditorIcon(editor: EditorId): Promise<string | null> {
-  const option = editorIconOptions(navigator.platform).find(({ value }) => value === editor);
-  if (option === undefined) return null;
+async function rasterizeEditorIcon(option: EditorIconOption): Promise<string | null> {
   const host = document.createElement("div");
   host.setAttribute("aria-hidden", "true");
   host.style.cssText = "position:fixed;left:-10000px;top:0;width:16px;height:16px;";
   document.body.append(host);
   const root = createRoot(host);
   try {
-    flushSync(() =>
-      root.render(
-        <option.Icon
-          className={
-            option.kind === "brand" ? "size-4 text-foreground" : "size-4 text-muted-foreground"
-          }
-        />,
-      ),
-    );
+    flushSync(() => root.render(<option.Icon className={iconClassName(option)} />));
     const svg = host.querySelector("svg");
     if (svg === null) return null;
     const clone = svg.cloneNode(true) as SVGSVGElement;
@@ -66,30 +55,42 @@ async function rasterizeEditorIcon(editor: EditorId): Promise<string | null> {
   }
 }
 
-// Keyed by theme and editor list; both change rarely, and each key rasterizes once.
-const editorMenuIconsAtom = Atom.family((key: string) =>
-  Atom.make((get): ReadonlyMap<EditorId, string> => {
-    const editors = key
-      .slice(key.indexOf("|") + 1)
-      .split(",")
-      .filter(Boolean) as EditorId[];
-    // Render outside the reading component's render pass.
-    void Promise.resolve().then(async () => {
-      const icons = new Map<EditorId, string>();
-      for (const editor of editors) {
-        const icon = await rasterizeEditorIcon(editor);
-        if (icon !== null) icons.set(editor, icon);
-      }
-      if (icons.size > 0) get.setSelf(icons);
-    });
-    return NO_ICONS;
-  }).pipe(Atom.keepAlive, Atom.withLabel(`editor-menu-icons:${key}`)),
-);
+/** What a logo's pixels depend on: `dark:` fills and the theme color behind currentColor. */
+function paintKey(className: string): string {
+  const probe = document.createElement("span");
+  probe.className = className;
+  document.body.append(probe);
+  const { color } = getComputedStyle(probe);
+  probe.remove();
+  return `${document.documentElement.classList.contains("dark")}|${color}`;
+}
 
-/** PNG data URLs of editor logos for context menus; empty until rendered. */
-export function useEditorMenuIcons(
+const rasterized = new Map<
+  EditorId,
+  { readonly paint: string; readonly icon: Promise<string | null> }
+>();
+
+/** PNG data URLs of editor logos for context menus, rasterized on first use per theme paint. */
+export async function editorMenuIcons(
   editors: ReadonlyArray<EditorId>,
-): ReadonlyMap<EditorId, string> {
-  const { resolvedTheme } = useTheme();
-  return useAtomValue(editorMenuIconsAtom(`${resolvedTheme}|${editors.join(",")}`));
+): Promise<ReadonlyMap<EditorId, string>> {
+  const options = editorIconOptions(navigator.platform);
+  const paintByClassName = new Map<string, string>();
+  const icons = await Promise.all(
+    editors.map(async (editor) => {
+      const option = options.find(({ value }) => value === editor);
+      if (option === undefined) return null;
+      const className = iconClassName(option);
+      const paint = paintByClassName.get(className) ?? paintKey(className);
+      paintByClassName.set(className, paint);
+      let entry = rasterized.get(editor);
+      if (entry?.paint !== paint) {
+        entry = { paint, icon: rasterizeEditorIcon(option) };
+        rasterized.set(editor, entry);
+      }
+      const icon = await entry.icon;
+      return icon === null ? null : ([editor, icon] as const);
+    }),
+  );
+  return new Map(icons.filter((entry) => entry !== null));
 }

@@ -122,6 +122,7 @@ import {
 import { LinkEnvironmentDialog, type LinkEnvironmentPrefill } from "./LinkedEnvironmentsSettings";
 import { LinkSeveralEnvironmentsDialog } from "./LinkSeveralEnvironments";
 import { savedBackendStatus } from "./SavedEnvironmentRows";
+import { clearSearchOnEscape } from "./searchFieldEscape";
 import { SettingsSearchTarget } from "./settingsLayout";
 
 type GT = ReturnType<typeof useGT>;
@@ -833,7 +834,8 @@ function FleetCanvas({
             </InputGroupAddon>
             <InputGroupInput
               size="sm"
-              type="search"
+              type="text"
+              role="searchbox"
               value={query}
               aria-label={gt("Find a machine on the map")}
               placeholder={gt("Find a machine")}
@@ -841,13 +843,11 @@ function FleetCanvas({
               autoComplete="off"
               onChange={(event) => setQuery(event.target.value)}
               onKeyDown={(event) => {
+                if (event.nativeEvent.isComposing || event.keyCode === 229) return;
                 if (event.key === "Enter") {
                   event.preventDefault();
                   goToFirstMatch();
-                } else if (event.key === "Escape" && query !== "") {
-                  event.stopPropagation();
-                  setQuery("");
-                }
+                } else clearSearchOnEscape(event, query, () => setQuery(""));
               }}
             />
           </InputGroup>

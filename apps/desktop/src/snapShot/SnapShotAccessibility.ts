@@ -13,6 +13,7 @@ import {
   findAccessibleWindow,
   isWaylandSession,
   MAX_ACCESSIBILITY_TREE_DEPTH,
+  MAX_ACCESSIBILITY_TREE_NODES,
 } from "./snapShot.ts";
 
 const ACCESSIBILITY_TIMEOUT_MS = 3_000;
@@ -42,6 +43,7 @@ type AccessibilityApp = (typeof import("@crowecawcaw/xa11y"))["App"];
 type AccessibilityReadProgress = {
   accessibleText: string | undefined;
   flatComplete: boolean;
+  flatTruncated: boolean;
   richComplete: boolean;
   richLocationsReliable: boolean;
   richRoot?: Extract<SnapShotAccessibility, { format: "element-tree" }>["root"];
@@ -78,7 +80,9 @@ function accessibilityReadSnapshot(
         ? {
             format: "flat-text",
             text: progress.accessibleText,
-            truncated: progress.accessibleText.length >= SNAP_SHOT_ACCESSIBLE_TEXT_MAX_CHARS,
+            truncated:
+              progress.flatTruncated ||
+              progress.accessibleText.length >= SNAP_SHOT_ACCESSIBLE_TEXT_MAX_CHARS,
           }
         : richTree
           ? {
@@ -163,11 +167,24 @@ async function readCapturedWindowAccessibility(
       (accessibleBounds !== null &&
         Math.abs(accessibleBounds.x - matchingBounds.x) <= 2 &&
         Math.abs(accessibleBounds.y - matchingBounds.y) <= 2));
+  // Not tree(): it caps only depth, so a branching cycle grows until the worker is killed.
   const flatRead = window
-    .tree(MAX_ACCESSIBILITY_TREE_DEPTH)
-    .then((tree) => {
+    .capture({
+      maxDepth: MAX_ACCESSIBILITY_TREE_DEPTH,
+      maxNodes: MAX_ACCESSIBILITY_TREE_NODES,
+      timeout: ACCESSIBILITY_TIMEOUT_MS,
+    })
+    .then(({ nodes, truncated }) => {
+      // Capture nodes are pre-order, so one flat level keeps the text order of a tree walk.
+      const children = nodes.map(({ element }) => ({
+        name: element.name,
+        value: element.value,
+        children: [],
+      }));
       progress.accessibleText =
-        accessibleWindowText(tree, SNAP_SHOT_ACCESSIBLE_TEXT_MAX_CHARS) || undefined;
+        accessibleWindowText({ children }, SNAP_SHOT_ACCESSIBLE_TEXT_MAX_CHARS) || undefined;
+      progress.flatTruncated =
+        truncated.byDepth || truncated.byNodes || truncated.byTime || truncated.byCancel;
       progress.flatComplete = true;
     })
     .catch(() => {
@@ -236,6 +253,7 @@ export function readAccessibleWindowContextWithApp(
   const progress: AccessibilityReadProgress = {
     accessibleText: undefined,
     flatComplete: false,
+    flatTruncated: false,
     richComplete: false,
     richLocationsReliable: false,
     richTruncated: false,

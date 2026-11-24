@@ -295,13 +295,19 @@ describe("sortActiveThreadsByOrderKey", () => {
       createdAt: "2026-03-01T09:00:00.000Z",
       activeOrderKey: pinOrderKeyBetween(activeThreadSortKey(newer), activeThreadSortKey(older)),
     };
+    // Dragged above every thread; a thread created later still lands ahead of it.
+    const top = {
+      id: "top",
+      createdAt: "2026-02-01T09:00:00.000Z",
+      activeOrderKey: pinOrderKeyBetween(null, activeThreadSortKey(newer)),
+    };
     const brandNew = { id: "brand-new", createdAt: "2026-03-10T09:00:00.000Z" };
     const saved = { id: "saved", createdAt: "2026-03-11T09:00:00.000Z", activeOrderKey: "b" };
     expect(
-      sortActiveThreadsByOrderKey([saved, older, arranged, newer, brandNew]).map(
+      sortActiveThreadsByOrderKey([saved, older, top, arranged, newer, brandNew]).map(
         (thread) => thread.id,
       ),
-    ).toEqual(["brand-new", "newer", "arranged", "older", "saved"]);
+    ).toEqual(["brand-new", "top", "newer", "arranged", "older", "saved"]);
   });
 
   it("breaks equal order keys and timestamps by thread then environment", () => {

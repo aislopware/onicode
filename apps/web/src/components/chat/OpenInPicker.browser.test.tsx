@@ -99,20 +99,27 @@ async function setup() {
   async function renderPicker(
     availableEditors: readonly EditorId[] = editors,
     panel = false,
-    { openInCwd = "/work/project", fileManagerAction = "open" as FileManagerAction } = {},
+    {
+      openInCwd = "/work/project",
+      fileManagerAction = "open" as FileManagerAction,
+      withFallback = false,
+    } = {},
   ) {
     await act(async () => {
       for (const listener of state.listeners) listener();
       const node = (
-        <OpenInPicker
-          environmentId={selected}
-          keybindings={DEFAULT_RESOLVED_KEYBINDINGS}
-          availableEditors={availableEditors}
-          openInCwd={openInCwd}
-          fileManagerAction={fileManagerAction}
-          displayMode={panel ? "panel" : "toolbar"}
-          compact={!panel}
-        />
+        <>
+          <OpenInPicker
+            environmentId={selected}
+            keybindings={DEFAULT_RESOLVED_KEYBINDINGS}
+            availableEditors={availableEditors}
+            openInCwd={openInCwd}
+            fileManagerAction={fileManagerAction}
+            displayMode={panel ? "panel" : "toolbar"}
+            compact={!panel}
+          />
+          {withFallback ? <FavoriteEditorFallback availableEditors={availableEditors} /> : null}
+        </>
       );
       await screen.rerender(node);
     });
@@ -143,12 +150,12 @@ async function setup() {
     return event;
   }
 
-  function FavoriteEditorFallback() {
+  function FavoriteEditorFallback({ availableEditors = editors }) {
     useOpenFavoriteEditorShortcut({
       enabled: true,
       environmentId: selected,
       keybindings: DEFAULT_RESOLVED_KEYBINDINGS,
-      availableEditors: editors,
+      availableEditors,
       openInCwd: "/work/project",
     });
     return null;
@@ -196,11 +203,16 @@ describe("file manager", () => {
     const { renderPicker, primaryButton, click, pressOpenFavorite } = fixture;
     state.allowed.add(selected);
     const openInCwd = "/work/project/notes.md";
-    await renderPicker(["file-manager"], false, { openInCwd, fileManagerAction: "unavailable" });
+    await renderPicker(["file-manager"], false, {
+      openInCwd,
+      fileManagerAction: "unavailable",
+      withFallback: true,
+    });
 
     expect(primaryButton().disabled).toBe(true);
     await click(primaryButton());
-    expect((await pressOpenFavorite()).defaultPrevented).toBe(false);
+    // The preview claims the chord, so ChatView's fallback does not open the workspace instead.
+    expect((await pressOpenFavorite()).defaultPrevented).toBe(true);
     expect(state.run).not.toHaveBeenCalled();
 
     // A failed open is not announced, so no timer outlives the test.

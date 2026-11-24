@@ -124,6 +124,8 @@ export function isOwnedShareFileUri(
 export interface IncomingShareFileReader {
   readonly readBase64: (uri: string) => Promise<string>;
   readonly removeOwnedFile: (uri: string) => Promise<void> | void;
+  /** A file this build made and no longer needs, such as a scaled image; never kept for a retry. */
+  readonly removeScratchFile?: (uri: string) => Promise<void> | void;
   readonly persistFile?: (uri: string, name: string) => Promise<string>;
   readonly readSize?: (uri: string) => Promise<number | null>;
 }
@@ -498,10 +500,17 @@ export async function buildIncomingShareDraft(input: {
     } finally {
       await releaseOwnedFiles(
         input.fileReader,
-        [uri, payload.value, persistedImageUri, renderedImageUri].filter(
+        [uri, payload.value, persistedImageUri].filter(
           (candidate) => candidate !== retainedImageUri,
         ),
       );
+      if (renderedImageUri && renderedImageUri !== retainedImageUri) {
+        const removeScratchFile =
+          input.fileReader.removeScratchFile ?? input.fileReader.removeOwnedFile;
+        try {
+          await removeScratchFile(renderedImageUri);
+        } catch {}
+      }
     }
   }
 

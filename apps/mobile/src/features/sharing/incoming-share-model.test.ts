@@ -111,6 +111,7 @@ describe("incoming native shares", () => {
     const persistedUri = "file:///documents/oni-composer-attachments/screenshot.png";
     const persistFile = vi.fn(async () => persistedUri);
     const removeOwnedFile = vi.fn(async (_uri: string) => undefined);
+    const removeScratchFile = vi.fn(async (_uri: string) => undefined);
 
     const draft = await buildIncomingShareDraft({
       id: "share-resize",
@@ -124,12 +125,16 @@ describe("incoming native shares", () => {
         persistFile,
         readSize: async () => 3,
         removeOwnedFile,
+        removeScratchFile,
       },
     });
 
     expect(nativeImage.resize).toHaveBeenCalledWith({ width: 2000, height: 1000 });
     expect(persistFile).toHaveBeenCalledWith("file:///cache/resized.png", "screenshot");
-    expect(removeOwnedFile).toHaveBeenCalledWith("file:///cache/resized.png");
+    // Owned files wait for the draft to save; the scaled copy goes now, so a failed save
+    // cannot leave it behind.
+    expect(removeScratchFile).toHaveBeenCalledWith("file:///cache/resized.png");
+    expect(removeOwnedFile).not.toHaveBeenCalledWith("file:///cache/resized.png");
     expect(draft.attachments).toEqual([
       {
         id: "share-resize-image-0",

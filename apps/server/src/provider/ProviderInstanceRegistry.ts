@@ -118,6 +118,7 @@ const withLivePresentation = (instance: ProviderInstance, created: ProviderInsta
       : {}),
   };
   const setPresentation = (entry: ProviderInstanceConfig) => {
+    if (entry.displayName !== current.displayName) instance.rename?.(entry.displayName);
     current = entry;
   };
   return { instance: wrapped, setPresentation };

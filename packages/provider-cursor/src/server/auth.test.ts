@@ -43,7 +43,7 @@ const makeHarness = Effect.fn("makeCursorAuthHarness")(function* (
   const changes: boolean[] = [];
   const auth = yield* makeCursorAuth({
     instanceId,
-    displayName: "Personal Cursor",
+    displayName: () => "Personal Cursor",
     enabled: true,
     store,
     onChanged: (signedIn) =>

@@ -1,5 +1,7 @@
 import type { ProviderInteractionMode } from "@onicode/contracts";
 
+import { opensWithSlashCommand } from "./ProviderAdapter.ts";
+
 // Codex truncates entries over 4,000 bytes; keep each section self-contained and below that limit.
 export const ONICODE_CODE_ORCHESTRATION_SECTIONS: ReadonlyArray<string> = [
   `## Onicode orchestration
@@ -86,7 +88,7 @@ export function oniAcpPromptWithInstructions(input: {
   readonly previousState?: OniAcpInstructionState;
 }): string {
   // Native slash commands must remain at the start of the prompt.
-  if (input.prompt.trimStart().startsWith("/")) return input.prompt;
+  if (opensWithSlashCommand(input.prompt)) return input.prompt;
   if (
     input.previousState?.interactionMode === input.state.interactionMode &&
     input.previousState.hasOniMcp === input.state.hasOniMcp &&

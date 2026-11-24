@@ -8,6 +8,7 @@ const state = vi.hoisted(() => ({
   remoteOpen: { state: { mode: "local-exec" }, isResolved: true } as RemoteOpenResolution,
   openInEditor: vi.fn(async () => ({ _tag: "Success" })),
   openRemoteEditorUrl: vi.fn(async (_url: string) => true),
+  editorMenuIcons: vi.fn(async (_editors: ReadonlyArray<string>) => new Map()),
 }));
 
 vi.mock("@effect/atom-react", () => ({
@@ -26,7 +27,7 @@ vi.mock(import("./state/session"), async (original) => ({
   ...(await original()),
   useEnvironmentScope: () => true,
 }));
-vi.mock("./editorMenuIcons", () => ({ useEditorMenuIcons: () => new Map() }));
+vi.mock("./editorMenuIcons", () => ({ editorMenuIcons: state.editorMenuIcons }));
 vi.mock("./state/use-atom-command", () => ({ useAtomCommand: () => state.openInEditor }));
 vi.mock(import("./remoteOpen"), async (original) => ({
   ...(await original()),
@@ -84,7 +85,7 @@ describe("useFileContextMenu", () => {
     state.openInEditor.mockClear();
     const menu = useFileContextMenu(BASE_TARGET.environmentId);
 
-    expect(menu.buildItems(BASE_TARGET)).toEqual([]);
+    expect(await menu.buildItems(BASE_TARGET)).toEqual([]);
     await menu.activate("open", BASE_TARGET);
     await menu.activate("editor:vscode", BASE_TARGET);
     expect(state.openInEditor).not.toHaveBeenCalled();
@@ -99,7 +100,7 @@ describe("useFileContextMenu", () => {
     state.openRemoteEditorUrl.mockClear();
     const menu = useFileContextMenu(BASE_TARGET.environmentId);
 
-    expect(menu.buildItems(BASE_TARGET)).toEqual([
+    expect(await menu.buildItems(BASE_TARGET)).toEqual([
       {
         id: "open-with",
         label: "Open with",
@@ -119,13 +120,17 @@ describe("useFileContextMenu", () => {
   it("opens files on the server host when remote open is local-exec", async () => {
     state.remoteOpen = { state: { mode: "local-exec" }, isResolved: true };
     state.openInEditor.mockClear();
+    state.editorMenuIcons.mockClear();
     const menu = useFileContextMenu(BASE_TARGET.environmentId);
 
-    expect(menu.buildItems(BASE_TARGET).map((item) => item.id)).toEqual([
+    // Logos rasterize when the menu opens, and only for Open with rows.
+    expect(state.editorMenuIcons).not.toHaveBeenCalled();
+    expect((await menu.buildItems(BASE_TARGET)).map((item) => item.id)).toEqual([
       "open",
       "reveal-in-folder",
       "open-with",
     ]);
+    expect(state.editorMenuIcons.mock.calls).toEqual([[["cursor"]]]);
     await menu.activate("open", BASE_TARGET);
     expect(state.openInEditor).toHaveBeenCalledWith({
       environmentId: BASE_TARGET.environmentId,

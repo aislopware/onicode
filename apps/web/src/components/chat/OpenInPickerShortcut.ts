@@ -23,7 +23,8 @@ export const OPEN_FAVORITE_EDITOR_ATTRIBUTE = "data-open-favorite-editor";
 /**
  * `editor.openFavorite` presses the marked OpenInPicker primary button, so the shortcut opens
  * exactly what the button on screen would. A missing or disabled button leaves the chord to the
- * bubble-phase fallback below. Capture phase, so a focused terminal does not swallow the chord.
+ * bubble-phase fallback, unless marked `unavailable`: a file preview's path the fallback would
+ * swap for the workspace. Capture phase, so a focused terminal does not swallow the chord.
  */
 export function registerOpenFavoriteEditorCommand(): () => void {
   return registerCommands(
@@ -33,7 +34,12 @@ export function registerOpenFavoriteEditorCommand(): () => void {
         const button = [
           ...document.querySelectorAll<HTMLButtonElement>(`[${OPEN_FAVORITE_EDITOR_ATTRIBUTE}]`),
         ].at(-1);
-        if (button === undefined || button.disabled) return false;
+        if (button === undefined) return false;
+        if (button.getAttribute(OPEN_FAVORITE_EDITOR_ATTRIBUTE) === "unavailable") {
+          event.preventDefault();
+          return;
+        }
+        if (button.disabled) return false;
         event.preventDefault();
         button.click();
       },
