@@ -565,7 +565,7 @@ export interface ThreadManagementServiceShape {
   readonly recoverDelegatedTask: Orchestrator.OrchestratorV2["Service"]["recoverDelegatedTask"];
   readonly cancelDelegatedTask: Orchestrator.OrchestratorV2["Service"]["cancelDelegatedTask"];
   readonly delegatedTaskResultPending: Orchestrator.OrchestratorV2["Service"]["delegatedTaskResultPending"];
-  readonly latestRunAwaitsCapture: Orchestrator.OrchestratorV2["Service"]["latestRunAwaitsCapture"];
+  readonly delegatedTaskAwaitsCapture: Orchestrator.OrchestratorV2["Service"]["delegatedTaskAwaitsCapture"];
   readonly streamStoredEvents: Orchestrator.OrchestratorV2["Service"]["streamStoredEvents"];
   readonly streamStoredEventsFrom: Orchestrator.OrchestratorV2["Service"]["streamStoredEventsFrom"];
   readonly streamDomainEvents: Orchestrator.OrchestratorV2["Service"]["streamDomainEvents"];
@@ -2031,7 +2031,7 @@ const make = Effect.gen(function* () {
     recoverDelegatedTask: orchestrator.recoverDelegatedTask,
     cancelDelegatedTask: orchestrator.cancelDelegatedTask,
     delegatedTaskResultPending: orchestrator.delegatedTaskResultPending,
-    latestRunAwaitsCapture: orchestrator.latestRunAwaitsCapture,
+    delegatedTaskAwaitsCapture: orchestrator.delegatedTaskAwaitsCapture,
     streamStoredEvents: orchestrator.streamStoredEvents,
     streamStoredEventsFrom: orchestrator.streamStoredEventsFrom,
     streamDomainEvents: orchestrator.streamDomainEvents,

@@ -436,9 +436,10 @@ export interface OrchestratorV2Shape {
   readonly awaitRestartContinuation: (run: OrchestrationV2Run) => Effect.Effect<void>;
   /** A capture that gives up emits no thread event; this still wakes waiters. */
   readonly awaitLatestRunCapture: (threadId: ThreadId) => Effect.Effect<void>;
-  /** The latest run's turn ended, but its work goes on until its turn-end capture lands. */
-  readonly latestRunAwaitsCapture: (
-    threadId: ThreadId,
+  /** The task's turn ended, but its work goes on until its turn-end capture lands. */
+  readonly delegatedTaskAwaitsCapture: (
+    childThreadId: ThreadId,
+    taskId: NodeId,
   ) => Effect.Effect<boolean, OrchestratorProjectionError>;
   /** A steer that misses its turn moves its message to another run once the worker settles it. */
   readonly steerDeliveryPending: (
@@ -2288,6 +2289,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           runIds: [message.runId],
         });
         const run = runs.runs[0];
+        // The run-end reaction its capture starts requeues it, held when a Stop ended the run.
+        if (run !== undefined && (yield* awaitsCheckpointCapture(run))) return;
         const turns = yield* projectionStore.getThreadRecords(threadId, ["providerTurns"], {
           providerTurnAttemptIds: run?.activeAttemptId == null ? [] : [run.activeAttemptId],
         });
@@ -17621,11 +17624,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         // What holds or ends the queue voids a pick put off for the turn-end capture.
         if (
           command.type === "thread.stop" ||
-          (command.type === "run.interrupt" && command.holdQueue === true) ||
-          command.type === "thread.archive" ||
-          command.type === "thread.delete"
+          (command.type === "run.interrupt" && command.holdQueue === true)
         ) {
           queueStartsAwaitingCapture.delete(command.threadId);
+        }
+        for (const { event } of committed.storedEvents) {
+          if (event.type === "thread.archived" || event.type === "thread.deleted")
+            queueStartsAwaitingCapture.delete(event.threadId);
         }
         if (command.type === "queue.resume" || command.type === "queued-run.start") {
           yield* startNextQueuedRunAfterCommit(
@@ -18295,13 +18300,14 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                         : [run.delegatedCompletion.delivery.messageId],
                     ),
                   );
-                  const terminalDeliveryRunIds = projection.runs
-                    .filter(
+                  const terminalDeliveryRunIds = (yield* Effect.filter(
+                    projection.runs.filter(
                       (run) =>
                         delegatedTaskTerminalStatus(run.status) !== null &&
                         openDeliveryMessageIds.has(run.userMessageId),
-                    )
-                    .map((run) => run.id);
+                    ),
+                    (run) => Effect.map(awaitsCheckpointCapture(run), (awaits) => !awaits),
+                  )).map((run) => run.id);
                   for (const runId of terminalDeliveryRunIds) {
                     yield* finalizeDelegatedCompletionDelivery(threadId, runId);
                   }
@@ -18419,6 +18425,25 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       effect.pipe(Effect.mapError((cause) => new OrchestratorProjectionError({ threadId, cause }))),
   );
 
+  const taskAwaitsCapture = (
+    child: Pick<OrchestrationV2ThreadProjection, "thread" | "runs" | "messages">,
+    taskId: NodeId,
+    capturing: OrchestrationV2Run | undefined,
+  ) => {
+    if (capturing === undefined) return false;
+    const owns = (id: NodeId) =>
+      delegatedTaskRuns(child, id).some((run) => run.id === capturing.id);
+    if (owns(taskId)) return true;
+    // The task the thread was forked for owns every run no follow-up owns.
+    const followUpIds = new Set(child.runs.flatMap((run) => run.delegatedTaskId ?? []));
+    return (
+      child.thread.forkedFrom?.type === "node" &&
+      child.thread.forkedFrom.nodeId === taskId &&
+      !followUpIds.has(taskId) &&
+      ![...followUpIds].some(owns)
+    );
+  };
+
   const cancelDelegatedTask: OrchestratorV2Shape["cancelDelegatedTask"] = Effect.fn(
     "Orchestrator.cancelDelegatedTask",
   )(function* (input) {
@@ -18444,21 +18469,20 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           )
           .pipe(mapDispatchError(command));
         const child = yield* readChild;
-        const followUpRun = child.runs
-          .filter((run) => run.delegatedTaskId === input.taskId)
-          .toSorted((a, b) => b.ordinal - a.ordinal)[0];
+        const followUpRuns = delegatedTaskRuns(child, input.taskId);
+        const followUpRun = delegatedTaskResultRun(followUpRuns);
         // The task stays open until the capture of its ended turn lands.
         const capturing = yield* runAwaitingCapture(command.threadId).pipe(
           mapDispatchError(command),
         );
         const unsettled =
-          followUpRun === undefined
+          taskAwaitsCapture(child, input.taskId, capturing) ||
+          (followUpRun === undefined
             ? child.thread.forkedFrom?.type === "node" &&
               child.thread.forkedFrom.nodeId === input.taskId &&
-              (capturing !== undefined || progressAfterTurn(child).state !== "result_available")
+              progressAfterTurn(child).state !== "result_available"
             : delegatedTaskTerminalStatus(runOutcome(followUpRun)) === null ||
-              capturing?.id === followUpRun.id ||
-              delegatedTaskAwaitsWork(delegatedTaskRuns(child, input.taskId), child);
+              delegatedTaskAwaitsWork(followUpRuns, child));
         yield* threadDispatch.withLock(
           command.threadId,
           Effect.gen(function* () {
@@ -18469,9 +18493,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                 : dispatchWithReceipt(command),
             );
             const child = yield* readChild;
-            const followUpRun = child.runs
-              .filter((run) => run.delegatedTaskId === input.taskId)
-              .toSorted((a, b) => b.ordinal - a.ordinal)[0];
+            const followUpRun = delegatedTaskResultRun(delegatedTaskRuns(child, input.taskId));
             const monitorRunIds = new Set(
               child.messages
                 .filter((message) => message.notification?.source.kind === "monitor")
@@ -18510,12 +18532,18 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       },
     ),
     awaitLatestRunCapture,
-    latestRunAwaitsCapture: Effect.fn("OrchestratorV2.latestRunAwaitsCapture")(function (threadId) {
-      return runAwaitingCapture(threadId).pipe(
-        Effect.map((run) => run !== undefined),
-        Effect.mapError((cause) => new OrchestratorProjectionError({ threadId, cause })),
-      );
-    }),
+    delegatedTaskAwaitsCapture: Effect.fn("OrchestratorV2.delegatedTaskAwaitsCapture")(
+      function* (childThreadId, taskId) {
+        const child = yield* projectionStore.getThreadRecords(childThreadId, ["runs", "messages"], {
+          messageRoles: ["user"],
+        });
+        return taskAwaitsCapture(child, taskId, yield* runAwaitingCapture(childThreadId));
+      },
+      (effect, threadId) =>
+        effect.pipe(
+          Effect.mapError((cause) => new OrchestratorProjectionError({ threadId, cause })),
+        ),
+    ),
     awaitRestartContinuation: Effect.fn("OrchestratorV2.awaitRestartContinuation")(function (run) {
       return effectOutbox.awaitSettled(`effect:restart-continuation:${run.id}`).pipe(Effect.ignore);
     }),
