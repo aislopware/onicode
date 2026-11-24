@@ -15,6 +15,7 @@ import {
   extractXAiAcpSubagentEndNotice,
   extractXAiAcpSubagentUpdate,
   extractXAiAskUserQuestions,
+  extractXAiAwaitedSubagentIds,
   extractXAiBackgroundTaskCompletion,
   extractXAiKilledBackgroundTasks,
   extractXAiMonitorTaskId,
@@ -208,6 +209,24 @@ describe("XAiAcpExtension", () => {
       result: "SUBAGENT_MARKER: 35 entries",
       suppressNormalTool: true,
     });
+  });
+
+  it.each([
+    { title: "get_command_or_subagent_output", rawInput: { timeout_ms: 15_000 }, awaited: true },
+    { title: "get_command_or_subagent_output", rawInput: {}, awaited: false },
+    { title: "get_command_or_subagent_output", rawInput: { timeout_ms: 0 }, awaited: false },
+    { title: "wait_commands_or_subagents", rawInput: { mode: "wait_all" }, awaited: true },
+    { title: "Read", rawInput: { timeout_ms: 15_000 }, awaited: false },
+  ])("holds the parent on the polled children only for a blocking poll: %j", (row) => {
+    const childId = "019f44a6-4820-7402-925d-bc862ee711dd";
+    expect(
+      extractXAiAwaitedSubagentIds({
+        toolCallId: "call-poll",
+        title: row.title,
+        status: "inProgress",
+        data: { rawInput: { task_ids: [childId, "call-bg-1-0"], ...row.rawInput } },
+      }),
+    ).toEqual(row.awaited ? [childId] : []);
   });
 
   it("attributes multi-task get_output envelopes to the result task_id", () => {

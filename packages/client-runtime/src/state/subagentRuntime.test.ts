@@ -15,6 +15,7 @@ import {
 import * as DateTime from "effect/DateTime";
 
 import {
+  countSubagentsAwaitedFromEarlierRuns,
   countSubagentsBlockingRun,
   deriveWorkflowGroups,
   isWorkflowScriptMessage,
@@ -422,6 +423,28 @@ describe("countSubagentsBlockingRun", () => {
     expect(count([child("a"), reply("m2")], false)).toBe(0);
     expect(count([child("a")], false)).toBe(1);
     expect(count([child("a", "running", false), reply("m2")], false)).toBe(0);
+  });
+
+  it("adds the children of earlier runs that the run's wait holds it on", () => {
+    const earlier = RunId.make("earlier-run");
+    expect(
+      countSubagentsAwaitedFromEarlierRuns(
+        [
+          { runId: earlier, status: "running", awaitedByRunId: runId },
+          { runId: earlier, status: "completed", awaitedByRunId: runId },
+          { runId: earlier, status: "running", awaitedByRunId: earlier },
+          { runId: earlier, status: "running" },
+          // Its own row in the run counts it.
+          { runId, status: "running", awaitedByRunId: runId },
+        ],
+        runId,
+      ),
+    ).toBe(1);
+    const withEarlier = (items: ReadonlyArray<OrchestrationV2TurnItem>, repliesShown: boolean) =>
+      countSubagentsBlockingRun(items, runId, (item) => [item], repliesShown, 1);
+    expect(withEarlier([reply("m1")], true)).toBe(1);
+    expect(withEarlier([child("a", "running", false), reply("m1")], true)).toBe(2);
+    expect(withEarlier([reply("m2")], false)).toBe(0);
   });
 
   it("stops at an entry that holds no turn item", () => {

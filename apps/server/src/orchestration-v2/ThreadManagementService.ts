@@ -1663,17 +1663,9 @@ const make = Effect.gen(function* () {
               "providerThreads",
               "providerTurns",
             ]);
-            // The run Force stop acts on: the active one, else the latest that started. Queued
-            // follow-ups never ran, so they neither count as targets nor supersede the request.
-            const target =
-              latestActiveRun(records) ??
-              records.runs
-                .filter((run) => run.status !== "queued")
-                .reduce<OrchestrationV2Run | undefined>(
-                  (current, run) =>
-                    current === undefined || run.ordinal > current.ordinal ? run : current,
-                  undefined,
-                );
+            // The run Force stop acts on: the active one, else the last that ran, as Stop picks it.
+            // Messages that never ran neither count as targets nor supersede the request.
+            const target = latestActiveRun(records) ?? latestExecutedRun(records.runs) ?? undefined;
             if (input.runId !== undefined && input.runId !== target?.id) {
               return yield* new OrchestrationV2ForceStopThreadError({
                 threadId: input.threadId,
@@ -1897,7 +1889,6 @@ const make = Effect.gen(function* () {
     child: ProjectionRecords<"runs" | "providerThreads" | "turnItems" | "subagents">,
   ) {
     if (child.thread.deletedAt !== null) return false;
-    const latestRun = child.runs.findLast((run) => run.status !== "queued");
     // Held queues resume out of ordinal order; limit recovery follows the run that ended last.
     const executed = latestExecutedRun(child.runs);
     const hasStoppableRun = child.runs.some(
@@ -1930,7 +1921,7 @@ const make = Effect.gen(function* () {
       child.thread.limitRecovery?.autoResume === true ||
       (child.thread.pullRequests ?? []).some((link) => link.watch !== undefined) ||
       derivePendingBackgroundWork({
-        latestRun,
+        latestRun: executed,
         providerThreads: child.providerThreads,
         turnItems: child.turnItems,
         activeProviderThreadId: child.thread.activeProviderThreadId,

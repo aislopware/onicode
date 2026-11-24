@@ -50,6 +50,7 @@ import {
   ThreadId,
 } from "@onicode/contracts";
 import { projectComposerContextForProvider } from "@onicode/shared/composerContextReferences";
+import { isHeadSha } from "@onicode/shared/git";
 import { THEME_GUIDE } from "@onicode/shared/themeCss";
 import { formatThreadLink } from "@onicode/shared/threadLinks";
 import { buildCodexAdditionalContext } from "../../apps/server/src/provider/CodexDeveloperInstructions.ts";
@@ -2276,17 +2277,14 @@ const recordForgeChange = (
  */
 const productRefusal = (sample: Sample, name: string, input: Readonly<Record<string, unknown>>) => {
   const world = sample.testCase.setup.world;
-  if (
-    name === "pull_request_review" &&
-    input.verdict === "approve" &&
-    typeof input.expectedHeadSha !== "string"
-  ) {
+  const expected =
+    typeof input.expectedHeadSha === "string" && input.expectedHeadSha.trim() !== ""
+      ? input.expectedHeadSha.trim()
+      : undefined;
+  if (name === "pull_request_review" && input.verdict === "approve" && expected === undefined) {
     return "Approving needs expectedHeadSha: the headSha pull_request_read reported for the commits you reviewed.";
   }
-  if (
-    (name === "pull_request_merge" || name === "pull_request_review") &&
-    typeof input.expectedHeadSha === "string"
-  ) {
+  if ((name === "pull_request_merge" || name === "pull_request_review") && expected !== undefined) {
     const own = branchPullRequest(sample);
     const number = input.number ?? own.number;
     const pr = worldPullRequests(sample).find((candidate) => Number(candidate.number) === number);
@@ -2297,8 +2295,8 @@ const productRefusal = (sample: Sample, name: string, input: Readonly<Record<str
         : number === own.number
           ? world?.commits?.[0]?.sha
           : undefined;
-    if (head !== undefined && head !== input.expectedHeadSha.trim()) {
-      return `The head is now ${head}, not ${input.expectedHeadSha}. Review the new commits first.`;
+    if (head !== undefined && !isHeadSha(head, expected)) {
+      return `The head is now ${head}, not ${expected}. Review the new commits first.`;
     }
   }
   return undefined;

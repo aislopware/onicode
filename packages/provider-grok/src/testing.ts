@@ -22,6 +22,7 @@ export { makeGrokTextGeneration } from "./server/textGeneration.ts";
 export { grokUsageResponseToLimits, readGrokAccount } from "./server/usageLimits.ts";
 export {
   extractXAiAcpSubagentUpdate,
+  extractXAiAwaitedSubagentIds,
   makeXAiPromptCompletionRuntime,
   normalizeXAiAcpToolCallState,
   registerXAiBackgroundTaskTracking,

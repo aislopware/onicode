@@ -704,10 +704,11 @@ describe("presentRunStop", () => {
       state: "unresponsive",
     },
     {
-      name: "a settled run whose background work ignored Stop, with a queued follow-up",
+      name: "a settled run whose background work ignored Stop, with queued and steered follow-ups",
       runs: [
         { ...running, status: "completed" as const, completedAt: now },
         run("run-queued", 2, "queued"),
+        { ...run("run-steered", 3, "cancelled"), startedAt: null, completedAt: now },
       ],
       turnItems: [{ ...request, unresponsiveAt: now }],
       state: "unresponsive",

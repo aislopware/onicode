@@ -1,4 +1,4 @@
-import { EnvironmentId, OrchestratorMcpFailure } from "@onicode/contracts";
+import { EnvironmentId, OrchestratorMcpFailure, type RuntimeMode } from "@onicode/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -8,6 +8,7 @@ import * as TestClock from "effect/testing/TestClock";
 
 import * as PeerLinks from "../peer/PeerLinks.ts";
 import * as PeerMcpClient from "../peer/PeerMcpClient.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as WorkflowAgentLinks from "./WorkflowAgentLinks.ts";
 
 const isFailure = Schema.is(OrchestratorMcpFailure);
@@ -20,10 +21,14 @@ interface Call {
 }
 
 /** The other environment, played by the test: each tool answers from a list, in order. */
-const peer = (answers: Record<string, ReadonlyArray<unknown>>, enabled = true) => {
+const peer = (
+  answers: Record<string, ReadonlyArray<unknown>>,
+  enabled = true,
+  maxRuntimeMode?: RuntimeMode,
+) => {
   const calls: Array<Call> = [];
   const left = new Map(Object.entries(answers).map(([tool, list]) => [tool, [...list]]));
-  const layer = Layer.merge(
+  const layer = Layer.mergeAll(
     Layer.succeed(
       PeerMcpClient.PeerMcpClient,
       PeerMcpClient.PeerMcpClient.of({
@@ -41,6 +46,12 @@ const peer = (answers: Record<string, ReadonlyArray<unknown>>, enabled = true) =
       }),
     ),
     Layer.mock(PeerLinks.PeerLinks)({ enabled: Effect.succeed(enabled) }),
+    Layer.mock(ServerSettings.ServerSettingsService)({
+      managedPolicy:
+        maxRuntimeMode === undefined
+          ? undefined
+          : { organization: "Example Corp", lockedSettings: [], limits: { maxRuntimeMode } },
+    }),
   );
   return { calls, layer };
 };
@@ -109,6 +120,25 @@ it.effect("starts a thread there by the project's folder, with the step's key as
     });
     // The link's own access is the ceiling, not a mode narrower than it.
     assert.equal(launch?.runtimeMode, "full-access");
+
+    // An administrator's ceiling here holds over a full-access link too.
+    const capped = peer(
+      {
+        oni_project_list: [
+          { projects: [{ id: "p-app", workspaceRoot: "/work/app" }], nextCursor: null },
+        ],
+        oni_thread_launch: [{ threadId: "thread-1", runId: "turn-1" }],
+      },
+      true,
+      "auto",
+    );
+    yield* Effect.provide(
+      Effect.flatMap(WorkflowAgentLinks.make, (links) =>
+        links.start(input, "env-b", "workflow:k", EnvironmentId.make("env-a")),
+      ),
+      capped.layer,
+    );
+    assert.equal(capped.calls.at(-1)?.runtimeMode, "auto");
   }),
 );
 

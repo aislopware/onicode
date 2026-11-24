@@ -105,6 +105,8 @@ export interface ThreadRunSummary {
     readonly instanceId: ProviderInstanceId;
     readonly driver: ProviderDriverKind;
   };
+  /** Live subagents of earlier runs that this run's wait call holds it on. */
+  readonly awaitedEarlierSubagents?: number;
   readonly sourcePlanRef?: {
     readonly threadId: ThreadId;
     readonly planId: PlanId;

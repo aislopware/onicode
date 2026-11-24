@@ -54,6 +54,7 @@ import {
 } from "./models.ts";
 import { commandDisplayText } from "../work-log/commandLabel.ts";
 import { formatSubagentDisplayTitle } from "./subagentDisplay.ts";
+import { countSubagentsAwaitedFromEarlierRuns } from "./subagentRuntime.ts";
 import { mFallback, msg } from "gt-i18n";
 import { markedTextEnglish } from "../errors/translatable.ts";
 import type { MFunctionType } from "gt-i18n/types";
@@ -104,7 +105,7 @@ export function deriveProviderExtensionStatuses(
 }
 
 function latestMatchingRun(
-  projection: ThreadStructure,
+  projection: Pick<ThreadStructure, "runs">,
   predicate: (run: OrchestrationV2ThreadProjection["runs"][number]) => boolean,
 ): OrchestrationV2ThreadProjection["runs"][number] | null {
   return projection.runs.reduce<OrchestrationV2ThreadProjection["runs"][number] | null>(
@@ -211,6 +212,9 @@ function summarizeThreadRun(
     (candidate) => candidate.providerInstanceId === run.providerInstanceId,
   );
   const phase = startupPhaseFor(projection, session);
+  const awaitedEarlierSubagents = ACTIVITY_RUN_STATUSES.has(run.status)
+    ? countSubagentsAwaitedFromEarlierRuns(projection.subagents, run.id)
+    : 0;
   return {
     runId: run.id,
     status: run.status,
@@ -234,6 +238,7 @@ function summarizeThreadRun(
           : providerStarting(run, session, phase, providers)
         : { turnEnded: true }),
     ...(run.sourcePlanRef === undefined ? {} : { sourcePlanRef: run.sourcePlanRef }),
+    ...(awaitedEarlierSubagents === 0 ? {} : { awaitedEarlierSubagents }),
   };
 }
 
@@ -709,19 +714,8 @@ export interface RunStopPresentation {
 export function presentRunStop(
   projection: Pick<ThreadStructure, "runs" | "turnItems">,
 ): RunStopPresentation | null {
-  let active: ThreadStructure["runs"][number] | null = null;
-  let latest: ThreadStructure["runs"][number] | null = null;
-  for (const candidate of projection.runs) {
-    // Queued follow-ups never ran, so they hold no Stop of their own.
-    if (candidate.status !== "queued" && candidate.ordinal > (latest?.ordinal ?? -1))
-      latest = candidate;
-    if (
-      INTERRUPTIBLE_RUN_STATUSES.has(candidate.status) &&
-      candidate.ordinal > (active?.ordinal ?? -1)
-    )
-      active = candidate;
-  }
-  const run = active ?? latest;
+  const active = latestMatchingRun(projection, (run) => INTERRUPTIBLE_RUN_STATUSES.has(run.status));
+  const run = active ?? latestExecutedRun(projection.runs);
   if (run === null) return null;
   let request:
     | Extract<ThreadStructure["turnItems"][number], { type: "run_interrupt_request" }>

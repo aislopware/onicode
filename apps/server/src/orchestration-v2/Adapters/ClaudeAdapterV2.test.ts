@@ -15888,6 +15888,12 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                   name: "Bash",
                   input: { command: movedScript },
                 },
+                {
+                  type: "tool_use",
+                  id: "toolu_moved_timer",
+                  name: "Bash",
+                  input: { command: "sleep 300; date" },
+                },
               ],
             },
             parent_tool_use_id: null,
@@ -15913,6 +15919,20 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           harness.sdkMessages,
           claudeSdkFrame({
             type: "system",
+            subtype: "task_started",
+            task_id: "moved-timer",
+            tool_use_id: "toolu_moved_timer",
+            description: "Wait before the next check",
+            is_backgrounded: false,
+            task_type: "local_bash",
+            uuid: "00000000-0000-4000-8000-000000000207",
+            session_id: WAKE_NATIVE_SESSION,
+          }),
+        );
+        yield* Queue.offer(
+          harness.sdkMessages,
+          claudeSdkFrame({
+            type: "system",
             subtype: "background_tasks_changed",
             tasks: [
               { task_id: WAKE_TASK_ID, task_type: "local_bash", description: "Audit" },
@@ -15920,6 +15940,12 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                 task_id: "moved-build",
                 task_type: "local_bash",
                 description: `\n${movedScript}`,
+              },
+              // A foreground timer Claude moved to the background is a timer all the same.
+              {
+                task_id: "moved-timer",
+                task_type: "local_bash",
+                description: "Wait before the next check",
               },
             ],
             uuid: "00000000-0000-4000-8000-000000000206",
@@ -15939,6 +15965,8 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           ["endless_sleep", "sleep infinity", false],
           ["delayed_server", "sleep 5 && npm run dev", false],
           ["substituted_server", 'sleep 60; echo "$(npm run dev)"', false],
+          // Past the roster's 1,000-character preview, which would cut off the server.
+          ["long_server", `sleep 5 && echo ${"x".repeat(1_000)} && npm run dev`, false],
         ] as const;
         yield* Queue.offer(
           harness.sdkMessages,
@@ -15995,6 +16023,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           [
             [WAKE_TASK_ID, false],
             ["moved-build", false],
+            ["moved-timer", true],
             ...sleeps.map(([taskId, , awaited]) => [taskId, awaited]),
           ],
         );
@@ -24994,6 +25023,19 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           : [],
       );
       assert.deepEqual(childEfforts, ["low", undefined, "max"]);
+      // Its owner waits on a nested task, not the root, even when Claude omits spawn_depth.
+      const rowBackground = new Map(
+        harness.events.flatMap((event) =>
+          event.type === "turn_item.updated" && event.turnItem.type === "subagent"
+            ? [[event.turnItem.nativeItemRef?.nativeId, event.turnItem.background] as const]
+            : [],
+        ),
+      );
+      assert.deepEqual(Object.fromEntries(rowBackground), {
+        [`task-${OUTER_TOOL_USE_ID}`]: undefined,
+        [`task-${UNSPECIFIED_TOOL_USE_ID}`]: true,
+        [`task-${OVERRIDING_TOOL_USE_ID}`]: true,
+      });
     }).pipe(
       Effect.provideService(WorkflowAgentTranscriptReadObserver, (read) =>
         read.agentId === `task-${UNSPECIFIED_TOOL_USE_ID}`

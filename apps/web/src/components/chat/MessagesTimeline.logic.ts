@@ -523,7 +523,7 @@ function maxIsoTimestamp(a: string | null, b: string | null): string | null {
 
 export type TimelineLatestRun = Pick<
   ThreadRunSummary,
-  "runId" | "status" | "startedAt" | "completedAt" | "turnEnded"
+  "runId" | "status" | "startedAt" | "completedAt" | "turnEnded" | "awaitedEarlierSubagents"
 >;
 
 const LIVE_ACTIVITY_ROW_ID = "live-activity-row";
@@ -2429,6 +2429,9 @@ export function deriveMessagesTimelineRows(
               unsettledRunId,
               timelineEntryTurnItems,
               input.toolCallVisibility !== "zen",
+              input.latestRun?.runId === unsettledRunId
+                ? (input.latestRun.awaitedEarlierSubagents ?? 0)
+                : 0,
             );
       nextRows.push({
         kind: "thinking",

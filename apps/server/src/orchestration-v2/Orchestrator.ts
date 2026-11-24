@@ -12443,6 +12443,17 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         }
       }
 
+      // An answer by message sends its files in question order; a live answer already names every file.
+      const questionFiles = new Map(Object.entries(command.attachmentsByQuestionId ?? {}));
+      const messageFiles =
+        runtimeRequest.responseCapability.type === "message" &&
+        approvalTurnItem?.type === "user_input_request"
+          ? approvalTurnItem.questions.flatMap((question) => {
+              const files = questionFiles.get(question.id);
+              return files === undefined ? [] : [[question.id, files] as const];
+            })
+          : undefined;
+
       const now = yield* DateTime.now;
       const resolvedRequest = {
         ...runtimeRequest,
@@ -12566,12 +12577,16 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           occurredAt: now,
           payload: {
             ...approvalTurnItem,
-            ...(approvalTurnItem.type === "user_input_request" && answers !== undefined
+            ...(approvalTurnItem.type === "user_input_request" &&
+            (answers !== undefined || command.attachmentsByQuestionId !== undefined)
               ? {
                   questionAnswer: {
                     requestId: command.requestId,
-                    answers,
-                    attachmentsByQuestionId: command.attachmentsByQuestionId ?? {},
+                    answers: answers ?? {},
+                    attachmentsByQuestionId:
+                      messageFiles === undefined
+                        ? (command.attachmentsByQuestionId ?? {})
+                        : Object.fromEntries(messageFiles),
                     questionTextById: Object.fromEntries(
                       approvalTurnItem.questions.map((question) => [
                         question.id,
@@ -12628,7 +12643,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           threadId: command.threadId,
           messageId: MessageId.make(`async-answer:${command.requestId}`),
           text: replies.join("\n\n"),
-          attachments: Object.values(command.attachmentsByQuestionId ?? {}).flat(),
+          attachments: (messageFiles ?? []).flatMap(([, files]) => files),
           createdBy: "user" as const,
           creationSource: "server" as const,
           dispatchMode,
@@ -14073,11 +14088,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       "runs" | "nodes" | "subagents" | "turnItems" | "providerThreads"
     >;
     readonly stoppedProviderThreadId: OrchestrationV2ProviderThread["id"] | null;
-    readonly throughRunOrdinal: number;
+    readonly stoppedRun: OrchestrationV2Run;
     readonly now: DateTime.Utc;
   }) {
     const emitEvent = emit(input.events, input.command);
-    const runOrdinals = new Map(input.projection.runs.map((run) => [run.id, run.ordinal]));
+    const runsById = new Map(input.projection.runs.map((run) => [run.id, run]));
     const childThreadIds = new Set<ThreadId>();
     const liveness = new Map<string, boolean>();
     const hasLiveSession = Effect.fn("Orchestrator.hasLiveSession")(function* (
@@ -14118,8 +14133,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       turnItems: input.projection.turnItems,
       runs: input.projection.runs,
     })) {
-      const itemRunOrdinal = item.runId === null ? undefined : runOrdinals.get(item.runId);
-      if (itemRunOrdinal !== undefined && itemRunOrdinal > input.throughRunOrdinal) continue;
+      const run = item.runId === null ? undefined : runsById.get(item.runId);
+      if (run !== undefined && runRanAfter(run, input.stoppedRun)) continue;
       const providerThreadId = item.providerThreadId ?? null;
       if (
         providerThreadId !== null &&
@@ -14128,7 +14143,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       ) {
         continue;
       }
-      const run = input.projection.runs.find((candidate) => candidate.id === item.runId);
       yield* emitEvent({
         type: "turn-item.updated",
         threadId: input.command.threadId,
@@ -14185,6 +14199,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       } else if (yield* hasLiveSession(providerThread.id)) {
         continue;
       }
+      const lastRun = input.projection.runs.find(
+        (run) => run.ordinal === providerThread.lastRunOrdinal,
+      );
       yield* emitEvent({
         type: "provider-thread.updated",
         threadId: input.command.threadId,
@@ -14195,8 +14212,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           ...providerThread,
           status:
             providerThread.status === "active" &&
-            providerThread.lastRunOrdinal !== null &&
-            providerThread.lastRunOrdinal <= input.throughRunOrdinal
+            lastRun !== undefined &&
+            !runRanAfter(lastRun, input.stoppedRun)
               ? "idle"
               : providerThread.status,
           pendingBackgroundTasks: [],
@@ -14851,7 +14868,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         events,
         projection,
         stoppedProviderThreadId: command.providerThreadId,
-        throughRunOrdinal: stoppedRun.ordinal,
+        stoppedRun,
         now,
       });
     },
@@ -15019,7 +15036,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ? undefined
         : projection.providerThreads.find((candidate) => candidate.id === run?.providerThreadId);
     const hasBackgroundWork =
-      run?.id === projection.runs.findLast((candidate) => candidate.status !== "queued")?.id &&
+      run?.id === latestExecutedRun(projection.runs)?.id &&
       derivePendingBackgroundWork({
         latestRun: run,
         providerThreads: projection.providerThreads,
@@ -15102,17 +15119,16 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
 
     const otherProviderInterrupts: Array<PendingOrchestrationEffectV2> = [];
     if (hasBackgroundWork || command.holdQueue === true) {
-      const runOrdinals = new Map(
-        projection.runs.map((candidate) => [candidate.id, candidate.ordinal]),
-      );
-      const runOrdinalOf = (item: (typeof projection.turnItems)[number]) =>
-        item.runId === null ? -1 : (runOrdinals.get(item.runId) ?? -1);
+      const runsById = new Map(projection.runs.map((candidate) => [candidate.id, candidate]));
       // Interrupt each provider thread at its latest pending turn so settlement covers all its work.
       // Use the item's provider turn: native subagent items name the child thread but the parent turn,
       // and interrupting the parent turn reaches the subagent.
       const latestTurnByProviderThread = new Map<
         OrchestrationV2ProviderThread["id"],
-        { readonly turn: (typeof projection.providerTurns)[number]; readonly runOrdinal: number }
+        {
+          readonly turn: (typeof projection.providerTurns)[number];
+          readonly owner: OrchestrationV2Run | undefined;
+        }
       >();
       for (const item of pendingBackgroundTurnItems({
         turnItems: projection.turnItems,
@@ -15122,10 +15138,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           (candidate) => candidate.id === item.providerTurnId,
         );
         if (turn === undefined || turn.providerThreadId === providerThread.id) continue;
-        const runOrdinal = runOrdinalOf(item);
+        const owner = item.runId === null ? undefined : runsById.get(item.runId);
         const latest = latestTurnByProviderThread.get(turn.providerThreadId);
-        if (latest === undefined || runOrdinal > latest.runOrdinal) {
-          latestTurnByProviderThread.set(turn.providerThreadId, { turn, runOrdinal });
+        if (
+          latest === undefined ||
+          (owner !== undefined && (latest.owner === undefined || runRanAfter(owner, latest.owner)))
+        ) {
+          latestTurnByProviderThread.set(turn.providerThreadId, { turn, owner });
         }
       }
       for (const { turn } of latestTurnByProviderThread.values()) {
@@ -15343,7 +15362,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         events,
         projection,
         stoppedProviderThreadId: providerThread.id,
-        throughRunOrdinal: run.ordinal,
+        stoppedRun: run,
         now,
       });
       yield* Ref.update(effects, (existing) => [...existing, ...otherProviderInterrupts]);
@@ -15625,20 +15644,21 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       )
         ? Effect.void
         : Ref.update(effects, (existing) => [...existing, delegatedTasksStopEffect(command)]);
-    const latestRun = projection.runs.findLast((run) => run.status !== "queued");
+    const executed = latestExecutedRun(projection.runs);
     const target =
       projection.runs.findLast(
         (run) =>
           run.status === "preparing" || run.status === "starting" || run.status === "running",
       ) ??
-      (derivePendingBackgroundWork({
-        latestRun,
+      (executed !== null &&
+      derivePendingBackgroundWork({
+        latestRun: executed,
         providerThreads: projection.providerThreads,
         turnItems: projection.turnItems,
         activeProviderThreadId: projection.thread.activeProviderThreadId,
         runs: projection.runs,
       }).length > 0
-        ? latestRun
+        ? executed
         : undefined);
     if (target !== undefined) {
       const interruptEvents = yield* Ref.make<Array<OrchestrationV2DomainEvent>>([]);
@@ -15676,7 +15696,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const now = yield* DateTime.now;
     // Record that Stop reached the turn it could not interrupt and the thread's last executed
     // run, so a late tool call from their agent starts nothing.
-    const executed = latestExecutedRun(projection.runs);
     const reached = new Map<RunId, OrchestrationV2Run>();
     if (target !== undefined) reached.set(target.id, target);
     if (executed !== null && !hasLiveRun({ runs: [executed] })) reached.set(executed.id, executed);

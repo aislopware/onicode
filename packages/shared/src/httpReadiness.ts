@@ -3,9 +3,20 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schedule from "effect/Schedule";
-import { HttpClient, HttpClientRequest } from "effect/http";
+import * as Stream from "effect/Stream";
+import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http";
 
 const DEFAULT_HTTP_READY_PROBE_TIMEOUT_MS = 1_000;
+const MAX_READINESS_BODY_BYTES = 64 * 1024;
+
+const readCappedBody = (response: HttpClientResponse.HttpClientResponse) => {
+  let bytes = 0;
+  return response.stream.pipe(
+    Stream.takeUntil((chunk) => (bytes += chunk.byteLength) >= MAX_READINESS_BODY_BYTES),
+    Stream.decodeText(),
+    Stream.mkString,
+  );
+};
 
 function describeReadinessCause(cause: unknown): unknown {
   if (cause instanceof Error) {
@@ -83,9 +94,23 @@ export const waitForHttpReady = Effect.fn("shared.httpReadiness.waitForHttpReady
     HttpClient.transform((effect) =>
       Effect.gen(function* () {
         attempt += 1;
+        const accept = input.accept;
+        // A listener that sends headers and then stalls its body fails this probe, not the whole wait.
         const responseOption = yield* effect.pipe(
+          Effect.tap((response) =>
+            accept === undefined
+              ? Effect.void
+              : readCappedBody(response).pipe(
+                  Effect.orElseSucceed(() => ""),
+                  Effect.flatMap(accept),
+                  Effect.flatMap((accepted) =>
+                    accepted
+                      ? Effect.void
+                      : Effect.fail(fail({ kind: "response-not-accepted", attempt })),
+                  ),
+                ),
+          ),
           Effect.timeoutOption(Duration.millis(probeTimeoutMs)),
-          Effect.mapError((cause) => fail(cause)),
         );
         return yield* Effect.fromOption(responseOption, () =>
           fail({
@@ -101,18 +126,6 @@ export const waitForHttpReady = Effect.fn("shared.httpReadiness.waitForHttpReady
             attempt,
             cause: describeReadinessCause(cause),
           }),
-        ),
-      ),
-    ),
-    HttpClient.tap((response) =>
-      response.text.pipe(
-        Effect.orElseSucceed(() => ""),
-        Effect.flatMap((body) => input.accept?.(body) ?? Effect.succeed(true)),
-        Effect.flatMap((accepted) =>
-          accepted ? Effect.void : Effect.fail(fail({ kind: "response-not-accepted", attempt })),
-        ),
-        Effect.tapError((cause) =>
-          Ref.set(lastProbeFailure, { attempt, cause: describeReadinessCause(cause) }),
         ),
       ),
     ),

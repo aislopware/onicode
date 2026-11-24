@@ -76,6 +76,8 @@ function withFakeClaudeEnv<A, E, R>(
     cwdMustNotBe?: string;
     settingsLog?: string;
     claudeConfig?: Partial<ClaudeSettings>;
+    environment?: NodeJS.ProcessEnv;
+    routeModelCatalog?: Parameters<typeof makeClaudeTextGeneration>[3];
   },
   effectFn: (textGeneration: TextGeneration.TextGeneration["Service"]) => Effect.Effect<A, E, R>,
 ) {
@@ -114,6 +116,7 @@ function withFakeClaudeEnv<A, E, R>(
       ...Object.fromEntries(
         Object.entries(fakeClaudeEnv).filter(([, value]) => value !== undefined),
       ),
+      ...input.environment,
       PATH: `${binDir}${pathDelimiter}${hostEnv.PATH ?? ""}`,
     };
 
@@ -122,6 +125,7 @@ function withFakeClaudeEnv<A, E, R>(
       config,
       environment,
       Effect.succeed(SYNTHETIC_CLAUDE_MODEL_CATALOG),
+      input.routeModelCatalog,
     );
     return yield* effectFn(textGeneration);
   }).pipe(Effect.scoped);
@@ -152,19 +156,32 @@ it.layer(layerClaudeTextGenerationTest)("ClaudeTextGeneration", (it) => {
         [project, "project"],
         [checkout, "checkout"],
       ] as const) {
-        yield* fs.makeDirectory(directory);
+        yield* fs.makeDirectory(path.join(directory, ".claude-home"), { recursive: true });
         yield* fs.writeFileString(
           path.join(directory, "claude.json"),
           JSON.stringify({ env: { ORIGIN: origin } }),
         );
+        // A pull request can carry a settings file where a relative config dir points.
+        yield* fs.writeFileString(
+          path.join(directory, ".claude-home", "settings.json"),
+          JSON.stringify({ env: { USER_SETTINGS: origin } }),
+        );
       }
       const settingsLog = path.join(root, "settings.json");
+      const routedFrom: Array<string> = [];
       yield* withFakeClaudeEnv(
         {
           output: JSON.stringify({ structured_output: { stops: [] } }),
           expectedTools: "Read,Grep,Glob,Bash",
           settingsLog,
-          claudeConfig: { homePath: path.join(root, "home"), launchArgs: "--settings claude.json" },
+          claudeConfig: { launchArgs: "--settings claude.json" },
+          environment: { CLAUDE_CONFIG_DIR: ".claude-home" },
+          configDirMustBe: path.join(project, ".claude-home"),
+          routeModelCatalog: (catalog, cwd) =>
+            Effect.sync(() => {
+              routedFrom.push(cwd);
+              return catalog;
+            }),
         },
         (textGeneration) =>
           textGeneration.generateReviewGuide({
@@ -174,9 +191,10 @@ it.layer(layerClaudeTextGenerationTest)("ClaudeTextGeneration", (it) => {
           }),
       );
       expect(JSON.parse(yield* fs.readFileString(settingsLog))).toEqual({
-        env: { ORIGIN: "project" },
+        env: { USER_SETTINGS: "project", ORIGIN: "project" },
         disableAllHooks: true,
       });
+      expect(routedFrom).toEqual([project]);
     }),
   );
 

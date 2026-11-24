@@ -1075,6 +1075,8 @@ export const OrchestrationV2Subagent = Schema.Struct({
   completionDelivery: Schema.optional(OrchestrationV2DelegatedCompletionTaskDelivery),
   // The run whose unfinished task was cancelled, committed with its Stop.
   cancelledRunId: Schema.optional(RunId),
+  /** The run whose running wait call holds its parent on this subagent. Absent from older servers. */
+  awaitedByRunId: Schema.optional(RunId),
   status: Schema.Literals([
     "idle",
     "pending",

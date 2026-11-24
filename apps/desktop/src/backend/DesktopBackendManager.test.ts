@@ -307,6 +307,51 @@ describe("DesktopBackendManager", () => {
     }),
   );
 
+  it.effect("a probe whose body stalls times out and the next probe can make it ready", () =>
+    Effect.gen(function* () {
+      const probes = yield* Ref.make(0);
+      const ready = yield* Deferred.make<void>();
+      const exit = yield* Deferred.make<ChildProcessSpawner.ExitCode>();
+      const instance = yield* makeTestInstance({
+        config: {
+          ...pollingConfig,
+          readinessProbe: Effect.succeed({
+            path: "/launch-proof?challenge=abc",
+            accept: (body: string) => Effect.succeed(body === "proof-for-abc"),
+          }),
+        },
+        onReady: Deferred.succeed(ready, undefined).pipe(Effect.asVoid),
+        spawnerLayer: Layer.succeed(
+          ChildProcessSpawner.ChildProcessSpawner,
+          ChildProcessSpawner.make(() =>
+            Effect.acquireRelease(
+              Effect.succeed(makeProcess({ exitCode: Deferred.await(exit) })),
+              () => Deferred.succeed(exit, ChildProcessSpawner.ExitCode(0)),
+            ),
+          ),
+        ),
+        httpClientLayer: layerHttpClient((request) =>
+          Ref.getAndUpdate(probes, (count) => count + 1).pipe(
+            Effect.map((count) =>
+              HttpClientResponse.fromWeb(
+                request,
+                new Response(count === 0 ? new ReadableStream() : "proof-for-abc", {
+                  status: 200,
+                }),
+              ),
+            ),
+          ),
+        ),
+      });
+      yield* instance.start;
+      yield* TestClock.adjust(Duration.seconds(2));
+
+      assert.isTrue(yield* Deferred.isDone(ready));
+      assert.isAbove(yield* Ref.get(probes), 1);
+      yield* instance.stop();
+    }),
+  );
+
   it.effect("notices a WSL backend soon after it listens despite slow refused connects", () =>
     Effect.gen(function* () {
       const ready = yield* Deferred.make<void>();

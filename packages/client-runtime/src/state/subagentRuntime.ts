@@ -102,10 +102,28 @@ export function isLiveSubagentTurnItem(item: OrchestrationV2TurnItem): boolean {
   return item.type === "subagent" && isOrchestrationV2WorkActive(item.status);
 }
 
+/** Live subagents an earlier run launched that a wait call of run `runId` holds it on. */
+export function countSubagentsAwaitedFromEarlierRuns(
+  subagents: ReadonlyArray<Pick<OrchestrationV2Subagent, "runId" | "status" | "awaitedByRunId">>,
+  runId: RunId,
+): number {
+  let count = 0;
+  for (const subagent of subagents) {
+    if (
+      subagent.awaitedByRunId === runId &&
+      subagent.runId !== runId &&
+      isOrchestrationV2WorkActive(subagent.status)
+    )
+      count += 1;
+  }
+  return count;
+}
+
 /**
  * Live subagents the run's parent waits on: rows marked awaited anywhere in the run, and unflagged
- * rows (older servers) in its tail past task lists and delegate calls. A finished reply there is the
- * parent's status while shown as its own row; zen hides it, so the live row shows it instead.
+ * rows (older servers) in its tail past task lists and delegate calls, plus `earlierAwaited`, the
+ * awaited children of earlier runs. A finished reply there is the parent's status while shown as
+ * its own row; zen hides it, so the live row shows it instead.
  */
 export function countSubagentsBlockingRun<Entry>(
   entries: ReadonlyArray<Entry>,
@@ -115,8 +133,9 @@ export function countSubagentsBlockingRun<Entry>(
     entry: Entry,
   ) => OrchestrationV2TurnItem | ReadonlyArray<OrchestrationV2TurnItem> | null,
   repliesShown: boolean,
+  earlierAwaited = 0,
 ): number {
-  let running = 0;
+  let running = earlierAwaited;
   let inTail = true;
   let sawSubagent = false;
   // False once the walk is done: another run's item, or a zen reply the live row shows.
@@ -129,7 +148,10 @@ export function countSubagentsBlockingRun<Entry>(
     } else if (!inTail) {
       return true;
     } else if (item.type === "assistant_message") {
-      if (!repliesShown && !sawSubagent) return false;
+      if (!repliesShown && !sawSubagent) {
+        running = 0;
+        return false;
+      }
       if (!repliesShown || sawSubagent || item.streaming) inTail = false;
     } else if (item.type !== "todo_list" && !isDelegateLaunch(item)) {
       inTail = false;
