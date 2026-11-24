@@ -20,6 +20,7 @@ import {
   ProviderSessionId,
   ProviderThreadId,
   ProviderTurnId,
+  RunId,
   ScheduledTaskId,
   ThreadId,
   TurnItemId,
@@ -2991,6 +2992,17 @@ describe("orchestration v2 provider switching", () => {
       new CodexErrors.CodexAppServerRequestNotSentError({
         method: "turn/start",
         cause: new CodexErrors.CodexAppServerProcessExitedError({ code: 1 }),
+      }),
+    ],
+    // ACP rejects a model it cannot select before sending the prompt.
+    [
+      "an ACP start that rejected the model",
+      new ProviderAdapter.ProviderAdapterTurnStartError({
+        driver: GROK_DRIVER,
+        threadId,
+        providerThreadId: ProviderThreadId.make("provider-thread:acp-refused-start"),
+        runId: RunId.make("run:acp-refused-start"),
+        refusedBeforePrompt: true,
       }),
     ],
     // Injected history is text only, so a refusal after injection must not settle the image.
