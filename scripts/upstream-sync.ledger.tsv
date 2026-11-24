@@ -3607,3 +3607,4 @@ e632155b3a	take	CONFLICT: claudeProviderTurnTokenUsage; took upstream's last-mes
 ededa85fe3	take	fix(server): closing an Android emulator with shutdown no longer leaves its session stuck open (#41840)
 8ef195587d	take	CONFLICT: took the update-all reason only; Onicode has no Stable/Nightly track switch, so the track-switch half is left out. Catalogs regenerated with upstream translations.
 0d90edcf0f	skip	relay removed; Onicode's push gateway (infra/push-gateway/src/Apns.ts) exports no spans and maps send errors to a fixed message, so no device token reaches spans or errors
+4162207ddd	take	fix(web): file menu opens remote files over SSH instead of on the server (#29771)
