@@ -843,8 +843,8 @@ function FleetCanvas({
               autoComplete="off"
               onChange={(event) => setQuery(event.target.value)}
               onKeyDown={(event) => {
-                if (event.nativeEvent.isComposing || event.keyCode === 229) return;
                 if (event.key === "Enter") {
+                  if (event.nativeEvent.isComposing || event.keyCode === 229) return;
                   event.preventDefault();
                   goToFirstMatch();
                 } else clearSearchOnEscape(event, query, () => setQuery(""));

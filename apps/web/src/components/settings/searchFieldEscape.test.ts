@@ -3,7 +3,15 @@ import { describe, expect, it } from "vite-plus/test";
 import { clearSearchOnEscape } from "./searchFieldEscape";
 
 function press(
-  init: { key?: string; isComposing?: boolean; keyCode?: number; repeat?: boolean },
+  init: {
+    key?: string;
+    isComposing?: boolean;
+    keyCode?: number;
+    repeat?: boolean;
+    defaultPrevented?: boolean;
+    shiftKey?: boolean;
+    metaKey?: boolean;
+  },
   query: string,
 ) {
   const outcome = { prevented: false, stopped: false, cleared: false };
@@ -12,6 +20,11 @@ function press(
       key: init.key ?? "Escape",
       keyCode: init.keyCode ?? 27,
       repeat: init.repeat ?? false,
+      defaultPrevented: init.defaultPrevented ?? false,
+      altKey: false,
+      ctrlKey: false,
+      metaKey: init.metaKey ?? false,
+      shiftKey: init.shiftKey ?? false,
       nativeEvent: { isComposing: init.isComposing ?? false },
       preventDefault: () => {
         outcome.prevented = true;
@@ -38,10 +51,17 @@ describe("clearSearchOnEscape", () => {
     expect(press({ repeat: true }, "")).toEqual({ prevented: true, stopped: true, cleared: false });
   });
 
-  it("leaves the Esc that cancels an IME composition and other keys alone", () => {
+  it("lets the Esc that cancels an IME composition cancel it without closing the page", () => {
+    const kept = { prevented: false, stopped: true, cleared: false };
+    expect(press({ isComposing: true }, "にほ")).toEqual(kept);
+    expect(press({ keyCode: 229 }, "")).toEqual(kept);
+  });
+
+  it("leaves modified, already handled and other keys alone", () => {
     const untouched = { prevented: false, stopped: false, cleared: false };
-    expect(press({ isComposing: true }, "にほ")).toEqual(untouched);
-    expect(press({ keyCode: 229 }, "にほ")).toEqual(untouched);
+    expect(press({ shiftKey: true }, "mac")).toEqual(untouched);
+    expect(press({ metaKey: true }, "mac")).toEqual(untouched);
+    expect(press({ defaultPrevented: true }, "mac")).toEqual(untouched);
     expect(press({ key: "Enter", keyCode: 13 }, "mac")).toEqual(untouched);
   });
 });
