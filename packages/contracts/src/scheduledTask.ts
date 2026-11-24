@@ -74,9 +74,11 @@ const ScheduledTaskOnceSchedule = Schema.Struct({
 });
 
 const ScheduledTaskWebhookSignatureFields = {
-  header: TrimmedNonEmptyString.annotate({
-    description: "Header with the signature, such as x-hub-signature-256.",
-  }),
+  header: TrimmedNonEmptyString.pipe(
+    Schema.annotateEncoded({
+      description: "Header with the signature, such as x-hub-signature-256.",
+    }),
+  ),
   encoding: Schema.Literals(["hex", "base64"]),
   prefix: Schema.String.annotate({
     description: "Text before the digest, such as 'sha256='. Empty for none.",
@@ -180,9 +182,6 @@ const ScheduledTaskUpsertWebhookSchedule = Schema.Struct({
   }),
   dedupe: Schema.optional(ScheduledTaskWebhookDedupe),
   filters: Schema.optional(ScheduledTaskWebhookFilters),
-}).annotate({
-  description:
-    "Run per webhook request. Prompt can use {{body.path}}, {{headers.name}}, {{query.name}}, {{body}}, {{request}}.",
 });
 
 /** Accept legacy sub-minute schedules so users can still manage them. */
