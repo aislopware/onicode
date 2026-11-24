@@ -3617,3 +3617,4 @@ ae926f6579	take	CONFLICT test only: kept Onicode's preview zoom test beside upst
 b1c83e180f	skip	guest links removed in Onicode (apps/server/src/guest does not exist)
 4508c70681	take	CONFLICT pnpm-lock.yaml only: patch hash regenerated with vp i. Patch touches the web build of legend-list; mobile's react-native build is unchanged. MessagesTimeline browser tests 78 pass.
 14ea095b0a	take	CONFLICT: index.css keeps Onicode's 280px details panel width beside the new --html-preview-max-width; settings import merged. Catalogs regenerated with upstream translations. Client setting decodes with a default, so older clients are unaffected.
+6f8282c2c8	take	fix(web): an IME Escape no longer blurs the file editor (#41837)
