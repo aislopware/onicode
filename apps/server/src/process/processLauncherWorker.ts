@@ -20,7 +20,7 @@ export interface LauncherRefRequest {
 export type LauncherRequest =
   | LauncherSpawnRequest
   | LauncherRefRequest
-  | { readonly type: "flush" };
+  | { readonly type: "shutdown" };
 
 export interface LauncherError {
   readonly message: string;
@@ -78,24 +78,26 @@ export function runProcessLauncher(): void {
 
   // Group signals target the server; this process exits when the server's channel closes.
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(signal, () => {});
-  process.on("disconnect", () => {
+  // Released children outlive the server, as natively spawned ones do.
+  const stop = () => {
     for (const [id, { child, groupLeader }] of children) {
       if (released.has(id)) continue;
       if (groupLeader) {
         try {
           process.kill(-child.pid!, "SIGKILL");
-          continue;
         } catch {
-          // It may have left the group it led.
+          // The group is gone.
         }
       }
+      // A leader may have left the group it led; unreaped, its pid is still this child.
       child.kill("SIGKILL");
     }
     process.exit(0);
-  });
+  };
+  process.on("disconnect", stop);
 
   process.on("message", (request: LauncherRequest) => {
-    if (request.type === "flush") return;
+    if (request.type === "shutdown") return stop();
     const { id } = request;
     if (request.type === "ref") {
       if (request.referenced) released.delete(id);
