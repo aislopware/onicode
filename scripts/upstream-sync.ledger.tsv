@@ -3707,3 +3707,4 @@ dc326236ea	take	taken as is
 60c9cb927e	take	kept Onicode's PR-watch registration-pass rule (already the same condition, plus the rerun-outside-gate count); took upstream's comment and tests (awaitingBaseline checks, optional CI still running)
 74d73ac23f	take	taken as is; peer-linked threads open through LinkedThreadPage, so the unreachable state only covers catalog environments; mobile counterpart noted as follow-up
 8fcd0a8f76	take	taken as is; Windows x64 is a supported platform
+26f4c7550e	take	kept Onicode's clearSearchOnEscape helper (shared by every Settings search field, unit-tested) instead of upstream's inline handler; same behavior, also prevents the default; took upstream's browser test
