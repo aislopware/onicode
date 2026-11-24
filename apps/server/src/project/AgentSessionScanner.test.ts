@@ -1423,6 +1423,11 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
         contents: (line: string) => `{"cwd":"/first",${line.slice(1, line.indexOf("\n"))}`,
       },
       {
+        name: "in the last of duplicate keys across a chunk boundary",
+        contents: (line: string) =>
+          `{"type":"summary","pad":"${"x".repeat(8 * 1024 - 60)}"}\n{"cwd":"/first","pad":"${"y".repeat(100)}",${line.slice(1)}`,
+      },
+      {
         name: "past a record whose keys exceed the scan limit",
         contents: (line: string) => `{"${"k".repeat(600 * 1024)}":1}\n${line}`,
       },
