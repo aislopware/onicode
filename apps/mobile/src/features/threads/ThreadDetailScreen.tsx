@@ -374,6 +374,9 @@ const appActiveAtom = Atom.make((get) => {
 const wakeAwareVisitShell = Atom.family((key: string) => {
   const ref = parseThreadKey(key);
   return Atom.make((get) => {
+    // Recomputed on return to the foreground: a phone's timers pause while it sleeps, so a wake
+    // that passed meanwhile shows only then. A backgrounded phone also skips shell work.
+    if (!get(appActiveAtom)) return null;
     const shell = get(environmentThreadShells.threadShellAtom(ref));
     if (shell === null) return null;
     const nowMs = Date.now();
