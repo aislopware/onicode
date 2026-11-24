@@ -3705,3 +3705,4 @@ a326dea2f9	skip	pr-size.yml and pr-vouch.yml are not in Onicode (T3's PR labelli
 dc326236ea	take	taken as is
 47329274bc	take	taken as is
 60c9cb927e	take	kept Onicode's PR-watch registration-pass rule (already the same condition, plus the rerun-outside-gate count); took upstream's comment and tests (awaitingBaseline checks, optional CI still running)
+74d73ac23f	take	taken as is; peer-linked threads open through LinkedThreadPage, so the unreachable state only covers catalog environments; mobile counterpart noted as follow-up
