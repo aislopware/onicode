@@ -753,7 +753,9 @@ const make = Effect.gen(function* () {
     });
     const index = yield* read(["rev-parse", "--git-path", "index"]);
     if (index === null) return true;
-    if (yield* fs.exists(`${path.resolve(cwd, index.stdout.trim())}.lock`))
+    const locked = fs.exists(`${path.resolve(cwd, index.stdout.trim())}.lock`);
+    // A worktree made just now holds its lock for a moment while its refreshed index is swapped in.
+    if ((yield* locked) && (yield* git.settleIndexRefresh(cwd).pipe(Effect.andThen(locked))))
       return yield* failure(
         "Git index is locked. Status will resume when the index lock is removed.",
       );
@@ -932,6 +934,8 @@ const make = Effect.gen(function* () {
     const status = yield* git.execute({
       operation: "StorageCleanup.localChanges",
       cwd,
+      // A refreshed index written here would lock it against a check running beside this one.
+      env: { GIT_OPTIONAL_LOCKS: "0" },
       args: [
         "status",
         "--porcelain=v1",
@@ -1979,6 +1983,7 @@ const make = Effect.gen(function* () {
               const changes = yield* localChangesReason(worktreePath, settings);
               if (changes !== null) return keep(changes);
             }
+            yield* git.stopIndexRefresh(worktreePath);
             const repository = yield* worktreeRepository(worktreePath);
             // Forced removal already discards local files; do not widen its final-check window.
             if (settings.worktreeKeepWhen === "tracked-changes" && !submodules.force)

@@ -3191,7 +3191,10 @@ const make = Effect.gen(function* () {
           (run) =>
             run.status === "queued" &&
             (run.delegatedTaskId === input.taskId || run.id === current.childRunId),
-        )
+        ) &&
+        !(yield* threadManagement
+          .delegatedTaskAwaitsCapture(childThreadId, input.taskId)
+          .pipe(Effect.mapError(threadManagementFailure)))
       ) {
         if (yield* cancelOrphan) return { taskId: input.taskId, status: "cancelled" };
         return yield* failure(

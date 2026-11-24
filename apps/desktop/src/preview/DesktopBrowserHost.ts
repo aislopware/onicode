@@ -365,19 +365,26 @@ export const make = Effect.gen(function* () {
       ),
     );
 
+  const stopNudgingWithoutLiveWaits = (tab: AttachedTab) => {
+    for (const held of tab.frameWaits) if (!held()) tab.frameWaits.delete(held);
+    if (tab.frameWaits.size > 0 || tab.nudging === null) return;
+    runFork(Fiber.interrupt(tab.nudging));
+    tab.nudging = null;
+  };
+
   /** Prods the guest while `work` is pending and `waits` holds; one loop serves all of a tab's waits. */
   const nudgedUntilSettled = <A>(
     tab: AttachedTab,
     waits: () => boolean,
     work: () => Promise<A>,
   ) => {
+    // A loop left with only dead waits may be sleeping toward a long prod; a new wait starts fresh.
+    stopNudgingWithoutLiveWaits(tab);
     tab.frameWaits.add(waits);
     startNudging(tab);
     return work().finally(() => {
       tab.frameWaits.delete(waits);
-      if (tab.frameWaits.size > 0 || tab.nudging === null) return;
-      runFork(Fiber.interrupt(tab.nudging));
-      tab.nudging = null;
+      stopNudgingWithoutLiveWaits(tab);
     });
   };
 
@@ -439,6 +446,7 @@ export const make = Effect.gen(function* () {
     tab.focusPending.clear();
     releaseFocusWhenIdle(tab);
     syncPainting(tab);
+    stopNudgingWithoutLiveWaits(tab);
   };
 
   const dropRelay = (tab: AttachedTab) => {
@@ -462,6 +470,7 @@ export const make = Effect.gen(function* () {
     }
     releaseFocusWhenIdle(tab);
     syncPainting(tab);
+    stopNudgingWithoutLiveWaits(tab);
   };
 
   /**
@@ -666,6 +675,8 @@ export const make = Effect.gen(function* () {
     tab.frameSessions.clear();
     for (const listener of listeners) listener();
     syncPainting(tab);
+    if (tab.nudging !== null) runFork(Fiber.interrupt(tab.nudging));
+    tab.nudging = null;
     if (announced) emit({ type: "detached", ...key });
   };
 

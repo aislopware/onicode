@@ -3,16 +3,23 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
+import * as HostProcess from "@onicode/shared/HostProcess";
 import { expect, it } from "vite-plus/test";
 
 import { RESTORE_OOMD_WATCH_SCRIPT } from "./userManagerOom.ts";
 
 const userService = "/user.slice/user-1001.slice/user@1001.service";
 
-it.each([
+it.skipIf(HostProcess.Platform.defaultValue() === "win32").each([
   [
     "mirrors the system manager's kill policy onto the user manager's root slice",
     { cgroup: userService, mode: "kill", limit: "4252017622", duration: "" },
+    "--user set-property --runtime -- -.slice ManagedOOMMemoryPressure=kill ManagedOOMMemoryPressureLimit=99.00%",
+  ],
+  [
+    // systemd 257 and later print an unset duration as `[not set]`.
+    "leaves out a duration systemd reports as not set",
+    { cgroup: userService, mode: "kill", limit: "4252017622", duration: "[not set]" },
     "--user set-property --runtime -- -.slice ManagedOOMMemoryPressure=kill ManagedOOMMemoryPressureLimit=99.00%",
   ],
   [

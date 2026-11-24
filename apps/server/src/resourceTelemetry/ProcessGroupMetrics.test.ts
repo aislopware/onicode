@@ -68,6 +68,24 @@ describe("groupProcesses", () => {
       other: { residentBytes: 220_000, cpuPercent: 220, count: 3 },
     });
   });
+
+  it("groups what the Linux process launcher spawned by its own name", () => {
+    const totals = groupProcesses(
+      [
+        process(10, 1, "node", "server"),
+        process(15, 10, "node", "server-child", "node /app/process-launcher.mjs"),
+        process(30, 15, "codex"),
+        process(31, 30, "bash"),
+      ],
+      (ppid) => ppid === 10 || ppid === 15,
+    );
+
+    assert.deepStrictEqual(Object.fromEntries(totals), {
+      server: { residentBytes: 10_000, cpuPercent: 10, count: 1 },
+      other: { residentBytes: 15_000, cpuPercent: 15, count: 1 },
+      codex: { residentBytes: 61_000, cpuPercent: 61, count: 2 },
+    });
+  });
 });
 
 describe("ProcessGroupMetrics.layer", () => {

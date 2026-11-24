@@ -114,7 +114,7 @@ describe("splitMarkdown", () => {
       "after",
       "",
     ].join("\n");
-    expect(starts(text)).toEqual(["<!--", "```html", "after"]);
+    expect(starts(text)).toEqual(["<!--", "<details>", "<table><tr><td>", "```html", "after"]);
     const multiline = [
       "<details",
       '  class="faq"><!-- </details> -->',
@@ -129,6 +129,155 @@ describe("splitMarkdown", () => {
     expect(starts(multiline)).toEqual(["<details", "after"]);
     const unclosed = ["<details>", "", "x".repeat(32 * 1024), "", "after", ""].join("\n");
     expect(starts(unclosed)).toEqual(["<details>", "after"]);
+    const afterBigFence = [
+      "```",
+      "x".repeat(34 * 1024),
+      "```",
+      "",
+      "<details>",
+      "<summary>Small</summary>",
+      "",
+      "Inside",
+      "",
+      "</details>",
+      "",
+      "after",
+      "",
+    ].join("\n");
+    expect(starts(afterBigFence)).toEqual(["```", "<details>", "after"]);
+    const closedInParagraph = [
+      "<details>",
+      "<summary>Plan</summary>",
+      "",
+      "Done </details>",
+      "",
+      "next",
+      "",
+      "last",
+      "",
+    ].join("\n");
+    expect(starts(closedInParagraph)).toEqual(["<details>", "next", "last"]);
+    const afterComment = [
+      "<!-- note --> <details>",
+      "",
+      "Inside",
+      "",
+      "</details>",
+      "",
+      "after",
+      "",
+    ];
+    expect(starts(afterComment.join("\n"))).toEqual(["<!-- note --> <details>", "after"]);
+    const closerInComment = [
+      "<details> <!-- </details>",
+      "still a comment -->",
+      "",
+      "Inside",
+      "",
+      "</details>",
+      "",
+      "after",
+      "",
+    ].join("\n");
+    expect(starts(closerInComment)).toEqual(["<details> <!-- </details>", "after"]);
+    const literalTags = [
+      "<details>",
+      "",
+      "<pre><details></pre>",
+      "",
+      "Use `</details>` to close it.",
+      "",
+      "    </details>",
+      "",
+      "<https://example.com> <details> in prose",
+      "",
+      "Inside",
+      "",
+      "</details>",
+      "",
+      "after",
+      "",
+    ];
+    expect(starts(literalTags.join("\n"))).toEqual(["<details>", "after"]);
+    const oneLineScript = ['<script>let s = "<details>";</script>', "", "next", ""];
+    expect(starts(oneLineScript.join("\n"))).toEqual([
+      '<script>let s = "<details>";</script>',
+      "next",
+    ]);
+    const commentsAcrossLines = [
+      "<details> <!-- start",
+      "</details> -->",
+      "",
+      "Inside",
+      "",
+      "<!--",
+      "</details>",
+      "--> </details>",
+      "",
+      "after",
+      "",
+    ];
+    expect(starts(commentsAcrossLines.join("\n"))).toEqual(["<details> <!-- start", "after"]);
+    const closesInWrapper = (line: string) => ["<details>", "", line, "", "next", "", "last", ""];
+    for (const line of [
+      "<https://example.com> closes it </details>",
+      "Write `<!--` then </details>",
+      "Close ``</details>` here",
+    ]) {
+      expect(starts(closesInWrapper(line).join("\n"))).toEqual(["<details>", "next", "last"]);
+    }
+    // An HTML block ends the paragraph, so its unclosed comment was literal text.
+    const literalComment = ["<details>", "", "Intro <!-- start", "</details> -->", "", "next", ""];
+    expect(starts(literalComment.join("\n"))).toEqual(["<details>", "next"]);
+    const staysOpen = (lines: string[]) => [
+      ...lines,
+      "",
+      "Inside",
+      "",
+      "</details>",
+      "",
+      "after",
+      "",
+    ];
+    for (const lines of [
+      ["<details>", "", "$$ \\text{</details>} $$"],
+      ["<details>", "", "Intro <!-- start", "more </details> -->"],
+      ["<!-- note --> <details> <!-- start", "</details> -->"],
+    ]) {
+      expect(starts(staysOpen(lines).join("\n"))).toEqual([lines[0], "after"]);
+    }
+    const shortComment = ["<!--> <details>", "", "Inside", "", "</details>", "", "after", ""];
+    expect(starts(shortComment.join("\n"))).toEqual(["<!--> <details>", "after"]);
+    // A wrapper after a big fence, with no blank line to cut at before it.
+    const wrapperAfterBigFence = [
+      "```",
+      "x".repeat(34 * 1024),
+      "```",
+      " <details>",
+      "",
+      "Inside",
+      "",
+      "</details>",
+      "",
+      "after",
+      "",
+    ];
+    expect(starts(wrapperAfterBigFence.join("\n"))).toEqual(["```", "after"]);
+    const closerInFence = [
+      "<details>",
+      "",
+      "```",
+      "</details>",
+      "```",
+      "",
+      "Inside",
+      "",
+      "</details>",
+      "",
+      "after",
+      "",
+    ];
+    expect(starts(closerInFence.join("\n"))).toEqual(["<details>", "after"]);
   });
 
   it("treats an autolink line as a paragraph, so a following fence still opens", () => {

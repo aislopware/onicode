@@ -7803,15 +7803,11 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         }
         yield* git(cwd, ["add", "."]);
         yield* git(cwd, ["commit", "-m", "more files"]);
-        const worktreePath = path.join(yield* makeTmpDir("git-worktrees-"), "fresh");
-        // A refresh still inside the checkout's second finishes in the background.
-        const worktreesDir = path.join(cwd, ".git", "worktrees");
-        yield* fs.makeDirectory(worktreesDir, { recursive: true });
-        const indexChanges = yield* Queue.unbounded<void>();
-        yield* fs.watch(worktreesDir, { recursive: true }).pipe(
-          Stream.runForEach(() => Queue.offer(indexChanges, undefined)),
-          Effect.forkScoped,
-        );
+        // Git reports the physical path, which a path through a symlinked parent does not match.
+        const worktreesDir = yield* fs.realPath(yield* makeTmpDir("git-worktrees-"));
+        const alias = path.join(yield* makeTmpDir("git-worktrees-alias-"), "worktrees");
+        yield* fs.symlink(worktreesDir, alias);
+        const worktreePath = path.join(alias, "fresh");
 
         // The refresh waits on the clock that stamps the files.
         yield* TestClock.withLive(
@@ -7838,9 +7834,10 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           assert.equal(entrySeconds.length, 51);
           return entrySeconds.filter((seconds) => seconds >= indexSecond);
         });
-        while ((yield* racyEntries).length > 0 || (yield* fs.exists(`${indexPath}.oni-refresh`))) {
-          yield* Queue.take(indexChanges);
-        }
+        // A refresh still inside the checkout's second finishes in the background.
+        yield* driver.settleIndexRefresh(path.join(worktreesDir, "fresh"));
+        assert.deepEqual(yield* racyEntries, []);
+        assert.isFalse(yield* fs.exists(`${indexPath}.oni-refresh`));
         assert.isFalse(yield* fs.exists(`${indexPath}.lock`));
       }),
     );

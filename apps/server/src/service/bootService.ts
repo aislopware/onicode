@@ -1049,9 +1049,26 @@ export const make = Effect.fn("service.boot_service.make")(function* (input: {
         );
       }),
     ).pipe(Effect.mapError((cause) => new BootServiceInstallError({ cause })));
-  const planForUnit = (unit: string): BootServicePlan => {
+  // Moves a path inside one spelling of this home to another, whatever its separators.
+  const rebaseHome = (file: string, from: string, to: string) => {
+    // path.relative resolves a bare argument such as "__service-launcher" against the cwd.
+    if (from === to || !path.isAbsolute(file)) return file;
+    const relative = path.relative(from, file);
+    if (relative === "") return to;
+    return relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)
+      ? file
+      : path.join(to, relative);
+  };
+  const planForUnit = (unit: string, rewrite = false): BootServicePlan => {
+    const unitInstallBinDir = serviceUnitEnvironmentValueOf(unit, "ONICODE_INSTALL_BIN_DIR");
+    const unitBaseDir = bootServiceBaseDirOf(unit);
+    // A rewrite moves the unit to this spelling of the home (install refuses another home's
+    // unit), so its install directory inside the home moves with it.
     const effectiveInstallBinDir =
-      installBinDir || serviceUnitEnvironmentValueOf(unit, "ONICODE_INSTALL_BIN_DIR");
+      installBinDir ||
+      (rewrite && unitInstallBinDir && unitBaseDir
+        ? rebaseHome(unitInstallBinDir, unitBaseDir, input.baseDir)
+        : unitInstallBinDir);
     return effectiveInstallBinDir ? { ...plan, installBinDir: effectiveInstallBinDir } : plan;
   };
   const requireManager = Effect.suspend(() =>
@@ -1394,7 +1411,7 @@ export const make = Effect.fn("service.boot_service.make")(function* (input: {
             .pipe(Effect.mapError((cause) => new BootServiceInstallError({ cause })));
           // Files can match the new version even when activation fails; keep that install retryable.
           yield* fs.writeFileString(restartPendingPath, `${input.cliVersion}\n`, { mode: 0o600 });
-          const plan = planForUnit(currentlyInstalled ? yield* readUnit() : "");
+          const plan = planForUnit(currentlyInstalled ? yield* readUnit() : "", true);
           yield* writeDurably(
             statePath,
             // @effect-diagnostics-next-line globalJsonInEffect:off - fixed launcher-owned document.
@@ -1571,10 +1588,26 @@ export const make = Effect.fn("service.boot_service.make")(function* (input: {
     const installedBaseDir = bootServiceBaseDirOf(unit);
     const otherBaseDir = yield* otherBaseDirOf(unit);
     // Another spelling of this home is current; repairing it would flip the unit between spellings.
-    const thisHomeUnit =
-      installedBaseDir !== undefined && otherBaseDir === undefined
-        ? unit.replaceAll(installedBaseDir, () => input.baseDir)
-        : unit;
+    // So the unit is rendered at its own spelling, since its text escapes paths.
+    const expectedPlan = (): BootServicePlan => {
+      const own = planForUnit(unit);
+      if (
+        installedBaseDir === undefined ||
+        otherBaseDir !== undefined ||
+        installedBaseDir === input.baseDir
+      ) {
+        return own;
+      }
+      const rebase = (file: string) => rebaseHome(file, input.baseDir, installedBaseDir);
+      return {
+        ...own,
+        baseDir: installedBaseDir,
+        logPath: rebase(own.logPath),
+        program: own.program.map(rebase),
+        // One read from the unit is already at its spelling.
+        ...(installBinDir ? { installBinDir: rebase(installBinDir) } : {}),
+      };
+    };
     const normalizeUnit = (contents: string) =>
       manager.kind === "launchd"
         ? contents.replace(/(<key>PATH<\/key>\n\s*<string>)[^<]*(<\/string>)/, "$1$2")
@@ -1586,6 +1619,7 @@ export const make = Effect.fn("service.boot_service.make")(function* (input: {
           ? [...(yield* readSchtasksProblems(Option.some(unit)))]
           : [];
     if (yield* fs.exists(restartPendingPath)) problems.push("restart-pending");
+    const expected = expectedPlan();
     return {
       supported: true,
       installed: true,
@@ -1595,8 +1629,8 @@ export const make = Effect.fn("service.boot_service.make")(function* (input: {
       problems,
       current:
         problems.length === 0 &&
-        !(manager.kind === "systemd" && systemdUnsafeValue(planForUnit(unit))) &&
-        normalizeUnit(thisHomeUnit) === normalizeUnit(manager.render(planForUnit(unit))) &&
+        !(manager.kind === "systemd" && systemdUnsafeValue(expected)) &&
+        normalizeUnit(unit) === normalizeUnit(manager.render(expected)) &&
         runtimeEntryExists &&
         Option.isSome(runtimeSentinel) &&
         runtimeSentinel.value.trim() === input.cliVersion &&

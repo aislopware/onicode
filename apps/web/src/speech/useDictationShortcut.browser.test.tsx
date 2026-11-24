@@ -179,14 +179,17 @@ it("lets Escape in another editor of the recording editor's dialog reach that ed
   expect(speech.cancel).not.toHaveBeenCalled();
 });
 
-it("lets Escape close a modal opened over the recording before canceling it", async () => {
+it.each([
+  ["a modal", "dialog"],
+  ["an alert dialog", "alertdialog"],
+])("lets Escape close %s opened over the recording before canceling it", async (_name, role) => {
   const speech = recording();
   const closeImage = vi.fn();
   await using screen = await render(
     <>
       <Probe speech={speech} />
       <div
-        role="dialog"
+        role={role}
         aria-modal="true"
         aria-label="Expanded image"
         onKeyDown={(event) => {

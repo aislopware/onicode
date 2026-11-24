@@ -116,10 +116,13 @@ it.effect.each([3, SERVICE_LAUNCHER_PROTOCOL])(
         startImmediately: true,
       });
       yield* Deferred.await(sentPrepared);
-      // Nothing runs systemctl after "prepared", so the log is what ran before it.
-      expect(yield* fs.readFileString(calls)).toContain(
-        "--user set-property --runtime -- -.slice ManagedOOMMemoryPressure=kill",
-      );
+      // Nothing runs systemctl after "prepared", so the log is what ran before it. Windows has no
+      // /bin/sh to run the stub with.
+      if (HostProcess.Platform.defaultValue() !== "win32") {
+        expect(yield* fs.readFileString(calls)).toContain(
+          "--user set-property --runtime -- -.slice ManagedOOMMemoryPressure=kill",
+        );
+      }
       expect(host.sent).toEqual([{ type: "prepared", updateId: "update-1" }]);
       assert.equal(yield* fs.readLink(installed), exe("1.0.0"));
 

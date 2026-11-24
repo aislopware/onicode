@@ -103,7 +103,10 @@ describe("ThreadPullRequestServiceV2 reads", () => {
       };
       const activation = yield* Deferred.make<void>();
       const domainEvents = yield* Queue.unbounded<OrchestrationV2DomainEvent>();
-      const turnLookup = yield* Deferred.make<void>();
+      const backfillLookup = yield* Deferred.make<void>();
+      const turnEndLookup = yield* Deferred.make<void>();
+      const captureLookup = yield* Deferred.make<void>();
+      let awaitedLookup = backfillLookup;
       const lookups: Array<{ readonly refresh: boolean }> = [];
       const dependencies = Layer.mergeAll(
         Layer.mock(Orchestrator.OrchestratorV2)({
@@ -125,7 +128,7 @@ describe("ThreadPullRequestServiceV2 reads", () => {
             Effect.gen(function* () {
               const refresh = options?.refresh ?? false;
               lookups.push({ refresh });
-              if (refresh) yield* Deferred.succeed(turnLookup, undefined);
+              yield* Deferred.succeed(awaitedLookup, undefined);
               return null;
             }),
         }),
@@ -164,13 +167,27 @@ describe("ThreadPullRequestServiceV2 reads", () => {
         yield* service.start();
         yield* Deferred.succeed(activation, undefined);
 
-        // A finished turn still discovers the pull request for its branch.
+        // A finished turn still discovers the pull request for its branch, reading the host
+        // fresh once: when its checkpoint capture lands, not also at the turn end before it.
+        yield* Deferred.await(backfillLookup);
+        yield* service.drain;
+        const lookupsBeforeTurn = lookups.length;
+        awaitedLookup = turnEndLookup;
+        yield* Queue.offer(domainEvents, {
+          type: "run.updated",
+          threadId: thread.id,
+          payload: { status: "completed", checkpointId: null },
+        } as OrchestrationV2DomainEvent);
+        yield* Deferred.await(turnEndLookup);
+        yield* service.drain;
+        awaitedLookup = captureLookup;
         yield* Queue.offer(domainEvents, {
           type: "checkpoint.captured",
           threadId: thread.id,
         } as OrchestrationV2DomainEvent);
-        yield* Deferred.await(turnLookup);
+        yield* Deferred.await(captureLookup);
         yield* service.drain;
+        expect(lookups.slice(lookupsBeforeTurn)).toEqual([{ refresh: false }, { refresh: true }]);
         const lookupsBeforeIdle = lookups.length;
 
         yield* TestClock.adjust("10 minutes");

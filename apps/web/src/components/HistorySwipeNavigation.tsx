@@ -61,6 +61,23 @@ function isVerticalScroll(travelX: number, travelY: number): boolean {
   );
 }
 
+// A modal's backdrop and viewport cover the page around its card, which alone has the role, and
+// menus, selects and other popups have no dialog role at all.
+const MODAL_OR_PREVIEW_SELECTOR = [
+  '[role="dialog"]',
+  '[role="alertdialog"]',
+  '[data-slot$="-popup"]',
+  // A submenu replaces its popup's slot.
+  '[data-slot="menu-sub-content"]',
+  ...["dialog", "alert-dialog", "command-dialog", "sheet", "popover"].flatMap((modal) => [
+    `[data-slot="${modal}-backdrop"]`,
+    `[data-slot="${modal}-viewport"]`,
+  ]),
+  "[data-preview-panel-mode]",
+  "[data-preview-viewport]",
+  "[data-server-browser-surface]",
+].join(", ");
+
 function lockSwipeAxis(
   pending: Extract<SwipeGesture, { kind: "pending" }>,
 ): Exclude<SwipeGesture, { kind: "pending" }> {
@@ -69,15 +86,7 @@ function lockSwipeAxis(
     return { kind: "ignored" };
   }
   // Preview contents can scroll in another document or on the server, outside this DOM.
-  if (
-    path.some(
-      (node) =>
-        node instanceof Element &&
-        node.matches(
-          '[role="dialog"], [role="alertdialog"], [data-preview-panel-mode], [data-preview-viewport], [data-server-browser-surface]',
-        ),
-    )
-  ) {
+  if (path.some((node) => node instanceof Element && node.matches(MODAL_OR_PREVIEW_SELECTOR))) {
     return { kind: "ignored" };
   }
   if (hasHorizontalScroller(path)) return { kind: "ignored" };

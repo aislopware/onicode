@@ -3510,7 +3510,7 @@ d08986ab55	take	taken; kept Onicode's driven-guest painting test beside the two 
 416b4e7b39	take	taken
 18d5eda881	take	taken
 36ecdeb851	take	taken
-9ad5e2ce66	take	taken, launcher not wired into server.ts yet: on Linux it kills unref'd editors when the server stops and fails every Cursor launch (ppid check); follow-up queue wires it in after the fix; kept Onicode's vite pack config, which has no build-version plugin
+9ad5e2ce66	take	taken; unref releases a hosted child and the launcher's children count as the server's (register, PortScanner); kept Onicode's vite pack config, which has no build-version plugin
 6233f5d114	take	taken
 221bc8a606	take	taken
 b5e1f91cba	take	taken; PR number in the sidebar takes its status colour (upstream look, Onicode had none of its own)

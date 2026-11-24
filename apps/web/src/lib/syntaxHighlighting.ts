@@ -1,6 +1,8 @@
 import "@onicode/client-runtime/assembly-highlighting";
 import {
   getSharedHighlighter,
+  HighlighterDisposedError,
+  isHighlighterNull,
   setCustomExtension,
   type DiffsHighlighter,
   type HighlighterTypes,
@@ -24,6 +26,8 @@ export const PREFERRED_HIGHLIGHTER: HighlighterTypes = "highlights";
 const highlighterPromiseCache = new Map<string, Promise<DiffsHighlighter>>();
 
 export function getSyntaxHighlighterPromise(language: string): Promise<DiffsHighlighter> {
+  // disposeHighlighter() leaves no shared instance, ending every promise made before it.
+  if (isHighlighterNull()) highlighterPromiseCache.clear();
   const cached = highlighterPromiseCache.get(language);
   if (cached) return cached;
 
@@ -33,8 +37,10 @@ export function getSyntaxHighlighterPromise(language: string): Promise<DiffsHigh
     langs: [language as SupportedLanguages],
     preferredHighlighter: PREFERRED_HIGHLIGHTER,
   }).catch((error) => {
-    if (language === "text") {
-      highlighterPromiseCache.delete(language);
+    // A disposed highlighter is not an unsupported language; falling back would load another.
+    if (language === "text" || error instanceof HighlighterDisposedError) {
+      if (highlighterPromiseCache.get(language) === promise)
+        highlighterPromiseCache.delete(language);
       throw error;
     }
     return getSyntaxHighlighterPromise("text");

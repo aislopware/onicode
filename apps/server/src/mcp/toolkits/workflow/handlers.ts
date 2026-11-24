@@ -41,7 +41,7 @@ export const layer = McpToolAccess.toLayer(WorkflowToolkit, {
         return yield* workflows.get(runId).pipe(Effect.mapError(refused));
       }),
     ),
-    McpToolAccess.writes((input) =>
+    McpToolAccess.writesEnvironment((input) =>
       Effect.gen(function* () {
         const workflows = yield* Workflows.Workflows;
         if (input.action === "start") {

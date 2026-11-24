@@ -11,6 +11,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import * as ProcessLauncher from "../process/ProcessLauncher.ts";
 import * as ResourceTelemetry from "../resourceTelemetry/ResourceTelemetry.ts";
 
 export class ProcessSignalFailed extends Schema.TaggedError<ProcessSignalFailed>()(
@@ -60,8 +61,23 @@ export const make = Effect.fn("makeProcessDiagnostics")(function* () {
   const refreshedTelemetry = telemetry.refresh.pipe(Effect.catch(() => telemetry.latest));
   const read: ProcessDiagnostics["Service"]["read"] = refreshedTelemetry.pipe(
     Effect.map((snapshot) => {
+      // The Linux launcher is not offered, and what it hosts sits where a direct child would.
+      const launchers = new Set(
+        snapshot.processes.flatMap((entry) =>
+          ProcessLauncher.isLauncher(entry.identity.pid) ? [entry.identity.pid] : [],
+        ),
+      );
+      const parents = new Map(snapshot.processes.map((entry) => [entry.identity.pid, entry.ppid]));
+      const hostedDepth = (entry: (typeof snapshot.processes)[number]) => {
+        let pid: number | undefined = entry.ppid;
+        for (let step = 0; step < entry.depth && pid !== undefined; step++) {
+          if (launchers.has(pid)) return 1;
+          pid = parents.get(pid);
+        }
+        return 0;
+      };
       const processes = snapshot.processes
-        .filter((entry) => canSignalCategory(entry.category))
+        .filter((entry) => canSignalCategory(entry.category) && !launchers.has(entry.identity.pid))
         .map((entry): ServerProcessDiagnosticsEntry => ({
           pid: entry.identity.pid,
           startTimeMs: entry.identity.startTimeMs,
@@ -72,7 +88,7 @@ export const make = Effect.fn("makeProcessDiagnostics")(function* () {
           rssBytes: entry.residentBytes,
           elapsed: formatElapsed(entry.runTimeMs),
           command: entry.command || entry.name || "unknown",
-          depth: Math.max(0, entry.depth - 1),
+          depth: Math.max(0, entry.depth - 1 - hostedDepth(entry)),
           childPids: entry.childPids,
         }));
       return {
@@ -95,6 +111,15 @@ export const make = Effect.fn("makeProcessDiagnostics")(function* () {
           signal: input.signal,
           signaled: false,
           message: Option.some("Refusing to signal the Onicode server process."),
+        };
+      }
+      // Its commands and agents would all die with it.
+      if (ProcessLauncher.isLauncher(input.pid)) {
+        return {
+          pid: input.pid,
+          signal: input.signal,
+          signaled: false,
+          message: Option.some("Refusing to signal the Onicode process launcher."),
         };
       }
       const current = yield* telemetry.refresh.pipe(Effect.option);

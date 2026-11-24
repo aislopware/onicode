@@ -28,6 +28,7 @@ import { ProjectFavicon } from "../ProjectFavicon";
 import { msg, T, useGT, useMessages } from "gt-react";
 import { type ReactNode, useRef, useState } from "react";
 import { observeIntersection } from "~/lib/observeIntersection";
+import { nextArchivedChunkView } from "./ArchivedThreadsPanel.logic";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 
 const ARCHIVE_ACTIONS = [
@@ -69,15 +70,23 @@ function ArchivedThreadChunk(props: {
         if (!node) return;
         return observeIntersection(
           node,
-          (entry) =>
-            setView({
-              near: entry.isIntersecting,
-              rowHeight: entry.boundingClientRect.height / rowCount,
-            }),
+          (entry) => {
+            // Read with the entry's height; a later commit may change the row count.
+            const mountedRows = Number(node.dataset.mountedRows);
+            setView((previous) =>
+              nextArchivedChunkView(
+                previous,
+                entry.isIntersecting,
+                entry.boundingClientRect.height,
+                mountedRows,
+              ),
+            );
+          },
           { root: node.closest("[data-settings-page-scroll]"), rootMargin: "1200px 0px" },
         );
       }}
       className="*:not-first:border-t *:not-first:border-border"
+      data-mounted-rows={view.near ? rowCount : 0}
       style={view.near ? undefined : { height: view.rowHeight * rowCount }}
     >
       {view.near ? props.renderRows() : null}

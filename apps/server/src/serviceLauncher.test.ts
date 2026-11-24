@@ -587,7 +587,8 @@ setInterval(() => {}, 1_000);
     }),
   );
 
-  it.effect(
+  // The fake busctl and systemctl are /bin/sh scripts.
+  it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
     "repoints the systemd unit the manager loads when environment.d moves XDG_CONFIG_HOME",
     () =>
       Effect.gen(function* () {

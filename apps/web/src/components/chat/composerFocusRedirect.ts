@@ -12,6 +12,7 @@ const TYPE_TO_FOCUS_INTERACTIVE_SELECTOR = [
   "button",
   "a[href]",
   "summary",
+  "audio[controls]",
   "video[controls]",
   '[role="application"]',
   '[role="button"]',

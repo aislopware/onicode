@@ -437,6 +437,10 @@ export class GitVcsDriver extends Context.Service<
     ) => Effect.Effect<VcsCreateWorktreeResult, GitCommandError>;
     /** Deletes the macOS worktree checkout cache in the background. */
     readonly clearWorktreeCheckoutCache: Effect.Effect<void>;
+    /** Waits for a new worktree's background index refresh, which briefly takes its index lock. */
+    readonly settleIndexRefresh: (worktreePath: string) => Effect.Effect<void>;
+    /** Stops a new worktree's background index refresh, before its folders are removed. */
+    readonly stopIndexRefresh: (worktreePath: string) => Effect.Effect<void>;
     /** Force-updates local `branch` to the primary remote's `ref`. */
     readonly fetchRefIntoBranch: (
       input: GitFetchRefInput & { readonly branch: string },

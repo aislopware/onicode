@@ -1,4 +1,4 @@
-import { DEFAULT_THEMES, preloadHighlighter, Virtualizer } from "@pierre/diffs";
+import { disposeHighlighter, Virtualizer } from "@pierre/diffs";
 import {
   EnvironmentId,
   ThreadId,
@@ -9,6 +9,7 @@ import { AsyncResult } from "effect/reactivity";
 import { StrictMode, type ReactNode } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { cdp, userEvent } from "vite-plus/test/browser";
+import { loadSharedHighlighter } from "../../../test/highlighter";
 import { act, fakeTimers, render } from "../../../test/render";
 import type { DraftId } from "~/composerDraftStore";
 import appCss from "~/index.css?inline";
@@ -193,12 +194,14 @@ function setup() {
   state.mintUrl.mockReset().mockImplementation(async () => `/assets/report.docx?mint=${++mints}`);
   state.writeFile.mockReset().mockResolvedValue(AsyncResult.success(undefined));
   return {
-    [Symbol.dispose]() {
+    async [Symbol.asyncDispose]() {
       for (const [index, key] of keys.entries()) {
         const value = previous[index];
         if (value == null) localStorage.removeItem(key);
         else localStorage.setItem(key, value);
       }
+      // Source previews load the shared highlighter; the next test starts without one.
+      await disposeHighlighter();
     },
   };
 }
@@ -263,11 +266,9 @@ function deepActiveElement() {
   return active;
 }
 
-// Before the tests that preload Shiki: Shiki can't load the app's Zed-only oni-light theme, and a
-// streamed source preview then never lays out (on main too; the app never preloads Shiki).
 describe("large file previews", () => {
   it("shows a draft's first megabyte when an older server mints no download for it", async () => {
-    using _settings = setup();
+    await using _settings = setup();
     state.file = {
       relativePath: "server.log",
       contents: "first line\nsecond line\n",
@@ -291,7 +292,7 @@ describe("large file previews", () => {
 
   // regression: the held line scrolled into view when it arrived, and again in the plain viewer
   it("leaves a line reveal the reader scrolled away from while its line downloaded", async () => {
-    using _settings = setup();
+    await using _settings = setup();
     const style = document.createElement("style");
     style.textContent = appCss;
     document.head.append(style);
@@ -370,12 +371,12 @@ describe("large file previews", () => {
 
 describe("source file focus", () => {
   it("hands panel focus to the file's editor, which owns mod+f", async () => {
-    using _settings = setup();
+    await using _settings = setup();
     const style = document.createElement("style");
     style.textContent = appCss;
     document.head.append(style);
     using _style = { [Symbol.dispose]: () => style.remove() };
-    await preloadHighlighter({ themes: Object.values(DEFAULT_THEMES), langs: ["typescript"] });
+    await using _highlighter = await loadSharedHighlighter(["typescript"]);
     const panel = () => (
       <div {...workspaceAreaProps("panel", 1, "Workspace panel")}>
         <div data-right-panel-surface-content>{filePreview("server.ts")}</div>
@@ -419,13 +420,13 @@ describe("source file focus", () => {
   });
 
   it("focuses the editor when a file row is clicked or activated with Enter", async () => {
-    using _settings = setup();
+    await using _settings = setup();
     localStorage.setItem("onicode.fileExplorerOpen", "true");
     const style = document.createElement("style");
     style.textContent = appCss;
     document.head.append(style);
     using _style = { [Symbol.dispose]: () => style.remove() };
-    await preloadHighlighter({ themes: Object.values(DEFAULT_THEMES), langs: ["typescript"] });
+    await using _highlighter = await loadSharedHighlighter(["typescript"]);
     state.file = {
       relativePath: "server.ts",
       contents: "const server = 1;\n",
@@ -463,12 +464,12 @@ describe("source file focus", () => {
 
 describe("source file scroll", () => {
   it("returns a file tab to where it was scrolled after another file was shown", async () => {
-    using _settings = setup();
+    await using _settings = setup();
     const style = document.createElement("style");
     style.textContent = appCss;
     document.head.append(style);
     using _style = { [Symbol.dispose]: () => style.remove() };
-    await preloadHighlighter({ themes: Object.values(DEFAULT_THEMES), langs: ["typescript"] });
+    await using _highlighter = await loadSharedHighlighter(["typescript"]);
     const sourceFile = (relativePath: string, lines: number) => {
       const contents = Array.from({ length: lines }, (_, i) => `const line${i} = ${i};`).join("\n");
       state.file = { relativePath, contents, byteLength: contents.length, truncated: false };
@@ -529,13 +530,13 @@ describe("source file scroll", () => {
       targetFirstMounted,
       expectedIncludedLine,
     }) => {
-      using _settings = setup();
+      await using _settings = setup();
       localStorage.setItem("onicode.renderMarkdown", "false");
       const style = document.createElement("style");
       style.textContent = appCss;
       document.head.append(style);
       using _style = { [Symbol.dispose]: () => style.remove() };
-      await preloadHighlighter({ themes: Object.values(DEFAULT_THEMES), langs: ["markdown"] });
+      await using _highlighter = await loadSharedHighlighter(["markdown"]);
 
       const lines = Array.from({ length: 400 }, (_, index) => `line ${index + 1} markdown content`);
       const contents = `${lines.join("\n")}\n`;
@@ -646,12 +647,12 @@ describe("source file scroll", () => {
   );
 
   it("scrolls a find match below many wrapped lines into view", async () => {
-    using _settings = setup();
+    await using _settings = setup();
     const style = document.createElement("style");
     style.textContent = appCss;
     document.head.append(style);
     using _style = { [Symbol.dispose]: () => style.remove() };
-    await preloadHighlighter({ themes: Object.values(DEFAULT_THEMES), langs: ["typescript"] });
+    await using _highlighter = await loadSharedHighlighter(["typescript"]);
     const wrapped = "wrap ".repeat(60);
     const lines = Array.from({ length: 800 }, (_, i) => `const line${i} = "${wrapped}";`);
     lines[2] = `const needle0 = "${wrapped}";`;
@@ -719,13 +720,13 @@ describe("source file scroll", () => {
   });
 
   it("collapses a select-all selection in a long file to the caret clicked inside it", async () => {
-    using _settings = setup();
+    await using _settings = setup();
     localStorage.setItem("onicode.renderMarkdown", "false");
     const style = document.createElement("style");
     style.textContent = appCss;
     document.head.append(style);
     using _style = { [Symbol.dispose]: () => style.remove() };
-    await preloadHighlighter({ themes: Object.values(DEFAULT_THEMES), langs: ["markdown"] });
+    await using _highlighter = await loadSharedHighlighter(["markdown"]);
     const lines = Array.from({ length: 400 }, (_, index) => `line ${index + 1} markdown content`);
     const contents = `${lines.join("\n")}\n`;
     state.file = {
@@ -768,7 +769,7 @@ describe("source file scroll", () => {
 
 describe("rendered Markdown task saves", () => {
   it("renders the whole file of a truncated read, read-only", async () => {
-    using _settings = setup();
+    await using _settings = setup();
     state.assetUrl = {
       _tag: "Success",
       url: "/assets/tasks.md",
@@ -794,7 +795,7 @@ describe("rendered Markdown task saves", () => {
   });
 
   it("keeps a read with a line cut short read-only without queuing a replacement", async () => {
-    using _settings = setup();
+    await using _settings = setup();
     // Task offsets would point past the cut, into the wrong place in the file.
     await using screen = await render(
       markdownPreview(false, `${"a".repeat(12_000)}\n\n- [ ] Keep the rest of this file\n`),
@@ -824,7 +825,7 @@ describe("rendered Markdown task saves", () => {
       head: `[logo]: https://example.com/${"a".repeat(11_000)}\n`,
     },
   ])("saves a task in a later piece than $before", async ({ head }) => {
-    using _settings = setup();
+    await using _settings = setup();
     const contents = `${head}\nIntro\n\n# Tasks\n\n- [ ] Ship it\n`;
     await using screen = await render(markdownPreview(false, contents));
     await expect.element(screen.getByRole("checkbox")).toBeInTheDocument();
@@ -844,7 +845,7 @@ describe("rendered Markdown task saves", () => {
   });
 
   it("cuts the lines of a block too long to render as Markdown", async () => {
-    using _settings = setup();
+    await using _settings = setup();
     await using screen = await render(markdownPreview(false, `${"a".repeat(140_000)}\n`));
     await vi.waitFor(() =>
       expect(screen.container.textContent).toContain(
@@ -854,7 +855,7 @@ describe("rendered Markdown task saves", () => {
   });
 
   it("scrolls a heading link to a heading in a piece the list has not mounted", async () => {
-    using _settings = setup();
+    await using _settings = setup();
     const style = document.createElement("style");
     style.textContent = appCss;
     document.head.append(style);
@@ -877,7 +878,7 @@ describe("rendered Markdown task saves", () => {
   });
 
   it("still toggles and saves tasks from a complete read", async () => {
-    using _settings = setup();
+    await using _settings = setup();
     await using screen = await render(markdownPreview(false));
     // The virtualized list mounts its pieces after measuring the viewport.
     await expect.element(screen.getByRole("checkbox")).toBeInTheDocument();
@@ -900,7 +901,7 @@ describe("rendered Markdown task saves", () => {
 
 describe("workspace document previews", () => {
   it("keeps an unchanged document loaded when another workspace change lands", async () => {
-    using _settings = setup();
+    await using _settings = setup();
     await using screen = await render(documentPreview("mutation-1", "revision-1"));
     const preview = screen.getByTestId("office-preview");
     await expect.element(preview).toHaveTextContent("/assets/report.docx?mint=1");
@@ -913,7 +914,7 @@ describe("workspace document previews", () => {
   });
 
   it("keeps an unchanged document mounted while its revision check reloads", async () => {
-    using _settings = setup();
+    await using _settings = setup();
     await using screen = await render(documentPreview("mutation-1", "revision-1"));
     const preview = screen.getByTestId("office-preview");
     await expect.element(preview).toHaveTextContent("/assets/report.docx?mint=1");
@@ -934,7 +935,7 @@ describe("workspace document previews", () => {
   });
 
   it("reloads the document when its URL can no longer be minted", async () => {
-    using _settings = setup();
+    await using _settings = setup();
     await using screen = await render(documentPreview("mutation-1", "revision-1"));
     const preview = screen.getByTestId("office-preview");
     await expect.element(preview).toHaveTextContent("/assets/report.docx?mint=1");
@@ -946,7 +947,7 @@ describe("workspace document previews", () => {
   });
 
   it("loads the new bytes when the document itself changes", async () => {
-    using _settings = setup();
+    await using _settings = setup();
     await using screen = await render(documentPreview("mutation-1", "revision-1"));
     const preview = screen.getByTestId("office-preview");
     await expect.element(preview).toHaveTextContent("/assets/report.docx?mint=1");
@@ -959,7 +960,7 @@ describe("workspace document previews", () => {
 
 describe("open file in preview browser", () => {
   it("mints a fresh asset URL on every click so the browser cannot reuse cached bytes", async () => {
-    using _settings = setup();
+    await using _settings = setup();
     state.file = {
       relativePath: "page.html",
       contents: "<h1>page</h1>",
@@ -982,7 +983,7 @@ describe("open file in preview browser", () => {
 
 describe("rendered Markdown select all", () => {
   it("selects only the rendered file, including after a task toggle", async () => {
-    using _settings = setup();
+    await using _settings = setup();
     await using screen = await render(
       <>
         <p>Transcript text from the chat thread.</p>
@@ -1011,7 +1012,7 @@ describe("rendered Markdown relative images", () => {
     ["2026-11-23T14:05/README.md", "/workspace/2026-11-23T14:05/diagram.png"],
     ["/README.md", "/diagram.png"],
   ])("resolves relative images in %s against its folder", async (relativePath, expectedPath) => {
-    using _settings = setup();
+    await using _settings = setup();
     await using _screen = await render(
       markdownPreview(false, "![diagram](diagram.png)\n", relativePath),
     );

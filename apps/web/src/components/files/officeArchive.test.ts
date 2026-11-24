@@ -17,6 +17,7 @@ function wordFile(
   parts: Partial<Record<"styles" | "numbering" | "header" | "footer" | "footnotes", string>> = {},
   section = "",
   extraRels = "",
+  files: Record<string, string> = {},
 ) {
   return zipFixture({
     "[Content_Types].xml": `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`,
@@ -27,6 +28,7 @@ function wordFile(
       .map((part) => relationship(part, `${part}.xml`))
       .join("")}${extraRels}</Relationships>`,
     ...Object.fromEntries(Object.entries(parts).map(([part, xml]) => [`word/${part}.xml`, xml])),
+    ...files,
     "word/document.xml": `<w:document ${W} ${V} ${R}><w:body>${body}<w:sectPr>${section}<w:pgSz w:w="12240" w:h="15840"/></w:sectPr></w:body></w:document>`,
   }).buffer;
 }
@@ -137,28 +139,78 @@ describe("Word preview limits", () => {
     expect(result.part("word/document.xml")).toContain("Body");
   });
 
-  it("drops a malformed external hyperlink relationship while keeping body text", async () => {
+  it.each([
+    ["a malformed external", "hyperlink", "http://[placeholder]/", "External"],
+    ["a space-padded malformed", "hyperlink", " http://[placeholder]/", "Internal"],
+    ["a UNC", "hyperlink", String.raw`\\server\share\report.docx`, "Internal"],
+    ["a malformed UNC", "hyperlink", String.raw`\\[server]\share`, "Internal"],
+    ["a malformed internal", "hyperlink", "/&#9;/[placeholder]", "Internal"],
+    ["a tab-split protocol-relative", "hyperlink", "/&#9;/example.com/x", "Internal"],
+    ["a tab-split javascript", "hyperlink", "javascript&#9;:alert(1)", "Internal"],
+    ["a tab-split file", "hyperlink", "file&#9;:///etc/passwd", "Internal"],
+    ["a tab-split UNC", "hyperlink", String.raw`\&#9;\server\share`, "Internal"],
+    ["a line-split web", "header", "http&#10;://example.com/", "Internal"],
+    ["a line-split same-scheme", "header", "http&#13;s:header.xml", "Internal"],
+  ])("drops %s %s relationship while keeping body text", async (_, role, target, mode) => {
     const result = await prepared(
       wordFile(
         paragraph("Body text"),
         {},
         "",
-        `<Relationship Id="badLink" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="http://[placeholder]/" TargetMode="External"/>`,
+        `<Relationship Id="badLink" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/${role}" Target="${target}" TargetMode="${mode}"/>`,
       ),
     );
     expect(result.truncated).toBe(false);
     expect(result.part("word/document.xml")).toContain("Body text");
     expect(result.part("word/_rels/document.xml.rels")).not.toContain("badLink");
   });
+
+  // Read as the part list reads it, so the header is counted and its reference kept.
+  it("keeps a header whose part name has a literal ?", async () => {
+    const header = `<w:hdr ${W}>${paragraph("Header")}</w:hdr>`;
+    const result = await prepared(
+      wordFile(
+        paragraph("Body text"),
+        {},
+        `<w:headerReference w:type="default" r:id="header"/>`,
+        relationship("header", "header.xml?v=1"),
+        { "word/header.xml?v=1": header },
+      ),
+    );
+    expect(result.part("word/document.xml")).toContain("w:headerReference");
+    expect(result.part("word/header.xml?v=1")).toBe(header);
+  });
+
+  // Trimming these spaces would alias the target to the document itself.
+  it.each(["&#160;", "&#65279;"])("keeps %s in a relationship target", async (space) => {
+    const result = await prepared(
+      wordFile(
+        paragraph("Body text"),
+        {},
+        "",
+        relationship("header", `${space}/word/document.xml`),
+      ),
+    );
+    expect(result.part("word/document.xml")).toContain("Body text");
+  });
 });
 
-function workbookFile(target: string, sheetPath: string, extraRels = "", targetMode = "Internal") {
+function workbookFile(
+  target: string,
+  sheetPath: string,
+  extraRels = "",
+  targetMode = "Internal",
+  workbookPath = "xl/workbook.xml",
+  files: Record<string, string> = {},
+) {
+  const slash = workbookPath.lastIndexOf("/") + 1;
   return zipFixture({
-    "[Content_Types].xml": `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/></Types>`,
-    "_rels/.rels": `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${relationship("officeDocument", "xl/workbook.xml")}</Relationships>`,
-    "xl/workbook.xml": `<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ${R}><sheets><sheet name="Sample" sheetId="1" r:id="sheet"/></sheets></workbook>`,
-    "xl/_rels/workbook.xml.rels": `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="sheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="${target}" TargetMode="${targetMode}"/>${extraRels}</Relationships>`,
+    "[Content_Types].xml": `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/${workbookPath}" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/></Types>`,
+    "_rels/.rels": `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${relationship("officeDocument", workbookPath)}</Relationships>`,
+    [workbookPath]: `<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ${R}><sheets><sheet name="Sample" sheetId="1" r:id="sheet"/></sheets></workbook>`,
+    [`${workbookPath.slice(0, slash)}_rels/${workbookPath.slice(slash)}.rels`]: `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="sheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="${target}" TargetMode="${targetMode}"/>${extraRels}</Relationships>`,
     [sheetPath]: `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1"><v>42</v></c></row></sheetData></worksheet>`,
+    ...files,
   }).buffer;
 }
 
@@ -177,11 +229,55 @@ describe("Workbook relationship targets", () => {
     },
   );
 
-  it("refuses a worksheet whose relationship is external", async () => {
+  it.each<[string, string, string, Record<string, string>]>([
+    ["a worksheet whose relationship is external", "workbook-sheet-count", "External", {}],
+    [
+      "package relationships with a DOCTYPE",
+      "office-xml-declarations",
+      "Internal",
+      { "_rels/.rels": "<!DOCTYPE Relationships><Relationships/>" },
+    ],
+  ])("refuses %s", async (_, code, targetMode, files) => {
     await expect(
-      prepare(workbookFile("worksheets/sheet2.xml", "xl/worksheets/sheet2.xml", "", "External")),
-    ).rejects.toMatchObject({ code: "workbook-sheet-count" });
+      prepare(
+        workbookFile(
+          "worksheets/sheet2.xml",
+          "xl/worksheets/sheet2.xml",
+          "",
+          targetMode,
+          "xl/workbook.xml",
+          files,
+        ),
+      ),
+    ).rejects.toMatchObject({ code });
   });
+
+  it.each<[string, string, string, Record<string, string>]>([
+    ["workbook.xml", "worksheets/sheet1.xml", "worksheets/sheet1.xml", {}],
+    ["book/main.xml", "../sheets/a&amp;b.xml", "sheets/a&b.xml", {}],
+    ["book/main", "/sheets/sheet1.xml", "sheets/sheet1.xml", {}],
+    [
+      "xl/workbook2.xml",
+      "worksheets/sheet1.xml",
+      "xl/worksheets/sheet1.xml",
+      {
+        "xl/workbook.xml": "<workbook><sheets/></workbook>",
+        "xl/_rels/workbook.xml.rels": "<Relationships/>",
+      },
+    ],
+  ])(
+    "moves a workbook found through package relationships (%s) to the engine's path",
+    async (workbookPath, target, sheetPath, files) => {
+      const result = await prepare(
+        workbookFile(target, sheetPath, "", "Internal", workbookPath, files),
+      );
+      expect(result.part("xl/workbook.xml")).toContain('name="Sample"');
+      expect(result.part("xl/_rels/workbook.xml.rels")).toContain(
+        `Target="/${sheetPath.replace("&", "&amp;")}"`,
+      );
+      expect(result.part(sheetPath)).toContain("42");
+    },
+  );
 
   it("handles a malformed external relationship in workbook relationships", async () => {
     const result = await prepare(

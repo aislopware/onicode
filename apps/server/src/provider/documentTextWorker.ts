@@ -960,10 +960,13 @@ async function* document(path: string, extension: string): AsyncGenerator<TextPa
         yield* notes;
         return;
       }
-      try {
-        const decoded = decodeURIComponent(rootfile);
-        if (files.has(decoded)) rootfile = decoded;
-      } catch {}
+      // OCF names the package by its raw path; some writers percent-encode it anyway.
+      if (!files.has(rootfile)) {
+        try {
+          const decoded = decodeURIComponent(rootfile);
+          if (files.has(decoded)) rootfile = decoded;
+        } catch {}
+      }
       const packageXml = read(rootfile);
       const items = new Map(
         [...all(packageXml, "item")].map((item) => [item.attrs.id, item.attrs.href]),

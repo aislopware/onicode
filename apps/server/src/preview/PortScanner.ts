@@ -26,6 +26,7 @@ import * as Semaphore from "effect/Semaphore";
 import { FetchHttpClient, HttpClient } from "effect/http";
 
 import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
+import * as ProcessLauncher from "../process/ProcessLauncher.ts";
 import * as WindowsTcpListeners from "../process/windowsTcpListeners.ts";
 import * as ProcessRunner from "../processRunner.ts";
 
@@ -413,7 +414,7 @@ const parseProcStatParent = (raw: string): number | null => {
  */
 const parsePsEnvironmentThreads = (
   raw: string,
-  serverPid: number,
+  isServerChild: (ppid: number) => boolean,
 ): ReadonlyMap<number, AgentListener | null> => {
   const threads = new Map<number, AgentListener | null>();
   for (const line of raw.split("\n")) {
@@ -423,7 +424,7 @@ const parsePsEnvironmentThreads = (
     threads.set(
       Number(match[1]),
       value && !DEVTOOLS_PORT_ARGUMENT.test(match[3]!)
-        ? { threadId: ThreadId.make(value), isAgentCli: Number(match[2]) === serverPid }
+        ? { threadId: ThreadId.make(value), isAgentCli: isServerChild(Number(match[2])) }
         : null,
     );
   }
@@ -480,12 +481,13 @@ const parseProcessTable = (raw: string): ReadonlyMap<number, ProcessTableRow> =>
 /**
  * The process group stopping `pid` signals. Shells with job control and agent tool shells give
  * every job its own group, so the group is the job. Null when the group also holds this server,
- * a direct child of it (agent CLIs and terminal shells), or one of its ancestors.
+ * a child it spawned (agent CLIs and terminal shells), or one of its ancestors.
  */
 export const stoppableProcessGroup = (
   table: ReadonlyMap<number, ProcessTableRow>,
   pid: number,
   serverPid: number,
+  isServerChild: (ppid: number) => boolean = (ppid) => ppid === serverPid,
 ): number | null => {
   const group = table.get(pid)?.pgid;
   if (group === undefined || group <= 1) return null;
@@ -498,7 +500,7 @@ export const stoppableProcessGroup = (
     guarded.add(parent);
   }
   for (const row of table.values()) {
-    if (row.pgid === group && (guarded.has(row.pid) || row.ppid === serverPid)) return null;
+    if (row.pgid === group && (guarded.has(row.pid) || isServerChild(row.ppid))) return null;
   }
   return group;
 };
@@ -593,7 +595,10 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
         Effect.map(parseProcStatParent),
         Effect.orElseSucceed(() => null),
       );
-      return [pid, { threadId, isAgentCli: parent === process.pid }] as const;
+      return [
+        pid,
+        { threadId, isAgentCli: parent !== null && ProcessLauncher.isServerChild(parent) },
+      ] as const;
     });
     const read: ReadonlyMap<number, AgentListener | null> =
       unread.length === 0
@@ -608,7 +613,9 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
                 maxOutputBytes: PS_MAX_OUTPUT_BYTES,
               })
               .pipe(
-                Effect.map((result) => parsePsEnvironmentThreads(result.stdout, process.pid)),
+                Effect.map((result) =>
+                  parsePsEnvironmentThreads(result.stdout, ProcessLauncher.isServerChild),
+                ),
                 Effect.orElseSucceed(() => {
                   requestAgentScan();
                   return new Map();
@@ -1240,7 +1247,12 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
     const table = yield* readProcessTable;
     // It exited after the scan, so there is nothing left to stop.
     if (!table.has(input.pid)) return;
-    const group = stoppableProcessGroup(table, input.pid, process.pid);
+    const group = stoppableProcessGroup(
+      table,
+      input.pid,
+      process.pid,
+      ProcessLauncher.isServerChild,
+    );
     if (group === null) return yield* new PreviewStopLocalServerError({ reason: "shared-group" });
     // False when the whole group already exited.
     const signalGroup = (signal: "SIGTERM" | "SIGKILL") =>
