@@ -73,9 +73,11 @@ The card names the project and the machine the value goes to. That line comes fr
 the title and the reason are the agent's words, so check where the value goes before you answer.
 
 If the environment has a secret provider, a card that asks for one value also lets you pick it and
-enter a reference instead of the value. A card with several fields takes typed values only. Onicode
-reads the secret once, when you answer. If 1Password is locked, the card says so and the request
-stays open: unlock it and try again, or enter the value.
+enter a reference instead of the value. A card with several fields takes typed values only.
+Answering with a reference needs permission to manage providers, as saving a reference in Settings
+does; a session without it sees only the value field. Onicode reads the secret once, when you
+answer. If 1Password is locked, the card says so and the request stays open: unlock it and try
+again, or enter the value.
 
 The value never appears in the conversation. It goes into a private file, one per field, that the
 agent's commands can read for about 24 hours, and the card says so.
