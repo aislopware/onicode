@@ -42,6 +42,7 @@ import * as EffectOutbox from "./EffectOutbox.ts";
 import * as EventSink from "./EventSink.ts";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import * as Orchestrator from "./Orchestrator.ts";
+import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ProviderReplayHarness from "./testkit/ProviderReplayHarness.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
@@ -531,6 +532,8 @@ const nextTurnSelectionHarness = Effect.fn("nextTurnSelectionHarness")(function*
   steersDuringCompaction = true,
   // Runs after each read of a steer's target, which the worker makes while it prepares the offer.
   afterSteerTargetRead: () => Effect.Effect<void> = () => Effect.void,
+  // Fails the next reads that plan a queued run's start.
+  queueReads: { failures: number } = { failures: 0 },
 ) {
   const driver = ProviderDriverKind.make(nativeGoals === undefined ? "codex" : "opencode");
   const cwd = yield* checkpointWorkspace(name);
@@ -681,6 +684,12 @@ const nextTurnSelectionHarness = Effect.fn("nextTurnSelectionHarness")(function*
       runEffectWorker: false,
       wrapProjectionStore: (store) => ({
         ...store,
+        canStartQueuedRun: (threadId) =>
+          Effect.suspend(() => {
+            if (queueReads.failures === 0) return store.canStartQueuedRun(threadId);
+            queueReads.failures -= 1;
+            return Effect.fail(new ProjectionStore.ProjectionStoreReadError({ threadId }));
+          }),
         getProviderControlContext: (threadId, target) =>
           store
             .getProviderControlContext(threadId, target)
@@ -1700,6 +1709,291 @@ it.effect("keeps a message queued when send now races with a running turn", () =
       assert.equal(started.length, 1);
       const after = yield* orchestrator.getThreadProjection(threadId);
       assert.deepEqual(after.runs, before.runs);
+    }).pipe(Effect.provide(layer));
+  }),
+);
+
+// The turn has ended and its checkpoint capture has not landed yet.
+const endTurnBeforeCapture = Effect.fn("endTurnBeforeCapture")(function* (
+  events: Queue.Queue<ProviderAdapter.ProviderAdapterV2Event>,
+  threadId: ThreadId,
+  first: ProviderAdapter.ProviderAdapterV2TurnInput,
+) {
+  const orchestrator = yield* Orchestrator.OrchestratorV2;
+  const ended = yield* orchestrator.streamDomainEvents.pipe(
+    Stream.filter(
+      (event) =>
+        event.type === "run.updated" &&
+        event.payload.id === first.runId &&
+        event.payload.status === "completed",
+    ),
+    Stream.take(1),
+    Stream.runDrain,
+    Effect.forkScoped,
+  );
+  const turn = (yield* orchestrator.getThreadProjection(threadId)).providerTurns.find(
+    (candidate) => candidate.runAttemptId === first.attemptId,
+  )!;
+  yield* Queue.offer(events, {
+    type: "provider_turn.updated",
+    driver,
+    providerTurn: { ...turn, status: "completed", completedAt: yield* DateTime.now },
+  });
+  yield* Queue.offer(events, {
+    type: "turn.terminal",
+    driver,
+    providerThreadId: turn.providerThreadId,
+    providerTurnId: turn.id,
+    runOrdinal: first.runOrdinal,
+    status: "completed",
+    failure: null,
+    threadDisposition: "reusable",
+  });
+  yield* Fiber.join(ended);
+  return (yield* orchestrator.getThreadProjection(threadId)).runs.find(
+    (run) => run.id === first.runId,
+  )!;
+});
+
+it.effect("sends the picked queued message when Send now lands before the turn's capture", () =>
+  Effect.gen(function* () {
+    const { events, started, layer, startFirstTurn } = yield* nextTurnSelectionHarness(
+      "send-queued-during-capture",
+    );
+    yield* Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+      const threadId = yield* startFirstTurn;
+      for (const text of ["second", "third"]) {
+        yield* orchestrator.dispatch({
+          type: "message.dispatch",
+          commandId: CommandId.make(`queue-${text}`),
+          threadId,
+          messageId: MessageId.make(`message:${text}`),
+          text,
+          attachments: [],
+          dispatchMode: { type: "queue_after_active" },
+          createdBy: "user",
+          creationSource: "web",
+        });
+      }
+      yield* endTurnBeforeCapture(events, threadId, started[0]!);
+      const nextStarted = yield* orchestrator.streamDomainEvents.pipe(
+        Stream.filter(
+          (event) =>
+            event.type === "run.updated" &&
+            event.payload.id !== started[0]!.runId &&
+            event.payload.status !== "queued",
+        ),
+        Stream.take(1),
+        Stream.runDrain,
+        Effect.forkScoped,
+      );
+      yield* orchestrator.dispatch({
+        type: "queued-run.start",
+        commandId: CommandId.make("send-third-now"),
+        threadId,
+        runId: (yield* orchestrator.getThreadProjection(threadId)).runs.find(
+          (run) => run.userMessageId === MessageId.make("message:third"),
+        )!.id,
+      });
+      yield* worker.drain();
+      yield* Fiber.join(nextStarted);
+      yield* worker.drain();
+      assert.deepEqual(
+        started.map((turn) => turn.message.messageId),
+        [MessageId.make("message:first"), MessageId.make("message:third")],
+      );
+    }).pipe(Effect.provide(layer));
+  }),
+);
+
+it.effect.each(["stop", "unstartable", "unreadable", "another cancelled"] as const)(
+  "a Send now before the turn's capture keeps to its own message: %s",
+  (scenario) =>
+    Effect.gen(function* () {
+      const queueReads = { failures: 0 };
+      const { events, started, layer, startFirstTurn } = yield* nextTurnSelectionHarness(
+        `send-queued-during-capture-${scenario}`,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        queueReads,
+      );
+      yield* Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+        const threadId = yield* startFirstTurn;
+        const send = (text: string) =>
+          orchestrator.dispatch({
+            type: "message.dispatch",
+            commandId: CommandId.make(`queue-${text}`),
+            threadId,
+            messageId: MessageId.make(`message:${text}`),
+            text,
+            attachments: [],
+            dispatchMode: { type: "queue_after_active" },
+            createdBy: "user",
+            creationSource: "web",
+          });
+        const runOf = Effect.fnUntraced(function* (text: string) {
+          return (yield* orchestrator.getThreadProjection(threadId)).runs.find(
+            (run) => run.userMessageId === MessageId.make(`message:${text}`),
+          )!;
+        });
+        const settled = (predicate: (event: OrchestrationV2DomainEvent) => boolean) =>
+          orchestrator.streamDomainEvents.pipe(
+            Stream.filter(predicate),
+            Stream.take(1),
+            Stream.runDrain,
+            Effect.forkScoped,
+          );
+        yield* send("second");
+        yield* send("third");
+        const second = yield* runOf("second");
+        const third = yield* runOf("third");
+        if (scenario === "another cancelled") yield* send("fourth");
+        yield* endTurnBeforeCapture(events, threadId, started[0]!);
+        if (scenario === "unstartable") {
+          yield* (yield* EventSink.EventSinkV2).write({
+            events: [
+              {
+                id: EventId.make("event:unstartable"),
+                type: "run.updated",
+                threadId,
+                runId: third.id,
+                occurredAt: yield* DateTime.now,
+                payload: { ...third, activeAttemptId: null },
+              },
+            ],
+          });
+        }
+        yield* orchestrator.dispatch({
+          type: "queued-run.start",
+          commandId: CommandId.make("send-third-now"),
+          threadId,
+          runId: third.id,
+        });
+        if (scenario === "another cancelled") {
+          // A later message cancelled before it ran is not a newer turn.
+          yield* orchestrator.dispatch({
+            type: "queued-run.cancel",
+            commandId: CommandId.make("cancel-fourth"),
+            threadId,
+            runId: (yield* runOf("fourth")).id,
+          });
+          const picked = yield* settled(
+            (event) =>
+              event.type === "run.updated" &&
+              (event.payload.id === second.id || event.payload.id === third.id) &&
+              event.payload.status !== "queued",
+          );
+          yield* worker.drain();
+          yield* Fiber.join(picked);
+          yield* worker.drain();
+          assert.equal(started[1]?.message.messageId, MessageId.make("message:third"));
+          return;
+        }
+        if (scenario === "unreadable") queueReads.failures = 1;
+        if (scenario === "unstartable" || scenario === "unreadable") {
+          const failed = yield* settled(
+            (event) => event.type === "run.updated" && event.payload.status === "failed",
+          );
+          yield* worker.drain();
+          yield* Fiber.join(failed);
+          assert.equal((yield* runOf("third")).status, "failed");
+          assert.notEqual((yield* runOf("second")).status, "failed");
+          if (scenario === "unreadable") return;
+          // The failed message never ran, so the turn that follows it is the latest one.
+          yield* TestClock.adjust("1 second");
+          const secondRunning = yield* settled(
+            (event) => event.type === "provider-turn.updated" && event.payload.status === "running",
+          );
+          yield* orchestrator.dispatch({
+            type: "queued-run.start",
+            commandId: CommandId.make("send-second-now"),
+            threadId,
+            runId: second.id,
+          });
+          yield* worker.drain();
+          yield* Fiber.join(secondRunning);
+          yield* (yield* ThreadCommandExecutor.ThreadCommandExecutor).withLock(
+            threadId,
+            Effect.void,
+          );
+          yield* endTurnBeforeCapture(events, threadId, started[1]!);
+          yield* send("fourth");
+          assert.equal((yield* runOf("fourth")).status, "queued");
+          return;
+        }
+        // Stop takes the pick back with the queue it holds.
+        yield* orchestrator.dispatch({
+          type: "thread.stop",
+          commandId: CommandId.make("stop-during-capture"),
+          threadId,
+        });
+        yield* send("fourth");
+        const nextStarted = yield* settled(
+          (event) =>
+            event.type === "run.updated" &&
+            (event.payload.id === second.id || event.payload.id === third.id) &&
+            event.payload.status !== "queued",
+        );
+        yield* worker.drain();
+        yield* Fiber.join(nextStarted);
+        yield* worker.drain();
+        assert.equal(started[1]?.message.messageId, MessageId.make("message:second"));
+      }).pipe(Effect.provide(layer));
+    }),
+);
+
+it.effect("keeps the turn end of a run archived before its capture lands", () =>
+  Effect.gen(function* () {
+    const { events, started, layer, startFirstTurn } =
+      yield* nextTurnSelectionHarness("archive-during-capture");
+    yield* Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const threadId = yield* startFirstTurn;
+      const first = started[0]!;
+      const running = (yield* orchestrator.getThreadProjection(threadId)).runs.find(
+        (run) => run.id === first.runId,
+      )!;
+      // An open delegation cohort is what archive disposes, rewriting the run.
+      yield* (yield* EventSink.EventSinkV2).write({
+        events: [
+          {
+            id: EventId.make("event:archive-during-capture:cohort"),
+            type: "run.updated",
+            threadId,
+            runId: first.runId,
+            occurredAt: yield* DateTime.now,
+            payload: {
+              ...running,
+              delegatedCompletion: { disposition: "open", nextGeneration: 1, delivery: null },
+            },
+          },
+        ],
+      });
+      const ended = yield* endTurnBeforeCapture(events, threadId, first);
+      assert.isNotNull(ended.completedAt);
+      yield* orchestrator.dispatch({
+        type: "thread.archive",
+        commandId: CommandId.make("archive"),
+        threadId,
+      });
+      const archived = (yield* orchestrator.getThreadProjection(threadId)).runs.find(
+        (run) => run.id === first.runId,
+      )!;
+      assert.deepEqual(
+        [archived.status, archived.completedAt, archived.delegatedCompletion?.disposition],
+        ["completed", ended.completedAt, "disposed"],
+      );
     }).pipe(Effect.provide(layer));
   }),
 );

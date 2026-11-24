@@ -12,7 +12,10 @@ import * as McpToolAccessTestkit from "../../McpToolAccess.testkit.ts";
 import * as WorkflowHandlers from "./handlers.ts";
 import { WorkflowToolkit } from "./tools.ts";
 
-const handlersWith = (workflows: Partial<Workflows.Workflows["Service"]>) =>
+const handlersWith = (
+  workflows: Partial<Workflows.Workflows["Service"]>,
+  narrowedTo?: McpInvocationContext.ClientModes,
+) =>
   McpToolAccess.HandlersLayer.layer(WorkflowHandlers.layer).pipe(
     Layer.provideMerge(
       Layer.mergeAll(
@@ -22,7 +25,12 @@ const handlersWith = (workflows: Partial<Workflows.Workflows["Service"]>) =>
           environmentId: EnvironmentId.make("environment:workflow"),
           requestNamespace: "client:workflow",
           thread: undefined,
-          client: { sessionId: "session-1", label: "onicode CLI", access: "full-access" },
+          client: {
+            sessionId: "session-1",
+            label: "onicode CLI",
+            access: "full-access",
+            narrowedTo,
+          },
           capabilities: new Set(["orchestration" as const]),
           issuedAt: 0,
         }),
@@ -98,5 +106,41 @@ it.effect("signal refuses a run destination mixed with a channel destination", (
     }
     expect(results.at(-1)).toEqual({ delivery: "delivered" });
     expect(delivered).toEqual([{ runId: "run-1", wait: "review" }]);
+  }),
+);
+
+it.effect("a client held below full access reads runs but starts, signals and stops none", () =>
+  Effect.gen(function* () {
+    const results = yield* Effect.gen(function* () {
+      const toolkit = yield* WorkflowToolkit;
+      return yield* Effect.forEach(
+        [
+          { action: "start", workflow: "echo", idempotencyKey: "trial" },
+          { action: "signal", runId: "run-1", wait: "review", value: true },
+          { action: "resume", runId: "run-1" },
+          { action: "cancel", runId: "run-1" },
+          { action: "store_set", key: "key", value: 1 },
+          { action: "store_delete", key: "key" },
+          { action: "list" },
+        ] as const,
+        (input) =>
+          toolkit.handle("oni_workflow", input).pipe(
+            Stream.unwrap,
+            Stream.runCollect,
+            Effect.map((parts) => parts.at(-1)?.result),
+          ),
+      );
+    }).pipe(
+      Effect.provide(
+        handlersWith(
+          { list: () => Effect.succeed([]) },
+          { runtimeMode: "auto", interactionMode: "default" },
+        ),
+      ),
+    );
+    for (const result of results.slice(0, -1)) {
+      expect(result).toMatchObject({ code: "capability_denied" });
+    }
+    expect(results.at(-1)).toEqual({ runs: [] });
   }),
 );

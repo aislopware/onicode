@@ -440,6 +440,15 @@ describe("OpenCodeAdapterV2", () => {
       if (request === "command") {
         assert.isTrue(runsAsCommand("/review the diff"));
         assert.isFalse(runsAsCommand("/unlisted"));
+        // The adapter compacts the session itself, so `/compact` is never in the list.
+        assert.isTrue(runsAsCommand(" /compact "));
+        assert.isFalse(
+          harness.runtime.runsAsNativeCommand!(
+            { text: "/compact", attachments: [{}] },
+            { cwd: null },
+          ),
+        );
+        assert.isFalse(runsAsCommand("/compact now"));
         // History met an earlier list: a past `/unlisted` turn stays one that held its context.
         assert.isTrue(harness.runtime.runsAsNativeCommand!({ text: "/unlisted", attachments: [] }));
       }

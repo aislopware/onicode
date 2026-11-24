@@ -844,6 +844,7 @@ describe("OrchestratorMcpService", () => {
             Effect.succeed(threadId === parentThreadId ? parentProjection : childProjection),
           getThreadShell: (threadId) => Effect.succeed(liveThreadShell(threadId)),
           listAppOwnedChildThreadIds: () => Effect.succeed([]),
+          delegatedTaskAwaitsCapture: () => Effect.succeed(false),
           dispatch: (command) =>
             Ref.update(dispatched, (commands) => [...commands, command]).pipe(
               Effect.as({} as never),
@@ -939,6 +940,7 @@ describe("OrchestratorMcpService", () => {
             getThreadShell: (threadId) => Effect.succeed(liveThreadShell(threadId)),
             listAppOwnedChildThreadIds: () => Effect.succeed([]),
             delegatedTaskResultPending: () => Effect.succeed(false),
+            delegatedTaskAwaitsCapture: () => Effect.succeed(false),
             stopDelegatedTasks: () => Effect.void,
             cancelDelegatedTask: ({ command }) =>
               Ref.update(dispatched, (commands) => [...commands, command]),

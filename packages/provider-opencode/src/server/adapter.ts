@@ -807,6 +807,12 @@ export function openCodeChildPermissionRules(
   return [...parentRules, ...childSpecificRules];
 }
 
+/** The adapter compacts the session itself, whatever OpenCode lists. */
+const isCompactCommand = (message: {
+  readonly text: string;
+  readonly attachments: ReadonlyArray<unknown>;
+}) => message.text.trim() === "/compact" && message.attachments.length === 0;
+
 /** Boundaries are exclusive: use the next user message, or omit at head to retain the selected turn. */
 export function openCodeBoundaryAfterProviderTurn(
   providerTurns: ReadonlyArray<OrchestrationV2ProviderTurn>,
@@ -3771,6 +3777,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           // A listed command runs through session.command, also with files; others are prompts.
           // History met an earlier list, so only a turn reads the current one.
           runsAsNativeCommand: (message, context) => {
+            if (isCompactCommand(message)) return true;
             const name = /^\/(\S+)/.exec(message.text.trim())?.[1];
             return (
               name !== undefined && (context === undefined || (listedCommands?.has(name) ?? true))
@@ -3814,10 +3821,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
               }
               yield* applyPermissionRules(state, turnInput.runtimePolicy);
               // A continuation admits a wake OpenCode is already running, so it sends no prompt.
-              const isCompaction =
-                !continuation &&
-                turnInput.message.text.trim() === "/compact" &&
-                turnInput.message.attachments.length === 0;
+              const isCompaction = !continuation && isCompactCommand(turnInput.message);
               const parts =
                 isCompaction || continuation ? [] : yield* resolvePromptParts(turnInput);
               const startedAt = yield* DateTime.now;

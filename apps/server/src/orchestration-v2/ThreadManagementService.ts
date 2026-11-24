@@ -565,6 +565,7 @@ export interface ThreadManagementServiceShape {
   readonly recoverDelegatedTask: Orchestrator.OrchestratorV2["Service"]["recoverDelegatedTask"];
   readonly cancelDelegatedTask: Orchestrator.OrchestratorV2["Service"]["cancelDelegatedTask"];
   readonly delegatedTaskResultPending: Orchestrator.OrchestratorV2["Service"]["delegatedTaskResultPending"];
+  readonly delegatedTaskAwaitsCapture: Orchestrator.OrchestratorV2["Service"]["delegatedTaskAwaitsCapture"];
   readonly streamStoredEvents: Orchestrator.OrchestratorV2["Service"]["streamStoredEvents"];
   readonly streamStoredEventsFrom: Orchestrator.OrchestratorV2["Service"]["streamStoredEventsFrom"];
   readonly streamDomainEvents: Orchestrator.OrchestratorV2["Service"]["streamDomainEvents"];
@@ -1299,7 +1300,7 @@ const make = Effect.gen(function* () {
       }
     });
     const untilDelegatedWorkSettled = input.untilDelegatedWorkSettled === true;
-    const delegatedWorkResult = Effect.gen(function* () {
+    const readDelegatedWorkResult = Effect.gen(function* () {
       const records = yield* getProjectThreadRecords(
         input,
         ["runs", "messages", "subagents", "providerThreads"],
@@ -1311,13 +1312,20 @@ const make = Effect.gen(function* () {
         progress.resultRun === undefined &&
         records.runs.every((run) => isTerminalRunStatus(run.status))
       ) {
-        return latestRun(records);
+        return { resultRun: latestRun(records), pending: false };
       }
-      if (progress.state !== "result_available") return undefined;
+      if (progress.state !== "result_available") return { resultRun: undefined, pending: false };
       const pending = yield* orchestrator
         .delegatedTaskResultPending(input.threadId)
         .pipe(Effect.mapError(loadError));
-      return pending ? undefined : progress.resultRun;
+      return { resultRun: pending ? undefined : progress.resultRun, pending };
+    });
+    const delegatedWorkResult = Effect.fnUntraced(function* (awaitCapture: boolean) {
+      const read = yield* readDelegatedWorkResult;
+      if (!read.pending || !awaitCapture) return read.resultRun;
+      // A capture that gives up records no event, so no later event would end the wait.
+      yield* orchestrator.awaitLatestRunCapture(input.threadId);
+      return (yield* readDelegatedWorkResult).resultRun;
     });
     const evaluate = Effect.fn("orchestrationV2.threadManagement.evaluate")(function* (
       runs: ReadonlyArray<OrchestrationV2Run>,
@@ -1327,7 +1335,7 @@ const make = Effect.gen(function* () {
       if (!current.settled || !untilDelegatedWorkSettled) {
         return { ...current, resultRun: undefined };
       }
-      const resultRun = yield* delegatedWorkResult;
+      const resultRun = yield* delegatedWorkResult(settleSteer !== false);
       return { ...current, settled: resultRun !== undefined, resultRun };
     });
     const settledResult = (current: Effect.Success<ReturnType<typeof evaluate>>) => ({
@@ -2023,6 +2031,7 @@ const make = Effect.gen(function* () {
     recoverDelegatedTask: orchestrator.recoverDelegatedTask,
     cancelDelegatedTask: orchestrator.cancelDelegatedTask,
     delegatedTaskResultPending: orchestrator.delegatedTaskResultPending,
+    delegatedTaskAwaitsCapture: orchestrator.delegatedTaskAwaitsCapture,
     streamStoredEvents: orchestrator.streamStoredEvents,
     streamStoredEventsFrom: orchestrator.streamStoredEventsFrom,
     streamDomainEvents: orchestrator.streamDomainEvents,

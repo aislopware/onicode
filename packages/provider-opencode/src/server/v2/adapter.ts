@@ -4980,6 +4980,9 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       runsAsNativeCommand: (message, context) => {
         const command = message.attachments.length === 0 ? commandOf(message.text) : undefined;
         if (command === undefined) return false;
+        // The adapter handles these itself, whatever OpenCode lists.
+        if (message.text.trim() === "/compact") return true;
+        if (supportsNativeGoals() && parseGoalCommand(message)?.type === "show") return true;
         const listed =
           context === undefined ? undefined : listedCommands.get(directoryOf(context.cwd));
         return listed?.has(command.name) ?? true;

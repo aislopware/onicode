@@ -8,6 +8,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it, vi } from "@effect/vitest";
 import {
   CheckpointId,
+  CheckpointScopeId,
   CommandId,
   EnvironmentId,
   EventId,
@@ -54,6 +55,7 @@ import * as EventSink from "./EventSink.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ProviderRuntimeRecovery from "./ProviderRuntimeRecoveryService.ts";
 import { continueRestartedRun } from "./RestartContinuation.ts";
+import * as RunExecutionService from "./RunExecutionService.ts";
 import * as RuntimeLayer from "./runtimeLayer.ts";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import { limitRecoveryCommand } from "./UsageLimitRecoveryWorker.ts";
@@ -2166,6 +2168,94 @@ it.layer(Layer.merge(layerTest, ProviderContinuationRequests.layer))(
       }),
     );
 
+    // Only a steer still pending is requeued once the capture of the run it was steered into lands.
+    it.effect("re-offers a steer whose run ended while its capture is pending", () =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const eventSink = yield* EventSink.EventSinkV2;
+        const requests = yield* ProviderContinuationRequests.ProviderContinuationRequests;
+        const now = yield* DateTime.now;
+        const threadId = ThreadId.make("thread:steered-capturing");
+        const runId = RunId.make("run:steered-capturing");
+        const taskId = NodeId.make("node:steered-capturing-task");
+        const messageId = MessageId.make(`message:delegated-delivery:${threadId}`);
+        const hostRunId = RunId.make("run:steered-capturing:host");
+        yield* seedParentWithTerminalTask({
+          threadId,
+          projectId: ProjectId.make("project:steered-capturing"),
+          runId,
+          rootNodeId: NodeId.make("node:steered-capturing-root"),
+          taskId,
+          deliveryState: "claimed",
+          completionWake: "always",
+          deliveryTaskIds: [taskId],
+          now,
+        });
+        // The queue is shared with the tests after this one, so the offer goes nowhere.
+        using offer = vi.spyOn(requests, "offer").mockImplementation(() => Effect.void);
+        yield* eventSink.writeWithEffects({
+          commandId: reconcileCommandId("steered-capturing"),
+          events: [
+            {
+              id: EventId.make("event:steered-capturing:delivery-message"),
+              type: "message.updated",
+              threadId,
+              runId: hostRunId,
+              occurredAt: now,
+              payload: {
+                id: messageId,
+                threadId,
+                runId: hostRunId,
+                nodeId: null,
+                role: "user",
+                text: `Delegated task ${taskId} reached a terminal state.`,
+                attachments: [],
+                streaming: false,
+                createdBy: "agent",
+                creationSource: "server",
+                createdAt: now,
+                updatedAt: now,
+                delegatedCompletion: { parentRunId: runId, generation: 1, taskIds: [taskId] },
+              },
+            },
+            runEvent({
+              threadId,
+              runId: hostRunId,
+              ordinal: 2,
+              status: "completed",
+              now,
+              providerThreadId: parentProviderThreadId(threadId),
+              userMessageId: MessageId.make("message:steered-capturing:host"),
+            }),
+          ],
+          effects: [
+            {
+              id: RunExecutionService.checkpointCaptureEffectId(hostRunId, null),
+              commandId: reconcileCommandId("steered-capturing"),
+              threadId,
+              request: {
+                type: "checkpoint.capture",
+                runId: hostRunId,
+                scopeId: CheckpointScopeId.make("scope:steered-capturing"),
+              },
+            },
+          ],
+        });
+
+        yield* orchestrator.recoverDelegatedTasks;
+
+        assert.isTrue(
+          offer.mock.calls.some(([request]) => request.delegatedCompletion?.parentRunId === runId),
+        );
+        // Its capture never lands; archived, the thread offers nothing into the next test's queue.
+        yield* orchestrator.dispatch({
+          type: "thread.archive",
+          commandId: CommandId.make("command:steered-capturing:archive"),
+          threadId,
+        });
+      }),
+    );
+
     it.effect("recovers a reserved delivery without loading conversation history", () =>
       Effect.gen(function* () {
         const orchestrator = yield* Orchestrator.OrchestratorV2;
@@ -3836,6 +3926,227 @@ it.layer(Layer.merge(layerTest, ProviderContinuationRequests.layer))(
           assert.equal(followup?.status, "completed");
           assert.equal(followup?.result, "FINAL CHECK-OK");
         }),
+    );
+
+    it.effect("a monitor update's capture does not hold the task the thread was forked for", () =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const eventSink = yield* EventSink.EventSinkV2;
+        const now = yield* DateTime.now;
+        const parentThreadId = ThreadId.make("thread:monitor-capturing-parent");
+        const projectId = ProjectId.make("project:monitor-capturing");
+        const parentRunId = RunId.make("run:monitor-capturing-parent");
+        const rootNodeId = NodeId.make("node:monitor-capturing-parent");
+        yield* seedParentWithTerminalTask({
+          threadId: parentThreadId,
+          projectId,
+          runId: parentRunId,
+          rootNodeId,
+          taskId: NodeId.make("node:monitor-capturing-seed"),
+          deliveryState: "acknowledged",
+          now,
+        });
+        const child = yield* seedRestartCancelledChild({
+          parentThreadId,
+          projectId,
+          parentRunId,
+          rootNodeId,
+          name: "monitor-capturing-child",
+          completionWake: "always",
+          continuationPending: false,
+          runStatus: "completed",
+          now,
+        });
+        yield* orchestrator.recoverDelegatedTasks;
+        const monitorMessageId = MessageId.make("message:monitor-capturing-update");
+        yield* orchestrator.dispatch({
+          type: "message.dispatch",
+          createdBy: "agent",
+          creationSource: "server",
+          commandId: CommandId.make("command:monitor-capturing-update"),
+          threadId: child.childThreadId,
+          messageId: monitorMessageId,
+          text: "A monitor reported new output.",
+          attachments: [],
+          notification: { source: { kind: "monitor" }, outcome: "updated", summary: "Updated" },
+          dispatchMode: { type: "queue_after_active" },
+        });
+        const monitorRun = (yield* orchestrator.getThreadProjection(child.childThreadId)).runs.find(
+          (run) => run.userMessageId === monitorMessageId,
+        )!;
+        yield* eventSink.writeWithEffects({
+          commandId: reconcileCommandId("monitor-capturing-ended"),
+          events: [
+            {
+              id: EventId.make("event:monitor-capturing-completed"),
+              type: "run.updated",
+              threadId: child.childThreadId,
+              runId: monitorRun.id,
+              occurredAt: now,
+              payload: { ...monitorRun, status: "completed", startedAt: now, completedAt: now },
+            },
+          ],
+          effects: [
+            {
+              id: RunExecutionService.checkpointCaptureEffectId(
+                monitorRun.id,
+                monitorRun.activeAttemptId,
+              ),
+              commandId: reconcileCommandId("monitor-capturing-ended"),
+              threadId: child.childThreadId,
+              request: {
+                type: "checkpoint.capture",
+                runId: monitorRun.id,
+                scopeId: CheckpointScopeId.make("scope:monitor-capturing"),
+              },
+            },
+          ],
+        });
+
+        assert.isFalse(
+          yield* orchestrator.delegatedTaskAwaitsCapture(child.childThreadId, child.taskId),
+        );
+      }),
+    );
+
+    it.effect("cancelling a follow-up keeps it open while its run captures", () =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const eventSink = yield* EventSink.EventSinkV2;
+        const now = yield* DateTime.now;
+        const parentThreadId = ThreadId.make("thread:followup-capturing-parent");
+        const projectId = ProjectId.make("project:followup-capturing");
+        const parentRunId = RunId.make("run:followup-capturing-parent");
+        const rootNodeId = NodeId.make("node:followup-capturing-parent");
+        yield* seedParentWithTerminalTask({
+          threadId: parentThreadId,
+          projectId,
+          runId: parentRunId,
+          rootNodeId,
+          taskId: NodeId.make("node:followup-capturing-seed"),
+          deliveryState: "acknowledged",
+          now,
+        });
+        const child = yield* seedRestartCancelledChild({
+          parentThreadId,
+          projectId,
+          parentRunId,
+          rootNodeId,
+          name: "followup-capturing-child",
+          completionWake: "always",
+          continuationPending: false,
+          runStatus: "completed",
+          now,
+        });
+        yield* orchestrator.recoverDelegatedTasks;
+        const send = (key: string) =>
+          orchestrator.dispatch({
+            type: "message.dispatch",
+            createdBy: "agent",
+            creationSource: "mcp",
+            commandId: CommandId.make(`command:followup-capturing-${key}`),
+            threadId: child.childThreadId,
+            senderThreadId: parentThreadId,
+            messageId: MessageId.make(`message:followup-capturing-${key}`),
+            text: key,
+            attachments: [],
+            dispatchMode: { type: "queue_after_active" },
+          });
+        yield* send("follow-up");
+        const followupRun = (yield* orchestrator.getThreadProjection(
+          child.childThreadId,
+        )).runs.find(
+          (run) => run.userMessageId === MessageId.make("message:followup-capturing-follow-up"),
+        )!;
+        const followupTaskId = followupRun.delegatedTaskId!;
+        // The task's newer runs never started; the one before them captures.
+        yield* eventSink.writeWithEffects({
+          commandId: reconcileCommandId("followup-capturing-ended"),
+          events: [
+            {
+              id: EventId.make("event:followup-capturing-completed"),
+              type: "run.updated",
+              threadId: child.childThreadId,
+              runId: followupRun.id,
+              occurredAt: now,
+              payload: { ...followupRun, status: "completed", startedAt: now, completedAt: now },
+            },
+            {
+              id: EventId.make("event:followup-capturing-never-started"),
+              type: "run.updated",
+              threadId: child.childThreadId,
+              runId: RunId.make("run:followup-capturing-never-started"),
+              occurredAt: now,
+              payload: {
+                ...followupRun,
+                id: RunId.make("run:followup-capturing-never-started"),
+                ordinal: followupRun.ordinal + 1,
+                userMessageId: MessageId.make("message:followup-capturing-never-started"),
+                activeAttemptId: null,
+                status: "cancelled",
+                startedAt: null,
+                completedAt: now,
+              },
+            },
+            // A wake the follow-up queued, which the Stop holds.
+            {
+              id: EventId.make("event:followup-capturing-queued"),
+              type: "run.updated",
+              threadId: child.childThreadId,
+              runId: RunId.make("run:followup-capturing-queued"),
+              occurredAt: now,
+              payload: {
+                ...followupRun,
+                id: RunId.make("run:followup-capturing-queued"),
+                ordinal: followupRun.ordinal + 2,
+                userMessageId: MessageId.make("message:followup-capturing-queued"),
+                activeAttemptId: null,
+                status: "queued",
+                startedAt: null,
+                completedAt: null,
+              },
+            },
+          ],
+          effects: [
+            {
+              id: RunExecutionService.checkpointCaptureEffectId(
+                followupRun.id,
+                followupRun.activeAttemptId,
+              ),
+              commandId: reconcileCommandId("followup-capturing-ended"),
+              threadId: child.childThreadId,
+              request: {
+                type: "checkpoint.capture",
+                runId: followupRun.id,
+                scopeId: CheckpointScopeId.make("scope:followup-capturing"),
+              },
+            },
+          ],
+        });
+
+        assert.isTrue(
+          yield* orchestrator.delegatedTaskAwaitsCapture(child.childThreadId, followupTaskId),
+        );
+        // The capture belongs to the follow-up, not to the task the thread was forked for.
+        assert.isFalse(
+          yield* orchestrator.delegatedTaskAwaitsCapture(child.childThreadId, child.taskId),
+        );
+        yield* orchestrator.cancelDelegatedTask({
+          parentThreadId,
+          taskId: followupTaskId,
+          command: {
+            type: "thread.stop",
+            commandId: CommandId.make("command:followup-capturing-cancel"),
+            threadId: child.childThreadId,
+            stopDelegatedTasks: false,
+          },
+          stopDescendants: () => Effect.void,
+        });
+        const cancelled = (yield* orchestrator.getThreadProjection(parentThreadId)).subagents.find(
+          (task) => task.id === followupTaskId,
+        );
+        assert.equal(cancelled?.cancelledRunId, followupRun.id);
+      }),
     );
 
     it.effect("settles a follow-up whose own run started no background work", () =>
@@ -5804,7 +6115,7 @@ it.layer(layerTest)("delegated tasks across a server restart", (it) => {
       const orchestrator = yield* Orchestrator.OrchestratorV2;
       const eventSink = yield* EventSink.EventSinkV2;
       const now = yield* DateTime.now;
-      const seed = (name: string, continuationPending: boolean) =>
+      const seed = (name: string, ends: "cut" | "resumed" | "capturing") =>
         Effect.gen(function* () {
           const threadId = ThreadId.make(`thread:${name}`);
           const runId = RunId.make(`run:${name}`);
@@ -5851,30 +6162,52 @@ it.layer(layerTest)("delegated tasks across a server restart", (it) => {
                 threadId,
                 runId: deliveryRunId,
                 ordinal: 2,
-                status: "cancelled",
+                status: ends === "capturing" ? "completed" : "cancelled",
                 now,
                 providerThreadId: parentProviderThreadId(threadId),
                 userMessageId: messageId,
               }),
             ],
-            effects: continuationPending
-              ? [
-                  {
-                    id: `effect:restart-continuation:${deliveryRunId}`,
-                    commandId: reconcileCommandId(name),
-                    threadId,
-                    request: { type: "provider-runtime.continue", sourceRunId: deliveryRunId },
-                  },
-                ]
-              : [],
+            effects:
+              ends === "resumed"
+                ? [
+                    {
+                      id: `effect:restart-continuation:${deliveryRunId}`,
+                      commandId: reconcileCommandId(name),
+                      threadId,
+                      request: { type: "provider-runtime.continue", sourceRunId: deliveryRunId },
+                    },
+                  ]
+                : ends === "capturing"
+                  ? [
+                      {
+                        id: RunExecutionService.checkpointCaptureEffectId(deliveryRunId, null),
+                        commandId: reconcileCommandId(name),
+                        threadId,
+                        request: {
+                          type: "checkpoint.capture",
+                          runId: deliveryRunId,
+                          scopeId: CheckpointScopeId.make(`scope:${name}`),
+                        },
+                      },
+                    ]
+                  : [],
           });
           return { threadId, runId, taskId };
         });
-      const cut = yield* seed("delivery-cut", false);
-      const resumed = yield* seed("delivery-resumed", true);
+      const cut = yield* seed("delivery-cut", "cut");
+      const resumed = yield* seed("delivery-resumed", "resumed");
+      // The run-end reaction its capture starts offers it again.
+      const capturing = yield* seed("delivery-capturing", "capturing");
 
       yield* orchestrator.recoverDelegatedTasks;
 
+      assert.equal(
+        (yield* orchestrator.getThreadProjection(capturing.threadId)).runs.find(
+          (row) => row.id === capturing.runId,
+        )?.delegatedCompletion?.delivery?.generation,
+        1,
+      );
       for (const seeded of [cut, resumed]) {
         const projection = yield* orchestrator.getThreadProjection(seeded.threadId);
         assert.deepEqual(

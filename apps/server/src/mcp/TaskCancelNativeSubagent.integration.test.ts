@@ -70,7 +70,7 @@ const provider = {
 
 // Cancellation races with turn completion and checkpoint capture; "recorded" restarts before the Stop outbox runs.
 const cancelBackgroundOnlyTask = (
-  background: "subagent" | "command",
+  background: "subagent" | "command" | "none",
   {
     cancelAt = "settled",
     remote = false,
@@ -447,9 +447,11 @@ const cancelBackgroundOnlyTask = (
         const started = yield* watch((event) =>
           background === "subagent"
             ? event.type === "subagent.updated" && event.payload.id === subagentId
-            : event.type === "provider-thread.updated" &&
-              event.threadId === task.childThreadId &&
-              (event.payload.pendingBackgroundTasks?.length ?? 0) > 0,
+            : background === "none"
+              ? event.type === "runtime-request.updated" && event.payload.id === "request:unrelated"
+              : event.type === "provider-thread.updated" &&
+                event.threadId === task.childThreadId &&
+                (event.payload.pendingBackgroundTasks?.length ?? 0) > 0,
         );
         // An async question the child asked during its turn, and one no run of this task owns.
         const question = (id: string, nodeId: NodeId) =>
@@ -471,7 +473,11 @@ const cancelBackgroundOnlyTask = (
         for (const event of [
           question("request:owned", child.turn.rootNodeId),
           question("request:unrelated", NodeId.make("node:unrelated")),
-          ...(background === "subagent" ? nativeSubagentEvents : shellEvents),
+          ...(background === "subagent"
+            ? nativeSubagentEvents
+            : background === "command"
+              ? shellEvents
+              : []),
         ]) {
           yield* Queue.offer(child.events, event);
         }
@@ -561,7 +567,10 @@ const cancelBackgroundOnlyTask = (
         const before = yield* service.taskStatus(scope, task.id);
         assert.equal(before.status, "running");
         // The child's run completes when its turn ends, before its checkpoint capture runs.
-        assert.equal(before.workState, cancelAt === "turn" ? "working" : "waiting_for_children");
+        assert.equal(
+          before.workState,
+          cancelAt === "turn" || background === "none" ? "working" : "waiting_for_children",
+        );
 
         const parentTask = Effect.map(orchestrator.getThreadProjection(parentThreadId), (parent) =>
           parent.subagents.find((entry) => entry.id === task.id),
@@ -653,10 +662,13 @@ const cancelBackgroundOnlyTask = (
         // Stop reached the provider turn that owns the shell.
         if (background === "command") assert.deepEqual(interrupted, [["bg-sleep"]]);
         assert.equal(childAfter.runs.length, cancelAt === "monitor" || cancelAt === "turn" ? 2 : 1);
-        // A Stop accepted before the run's checkpoint settled it ends that run as interrupted.
+        // A Stop accepted before the run's checkpoint settled it ends that run as interrupted,
+        // unless its turn had ended with nothing left to stop.
         assert.equal(
           childAfter.runs.find((run) => run.id === child.turn.runId)?.status,
-          cancelAt === "checkpoint" || cancelAt === "turn" ? "interrupted" : "completed",
+          background !== "none" && (cancelAt === "checkpoint" || cancelAt === "turn")
+            ? "interrupted"
+            : "completed",
         );
         assert.deepEqual(
           childAfter.runtimeRequests.map((request) => [request.id, request.status]),
@@ -708,6 +720,10 @@ it.effect("task_cancel ends a delegated child's background shell command", () =>
 
 it.effect("task_cancel ends background work while the child's run captures its checkpoint", () =>
   cancelBackgroundOnlyTask("command", { cancelAt: "checkpoint" }),
+);
+
+it.effect("task_cancel settles a child that left nothing running while its run captures", () =>
+  cancelBackgroundOnlyTask("none", { cancelAt: "checkpoint" }),
 );
 
 it.effect("task_cancel ends background work left by a turn that finishes after Stop", () =>
