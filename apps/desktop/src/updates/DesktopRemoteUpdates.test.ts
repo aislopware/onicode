@@ -410,7 +410,20 @@ describe("DesktopRemoteUpdates", () => {
 
   it.effect("downloads a deleted update file again before reporting prepared", () => {
     const downloadedFile = "/cache/pending/Onicode-1.2.4-arm64.zip";
-    const harness = makeHarness();
+    const releaseThirdDownload = Deferred.makeUnsafe<void>();
+    // Two transient failures, then a slow third attempt that a stale retry must not abort.
+    const harness = makeHarness({
+      downloadUpdate: Effect.suspend(() =>
+        harness.downloadCount() < 3
+          ? Effect.fail(
+              new ElectronUpdater.ElectronUpdaterDownloadUpdateError({
+                channel: null,
+                cause: new Error("network"),
+              }),
+            )
+          : Deferred.await(releaseThirdDownload),
+      ),
+    });
 
     return runRemoteUpdatesTest(harness, ({ reports, requests }) =>
       Effect.gen(function* () {
@@ -421,17 +434,52 @@ describe("DesktopRemoteUpdates", () => {
 
         yield* Queue.offer(requests, request("req-lost"));
         yield* settle;
-        yield* TestClock.adjust(Duration.millis(300));
+        assert.equal(harness.downloadCount(), 3);
+        yield* TestClock.adjust(Duration.seconds(1));
         yield* settle;
-        assert.equal(harness.downloadCount(), 1);
         assert.deepEqual(terminalReports(reports), []);
 
         harness.deletedFiles.delete(downloadedFile);
+        yield* Deferred.succeed(releaseThirdDownload, undefined);
         harness.emit("update-downloaded", { version: "1.2.4", downloadedFile });
         yield* settle;
         assert.deepEqual(
           terminalReports(reports).map((report) => report.outcome),
           ["ready-to-install"],
+        );
+      }),
+    );
+  });
+
+  it.effect("prepares again when a prepared update's file was deleted", () => {
+    const downloadedFile = "/cache/pending/Onicode-1.2.4-arm64.zip";
+    const harness = makeHarness();
+
+    return runRemoteUpdatesTest(harness, ({ reports, requests }) =>
+      Effect.gen(function* () {
+        yield* Queue.offer(requests, request("req-1"));
+        yield* settle;
+        harness.emit("update-available", { version: "1.2.4" });
+        yield* settle;
+        harness.emit("update-downloaded", { version: "1.2.4", downloadedFile });
+        yield* settle;
+        assert.equal(harness.downloadCount(), 1);
+
+        harness.deletedFiles.add(downloadedFile);
+        yield* Queue.offer(requests, request("req-2"));
+        yield* settle;
+        assert.equal(harness.downloadCount(), 2);
+
+        harness.deletedFiles.delete(downloadedFile);
+        harness.emit("update-downloaded", { version: "1.2.4", downloadedFile });
+        yield* settle;
+        const terminals = terminalReports(reports);
+        assert.deepEqual(
+          terminals.map((report) => [report.requestId, report.outcome, report.preparedRequestId]),
+          [
+            ["req-1", "ready-to-install", undefined],
+            ["req-2", "ready-to-install", undefined],
+          ],
         );
       }),
     );
