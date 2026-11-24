@@ -19,6 +19,7 @@ import {
   squashAtomCommandFailure,
 } from "@onicode/client-runtime/state/runtime";
 import {
+  AuthProvidersManageScope,
   resolveEnvironmentMachineKind,
   type EnvironmentId,
   type OrchestrationV2ProjectedTurnItem,
@@ -36,6 +37,7 @@ import { SecretTextInput } from "../../components/ui/SecretTextInput";
 import type { SecretTextInputHandle } from "../../components/ui/SecretTextInput.types";
 import { useProject, useQuietThreadShell } from "../../state/entities";
 import { serverEnvironment } from "../../state/server";
+import { useEnvironmentScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import { Button } from "../../components/ui/Button";
@@ -96,10 +98,13 @@ function PendingSecretRequestForm(props: {
   const inputs = secretRequestInputs(item, m);
   const multiple = item.fields !== undefined;
   const config = useAtomValue(serverEnvironment.configValueAtom(props.environmentId));
+  // The server accepts a reference answer only with this scope; without it the card is typed.
+  const canUseReferences = useEnvironmentScope(props.environmentId, AuthProvidersManageScope);
   // A reference answers one value, so a card with fields is always typed.
-  const sources = multiple
-    ? NO_SOURCES
-    : secretRequestSources(config, config?.settings.secretProviders ?? {}, m);
+  const sources =
+    multiple || !canUseReferences
+      ? NO_SOURCES
+      : secretRequestSources(config, config?.settings.secretProviders ?? {}, m);
   const thread = useQuietThreadShell(scopeThreadRef(props.environmentId, item.threadId));
   const project = useProject(
     thread === null ? null : scopeProjectRef(props.environmentId, thread.projectId),
