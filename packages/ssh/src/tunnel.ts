@@ -955,9 +955,7 @@ elif [ -n "$REMOTE_PORT" ] && managed_server_running "$REMOTE_PID"; then
     REMOTE_PID=""
     REMOTE_PORT=""
     REMOTE_MANAGED=""
-  elif [ "$READY_STATUS" = 0 ]; then
-    :
-  elif ! wait_ready "@@ONICODE_READY_TIMEOUT_MS@@"; then
+  elif [ "$READY_STATUS" != 0 ] && ! wait_ready "@@ONICODE_READY_TIMEOUT_MS@@"; then
     printf 'Remote Onicode server is still running but did not become ready. Retry the connection; the server was left running.\\n' >&2
     exit 1
   elif [ "$FOREIGN_LAUNCHER" -eq 1 ]; then
