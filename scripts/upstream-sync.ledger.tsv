@@ -3718,3 +3718,4 @@ b28b13bd1f	take	taken as is
 2cc8e73014	take	taken; test conflict resolved by keeping both cases
 75443857dc	take	taken; merged into Onicode's close() (skipped-close tracking) and existing router
 b51399fb38	take	fix(web): a held Esc or a search of spaces no longer closes Settings (#42093)
+6f6b978667	skip	kept Onicode's expanded-image close button: it never took the Back button; a ghost × already sits beside the media it closes (above it when the gutters are gone), where upstream's dark pill goes back to the popup corner, away from a small image. Same accessible names, tests already cover them
