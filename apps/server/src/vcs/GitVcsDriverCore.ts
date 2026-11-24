@@ -11,6 +11,7 @@ import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
+import * as FiberSet from "effect/FiberSet";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
@@ -1052,6 +1053,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   const random = yield* SecureRandom.SecureRandom;
   const hostPlatform = yield* HostProcess.Platform;
   const serviceScope = yield* Effect.scope;
+  // A worktree's index refresh can still take its lock after the worktree is handed out.
+  const indexRefreshes = yield* FiberSet.make();
   const automaticFetchInterval = yield* VcsAutomaticFetchInterval;
   type StatusFetchState = {
     phase: "queued" | "running" | "claimed";
@@ -6033,7 +6036,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     }).pipe(
       Effect.ensuring(fileSystem.remove(copyPath).pipe(Effect.ignore)),
       Effect.ignore({ log: "Debug" }),
-      Effect.forkIn(serviceScope),
+      FiberSet.run(indexRefreshes),
     );
   });
 
@@ -7298,6 +7301,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       );
     }),
     clearWorktreeCheckoutCache: checkoutCache?.clear ?? Effect.void,
+    settleIndexRefreshes: FiberSet.awaitEmpty(indexRefreshes),
     fetchRefIntoBranch: Effect.fnUntraced(function* (input) {
       return yield* withListRefsInvalidation(input.cwd, fetchRefIntoBranch(input));
     }),

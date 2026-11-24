@@ -1,5 +1,6 @@
-import { CodeView, DEFAULT_THEMES, parsePatchFiles, preloadHighlighter } from "@pierre/diffs";
+import { CodeView, parsePatchFiles } from "@pierre/diffs";
 import { expect, it, vi } from "vite-plus/test";
+import { loadSharedHighlighter } from "../../../test/highlighter";
 
 const OLD_LINES = Array.from({ length: 60 }, (_, index) => `line ${index + 1}`);
 const NEW_LINES = OLD_LINES.with(0, "changed 1").with(59, "changed 60");
@@ -27,7 +28,7 @@ function parsePartialDiff() {
 // A diff refresh re-parses an unchanged patch into a new object with the same cacheKey.
 // Upstream keeps rendering the old object and then discards the file contents loaded for it.
 it("expands hidden context after the host re-supplies an unchanged partial diff", async () => {
-  await preloadHighlighter({ themes: Object.values(DEFAULT_THEMES), langs: ["text"] });
+  await using _highlighter = await loadSharedHighlighter(["text"]);
   const root = document.createElement("div");
   root.style.cssText = "width: 800px; height: 600px; overflow: auto;";
   document.body.append(root);

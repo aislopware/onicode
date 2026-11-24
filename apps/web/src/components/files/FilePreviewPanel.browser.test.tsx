@@ -1,4 +1,4 @@
-import { DEFAULT_THEMES, preloadHighlighter, Virtualizer } from "@pierre/diffs";
+import { Virtualizer } from "@pierre/diffs";
 import {
   EnvironmentId,
   ThreadId,
@@ -9,6 +9,7 @@ import { AsyncResult } from "effect/reactivity";
 import { StrictMode, type ReactNode } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { cdp, userEvent } from "vite-plus/test/browser";
+import { loadSharedHighlighter } from "../../../test/highlighter";
 import { act, fakeTimers, render } from "../../../test/render";
 import type { DraftId } from "~/composerDraftStore";
 import appCss from "~/index.css?inline";
@@ -263,8 +264,6 @@ function deepActiveElement() {
   return active;
 }
 
-// Before the tests that preload Shiki: Shiki can't load the app's Zed-only oni-light theme, and a
-// streamed source preview then never lays out (on main too; the app never preloads Shiki).
 describe("large file previews", () => {
   it("shows a draft's first megabyte when an older server mints no download for it", async () => {
     using _settings = setup();
@@ -375,7 +374,7 @@ describe("source file focus", () => {
     style.textContent = appCss;
     document.head.append(style);
     using _style = { [Symbol.dispose]: () => style.remove() };
-    await preloadHighlighter({ themes: Object.values(DEFAULT_THEMES), langs: ["typescript"] });
+    await using _highlighter = await loadSharedHighlighter(["typescript"]);
     const panel = () => (
       <div {...workspaceAreaProps("panel", 1, "Workspace panel")}>
         <div data-right-panel-surface-content>{filePreview("server.ts")}</div>
@@ -425,7 +424,7 @@ describe("source file focus", () => {
     style.textContent = appCss;
     document.head.append(style);
     using _style = { [Symbol.dispose]: () => style.remove() };
-    await preloadHighlighter({ themes: Object.values(DEFAULT_THEMES), langs: ["typescript"] });
+    await using _highlighter = await loadSharedHighlighter(["typescript"]);
     state.file = {
       relativePath: "server.ts",
       contents: "const server = 1;\n",
@@ -468,7 +467,7 @@ describe("source file scroll", () => {
     style.textContent = appCss;
     document.head.append(style);
     using _style = { [Symbol.dispose]: () => style.remove() };
-    await preloadHighlighter({ themes: Object.values(DEFAULT_THEMES), langs: ["typescript"] });
+    await using _highlighter = await loadSharedHighlighter(["typescript"]);
     const sourceFile = (relativePath: string, lines: number) => {
       const contents = Array.from({ length: lines }, (_, i) => `const line${i} = ${i};`).join("\n");
       state.file = { relativePath, contents, byteLength: contents.length, truncated: false };
@@ -535,7 +534,7 @@ describe("source file scroll", () => {
       style.textContent = appCss;
       document.head.append(style);
       using _style = { [Symbol.dispose]: () => style.remove() };
-      await preloadHighlighter({ themes: Object.values(DEFAULT_THEMES), langs: ["markdown"] });
+      await using _highlighter = await loadSharedHighlighter(["markdown"]);
 
       const lines = Array.from({ length: 400 }, (_, index) => `line ${index + 1} markdown content`);
       const contents = `${lines.join("\n")}\n`;
@@ -651,7 +650,7 @@ describe("source file scroll", () => {
     style.textContent = appCss;
     document.head.append(style);
     using _style = { [Symbol.dispose]: () => style.remove() };
-    await preloadHighlighter({ themes: Object.values(DEFAULT_THEMES), langs: ["typescript"] });
+    await using _highlighter = await loadSharedHighlighter(["typescript"]);
     const wrapped = "wrap ".repeat(60);
     const lines = Array.from({ length: 800 }, (_, i) => `const line${i} = "${wrapped}";`);
     lines[2] = `const needle0 = "${wrapped}";`;
@@ -725,7 +724,7 @@ describe("source file scroll", () => {
     style.textContent = appCss;
     document.head.append(style);
     using _style = { [Symbol.dispose]: () => style.remove() };
-    await preloadHighlighter({ themes: Object.values(DEFAULT_THEMES), langs: ["markdown"] });
+    await using _highlighter = await loadSharedHighlighter(["markdown"]);
     const lines = Array.from({ length: 400 }, (_, index) => `line ${index + 1} markdown content`);
     const contents = `${lines.join("\n")}\n`;
     state.file = {
