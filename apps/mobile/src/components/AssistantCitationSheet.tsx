@@ -1,5 +1,6 @@
 import { ASSISTANT_CITATION_MAX_COMMENT_LENGTH, type AssistantCitation } from "@onicode/contracts";
 import { scopedThreadKey } from "@onicode/client-runtime/environment";
+import { wordCutEnd, wordCutStart } from "@onicode/shared/String";
 import { useState } from "react";
 import { T, useGT } from "gt-react-native";
 import { Platform, ScrollView, TextInput, View } from "react-native";
@@ -17,15 +18,13 @@ const CONTEXT_CHARS = 80;
 function contextBefore(prefix: string) {
   const flat = prefix.replace(/\s+/g, " ");
   if (flat.length <= CONTEXT_CHARS) return flat.trimStart();
-  const cut = flat.slice(-CONTEXT_CHARS);
-  return `…${cut.slice(cut.indexOf(" ") + 1)}`;
+  return `…${flat.slice(wordCutStart(flat, CONTEXT_CHARS))}`;
 }
 
 function contextAfter(suffix: string) {
   const flat = suffix.replace(/\s+/g, " ");
   if (flat.length <= CONTEXT_CHARS) return flat.trimEnd();
-  const cut = flat.slice(0, CONTEXT_CHARS);
-  return `${cut.slice(0, cut.lastIndexOf(" "))}…`;
+  return `${flat.slice(0, wordCutEnd(flat, CONTEXT_CHARS))}…`;
 }
 
 export function AssistantCitationSheet(props: {

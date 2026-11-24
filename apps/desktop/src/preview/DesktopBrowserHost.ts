@@ -371,6 +371,12 @@ export const make = Effect.gen(function* () {
     waits: () => boolean,
     work: () => Promise<A>,
   ) => {
+    // A loop left with only dead waits may be sleeping toward a long prod; a new wait starts fresh.
+    for (const held of tab.frameWaits) if (!held()) tab.frameWaits.delete(held);
+    if (tab.frameWaits.size === 0 && tab.nudging !== null) {
+      runFork(Fiber.interrupt(tab.nudging));
+      tab.nudging = null;
+    }
     tab.frameWaits.add(waits);
     startNudging(tab);
     return work().finally(() => {

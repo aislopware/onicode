@@ -16,7 +16,8 @@ export const RESTORE_OOMD_WATCH_SCRIPT = [
   "p=$(( (limit * 10000 + 2147483648) / 4294967296 ))",
   'set -- ManagedOOMMemoryPressure=kill "ManagedOOMMemoryPressureLimit=$((p / 100)).$(printf %02d $((p % 100)))%"',
   "duration=$(show ManagedOOMMemoryPressureDurationUSec)",
-  'case $duration in "" | infinity) ;; *) set -- "$@" "ManagedOOMMemoryPressureDurationSec=$duration" ;; esac',
+  // Unset reads as "" before systemd 257 and `[not set]` from it on; a timespan starts with a digit.
+  'case $duration in [0-9]*) set -- "$@" "ManagedOOMMemoryPressureDurationSec=$duration" ;; esac',
   'exec systemctl --user set-property --runtime -- -.slice "$@"',
   "",
 ].join("\n");
