@@ -173,6 +173,12 @@ function transport(httpClient: HttpClient.HttpClient) {
   );
 }
 
+function withIssueStatus(status: unknown) {
+  const response = JSON.parse(DETAIL_RESPONSE);
+  response.data.repository.issue.status = status;
+  return response;
+}
+
 function tracker(
   onRequest: (variables: unknown, query: string) => void,
   templateRepository?: unknown,
@@ -216,7 +222,9 @@ function tracker(
                       },
                     },
                   })
-                : DETAIL_RESPONSE;
+                : query.includes("query IssueSummaryWithStatus")
+                  ? JSON.stringify(withIssueStatus(null))
+                  : DETAIL_RESPONSE;
           return Effect.succeed(
             HttpClientResponse.fromWeb(
               request,
@@ -442,6 +450,14 @@ describe("GitHubIssueTracker", () => {
           const operation = query.match(/(?:query|mutation)\s+(\w+)/)?.[1];
           if (operation === "IssueDetail") {
             response = fixture;
+          } else if (operation === "IssueSummaryWithStatus") {
+            response = {
+              data: {
+                repository: {
+                  issue: { ...fixture.data.repository.issue, status: planningStatuses.nodes[1] },
+                },
+              },
+            };
           } else if (operation === "IssueStatuses") {
             response = {
               data: {
@@ -485,6 +501,7 @@ describe("GitHubIssueTracker", () => {
         { category: "closed", name: "Duplicate", closeReason: "duplicate" },
       ]);
       expect(issue.viewerPermissions.setState).toBe(false);
+      expect((yield* api.getIssueSummary!(target)).state).toEqual(issue.state);
 
       yield* api.setState({ ...target, state: "Backlog" });
       // Closing as a duplicate through a status needs the original issue, so it closes over REST.
@@ -539,12 +556,13 @@ describe("GitHubIssueTracker", () => {
         limit: 10,
       });
       yield* api.getIssue({ ...target, key: "42" });
-      expect(queries).toHaveLength(2);
+      yield* api.getIssueSummary!({ ...target, key: "42" });
+      expect(queries).toHaveLength(3);
       for (const query of queries) expect(query).not.toMatch(/status|planningStatuses/i);
     }),
   );
 
-  it.effect("lists issues without statuses when GitHub refuses the status fields", () =>
+  it.effect("reads issues without statuses when GitHub refuses the status fields", () =>
     Effect.gen(function* () {
       const operations: string[] = [];
       const http = HttpClient.make((request) => {
@@ -552,12 +570,13 @@ describe("GitHubIssueTracker", () => {
         const { query } = decodeVariables(new TextDecoder().decode(request.body.body));
         const operation = query.match(/query\s+(\w+)/)?.[1] ?? "";
         operations.push(operation);
-        const body =
-          operation === "IssueSearchWithStatus"
-            ? {
-                data: null,
-                errors: [{ message: "Field 'status' doesn't exist on type 'Issue'" }],
-              }
+        const body = operation.endsWith("WithStatus")
+          ? {
+              data: null,
+              errors: [{ message: "Field 'status' doesn't exist on type 'Issue'" }],
+            }
+          : operation === "IssueSummary"
+            ? JSON.parse(DETAIL_RESPONSE)
             : {
                 data: { search: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] } },
               };
@@ -581,7 +600,19 @@ describe("GitHubIssueTracker", () => {
         limit: 10,
       });
       expect(listing.items).toEqual([]);
-      expect(operations).toEqual(["IssueSearchWithStatus", "IssueSearch"]);
+      const summary = yield* api.getIssueSummary!({
+        cwd: "/w",
+        host: "github.com",
+        scope: "acme/web",
+        key: "42",
+      });
+      expect(summary.key).toBe("42");
+      expect(operations).toEqual([
+        "IssueSearchWithStatus",
+        "IssueSearch",
+        "IssueSummaryWithStatus",
+        "IssueSummary",
+      ]);
     }),
   );
 
@@ -846,7 +877,7 @@ Redact secrets before uploading.`);
         key: "42",
       });
       expect(seen).toEqual([{ owner: "acme", name: "web", number: 42 }]);
-      expect(operations).toEqual(["IssueSummary"]);
+      expect(operations).toEqual(["IssueSummaryWithStatus"]);
       expect(queries.join("\n")).not.toMatch(/\b(body|comments\(last|timelineItems)\b/);
       expect(summary).toEqual({
         key: "42",

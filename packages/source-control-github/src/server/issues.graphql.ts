@@ -252,6 +252,62 @@ export declare namespace IssueSummary {
   export type Result = typeof IssueSummary.result.Type
 }
 
+/** An Issue is a place to discuss ideas, enhancements, tasks, and bugs for a project. */
+export const IssueSummaryWithStatusRepositoryIssueIssue = Schema.Struct({
+  ...IssueRow.fields,
+  /**
+   * The status of this issue, or null when it has none or issue statuses aren't
+   * available in the repository. Issue statuses are in preview and only available
+   * to accounts enrolled in the preview.
+   */
+  status: Schema.NullOr(PlanningStatusFields),
+  /** A list of Users assigned to this object. */
+  assignees: NodesAssigneesUserConnection,
+  /** A list of labels associated with the object. */
+  labels: Schema.NullOr(NodesLabelsLabelConnection),
+  /** A list of comments associated with the Issue. */
+  comments: NodesCommentsIssueCommentConnection
+})
+export interface IssueSummaryWithStatusRepositoryIssueIssue extends Schema.Struct.Type<typeof IssueSummaryWithStatusRepositoryIssueIssue.fields> {}
+
+/** A repository contains the content for a project. */
+export const IssueSummaryWithStatusRepositoryRepository = Schema.Struct({
+  /** Returns a single issue from the current repository by number. */
+  issue: Schema.NullOr(IssueSummaryWithStatusRepositoryIssueIssue)
+})
+export interface IssueSummaryWithStatusRepositoryRepository extends Schema.Struct.Type<typeof IssueSummaryWithStatusRepositoryRepository.fields> {}
+
+/** `query IssueSummaryWithStatus` */
+export const IssueSummaryWithStatus = GraphQL.query("IssueSummaryWithStatus", {
+  document: {
+    variables: [
+      { name: "owner", body: "String!" },
+      { name: "name", body: "String!" },
+      { name: "number", body: "Int!" }
+    ],
+    selections: [
+      { name: "repository", body: ["(owner:$", "owner", " name:$", "name", "){issue(number:$", "number", "){...IssueRow status{...PlanningStatusFields}assignees(first:20){nodes{login name avatarUrl}}labels(first:20){nodes{name color}}comments{totalCount}}}"] }
+    ],
+    fragments: [
+      { name: "IssueRow", body: ["on Issue{number title url state stateReason createdAt updatedAt closedAt author{__typename login avatarUrl...on User{name}}}"] },
+      { name: "PlanningStatusFields", body: ["on PlanningStatus{id name category{key state stateReason}}"] }
+    ]
+  },
+  variables: {
+    owner: Schema.String,
+    name: Schema.String,
+    number: Shared.Int
+  },
+  result: Schema.Struct({
+    /** Lookup a given repository by the owner and repository name. */
+    repository: Schema.NullOr(IssueSummaryWithStatusRepositoryRepository)
+  })
+})
+export declare namespace IssueSummaryWithStatus {
+  export type Variables = typeof IssueSummaryWithStatus.variables.Type
+  export type Result = typeof IssueSummaryWithStatus.result.Type
+}
+
 /** A user is an individual's account on GitHub that owns repositories and can make new content. */
 export const ViewerUser = Schema.Struct({
   /** The username used to login. */
@@ -1291,4 +1347,4 @@ export declare namespace SetIssueStatus {
 }
 
 /** Every operation in issues.graphql. */
-export const IssuesGraphQLGroup = GraphQLGroup.make(IssueSearch, IssueSummary, IssueDetail, IssueComments, IssueNodeId, IssueCommentScope, IssueCandidates, IssueTemplates, IssueViewer, IssueCollections, IssueSearchWithStatus, IssueStatuses, SetIssueStatus)
+export const IssuesGraphQLGroup = GraphQLGroup.make(IssueSearch, IssueSummary, IssueSummaryWithStatus, IssueDetail, IssueComments, IssueNodeId, IssueCommentScope, IssueCandidates, IssueTemplates, IssueViewer, IssueCollections, IssueSearchWithStatus, IssueStatuses, SetIssueStatus)
