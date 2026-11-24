@@ -1,4 +1,5 @@
 import {
+  ScheduledTaskError,
   scheduledTaskThreadMode,
   type ProjectId,
   type ScheduledTask,
@@ -6,6 +7,9 @@ import {
   type ScheduledTaskThreadMode,
   type ThreadId,
 } from "@onicode/contracts";
+import * as Schema from "effect/Schema";
+
+const isScheduledTaskError = Schema.is(ScheduledTaskError);
 
 /** What an editor loaded, sent so a save is refused once another client changed it. */
 export function scheduledTaskExpected(task: ScheduledTask): ScheduledTaskExpected {
@@ -22,6 +26,11 @@ export function scheduledTaskExpected(task: ScheduledTask): ScheduledTaskExpecte
     runtimeMode: task.runtimeMode,
     interactionMode: task.interactionMode,
   };
+}
+
+/** The stored task a refused save carries; the live list can still hold the one before it. */
+export function refusedScheduledTask(error: unknown): ScheduledTask | undefined {
+  return isScheduledTaskError(error) ? error.current : undefined;
 }
 
 /**

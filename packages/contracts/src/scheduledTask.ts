@@ -228,6 +228,8 @@ export class ScheduledTaskError extends Schema.TaggedError<ScheduledTaskError>()
   {
     message: Schema.String,
     taskId: Schema.optional(ScheduledTaskId),
+    /** The stored task, on a save refused because it changed. Absent from older servers. */
+    current: Schema.optional(ScheduledTask),
     cause: Schema.optional(Schema.Defect()),
   },
 ) {}

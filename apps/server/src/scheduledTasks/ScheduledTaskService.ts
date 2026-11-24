@@ -144,10 +144,14 @@ export class ScheduledTaskService extends Context.Service<
   }
 >()("onicode/scheduledTasks/ScheduledTaskService") {}
 
-function taskError(message: string, input?: { taskId?: ScheduledTaskId; cause?: unknown }) {
+function taskError(
+  message: string,
+  input?: { taskId?: ScheduledTaskId; current?: ScheduledTask; cause?: unknown },
+) {
   return new ScheduledTaskError({
     message,
     ...(input?.taskId === undefined ? {} : { taskId: input.taskId }),
+    ...(input?.current === undefined ? {} : { current: input.current }),
     ...(input?.cause === undefined ? {} : { cause: input.cause }),
   });
 }
@@ -157,7 +161,7 @@ function changedError(stored: ScheduledTask, expectedThreadId: ThreadId | null |
     expectedThreadId !== undefined && stored.threadId !== expectedThreadId
       ? "The task's thread changed while saving. Read the task again."
       : "The task changed while saving. Read the task again.",
-    { taskId: stored.id },
+    { taskId: stored.id, current: stored },
   );
 }
 
@@ -1268,16 +1272,51 @@ export const layer = Layer.effect(
         existingTask.projectId !== input.projectId &&
         keptThreadId === existingTask.threadId;
       const threadId = threadMode === "new_thread" || movedOffThread ? null : keptThreadId;
-      // An unchanged destination is not rechecked, so a task on an archived thread stays editable.
-      if (threadId !== null && threadId !== existingTask?.threadId) {
-        yield* requireDestinationThread(threadId, input.projectId, id);
-      }
+      // Clients send the thread they loaded; one equal to the stored thread is no change, so the
+      // save writes none and the stored binding wins at commit.
+      const keepsStoredThread = threadId !== null && threadId === existingTask?.threadId;
       // Refused on save rather than at run time; a disabled task can still be saved, so one
       // stored above the ceiling can be turned off before its mode is lowered. A task bound to a
       // thread runs in that thread's mode, which the orchestrator checks instead.
       const unboundModeDenial = input.enabled
         ? managedRuntimeModeDenial(managedPolicy.summary, input.runtimeMode)
         : undefined;
+      // A save that leaves the stored thread in place cannot undo another client's binding.
+      const changesThread = threadId !== (existingTask?.threadId ?? null);
+      const loadedThreadId =
+        changesThread || threadMode === "new_thread" ? input.expected?.threadId : undefined;
+      const expectedThreadId =
+        options?.expectedThreadId !== undefined
+          ? options.expectedThreadId
+          : loadedThreadId !== undefined
+            ? loadedThreadId
+            : // Unbound since the read, this mode would have been refused.
+              keepsStoredThread && unboundModeDenial !== undefined
+              ? threadId
+              : undefined;
+      const expected: ScheduledTaskExpectation | undefined =
+        input.expected === undefined && options?.expected === undefined
+          ? undefined
+          : { ...input.expected, ...options?.expected };
+      // The JSON columns compare decoded here, as an older row's text need not be canonical.
+      if (
+        existingTask !== null &&
+        ((expected !== undefined && !matchesExpectation(existingTask, expected)) ||
+          (expectedThreadId !== undefined && existingTask.threadId !== expectedThreadId))
+      ) {
+        return yield* changedError(existingTask, expectedThreadId);
+      }
+      // A save checked against a binding cannot bring back a task deleted meanwhile.
+      const requireExisting =
+        input.requireExisting === true || expectedThreadId !== undefined || expected !== undefined;
+      // Before the checks below, which a stale edit can fail for reasons that are not its own.
+      if (existingTask === null && requireExisting) {
+        return yield* taskError("Schedule task not found.", { taskId: id });
+      }
+      // An unchanged destination is not rechecked, so a task on an archived thread stays editable.
+      if (threadId !== null && threadId !== existingTask?.threadId) {
+        yield* requireDestinationThread(threadId, input.projectId, id);
+      }
       if (threadId === null && unboundModeDenial !== undefined) {
         return yield* taskError(unboundModeDenial, { taskId: id });
       }
@@ -1326,45 +1365,14 @@ export const layer = Layer.effect(
         lastRunError: existingTask?.lastRunError ?? null,
         runCount: existingTask?.runCount ?? 0,
       };
-      // Clients send the thread they loaded; one equal to the stored thread is no change, so the
-      // save writes none and the stored binding wins at commit.
-      const keepsStoredThread = threadId !== null && threadId === existingTask?.threadId;
       const keepsThread =
         existingTask !== null &&
         existingTask.projectId === input.projectId &&
         threadId === existingTask.threadId &&
         threadMode === scheduledTaskThreadMode(existingTask);
-      // A save that leaves the stored thread in place cannot undo another client's binding.
-      const changesThread = threadId !== (existingTask?.threadId ?? null);
-      const loadedThreadId =
-        changesThread || threadMode === "new_thread" ? input.expected?.threadId : undefined;
-      const expectedThreadId =
-        options?.expectedThreadId !== undefined
-          ? options.expectedThreadId
-          : loadedThreadId !== undefined
-            ? loadedThreadId
-            : // Unbound since the read, this mode would have been refused.
-              keepsStoredThread && unboundModeDenial !== undefined
-              ? threadId
-              : undefined;
-      const expected: ScheduledTaskExpectation | undefined =
-        input.expected === undefined && options?.expected === undefined
-          ? undefined
-          : { ...input.expected, ...options?.expected };
-      // The JSON columns compare decoded here, as an older row's text need not be canonical.
-      if (
-        existingTask !== null &&
-        expected !== undefined &&
-        !matchesExpectation(existingTask, expected)
-      ) {
-        return yield* changedError(existingTask, expectedThreadId);
-      }
       yield* saveTask(
         keepsStoredThread ? { ...task, threadId: null } : task,
-        // A save checked against a binding cannot bring back a task deleted meanwhile.
-        input.requireExisting === true ||
-          expectedThreadId !== undefined ||
-          expected !== undefined,
+        requireExisting,
         scheduleUnchanged ? existingTask.schedule : null,
         threadId === null && input.unbindThread === true ? (existingTask?.threadId ?? null) : null,
         {

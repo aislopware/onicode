@@ -25,7 +25,10 @@ import {
   type AtomCommandResult,
 } from "@onicode/client-runtime/state/runtime";
 import { normalizeProjectPathForDispatch, resolvePastedPath } from "@onicode/shared/path";
-import { scheduledTaskExpected } from "@onicode/client-runtime/scheduled-task-draft";
+import {
+  refusedScheduledTask,
+  scheduledTaskExpected,
+} from "@onicode/client-runtime/scheduled-task-draft";
 import { scheduledTaskWorktreeBaseRef } from "@onicode/client-runtime/scheduled-task-worktree";
 import { scheduleTimeZoneLabel } from "@onicode/client-runtime/scheduled-task-time-zone";
 import type { MessageResolver } from "../../i18n/messages";
@@ -786,9 +789,11 @@ function TaskForm({
     if (result._tag === "Failure") {
       submissionPending.current = false;
       // Another client's change refuses the save; keep the user's edits over what is stored now.
-      const stored = AsyncResult.getOrElse(registry.get(tasksAtom), () => null)?.tasks.find(
-        (task) => task.id === draft.task?.id,
-      );
+      const stored =
+        refusedScheduledTask(squashAtomCommandFailure(result)) ??
+        AsyncResult.getOrElse(registry.get(tasksAtom), () => null)?.tasks.find(
+          (task) => task.id === draft.task?.id,
+        );
       if (stored !== undefined) setDraft((latest) => rebaseScheduledTaskDraft(latest, stored));
       failure(gt("Could not save task"), result);
       return;
