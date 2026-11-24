@@ -256,6 +256,7 @@ it.effect.each([
   const layerTest = ThreadManagementService.layerWithLegacyImporter.pipe(
     Layer.provide(
       Layer.succeed(ThreadWorktreeRestore, {
+        takeRecreated: () => Effect.undefined,
         restore: () =>
           Effect.fail(
             new WorktreeRecreateError({
