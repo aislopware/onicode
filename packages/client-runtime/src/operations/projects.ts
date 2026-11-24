@@ -11,7 +11,7 @@ import type {
   SourceControlRepositoryInfo,
 } from "@onicode/contracts";
 import { SourceControlProviderKind } from "@onicode/contracts";
-import { cloneUrlRepositoryPath } from "@onicode/shared/cloneUrl";
+import { cloneUrlRepositoryPath, isScpLikeCloneUrl } from "@onicode/shared/cloneUrl";
 import {
   isAbsolutePath,
   isExplicitRelativePath,
@@ -240,9 +240,12 @@ export function getAddProjectInitialQuery(baseDirectory: string | null | undefin
 
 export function getCloneDirectoryName(repositoryOrRemoteUrl: string | null | undefined): string {
   const trimmed = (repositoryOrRemoteUrl ?? "").trim();
-  // Only a URL or `host:path` has a query or fragment; a local path keeps `#` and `?` in its name.
+  // Only a URL or `host:path` has a query or fragment; local paths keep `#` and `?`, and SCP
+  // paths keep a literal `#` in the repository name.
   const isRemote = trimmed.includes("://") || (!isHostPath(trimmed) && /^[^/\\]+:/.test(trimmed));
-  const withoutQuery = isRemote ? (trimmed.split(/[?#]/)[0] ?? "") : trimmed;
+  const withoutQuery = isRemote
+    ? trimmed.split(isScpLikeCloneUrl(trimmed) ? "?" : /[?#]/, 1)[0]!
+    : trimmed;
   const schemeIndex = withoutQuery.indexOf("://");
   const hasHost = schemeIndex >= 0 || /^[^/\\:]+@[^/\\:]+:/.test(withoutQuery);
   const pathPart = schemeIndex >= 0 ? withoutQuery.slice(schemeIndex + "://".length) : withoutQuery;
