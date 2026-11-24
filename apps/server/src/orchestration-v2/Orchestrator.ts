@@ -10222,13 +10222,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               mergeBackSourceProjection.thread.id,
               sourceRuns.map((run) => run.id),
             );
+            // Everything since the fork's latest /clear merges back, its scheduled sessions too.
             const conversation = conversationRuns(
               {
                 runs: sourceRuns,
                 turnItems: rawItems,
                 providerThreads: mergeBackSourceProjection.providerThreads,
               },
-              mergeBackSourceRun,
+              undefined,
+              { withScheduledRuns: true },
             );
             return visibleConversationItems(
               mergeBackSourceProjection,

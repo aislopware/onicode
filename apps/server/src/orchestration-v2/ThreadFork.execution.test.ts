@@ -1830,12 +1830,23 @@ it.effect("merge-back carries only the fork's context since its latest /clear", 
       stable: true,
       freshContext: true,
     });
+    // A fresh-session schedule is a side conversation, not a /clear of the fork's own.
+    yield* writeParentRun({
+      threadId: forkId,
+      runId: RunId.make("merge-back-clear-fork-run-3"),
+      ordinal: 3,
+      status: "completed",
+      text: "SCHEDULED_MARKER",
+      stable: true,
+      freshContext: true,
+      scheduled: true,
+    });
     yield* orchestrator.dispatch({
       type: "thread.merge_back",
       commandId: CommandId.make("merge-back-clear-merge"),
       sourceThreadId: forkId,
       targetThreadId: parentId,
-      sourcePoint: { type: "run", runId: clearRunId },
+      sourcePoint: { type: "latest_stable" },
       createdBy: "user",
       creationSource: "web",
     });
@@ -1844,6 +1855,7 @@ it.effect("merge-back carries only the fork's context since its latest /clear", 
     const parent = yield* orchestrator.getThreadProjection(parentId);
     const context = parent.contextHandoffs.map((handoff) => handoff.summaryText).join("\n");
     assert.include(context, "AFTER_CLEAR_MARKER");
+    assert.include(context, "SCHEDULED_MARKER");
     assert.notInclude(context, "BEFORE_CLEAR_MARKER");
   }).pipe(Effect.provide(forkCases[0]!.layer)),
 );
