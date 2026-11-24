@@ -11263,85 +11263,115 @@ describe("CodexAdapterV2 post-settle continuation", () => {
     ),
   );
 
-  it.effect("leaves a late child's result to the root's next turn when one is running", () =>
-    Effect.gen(function* () {
-      const secondPrompt = "Wait for the sub-agent.";
-      const secondTurn = "native-codex-resume-root-turn-2";
-      const { spawned, rootFinished } = lateChildPrefix();
-      // Reuse the preamble's turn/start exchange under the session's next request id.
-      const secondTurnStart = codexReplayPreamble({
-        nativeThreadId: RESUME_NATIVE_THREAD,
-        nativeTurnId: secondTurn,
-        prompt: secondPrompt,
-      })
-        .slice(-3)
-        .map((entry) =>
-          entry.type !== "runtime_exit" &&
-          typeof entry.frame === "object" &&
-          entry.frame !== null &&
-          "id" in entry.frame
-            ? { ...entry, frame: { ...entry.frame, id: 4 } }
-            : entry,
-        );
-      const harness = yield* makeCodexReplayHarness(
-        makeCodexReplayTranscript({
-          scenario: RESUME_SCENARIO,
-          entries: [
-            ...spawned,
-            ...rootFinished,
-            ...secondTurnStart,
-            childAgentMessage({
-              id: "child-late-answer",
-              text: "CHILD_DURING_SECOND_TURN",
-              turnId: RESUME_CHILD_TURN_1,
-              completedAtMs: 1782622480000,
-            }),
-            childTurnCompleted(RESUME_CHILD_TURN_1),
-            {
-              type: "emit_inbound",
-              label: "turn/completed/root-2",
-              frame: {
-                method: "turn/completed",
-                params: {
-                  threadId: RESUME_NATIVE_THREAD,
-                  turn: makeCodexReplayTurn({ id: secondTurn, status: "completed" }),
+  it.effect.each(["first", "next"] as const)(
+    "leaves a late child's result to the root's next turn when one is running (child starts in %s turn)",
+    (childStart) =>
+      Effect.gen(function* () {
+        const secondPrompt = "Wait for the sub-agent.";
+        const secondTurn = "native-codex-resume-root-turn-2";
+        const prefix = lateChildPrefix();
+        const spawned = childStart === "first" ? prefix.spawned : prefix.spawned.slice(0, -1);
+        const rootFinished = prefix.rootFinished;
+        // Reuse the preamble's turn/start exchange under the session's next request id.
+        const secondTurnStart = codexReplayPreamble({
+          nativeThreadId: RESUME_NATIVE_THREAD,
+          nativeTurnId: secondTurn,
+          prompt: secondPrompt,
+        })
+          .slice(-3)
+          .map((entry) =>
+            entry.type !== "runtime_exit" &&
+            typeof entry.frame === "object" &&
+            entry.frame !== null &&
+            "id" in entry.frame
+              ? { ...entry, frame: { ...entry.frame, id: 4 } }
+              : entry,
+          );
+        const harness = yield* makeCodexReplayHarness(
+          makeCodexReplayTranscript({
+            scenario: RESUME_SCENARIO,
+            entries: [
+              ...spawned,
+              ...rootFinished,
+              ...secondTurnStart,
+              ...(childStart === "next" ? [childTurnStarted(RESUME_CHILD_TURN_1)] : []),
+              childAgentMessage({
+                id: "child-late-answer",
+                text: "CHILD_DURING_SECOND_TURN",
+                turnId: RESUME_CHILD_TURN_1,
+                completedAtMs: 1782622480000,
+              }),
+              childTurnCompleted(RESUME_CHILD_TURN_1),
+              {
+                type: "emit_inbound",
+                label: "turn/completed/root-2",
+                frame: {
+                  method: "turn/completed",
+                  params: {
+                    threadId: RESUME_NATIVE_THREAD,
+                    turn: makeCodexReplayTurn({ id: secondTurn, status: "completed" }),
+                  },
                 },
               },
-            },
-          ],
-        }),
-      );
+            ],
+          }),
+        );
 
-      const turnInput = (index: number, text: string) =>
-        Effect.gen(function* () {
-          return {
-            ...makeCodexTestTurnInput({
-              threadId: harness.threadId,
-              providerThread: harness.providerThread,
-              now: yield* DateTime.now,
-              attemptId: RunAttemptId.make(`attempt-codex-active-root-${index}`),
-              text,
-            }),
-            runOrdinal: index,
-            providerTurnOrdinal: index,
-          };
-        });
-      yield* harness.runtime.startTurn(yield* turnInput(1, RESUME_PROMPT));
-      yield* harness.awaitTerminal(1);
-      yield* harness.runtime.startTurn(yield* turnInput(2, secondPrompt));
-      yield* harness.awaitTerminal(2);
-      assert.equal(harness.subagentUpdates().at(-1)?.subagent.result, "CHILD_DURING_SECOND_TURN");
-      assert.lengthOf(harness.continuationRequests, 0);
-    }).pipe(
-      Effect.provide(
-        Layer.mergeAll(
-          IdAllocator.layer,
-          McpProviderSessions.layer,
-          NodeServices.layer,
-          NodeCrypto.layer,
+        const turnInput = (index: number, text: string) =>
+          Effect.gen(function* () {
+            return {
+              ...makeCodexTestTurnInput({
+                threadId: harness.threadId,
+                providerThread: harness.providerThread,
+                now: yield* DateTime.now,
+                attemptId: RunAttemptId.make(`attempt-codex-active-root-${index}`),
+                text,
+              }),
+              runOrdinal: index,
+              providerTurnOrdinal: index,
+            };
+          });
+        yield* harness.runtime.startTurn(yield* turnInput(1, RESUME_PROMPT));
+        yield* harness.awaitTerminal(1);
+        yield* harness.runtime.startTurn(yield* turnInput(2, secondPrompt));
+        yield* harness.awaitTerminal(2);
+        assert.equal(harness.subagentUpdates().at(-1)?.subagent.result, "CHILD_DURING_SECOND_TURN");
+        assert.lengthOf(harness.continuationRequests, 0);
+        // Clients group a card by run and provider turn; both must stay on the spawning turn.
+        const cards = harness.events.flatMap((event) =>
+          event.type === "turn_item.updated" && event.turnItem.type === "subagent"
+            ? [event.turnItem]
+            : [],
+        );
+        const nodes = harness.events.flatMap((event) =>
+          event.type === "node.updated" && event.node.kind === "subagent" ? [event.node] : [],
+        );
+        const rootTurnIds = harness.events.flatMap((event) =>
+          event.type === "provider_turn.updated" && event.threadId === harness.threadId
+            ? [event.providerTurn.id]
+            : [],
+        );
+        assert.equal(new Set(rootTurnIds).size, 2);
+        assert.equal(cards.at(-1)?.status, "completed");
+        assert.equal(nodes.at(-1)?.status, "completed");
+        assert.deepEqual(
+          [
+            ...new Set(
+              [...cards, ...nodes].map(({ runId, providerTurnId }) => `${runId}|${providerTurnId}`),
+            ),
+          ],
+          [`${cards[0]?.runId}|${rootTurnIds[0]}`],
+        );
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+          ),
         ),
       ),
-    ),
   );
 
   it.effect.each(["model/rerouted"] as const)(
