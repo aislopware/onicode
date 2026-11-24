@@ -3634,3 +3634,4 @@ e9c952495c	take	fix(server): keep short RGB terminal colors on reattach (#41882)
 0aeb7921c2	skip	T3's trademark policy and branding wording for its own name and forks; Onicode has its own name, icon and docs, and ships no T3 Code branding
 9331811180	take	fix(clients): threads can be dragged above threads from a disconnected machine (#41885)
 ac3af66f21	take	taken as is
+28d6719114	take	test conflict: kept Onicode's Proxy-env case beside upstream's Windows tree-kill case
