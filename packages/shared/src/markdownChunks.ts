@@ -222,6 +222,8 @@ function scanMarkdown(
   // A cut needs no open wrapper, so a resumed scan starts with none.
   let openWrappers = 0;
   let wrapperStart = 0;
+  // The last cut an open wrapper held back, which a piece too large to render falls back to.
+  let held: { line: number; resume: MarkdownSplitResume } | null = null;
   // The kind of line whose comment is still open; it does not continue into another kind.
   let commentIn: "html" | "text" | null = null;
   let inCommentBlock = false;
@@ -238,17 +240,15 @@ function scanMarkdown(
     } else {
       // The last line may still be growing; "1" can become "1. item" and "#" "#tag".
       if (openWrappers > 0 && chars - wrapperStart >= WRAPPED_MAX_CHARS) openWrappers = 0;
-      const cut =
+      const cutPoint =
         lines.length > 0 &&
         index < textLines.length - 1 &&
         chars >= targetChars &&
-        openWrappers === 0 &&
         (ATX_HEADING.test(line) ||
           (afterBlankLine &&
             ((BLOCK_START.test(line) && !ORDERED_ITEM.test(line)) || WRAPPER_START.test(line))));
-      if (cut) {
-        chunks.push({ text: lines.join("\n"), lines: lines.length });
-        resume = {
+      if (cutPoint) {
+        const at: MarkdownSplitResume = {
           targetChars,
           textLength: 0,
           start: offset,
@@ -260,8 +260,15 @@ function scanMarkdown(
           afterDefinition,
           afterHeading,
         };
-        lines = [];
-        chars = 0;
+        if (openWrappers === 0) {
+          chunks.push({ text: lines.join("\n"), lines: lines.length });
+          resume = at;
+          lines = [];
+          chars = 0;
+          held = null;
+        } else {
+          held = { line: lines.length, resume: at };
+        }
       }
       closes = blockCloser(line);
       // A definition cannot interrupt a paragraph, so it follows a blank line, a heading or
@@ -307,6 +314,17 @@ function scanMarkdown(
     }
     lines.push(line);
     chars += line.length + 1;
+    // Cuts at the held cut and rescans from it, as extendMarkdownSplit would resume there. A last
+    // line may still become a cut itself, so it waits for its line break.
+    if (
+      held !== null &&
+      index < textLines.length - 1 &&
+      chars - 1 > LARGE_MARKDOWN_CHUNK_MAX_CHARS
+    ) {
+      chunks.push({ text: lines.slice(0, held.line).join("\n"), lines: held.line });
+      const kept = definitions.join("\n").slice(0, held.resume.definitions);
+      return scanMarkdown(text, targetChars, chunks, kept, held.resume);
+    }
     afterBlankLine = inFrontmatter || line.trim() === "";
     afterHeading = closes === null && (ATX_HEADING.test(line) || THEMATIC_BREAK.test(line));
     offset += line.length + 1;
