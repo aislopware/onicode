@@ -9185,6 +9185,8 @@
   "6e820a7742353257": "Introduce un intervalo de al menos un minuto.",
   "9e596c405f5cea09": "Una vez no está disponible aquí",
   "799f05fba79f8857": "Este entorno ejecuta una versión antigua de Onicode. Actualízalo para programar una tarea única o elige otra programación.",
+  "19ab0e577aa36532": "Los webhooks no están disponibles aquí",
+  "29f850e9ae4ce83e": "Este entorno usa una versión antigua de {product}. Actualízalo para ejecutar una tarea por webhook o elige otra programación.",
   "71d8554090924454": "Se requiere la ruta del checkout",
   "a34b72de0ff1cbd0": "Introduce la ruta del checkout donde ejecutar.",
   "99a8c45121157edd": "No se pudo guardar la tarea programada",

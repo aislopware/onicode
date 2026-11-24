@@ -9195,6 +9195,8 @@
   "6e820a7742353257": "Ange ett intervall på minst en minut.",
   "9e596c405f5cea09": "En gång är inte tillgängligt här",
   "799f05fba79f8857": "Den här miljön kör en äldre version av Onicode. Uppdatera den för att schemalägga en engångsuppgift, eller välj ett annat schema.",
+  "19ab0e577aa36532": "Webhooks är inte tillgängliga här",
+  "29f850e9ae4ce83e": "Den här miljön kör en äldre {product}. Uppdatera den för att köra en uppgift vid webhook, eller välj ett annat schema.",
   "71d8554090924454": "Sökväg till utcheckningen krävs",
   "a34b72de0ff1cbd0": "Ange sökvägen till utcheckningen som ska köras i.",
   "99a8c45121157edd": "Kunde inte spara den schemalagda uppgiften",

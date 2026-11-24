@@ -83,6 +83,20 @@ it.effect(
           cleared.task.schedule.type === "webhook" && cleared.task.schedule.dedupe,
           {},
         );
+        // Dedupe without keys takes the plain path, with no dedupe transaction.
+        const spans: Array<string> = [];
+        const plain = yield* service.triggerWebhook(request("D")).pipe(
+          Effect.withTracer(
+            Tracer.make({
+              span: (options) => {
+                spans.push(options.name);
+                return new Tracer.NativeSpan(options);
+              },
+            }),
+          ),
+        );
+        assert.equal(plain._tag === "accepted" && plain.outcome, "accepted");
+        assert.notInclude(spans, "ScheduledTaskService.acceptWebhookDedupe");
       }),
     ),
 );

@@ -100,6 +100,16 @@ export function deviceMcpUrl(addresses: ReadonlyArray<string | null>): string | 
   return loopback === undefined ? null : mcpUrlFor(loopback);
 }
 
+/** A token needs no sign-in, so any http address this device reaches works for one. */
+export function tokenMcpUrl(addresses: ReadonlyArray<string | null>): string | null {
+  const plain = addresses
+    .map(parseUrl)
+    .find((url) => url !== null && (url.protocol === "http:" || url.protocol === "https:"));
+  return (
+    deviceMcpUrl(addresses) ?? (plain === undefined || plain === null ? null : mcpUrlFor(plain))
+  );
+}
+
 /** Public MCP address: only while public agents is on and Funnel answers. */
 export const publicMcpUrl = (agentsEnabled: boolean, status: PublicAccessStatus | null) =>
   agentsEnabled && status?._tag === "on" ? `${status.origin}/mcp` : null;

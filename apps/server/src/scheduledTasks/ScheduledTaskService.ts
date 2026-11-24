@@ -2482,9 +2482,11 @@ export const layer = Layer.effect(
             };
           }
 
+          const deduping =
+            schedule.dedupe?.replayKey !== undefined || schedule.dedupe?.coalesceKey !== undefined;
           const runWindow = (yield* Ref.get(webhookRateWindows)).get(task.id);
           if (
-            schedule.dedupe === undefined &&
+            !deduping &&
             (runWindow?.accepted.filter((entry) => DateTime.toEpochMillis(now) - entry.at < 60_000)
               .length ?? 0) >= WEBHOOK_RATE_LIMIT_PER_MINUTE
           ) {
@@ -2524,33 +2526,32 @@ export const layer = Layer.effect(
                   : Effect.fail(isScheduledTaskError(cause) ? cause : dedupeError(cause)),
               ),
             );
-          const deduped =
-            schedule.dedupe === undefined
-              ? "run"
-              : yield* admit(
-                  Effect.gen(function* () {
-                    const outcome = yield* acceptWebhookDedupe(
-                      task,
-                      request,
-                      deliveryId,
-                      DateTime.toEpochMillis(now),
-                      reserve,
-                      takeDedupeLogSlot(task.id, DateTime.toEpochMillis(now)),
-                      checkCapacity,
-                      (ownerId) => replaceDeliveryRequest(ownerId, request),
-                    ).pipe(Effect.provideService(SqlClient.SqlClient, sql));
-                    if (
-                      outcome === "pending" ||
-                      outcome === "coalesced" ||
-                      (outcome === "duplicate" &&
-                        (yield* takeDedupeLogSlot(task.id, DateTime.toEpochMillis(now))))
-                    )
-                      yield* log(outcome === "pending" ? "accepted" : outcome, {
-                        signatureVerified: signature !== null,
-                      });
-                    return outcome;
-                  }),
-                );
+          const deduped = !deduping
+            ? "run"
+            : yield* admit(
+                Effect.gen(function* () {
+                  const outcome = yield* acceptWebhookDedupe(
+                    task,
+                    request,
+                    deliveryId,
+                    DateTime.toEpochMillis(now),
+                    reserve,
+                    takeDedupeLogSlot(task.id, DateTime.toEpochMillis(now)),
+                    checkCapacity,
+                    (ownerId) => replaceDeliveryRequest(ownerId, request),
+                  ).pipe(Effect.provideService(SqlClient.SqlClient, sql));
+                  if (
+                    outcome === "pending" ||
+                    outcome === "coalesced" ||
+                    (outcome === "duplicate" &&
+                      (yield* takeDedupeLogSlot(task.id, DateTime.toEpochMillis(now))))
+                  )
+                    yield* log(outcome === "pending" ? "accepted" : outcome, {
+                      signatureVerified: signature !== null,
+                    });
+                  return outcome;
+                }),
+              );
           if (typeof deduped !== "string") {
             yield* refundRejectionSlot;
             if (deduped.log) yield* log("rate_limited");

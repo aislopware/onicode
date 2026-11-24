@@ -13,6 +13,7 @@ import {
   closestGrantable,
   deviceMcpUrl,
   publicMcpUrl,
+  tokenMcpUrl,
 } from "./agentAccess.logic";
 
 const session = (levels: ReadonlyArray<AuthMcpClientAccess>) => ({
@@ -88,10 +89,16 @@ describe("deviceMcpUrl", () => {
       expected: "https://studio.tail1.ts.net/mcp",
     },
     { addresses: ["http://localhost:3773"], expected: "http://localhost:3773/mcp" },
-    { addresses: ["http://192.168.1.4:3773", "http://100.64.1.2:3773"], expected: null },
+    // A token needs no sign-in, so it falls back to plain http.
+    {
+      addresses: ["http://192.168.1.4:3773", "http://100.64.1.2:3773"],
+      expected: null,
+      token: "http://192.168.1.4:3773/mcp",
+    },
     { addresses: [null, "studio-ssh"], expected: null },
-  ])("$addresses gives $expected", ({ addresses, expected }) => {
+  ])("$addresses gives $expected", ({ addresses, expected, token }) => {
     expect(deviceMcpUrl(addresses)).toBe(expected);
+    expect(tokenMcpUrl(addresses)).toBe(token ?? expected);
   });
 });
 

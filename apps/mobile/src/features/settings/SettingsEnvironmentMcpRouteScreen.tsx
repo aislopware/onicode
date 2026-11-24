@@ -52,6 +52,7 @@ import {
   codexCommands,
   DEFAULT_AGENT_ACCESS,
   deviceMcpUrl,
+  tokenMcpUrl,
   formatCountdown,
   outsideAgentSessions,
 } from "../agent-access/agentAccess.logic";
@@ -144,11 +145,11 @@ function McpSetup({
     catalog.entries.get(environmentId),
   );
   const publicAccess = usePublicAccess(environmentId);
-  const deviceUrl = deviceMcpUrl([
+  const addresses = [
     prepared._tag === "Some" ? prepared.value.httpBaseUrl : null,
     ...(entry === undefined ? [] : connectionRoutes(entry).map(connectionRouteAddress)),
-  ]);
-  const agentUrl = deviceUrl ?? publicAccess.mcpUrl;
+  ];
+  const agentUrl = deviceMcpUrl(addresses) ?? publicAccess.mcpUrl;
   const denied = useGrantableAgentAccess(environmentId, environmentLabel);
   const [picked, setPicked] = useState<AuthMcpClientAccess | null>(null);
   const access = picked ?? closestGrantable(DEFAULT_AGENT_ACCESS, denied);
@@ -211,7 +212,11 @@ function McpSetup({
             environmentLabel={environmentLabel}
             access={access}
           />
-          <AgentToken environmentId={environmentId} access={access} mcpUrl={agentUrl} />
+          <AgentToken
+            environmentId={environmentId}
+            access={access}
+            mcpUrl={agentUrl ?? tokenMcpUrl(addresses)}
+          />
         </>
       )}
       <ConnectedAgents environmentId={environmentId} />

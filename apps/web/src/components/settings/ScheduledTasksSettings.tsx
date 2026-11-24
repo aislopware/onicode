@@ -1709,6 +1709,16 @@ function ScheduledTaskEditorForm({
       );
       return;
     }
+    if (schedule.type === "webhook" && !offersWebhook) {
+      reportFailure(
+        gt("Webhooks are not available here"),
+        gt(
+          "This environment runs an older {product}. Update it to run a task on a webhook, or pick another schedule.",
+          { product: "Onicode" },
+        ),
+      );
+      return;
+    }
     if (draft.workspaceMode === "existing_worktree" && !draft.existingWorktreePath.trim()) {
       reportFailure(
         gt("Checkout path is required"),
