@@ -389,8 +389,9 @@ const parseProcEnvironThread = (raw: string): ThreadId | null => {
 };
 
 /**
- * A listener with an agent thread in its environment. An agent CLI is a direct child of this
- * server and has that environment too, but its own ports are not servers it started.
+ * A listener with an agent thread in its environment. An agent CLI is spawned directly by this
+ * server or its Linux process launcher and has that environment too, but its own ports are not
+ * servers it started.
  */
 interface AgentListener {
   readonly threadId: ThreadId;

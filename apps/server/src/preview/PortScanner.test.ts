@@ -1070,31 +1070,31 @@ effectIt.effect.each(["linux", "darwin"] as const)(
 effectIt.effect("stops only a job's own process group", () =>
   Effect.sync(() => {
     const serverPid = 100;
+    const launcherPid = 150;
     const rows = [
       { pid: 10, ppid: 1, pgid: 10 }, // `vp run dev`, whose job holds this server
       { pid: 20, ppid: 10, pgid: 10 }, // the web dev server in the same job
       { pid: serverPid, ppid: 10, pgid: 10 },
-      { pid: 200, ppid: serverPid, pgid: 200 }, // agent CLI
+      { pid: launcherPid, ppid: serverPid, pgid: 10 }, // Linux ProcessLauncher worker
+      { pid: 200, ppid: serverPid, pgid: 200 }, // direct agent CLI
       { pid: 210, ppid: 200, pgid: 200 }, // a server it spawned without a group of its own
+      { pid: 250, ppid: launcherPid, pgid: 250 }, // launcher-spawned agent CLI (e.g. agy acp)
+      { pid: 260, ppid: 250, pgid: 250 }, // a server in the launcher-spawned agent CLI's group
+      { pid: 270, ppid: 250, pgid: 270 }, // a job started by the launcher-spawned agent CLI
       { pid: 300, ppid: 200, pgid: 300 }, // agent tool shell
       { pid: 400, ppid: 300, pgid: 400 }, // `npm run dev &`
       { pid: 401, ppid: 400, pgid: 400 },
       { pid: 500, ppid: serverPid, pgid: 500 }, // terminal shell
       { pid: 600, ppid: 500, pgid: 600 }, // terminal job
-      { pid: 150, ppid: serverPid, pgid: 10 }, // the Linux process launcher
-      { pid: 700, ppid: 150, pgid: 700 }, // an agent CLI the launcher spawned
-      { pid: 710, ppid: 700, pgid: 700 },
-      { pid: 800, ppid: 700, pgid: 800 }, // its tool shell's job
     ];
     const table = new Map(rows.map((row) => [row.pid, row]));
-    const isServerChild = (ppid: number) => ppid === serverPid || ppid === 150;
-    expect(PortScanner.stoppableProcessGroup(table, 401, serverPid)).toBe(400);
-    expect(PortScanner.stoppableProcessGroup(table, 600, serverPid)).toBe(600);
-    expect(PortScanner.stoppableProcessGroup(table, 800, serverPid, isServerChild)).toBe(800);
-    for (const pid of [20, 210, 500, 999]) {
-      expect(PortScanner.stoppableProcessGroup(table, pid, serverPid)).toBeNull();
+    const isServerChild = (ppid: number) => ppid === serverPid || ppid === launcherPid;
+    expect(PortScanner.stoppableProcessGroup(table, 401, serverPid, isServerChild)).toBe(400);
+    expect(PortScanner.stoppableProcessGroup(table, 600, serverPid, isServerChild)).toBe(600);
+    expect(PortScanner.stoppableProcessGroup(table, 270, serverPid, isServerChild)).toBe(270);
+    for (const pid of [20, 150, 210, 250, 260, 500, 999]) {
+      expect(PortScanner.stoppableProcessGroup(table, pid, serverPid, isServerChild)).toBeNull();
     }
-    expect(PortScanner.stoppableProcessGroup(table, 710, serverPid, isServerChild)).toBeNull();
     // The tool shell is the command; its `npm run dev &` job only inherited the name.
     const variables = new Map([
       [200, new Map<string, string>()],
