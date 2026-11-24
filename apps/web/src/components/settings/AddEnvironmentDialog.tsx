@@ -67,6 +67,7 @@ import {
   formatDesktopSshConnectionError,
 } from "./ConnectionsSettings.logic";
 import { TailnetDevicePicker } from "./TailnetDevicePicker";
+import { isImeKeyDown } from "../../lib/imeKeyDown";
 
 const SSH_PROTOCOL_NAME = "SSH";
 const EMPTY_DISCOVERED_SSH_HOSTS: ReadonlyArray<DesktopDiscoveredSshHost> = [];
@@ -361,7 +362,7 @@ export function AddEnvironmentDialog({
   };
 
   const handleSavedBackendSshFieldKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+    if (isImeKeyDown(event.nativeEvent)) return;
     if (event.key === "Enter" && savedBackendSshHost.trim().length > 0) {
       event.preventDefault();
       void handleAddSavedBackend();
@@ -396,7 +397,7 @@ export function AddEnvironmentDialog({
   };
 
   const handleSavedBackendSshHostKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+    if (isImeKeyDown(event.nativeEvent)) return;
 
     const isSshHostPopupVisible = sshHostSuggestionsOpen && hasSshHostSuggestionContent;
     if (isSshHostPopupVisible) {

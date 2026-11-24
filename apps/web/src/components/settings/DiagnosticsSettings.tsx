@@ -1,5 +1,6 @@
 import { thrownErrorMessage } from "@onicode/client-runtime/errors";
 import { m as resolveMessage } from "~/i18n/messages";
+import { moveChartBarFocus } from "./chartBarFocus";
 import { ProcessSignalActions } from "./ProcessSignalActions";
 import { resolveUsageAccess } from "@onicode/client-runtime/state/usage-access";
 import { environmentSession } from "../../state/session";
@@ -521,22 +522,27 @@ function ProcessResourceHistoryChart({
 
   return (
     <div className="border-t border-border px-4 py-3 sm:px-5">
-      <div className="flex h-28 items-end gap-1 overflow-hidden rounded-sm bg-muted p-2">
-        {buckets.map((bucket) => {
+      <div
+        className="flex h-28 items-end gap-1 overflow-hidden rounded-sm bg-muted p-2"
+        onKeyDown={moveChartBarFocus}
+      >
+        {buckets.map((bucket, index) => {
           const peakHeight = Math.max(2, (bucket.maxCpuPercent / maxCpuPercent) * 100);
           const averageHeight = Math.max(2, (bucket.avgCpuPercent / maxCpuPercent) * 100);
           return (
             <Tooltip key={DateTime.formatIso(bucket.startedAt)}>
               <TooltipTrigger
                 render={
-                  <div className="flex h-full min-w-1 flex-1 items-end">
+                  <div
+                    role="img"
+                    aria-label={gt("Average CPU {average}%, peak CPU {peak}%", {
+                      average: bucket.avgCpuPercent.toFixed(1),
+                      peak: bucket.maxCpuPercent.toFixed(1),
+                    })}
+                    tabIndex={index === 0 ? 0 : -1}
+                    className="flex h-full min-w-1 flex-1 items-end rounded-sm outline-none focus-visible:outline-ring-inset"
+                  >
                     <div className="relative h-full w-full">
-                      <span className="sr-only">
-                        {gt("Average CPU {average}%, peak CPU {peak}%", {
-                          average: bucket.avgCpuPercent.toFixed(1),
-                          peak: bucket.maxCpuPercent.toFixed(1),
-                        })}
-                      </span>
                       <div
                         className="absolute inset-x-0 bottom-0 rounded-t-sm bg-foreground/15 transition-colors"
                         style={{ height: `${peakHeight}%` }}

@@ -17,6 +17,7 @@ import { readableFailure } from "./pullRequestDetail.logic";
 import { canEditPullRequestChangeRequest } from "@onicode/client-runtime/pull-request-editing";
 
 import { changeRequestTermKind } from "./changeRequestTerm";
+import { isImeKeyDown } from "../../lib/imeKeyDown";
 
 /** The pull request title, which the reader can rename in place when the host allows it. */
 export function PullRequestTitleEditor({
@@ -103,7 +104,7 @@ export function PullRequestTitleEditor({
         )}
         onChange={(event) => setTitleScope({ pullRequestKey, text: event.target.value })}
         onKeyDown={(event) => {
-          if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+          if (isImeKeyDown(event.nativeEvent)) return;
           if (event.key === "Enter") {
             event.preventDefault();
             void saveTitle(titleDraft);

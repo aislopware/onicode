@@ -167,6 +167,8 @@ interface Tokenized {
   readonly root: Root;
   /** Elements with a `data-sourcepos`, which raw HTML can write too. */
   readonly positioned: Element[];
+  /** Each `<p>` start tag's element, in order. */
+  readonly paragraphs: Element[];
 }
 
 /**
@@ -176,6 +178,7 @@ interface Tokenized {
 function tokenize(html: string, offsetOf: (byte: number) => number): Tokenized {
   const root: Root = { type: "root", children: [] };
   const positioned: Element[] = [];
+  const paragraphs: Element[] = [];
   const stack: Array<Root | Element> = [root];
   let svgDepth = 0;
   let last = 0;
@@ -241,6 +244,7 @@ function tokenize(html: string, offsetOf: (byte: number) => number): Tokenized {
       };
       positioned.push(element);
     }
+    if (tagName === "p") paragraphs.push(element);
     const parent = stack.at(-1)!;
     (parent.children as ElementContent[]).push(element);
     if (tagName === "a") {
@@ -267,8 +271,20 @@ function tokenize(html: string, offsetOf: (byte: number) => number): Tokenized {
     end.value = end.value.replace(/\n$/, "");
     if (end.value.trim() === "") root.children.pop();
   }
-  return { root, positioned };
+  return { root, positioned, paragraphs };
 }
+
+/** Paragraphs written as raw HTML that look like the bare `<p>` Words writes for Markdown. */
+const rawParagraphs = new WeakSet<Element>();
+
+const hasLineBreak = (node: Element): boolean =>
+  node.children.some((child) =>
+    child.type === "text"
+      ? child.value.includes("\n")
+      : child.type === "element" && hasLineBreak(child),
+  );
+const breaksLines = (paragraph: Element) =>
+  Object.keys(paragraph.properties).length === 0 && hasLineBreak(paragraph);
 
 const positionKey = (node: Element) =>
   `${node.tagName.toLowerCase()}:${node.position!.start.offset}-${node.position!.end.offset}`;
@@ -280,10 +296,10 @@ const positionKey = (node: Element) =>
  */
 function parse(markdown: string, options: RenderOptions): Root {
   const offsetOf = utf16Offsets(markdown);
-  const render = (escapeHtml?: true) =>
+  const render = (source: string, escapeHtml?: true) =>
     tokenize(
       decoder.decode(
-        renderToHtml(markdown, {
+        renderToHtml(source, {
           ...options,
           ...(escapeHtml ? { escapeHtml } : {}),
           sourcePositions: true,
@@ -291,10 +307,25 @@ function parse(markdown: string, options: RenderOptions): Root {
       ),
       offsetOf,
     );
-  const { root, positioned } = render();
-  if (options.escapeHtml || options.skipHtml || !/data-sourcepos/i.test(markdown)) return root;
+  const { root, positioned, paragraphs } = render(markdown);
+  if (options.escapeHtml || options.skipHtml) return root;
+  // An attribute on each `<p>` in the source reaches the tag only where Words passes raw HTML on.
+  const marked = markdown.replace(/<p(?=\s*\/?>)/gi, "$& data-raw-paragraph");
+  if (marked !== markdown && paragraphs.some(breaksLines)) {
+    const markedParagraphs = render(marked).paragraphs;
+    // The attribute can change how Words reads its line (a `<p>` in a link destination stops
+    // being a link); then the paragraphs no longer pair up, and none are marked.
+    if (markedParagraphs.length === paragraphs.length) {
+      for (const [index, paragraph] of paragraphs.entries()) {
+        if (markedParagraphs[index]!.properties.dataRawParagraph !== undefined) {
+          rawParagraphs.add(paragraph);
+        }
+      }
+    }
+  }
+  if (!/data-sourcepos/i.test(markdown)) return root;
   const generated = new Map<string, number>();
-  for (const node of render(true).positioned) {
+  for (const node of render(markdown, true).positioned) {
     const key = positionKey(node);
     generated.set(key, (generated.get(key) ?? 0) + 1);
   }
@@ -833,9 +864,13 @@ function transform(node: Root | Element, walk: Walk, inLink: boolean, inCode: bo
         if (node.type === "element") node.properties.className = ["contains-task-list"];
       }
       if (child.position) breakLines(child, walk.options.breaks);
-    } else if (tagName === "p" && Object.keys(child.properties).length === 0) {
-      // Words writes a Markdown paragraph bare; one with attributes is raw HTML, which keeps its
-      // lines as written, as remark-breaks never touched raw HTML.
+    } else if (
+      tagName === "p" &&
+      Object.keys(child.properties).length === 0 &&
+      !rawParagraphs.has(child)
+    ) {
+      // Words writes a Markdown paragraph bare; one with attributes is raw HTML. Raw HTML keeps its
+      // lines as written, as remark-breaks never touched it.
       breakLines(child, walk.options.breaks);
     } else if (tagName === "blockquote") {
       // remarkGithubAlerts

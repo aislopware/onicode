@@ -35,6 +35,7 @@ import {
   visiblePdfPages,
 } from "./pdfLayout";
 import "./pdfViewer.css";
+import { isImeKeyDown } from "../../lib/imeKeyDown";
 
 const MAX_PAGES = 2000;
 const MAX_FIND_TEXT = 4 * 1024 * 1024;
@@ -643,8 +644,7 @@ export default function PdfViewer(props: {
               setFindError(null);
             }}
             onKeyDown={(event) => {
-              if (event.key !== "Escape" || event.nativeEvent.isComposing || event.keyCode === 229)
-                return;
+              if (event.key !== "Escape" || isImeKeyDown(event.nativeEvent)) return;
               if (!query && !event.repeat) return;
               event.stopPropagation();
               setQuery("");

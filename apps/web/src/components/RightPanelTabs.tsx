@@ -116,6 +116,7 @@ import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { observeResize } from "~/lib/observeResize";
 import { surfaceShortcutKey } from "~/lib/surfaceShortcutKey";
+import { isImeKeyDown } from "../lib/imeKeyDown";
 
 export interface RightPanelTabsProps {
   mode: PreviewPanelMode;
@@ -1040,7 +1041,7 @@ function RightPanelTab(
           onBlur={(event) => onFinishRename(surface.id, event.currentTarget.value)}
           onKeyDown={(event) => {
             event.stopPropagation();
-            if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+            if (isImeKeyDown(event.nativeEvent)) return;
             if (event.key === "Enter") event.currentTarget.blur();
             if (event.key === "Escape") {
               event.currentTarget.value = title;

@@ -298,6 +298,7 @@ import { readIssueListPreferences } from "~/components/issue/issueListPreference
 import { IssueGlyph } from "~/components/issue/issuePresentation";
 import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
 import { threadRecentUse } from "@onicode/shared/paletteSearch";
+import { isImeKeyDown } from "../lib/imeKeyDown";
 
 const EMPTY_BROWSE_ENTRIES: FilesystemBrowseResult["entries"] = [];
 const FOLDER_SEARCH_DEBOUNCE_MS = 150;
@@ -2840,7 +2841,7 @@ function OpenCommandPaletteDialog(props: {
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
-    if (event.key === "Enter" && (event.nativeEvent.isComposing || event.keyCode === 229)) {
+    if (event.key === "Enter" && isImeKeyDown(event.nativeEvent)) {
       // Confirming an IME candidate must not submit a path or select a row.
       (event as typeof event & { preventBaseUIHandler?: () => void }).preventBaseUIHandler?.();
       return;
@@ -2866,8 +2867,7 @@ function OpenCommandPaletteDialog(props: {
     // Global new-thread handlers ignore shortcuts while the palette is open.
     const isJump = threadJumpIndexFromCommand(command ?? "") !== null;
     const isNewThread =
-      !event.nativeEvent.isComposing &&
-      event.keyCode !== 229 &&
+      !isImeKeyDown(event.nativeEvent) &&
       (command === "chat.new" ||
         command === "chat.newLocal" ||
         command === "chat.newWithoutProject");
@@ -2920,8 +2920,7 @@ function OpenCommandPaletteDialog(props: {
       event.key === "Enter" &&
       (!hasHighlightedNewProjectItem || isPrimaryModifierPressed(event)) &&
       // Enter that confirms an IME composition is part of typing the name.
-      !event.nativeEvent.isComposing &&
-      event.keyCode !== 229
+      !isImeKeyDown(event.nativeEvent)
     ) {
       // Base UI would otherwise also click the highlighted row.
       (event as typeof event & { preventBaseUIHandler?: () => void }).preventBaseUIHandler?.();
@@ -2954,7 +2953,7 @@ function OpenCommandPaletteDialog(props: {
     if (event.ctrlKey || event.shiftKey || event.altKey || event.metaKey) return;
 
     if (event.key === "Tab" && isBrowsing && !relativePathNeedsActiveProject) {
-      if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+      if (isImeKeyDown(event.nativeEvent)) return;
       (event as typeof event & { preventBaseUIHandler?: () => void }).preventBaseUIHandler?.();
       event.preventDefault();
       if (highlightedItemValue === "browse:up") {
@@ -2996,7 +2995,7 @@ function OpenCommandPaletteDialog(props: {
     }
 
     // Virtualization may unmount the highlighted row; handle Enter directly instead of Base UI's click.
-    if (event.key === "Enter" && !event.nativeEvent.isComposing && event.keyCode !== 229) {
+    if (event.key === "Enter" && !isImeKeyDown(event.nativeEvent)) {
       const highlightedItem = findHighlightedCommandPaletteItem(
         displayedGroups,
         highlightedItemValue ?? firstItemValue ?? null,

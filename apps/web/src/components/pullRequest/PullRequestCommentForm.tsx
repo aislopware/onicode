@@ -21,6 +21,7 @@ import { pullRequestReviewKey } from "./pullRequestReviewStore";
 import { useInlineActionConfirm } from "./useInlineActionConfirm";
 
 import { changeRequestTermKind } from "./changeRequestTerm";
+import { isImeKeyDown } from "../../lib/imeKeyDown";
 
 export function PullRequestCommentForm({
   environmentId,
@@ -134,7 +135,7 @@ export function PullRequestCommentForm({
         )}
         onValueChange={setBody}
         onKeyDown={(event) => {
-          if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+          if (isImeKeyDown(event.nativeEvent)) return;
           if (
             event.key === "Enter" &&
             (event.metaKey || event.ctrlKey) &&

@@ -24,6 +24,7 @@ import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collaps
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../ui/input-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
+import { isImeKeyDown } from "../../lib/imeKeyDown";
 
 class LicenseManifestLoadError extends Schema.TaggedError<LicenseManifestLoadError>()(
   "LicenseManifestLoadError",
@@ -214,8 +215,7 @@ function LicenseHeaderAction({
           }}
           onChange={(event) => onQueryChange(event.currentTarget.value)}
           onKeyDown={(event) => {
-            if (event.key !== "Escape" || event.nativeEvent.isComposing || event.keyCode === 229)
-              return;
+            if (event.key !== "Escape" || isImeKeyDown(event.nativeEvent)) return;
             event.preventDefault();
             event.stopPropagation();
             // Unmounting the focused input lets the dialog move focus to a control whose

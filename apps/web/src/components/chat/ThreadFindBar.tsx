@@ -10,6 +10,7 @@ import {
   type ThreadFindAnnouncement,
 } from "./threadFind";
 import { THREAD_DETAILS_CARD_GAP } from "./threadDetailsCardLayout";
+import { isImeKeyDown } from "../../lib/imeKeyDown";
 
 interface ThreadFindBarProps {
   readonly open: boolean;
@@ -69,7 +70,7 @@ export function ThreadFindBar(props: ThreadFindBarProps) {
   const navigationDisabled =
     props.matchCount === 0 || props.status === "loading" || props.counting === true;
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+    if (isImeKeyDown(event.nativeEvent)) return;
     if (event.key === "Enter") {
       event.preventDefault();
       event.stopPropagation();
@@ -98,9 +99,11 @@ export function ThreadFindBar(props: ThreadFindBarProps) {
         aria-busy={props.status === "loading" || props.counting === true}
         className="w-full"
       >
+        {/* Native search inputs clear on Escape even during IME composition. */}
         <InputGroupInput
           ref={inputRef}
-          type="search"
+          type="text"
+          role="searchbox"
           size="sm"
           value={props.query}
           aria-label={gt("Find in thread")}

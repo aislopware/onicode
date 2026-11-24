@@ -22,6 +22,7 @@ import {
   ORCHESTRATION_V2_WS_METHODS,
   ScheduledTaskId,
   WS_METHODS,
+  type AuthEnvironmentScope,
   type AuthSessionState,
   type PeerLinkSummary,
 } from "@onicode/contracts";
@@ -197,6 +198,29 @@ describe("command permissions", () => {
         expect(registry.get(check.permissionAtom(env))).toBe(true);
         yield* check.authorize(registry, env);
       }),
+  );
+
+  it.effect("requires the settings and operate grants to save project scripts", () =>
+    Effect.gen(function* () {
+      const registry = yield* setup;
+      const update = createCommandPermissions(runtime, WS_METHODS.serverUpdateSettings);
+      const scripts = { patch: { defaultProjectScripts: [] } };
+      const holding = (...scopes: AuthEnvironmentScope[]) =>
+        AsyncResult.success({ ...grant(false), scopes, permissions: scopes });
+      registry.set(sessions(env), holding(AuthSettingsWriteScope));
+      expect(registry.get(update.permissionAtom(env))).toBe(true);
+      expect(registry.get(update.permissionAtom(env, scripts))).toBe(false);
+      expect(
+        (yield* update.authorize(registry, env, scripts).pipe(Effect.flip)).requiredPermission,
+      ).toBe(AuthOrchestrationOperateScope);
+      yield* update.authorize(registry, env, { patch: { projectSettingsOverrides: {} } });
+      registry.set(sessions(env), holding(AuthOrchestrationOperateScope));
+      expect(registry.get(update.permissionAtom(env))).toBe(false);
+      expect(registry.get(update.permissionAtom(env, scripts))).toBe(false);
+      registry.set(sessions(env), holding(AuthSettingsWriteScope, AuthOrchestrationOperateScope));
+      expect(registry.get(update.permissionAtom(env, scripts))).toBe(true);
+      yield* update.authorize(registry, env, scripts);
+    }),
   );
 
   it.effect("requires the destination settings grant to connect or bind an issue tracker", () =>

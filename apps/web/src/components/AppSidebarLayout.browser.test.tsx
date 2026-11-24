@@ -9,6 +9,7 @@ vi.mock(import("../state/server"), async (original) => {
   const { compileResolvedKeybindingsConfig } = await import("@onicode/shared/keybindings");
   const keybindings = compileResolvedKeybindingsConfig([
     { key: "mod+b", command: "sidebar.toggle", when: "!terminalFocus" },
+    { key: "f6", command: "workspace.focusNext" },
   ]);
   return { ...actual, primaryServerKeybindingsAtom: Atom.make(keybindings) };
 });
@@ -67,5 +68,31 @@ describe("pull requests Escape", () => {
       expect(event.defaultPrevented, JSON.stringify(init)).toBe(leaves);
     }
     await vi.waitFor(() => expect(screen.router?.state.location.pathname).toBe("/"));
+  });
+});
+
+describe("workspace focus F6", () => {
+  it("leaves a keydown an IME composition owns to the input", async () => {
+    await using screen = await render(
+      <AppSidebarLayout>
+        <textarea aria-label="Message" />
+      </AppSidebarLayout>,
+    );
+    const input = screen.getByRole("textbox", { name: "Message" });
+    await userEvent.click(input);
+    for (const [init, moves] of [
+      [{ isComposing: true }, false],
+      [{ keyCode: 229 }, false],
+      [{}, true],
+    ] as const) {
+      const event = new KeyboardEvent("keydown", {
+        key: "F6",
+        ...init,
+        bubbles: true,
+        cancelable: true,
+      });
+      await act(() => input.element().dispatchEvent(event));
+      expect(event.defaultPrevented, JSON.stringify(init)).toBe(moves);
+    }
   });
 });

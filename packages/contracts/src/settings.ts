@@ -2140,6 +2140,18 @@ export function requiredScopesForServerSettingsPatch(
   ];
 }
 
+/** A provider instance change alone is provider authority; with a patch it adds to the patch's. */
+export function requiredScopesForServerSettingsUpdate(input: {
+  readonly patch: ServerSettingsPatch;
+  readonly providerInstanceMutation?: unknown;
+}): ReadonlyArray<AuthEnvironmentScope> {
+  const scopes = requiredScopesForServerSettingsPatch(input.patch);
+  if (input.providerInstanceMutation === undefined) return scopes;
+  return Object.values(input.patch).every((value) => value === undefined)
+    ? [AuthProvidersManageScope]
+    : [...new Set([...scopes, AuthProvidersManageScope])];
+}
+
 /** Host-executed project scripts require settings-write authority in addition to orchestration:operate. */
 export function requiredScopesForProjectMutation(
   mutation: ProjectMutation,

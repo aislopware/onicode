@@ -61,13 +61,22 @@ function withoutComments(line: string, inComment: boolean): [kept: string, inCom
   return [kept + line.slice(at), false];
 }
 
-function openedWrappers(text: string, closersOnly: boolean): number {
-  let opened = 0;
+/** The wrapper depth after `text`, and whether its last open wrapper closed on the way. */
+function wrapperDepth(
+  text: string,
+  closersOnly: boolean,
+  depth: number,
+): { readonly depth: number; readonly closed: boolean } {
+  let closed = false;
   for (const [, closing] of text.matchAll(WRAPPER_TAG)) {
-    if (closing) opened -= 1;
-    else if (!closersOnly) opened += 1;
+    if (!closing) {
+      if (!closersOnly) depth += 1;
+    } else if (depth > 0) {
+      depth -= 1;
+      closed ||= depth === 0;
+    }
   }
-  return opened;
+  return { depth, closed };
 }
 
 const COMMENT_START = /^ {0,3}<!--/;
@@ -138,14 +147,18 @@ export interface SplitMarkdown {
 }
 
 /**
- * Cuts Markdown into pieces of about `targetChars` at column-0 block starts, never at an
- * unfinished last line; frontmatter stays in the first piece. Link definitions are shared across
- * pieces. Footnotes resolve only within a piece, so a file under the large-chunk cap that defines
- * one stays whole. Duplicate heading slugs restart per piece.
+ * Cuts Markdown into pieces of about `targetChars` at column-0 block starts; frontmatter stays in
+ * the first piece. Unless the text is `complete`, its last line may still grow, so it is never a
+ * cut. Link definitions are shared across pieces. Footnotes resolve only within a piece, so a file
+ * under the large-chunk cap that defines one stays whole. Duplicate heading slugs restart per piece.
  */
-export function splitMarkdown(text: string, targetChars = CHUNK_TARGET_CHARS): SplitMarkdown {
+export function splitMarkdown(
+  text: string,
+  targetChars = CHUNK_TARGET_CHARS,
+  complete = false,
+): SplitMarkdown {
   if (keepsWhole(text)) return wholeMarkdown(text);
-  return scanMarkdown(text, targetChars, [], "", {
+  return scanMarkdown(text, targetChars, complete, [], "", {
     targetChars,
     textLength: 0,
     start: 0,
@@ -167,6 +180,7 @@ export function extendMarkdownSplit(
   previous: SplitMarkdown,
   text: string,
   targetChars = CHUNK_TARGET_CHARS,
+  complete = false,
 ): SplitMarkdown {
   const resume = previous.resume;
   // Callers only append; these checks catch a shorter text, another piece size, or a lost resume.
@@ -177,17 +191,18 @@ export function extendMarkdownSplit(
     text.charCodeAt(resume.start - 1) !== 10 ||
     keepsWhole(text)
   ) {
-    return splitMarkdown(text, targetChars);
+    return splitMarkdown(text, targetChars, complete);
   }
   // Frontmatter is settled once its closer or line cap lies before the last cut.
   const frontmatter =
     resume.frontmatter > 0 || resume.linesBefore > FRONTMATTER_MAX_LINES
       ? resume.frontmatter
       : leadingFrontmatterLength(text);
-  if (frontmatter !== resume.frontmatter) return splitMarkdown(text, targetChars);
+  if (frontmatter !== resume.frontmatter) return splitMarkdown(text, targetChars, complete);
   return scanMarkdown(
     text,
     targetChars,
+    complete,
     previous.chunks.slice(0, -1),
     previous.definitions.slice(0, resume.definitions),
     resume,
@@ -207,6 +222,7 @@ function wholeMarkdown(text: string): SplitMarkdown {
 function scanMarkdown(
   text: string,
   targetChars: number,
+  complete: boolean,
   chunks: MarkdownChunk[],
   definitionsBefore: string,
   from: MarkdownSplitResume,
@@ -235,6 +251,8 @@ function scanMarkdown(
   let offset = from.start;
   let linesBefore = from.linesBefore;
   const textLines = (from.start > 0 ? text.slice(from.start) : text).split("\n");
+  // Lines from this index on may still grow, so they are not cuts.
+  const wholeLines = complete ? textLines.length : textLines.length - 1;
   for (let index = 0; index < textLines.length; index++) {
     const line = textLines[index] ?? "";
     const inFrontmatter = offset < frontmatter;
@@ -248,7 +266,7 @@ function scanMarkdown(
       if (openWrappers > 0 && chars - wrapperStart >= WRAPPED_MAX_CHARS) openWrappers = 0;
       const cutPoint =
         lines.length > 0 &&
-        index < textLines.length - 1 &&
+        index < wholeLines &&
         chars >= targetChars &&
         (ATX_HEADING.test(line) ||
           (afterBlankLine &&
@@ -309,9 +327,13 @@ function scanMarkdown(
           htmlLine ? line : line.replace(INLINE_CODE, ""),
           commentIn !== null,
         );
-        const wasOpen = openWrappers > 0;
-        openWrappers = Math.max(0, openWrappers + openedWrappers(kept, !htmlLine));
-        if (!wasOpen && openWrappers > 0) wrapperStart = chars;
+        const wrappers = wrapperDepth(kept, !htmlLine, openWrappers);
+        // Only a wrapper open before this line can hold a cut; one opened and closed on it cannot.
+        const closedOpen = openWrappers > 0 && wrappers.closed;
+        if ((openWrappers === 0 || closedOpen) && wrappers.depth > 0) wrapperStart = chars;
+        openWrappers = wrappers.depth;
+        // A cut held inside a wrapper that has since closed would split it.
+        if (closedOpen) held = null;
         commentIn = stillInComment ? kind : null;
       }
       inCommentBlock = (inCommentBlock || opensComment) && closes !== null;
@@ -321,12 +343,8 @@ function scanMarkdown(
     lines.push(line);
     chars += line.length + 1;
     // Cuts at the held cut and rescans from it in place, as extendMarkdownSplit would resume
-    // there. A last line may still become a cut itself, so it waits for its line break.
-    if (
-      held !== null &&
-      index < textLines.length - 1 &&
-      chars - 1 > LARGE_MARKDOWN_CHUNK_MAX_CHARS
-    ) {
+    // there. A growing last line may still become a cut itself, so it waits for its line break.
+    if (held !== null && index < wholeLines && chars - 1 > LARGE_MARKDOWN_CHUNK_MAX_CHARS) {
       chunks.push({ text: lines.slice(0, held.line).join("\n"), lines: held.line });
       ({ afterBlankLine, afterDefinition, afterHeading, definitionChars } = held.resume);
       resume = held.resume;

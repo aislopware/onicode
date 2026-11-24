@@ -286,6 +286,7 @@ import {
   SidebarSectionHeader,
   SidebarSectionPlaceholder,
 } from "./sidebar/SidebarListMarkers";
+import { isImeKeyDown } from "../lib/imeKeyDown";
 
 function sameSidebarProviderEntries(
   left: ReadonlyMap<string, SidebarProviderEntry>,
@@ -1576,8 +1577,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     if (match) openThreadFindOnQuery(scopedThreadKey(ref), findForMessageMatch(match, query));
   };
   const handleThreadSearchKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
-    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
-    if (event.key === "Escape" && isSearchingThreads) {
+    if (isImeKeyDown(event.nativeEvent)) return;
+    if (event.key === "Escape" && threadSearchQuery !== "") {
       event.preventDefault();
       event.stopPropagation();
       clearThreadSearch();
@@ -3192,11 +3193,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                       placeholder={gt("Search projects…")}
                       value={projectScopeMenuState.query}
                       onKeyDown={(event) => {
-                        if (
-                          event.defaultPrevented ||
-                          event.nativeEvent.isComposing ||
-                          event.keyCode === 229
-                        ) {
+                        if (event.defaultPrevented || isImeKeyDown(event.nativeEvent)) {
                           return;
                         }
                         const scopeKey = highlightedProjectScopeKeyRef.current;

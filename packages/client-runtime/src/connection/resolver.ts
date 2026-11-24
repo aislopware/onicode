@@ -117,10 +117,7 @@ const makeBearerBroker = Effect.fn("clientRuntime.connection.broker.makeBearer")
       });
     }
     if (profile.environmentId !== target.environmentId) {
-      return yield* environmentMismatchError({
-        expected: target.environmentId,
-        actual: profile.environmentId,
-      });
+      return yield* profileMissingError(target.connectionId);
     }
     const credential = yield* credentials.get(credentialConnectionId(target.connectionId)).pipe(
       Effect.flatMap(
@@ -170,10 +167,7 @@ const makeSshBroker = Effect.fn("clientRuntime.connection.broker.makeSsh")(funct
       });
     }
     if (profile.environmentId !== target.environmentId) {
-      return yield* environmentMismatchError({
-        expected: target.environmentId,
-        actual: profile.environmentId,
-      });
+      return yield* profileMissingError(target.connectionId);
     }
     // Each pairing adds a session on the host, so connects reuse the saved token.
     const saved = Option.getOrUndefined(yield* credentials.get(target.connectionId));
@@ -255,10 +249,7 @@ export const make = Effect.gen(function* () {
         Effect.provideService(HttpClient.HttpClient, httpClient),
       ));
     if (descriptor.environmentId !== target.environmentId) {
-      return yield* environmentMismatchError({
-        expected: target.environmentId,
-        actual: descriptor.environmentId,
-      });
+      return yield* environmentMismatchError();
     }
     return { prepared, descriptor };
   });

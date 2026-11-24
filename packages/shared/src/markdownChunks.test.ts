@@ -12,8 +12,8 @@ import { maskMarkdownFrontmatter } from "./markdownFrontmatter.ts";
 const splitLargeMarkdown = (text: string, targetChars?: number) =>
   splitMarkdown(text, targetChars).chunks;
 
-const starts = (text: string) =>
-  splitLargeMarkdown(text, 1).map((chunk) => chunk.text.split("\n")[0]);
+const starts = (text: string, complete?: boolean) =>
+  splitMarkdown(text, 1, complete).chunks.map((chunk) => chunk.text.split("\n")[0]);
 
 describe("splitMarkdown", () => {
   it("cuts only where a new top-level block starts, and keeps every byte", () => {
@@ -283,11 +283,39 @@ describe("splitMarkdown", () => {
     const longLine = "x".repeat(LARGE_MARKDOWN_CHUNK_MAX_CHARS - head.length);
     expect(starts(head + longLine)).toEqual(["<details>"]);
     expect(starts(`${head}${longLine}x`)).toEqual(["<details>"]);
+    expect(starts(`${head}${longLine}x`, true)).toEqual(["<details>", `${longLine}x`]);
     expect(starts(`${head}${longLine}x\n`)).toEqual(["<details>", `${longLine}x`]);
     expect(starts(`${head}\`\`\`json\n${longLine}\n\`\`\`\n\n</details>`)).toEqual([
       "<details>",
       "```json",
     ]);
+    const closedThenLong = ["<details>", "", "intro", "", "para", "", "</details>", "", "- "];
+    expect(
+      starts(
+        `${closedThenLong.join("\n")}${"x".repeat(LARGE_MARKDOWN_CHUNK_MAX_CHARS)}\n\nafter\n`,
+      ),
+    ).toEqual(["<details>", "after"]);
+    const reopened = ["<details>", "", "intro", "", "para", "", "</details><details>", ""];
+    expect(
+      starts(
+        `${reopened.join("\n")}${"x".repeat(LARGE_MARKDOWN_CHUNK_MAX_CHARS)}\n\n</details>\n\nafter\n`,
+      ),
+    ).toEqual(["<details>", "after"]);
+    // A wrapper that opens and closes on one line, after an unclosed one stopped counting, closes
+    // nothing that holds a cut.
+    const stopped = [
+      "<details>",
+      "",
+      "intro",
+      "",
+      "y".repeat(33 * 1024),
+      "",
+      "<span><table></table></span>",
+      "",
+    ];
+    expect(
+      starts(`${stopped.join("\n")}1. ${"z".repeat(LARGE_MARKDOWN_CHUNK_MAX_CHARS)}\n\nafter\n`),
+    ).toEqual(["<details>", "y".repeat(33 * 1024), "after"]);
   });
 
   it("treats an autolink line as a paragraph, so a following fence still opens", () => {
@@ -308,6 +336,7 @@ describe("splitMarkdown", () => {
   it("never cuts at the last line, which may still be growing", () => {
     expect(starts("# a\n# b")).toEqual(["# a"]);
     expect(starts("# a\n# b\n")).toEqual(["# a", "# b"]);
+    expect(starts("# a\n# b", true)).toEqual(["# a", "# b"]);
   });
 
   it("keeps leading frontmatter in the first piece", () => {
@@ -422,6 +451,7 @@ describe("extendMarkdownSplit", () => {
   // longer one after it no longer fits, the short one does.
   const cappedDefinitions = `# A\n\n[a]: /${"a".repeat(16_000)}\n\n# B\n\n[b]: /${"b".repeat(400)}\n\n[c]: /c\n\n# C\n`;
   const heldPastLimit = `<details>\n\nintro\n\npara ${"x".repeat(LARGE_MARKDOWN_CHUNK_MAX_CHARS)}\n\n</details>\n\n# B\n`;
+  const finishedPastLimit = `<details>\n\nintro\n\npara ${"x".repeat(LARGE_MARKDOWN_CHUNK_MAX_CHARS)}`;
   const near = (text: string, marker: string, offsets: readonly number[]) =>
     offsets.map((offset) => text.indexOf(marker) + offset);
   it.each([
@@ -480,12 +510,21 @@ describe("extendMarkdownSplit", () => {
         heldPastLimit.length - 2,
       ],
     },
-  ])("splits $name as if split whole", ({ text, cuts, reusesFrom = 0 }) => {
-    const whole = splitMarkdown(text, 8);
+    {
+      name: "a finished text whose last line passes the render limit",
+      text: finishedPastLimit,
+      complete: true,
+      cuts: [
+        ...near(finishedPastLimit, "para", [0, 3, LARGE_MARKDOWN_CHUNK_MAX_CHARS - 20]),
+        finishedPastLimit.length,
+      ],
+    },
+  ])("splits $name as if split whole", ({ text, cuts, reusesFrom = 0, complete }) => {
+    const whole = splitMarkdown(text, 8, complete);
     let streamed = splitMarkdown("", 8);
     for (const cut of cuts ?? Array.from({ length: text.length + 1 }, (_, index) => index)) {
       const previous = splitMarkdown(text.slice(0, cut), 8);
-      const extended = extendMarkdownSplit(previous, text, 8);
+      const extended = extendMarkdownSplit(previous, text, 8, complete);
       expect(extended).toEqual(whole);
       if (cut >= reusesFrom) {
         for (const [index, chunk] of previous.chunks.slice(0, -1).entries()) {

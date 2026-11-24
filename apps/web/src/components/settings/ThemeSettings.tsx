@@ -160,7 +160,12 @@ function ThemeLibraryCard({
                     }
                   }}
                   onKeyDown={(event) => {
-                    if (event.key === "Escape") setRadialModeOpen(null);
+                    if (event.key !== "Escape" || (radialModeOpen === null && !event.repeat))
+                      return;
+                    // An unhandled Escape closes the settings page.
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setRadialModeOpen(null);
                   }}
                   onMouseLeave={() => setRadialModeOpen(null)}
                 >
@@ -206,8 +211,9 @@ function ThemeLibraryCard({
                               event.stopPropagation();
                               variantNavigation.onSelectAndUse(selected.option.themeIndex, mode);
                             }}
-                            onFocus={() => setRadialModeOpen(mode)}
-                            onMouseEnter={() => setRadialModeOpen(mode)}
+                            // A mode with one variant has no radial menu to open.
+                            onFocus={() => setRadialModeOpen(options.length > 1 ? mode : null)}
+                            onMouseEnter={() => setRadialModeOpen(options.length > 1 ? mode : null)}
                           >
                             <ThemePreviewCircle
                               colors={selected.preview.colors}

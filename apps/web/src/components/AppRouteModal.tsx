@@ -151,8 +151,14 @@ export function AppRouteModal({ label, children }: { label: string; children: Re
       open={shown}
       // Portaled layers outside this tree (toasts, confirm dialogs) are not backdrop presses.
       disablePointerDismissal
-      onOpenChange={(nextOpen) => {
+      onOpenChange={(nextOpen, details) => {
         if (nextOpen) return;
+        // A control inside used this Escape. A drag hears it at the document, so let it through.
+        if (details.reason === "escape-key" && details.event.defaultPrevented) {
+          details.cancel();
+          details.allowPropagation();
+          return;
+        }
         // Closing unmounts a focused field without a blur, so commit-on-blur rows would
         // drop what was typed. Blur first so they commit.
         blurFocusedWithin(popupRef.current);

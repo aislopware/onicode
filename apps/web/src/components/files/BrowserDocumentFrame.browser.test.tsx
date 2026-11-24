@@ -96,6 +96,7 @@ describe("HtmlRenderDocument", () => {
       expect.anything(),
       issueUrl,
       threadRef.environmentId,
+      undefined,
     );
   });
 });

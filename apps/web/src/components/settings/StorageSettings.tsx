@@ -50,6 +50,7 @@ import {
   useUpdateScopedSettings,
 } from "./useScopedSettings";
 import { settingsScopeEnvironmentLabel } from "./settingsScopeAxis";
+import { isImeKeyDown } from "../../lib/imeKeyDown";
 
 export function WorktreesDirectoryRow() {
   const setting = useSearchableSetting();
@@ -221,7 +222,7 @@ function RetentionControl({
               onChange={() => setHeld(false)}
               onPaste={() => setHeld(false)}
               onKeyDown={(event) => {
-                if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+                if (isImeKeyDown(event.nativeEvent)) return;
                 if (event.key === "Enter") {
                   // Blurring lets NumberField parse the visible text and commit it once. It
                   // skips an unedited value, so an untouched draft is committed here.

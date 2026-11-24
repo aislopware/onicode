@@ -159,6 +159,7 @@ import {
   type ComposerAttachmentInsertion,
 } from "./composerAttachmentInsertion";
 import type { ComposerDraftContextRecords } from "./composerContextPresentation";
+import { isImeKeyDown } from "../lib/imeKeyDown";
 
 export interface ComposerPromptEditorHandle {
   focus: () => void;
@@ -1514,7 +1515,7 @@ function ComposerPromptEditorTiptapInner(
               }
             }
           }
-          if (event.key === "Enter" && (event.isComposing || event.keyCode === 229)) {
+          if (event.key === "Enter" && isImeKeyDown(event)) {
             event.stopPropagation();
             return true;
           }

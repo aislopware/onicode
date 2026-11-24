@@ -1,4 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
+import { isStandaloneIssueLink } from "@onicode/client-runtime/issue-links";
 import {
   type KeybindingCommand,
   type KeybindingShortcut,
@@ -50,7 +51,9 @@ import { useOpenIssueLink } from "~/lib/openIssueLink";
 import { useOpenChangeRequestLink } from "~/lib/openPullRequestLink";
 import { readLocalApi } from "~/localApi";
 import { cn } from "~/lib/utils";
+import { issueTrackerEnvironment } from "~/state/issueTrackers";
 import { primaryServerKeybindingsAtom, serverEnvironment } from "~/state/server";
+import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
 
 /**
  * The page reports the keys, and a page script can report any key it likes,
@@ -311,9 +314,10 @@ export function HtmlRenderDocument(props: {
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- posts the current theme to the sandboxed iframe's window
   useEffect(postTheme, [theme]);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
-  const environmentKeybindings = useAtomValue(
+  const environmentConfig = useAtomValue(
     serverEnvironment.configValueAtom(props.threadRef?.environmentId ?? null),
-  )?.keybindings;
+  );
+  const environmentKeybindings = environmentConfig?.keybindings;
   // Replay only Cmd/Ctrl chords exclusive to allowed commands regardless of when; live resolution could
   // otherwise type in the composer.
   const mac = isMacPlatform(navigator.platform);
@@ -371,27 +375,35 @@ export function HtmlRenderDocument(props: {
   const openChangeRequestLink = useOpenChangeRequestLink(props.threadRef);
   const openIssueLink = useOpenIssueLink(props.threadRef);
   const openLink = useOpenLink(props.threadRef);
-  const open = useEffectEvent((url: string, modifiers: { metaKey: boolean; ctrlKey: boolean }) => {
-    if (modifiers.metaKey || modifiers.ctrlKey) {
-      void readLocalApi()
-        ?.shell.openExternal(url)
-        .catch((cause: unknown) => console.error(cause));
-      return;
-    }
-    const event = {
-      ...modifiers,
-      preventDefault: () => undefined,
-      stopPropagation: () => undefined,
-    };
-    if (
-      props.threadRef !== undefined &&
-      (openChangeRequestLink(event, url, undefined, props.threadRef.environmentId) ||
-        openIssueLink(event, url, props.threadRef.environmentId))
-    ) {
-      return;
-    }
-    void openLink(url, { event: modifiers }).catch((cause: unknown) => console.error(cause));
+  const readTrackerConnections = useAtomQueryRunner(issueTrackerEnvironment.connections, {
+    reportFailure: false,
+    reportDefect: false,
   });
+  const open = useEffectEvent(
+    async (url: string, modifiers: { metaKey: boolean; ctrlKey: boolean }) => {
+      if (modifiers.metaKey || modifiers.ctrlKey) {
+        await readLocalApi()?.shell.openExternal(url);
+        return;
+      }
+      const event = {
+        ...modifiers,
+        preventDefault: () => undefined,
+        stopPropagation: () => undefined,
+      };
+      const environmentId = props.threadRef?.environmentId;
+      if (environmentId !== undefined) {
+        if (openChangeRequestLink(event, url, undefined, environmentId)) return;
+        // Only a standalone tracker's link needs the bindings, whose read probes the tracker.
+        const connections =
+          environmentConfig?.environment.capabilities.issues === true && isStandaloneIssueLink(url)
+            ? await readTrackerConnections({ environmentId, input: {} })
+            : null;
+        const trackers = connections?._tag === "Success" ? connections.value : undefined;
+        if (openIssueLink(event, url, environmentId, trackers)) return;
+      }
+      await openLink(url, { event: modifiers });
+    },
+  );
   const { onFullscreenChange } = props;
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- reports fullscreen to the parent while the image viewer is open, and clears it on unmount
   useEffect(() => {
@@ -411,7 +423,7 @@ export function HtmlRenderDocument(props: {
     if (document.activeElement !== frame || navigator.userActivation?.isActive === false) return;
     const linkRequest = readHtmlRenderLinkRequest(event.data);
     if (linkRequest !== undefined) {
-      open(linkRequest.url, linkRequest);
+      open(linkRequest.url, linkRequest).catch((cause: unknown) => console.error(cause));
       frame.contentWindow?.postMessage(htmlRenderResult(linkRequest.id), "*");
       return;
     }

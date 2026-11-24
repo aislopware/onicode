@@ -1240,7 +1240,7 @@ function RenderedMarkdownSurface({
         changeFileSaveSession(saveTarget, nextContents);
       };
 
-  const { chunks, definitions } = splitMarkdown(contents);
+  const { chunks, definitions } = splitMarkdown(contents, undefined, true);
   return (
     <ChunkedMarkdown
       chunks={chunks}

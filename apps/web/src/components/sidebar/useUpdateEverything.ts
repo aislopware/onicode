@@ -59,6 +59,7 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
     connected: environment.connection.phase === "connected",
     connectionError: connectionErrorText(environment.connection, resolve),
     turnedOff: !environment.entry.enabled,
+    unsupported: environment.connection.phase === "unsupported",
     hostedByThisApp: isHostedByThisApp(environment),
     canMaintain: canUpdateServer(sessionStates[index]!),
     updateState: updateStates[index]!,

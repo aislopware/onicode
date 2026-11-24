@@ -160,6 +160,14 @@ describe("nextMarkdownSplit", () => {
       expect(second.split.chunks[index]).toBe(first.split.chunks[index]);
     }
     expect(nextMarkdownSplit(second, swap(text))).toBe(second);
+    // A finished text's last line is whole, so it can start a piece.
+    const done = nextMarkdownSplit(second, swap(`${text}# Last`, null, true))!;
+    expect(done.split.chunks.at(-1)?.text).toBe("# Last");
+    // The download can finish without new text after the swap that carried its last line.
+    const streamed = nextMarkdownSplit(second, swap(`${text}# Last`))!;
+    expect(streamed.split.chunks.at(-1)?.text).not.toBe("# Last");
+    const finished = nextMarkdownSplit(streamed, swap(`${text}# Last`, null, true))!;
+    expect(finished.split).toEqual(done.split);
   });
 
   // regression: a finished file past the line cap was split on the main thread for the plain viewer

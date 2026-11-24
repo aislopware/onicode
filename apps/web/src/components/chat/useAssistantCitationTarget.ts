@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { AssistantCitationRequest, AssistantCitationTarget } from "./AssistantCitationSource";
 import type { CitationPhase } from "./citationProcedure";
+import { isImeKeyDown } from "../../lib/imeKeyDown";
 
 const CITATION_SCROLL_KEYS = new Set([
   "ArrowUp",
@@ -89,7 +90,7 @@ export function useAssistantCitationTarget({
         setSettlement({ target, dismissed: true });
       };
       const onKeyDown = (event: KeyboardEvent) => {
-        if (event.isComposing || event.keyCode === 229) return;
+        if (isImeKeyDown(event)) return;
         if (event.key === "Escape") {
           dismiss(false);
         } else if (

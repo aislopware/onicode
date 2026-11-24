@@ -39,6 +39,7 @@ import {
 import { Input } from "./ui/input";
 import { Spinner } from "./ui/spinner";
 import { toastManager } from "./ui/toast";
+import { isImeKeyDown } from "../lib/imeKeyDown";
 
 interface PullRequestThreadDialogProps {
   open: boolean;
@@ -261,7 +262,7 @@ export function PullRequestThreadDialog({
                 if (event.key !== "Enter") {
                   return;
                 }
-                if (event.nativeEvent.isComposing || event.keyCode === 229) {
+                if (isImeKeyDown(event.nativeEvent)) {
                   return;
                 }
                 event.preventDefault();

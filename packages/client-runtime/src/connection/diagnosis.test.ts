@@ -2,7 +2,7 @@ import { EnvironmentAuthInvalidError } from "@onicode/contracts";
 import { describe, expect, it } from "@effect/vitest";
 
 import { presentConnectionDiagnosis } from "./diagnosis.ts";
-import { mapRemoteEnvironmentError } from "./errors.ts";
+import { environmentMismatchError, mapRemoteEnvironmentError } from "./errors.ts";
 import {
   AVAILABLE_CONNECTION_STATE,
   ConnectionBlockedError,
@@ -59,6 +59,28 @@ describe("presentConnectionDiagnosis", () => {
     const steps = diagnose(backoff(failure))?.steps.join(" ");
     expect(steps).not.toContain("Make sure Onicode is running");
     expect(steps).toMatch(/pair|sign in/i);
+  });
+
+  it("says another machine answered when the address reaches a different Onicode", () => {
+    const state = backoff(environmentMismatchError());
+    const diagnosis = diagnose(state);
+    expect(diagnosis?.headline).toBe("Another Onicode answers at the address of Mac mini");
+    expect(results(state)).toEqual(["device:ok", "server:failed"]);
+    expect(diagnosis?.steps.join(" ")).toMatch(/another network/);
+    expect(diagnosis?.steps.join(" ")).toContain("remove Mac mini");
+    // This desktop app's own server cannot be removed.
+    const primary = presentConnectionDiagnosis({ hostLabel: "Mac mini", state, primary: true });
+    expect(primary?.steps.join(" ")).not.toMatch(/remove/i);
+  });
+
+  it("does not blame a host that answered for not running", () => {
+    const failure = new ConnectionBlockedError({
+      reason: "configuration",
+      detail: "The environment endpoint could not be found.",
+      hop: "server",
+    });
+    expect(diagnose(backoff(failure))?.headline).toBe("Could not connect to Onicode on Mac mini");
+    expect(diagnose(backoff(failure))?.steps.join(" ")).not.toContain("running");
   });
 
   it("does not report hops as working when the failure names none", () => {

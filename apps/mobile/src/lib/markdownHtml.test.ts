@@ -67,6 +67,16 @@ describe("HTML in native Markdown", () => {
     );
   });
 
+  it("keeps a raw paragraph's line endings from becoming line breaks", () => {
+    expect(markdownWithHtml("<p>\none\n<b>two</b>\n</p>\n\nthree\nfour").trim()).toMatch(
+      /^one two\s+three\nfour$/,
+    );
+    expect(markdownWithHtml("<p>\n<ul>\n<li>one</li>\n<li>two</li>\n</ul>")).toMatch(/one\ntwo/);
+    expect(markdownWithHtml("<p-card>\none\ntwo\n</p-card>").trim()).toBe("one\ntwo");
+    expect(markdownWithHtml("See <p-card>one</p-card> here")).toBe("See one here");
+    expect(markdownWithHtml("<p>\nlead\n<aside>\none\ntwo\n</aside>")).toMatch(/one\ntwo/);
+  });
+
   it("collects HTML and Markdown screenshots while leaving inline and fenced code literal", () => {
     const markdown =
       '```html\n<img src="literal.png">\n```\n\nUse `<img src="inline.png">` here.\n\n<img src="one.png">\n\n![Two](two.png)\n\n<img src="one.png">';

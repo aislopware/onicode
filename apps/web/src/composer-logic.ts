@@ -25,6 +25,7 @@ import {
   type ShortcutMatchContext,
 } from "./keybindings";
 import type { ProviderSessionView } from "@onicode/client-runtime/provider-session-views";
+import { isImeKeyDown } from "./lib/imeKeyDown";
 
 export type ComposerTriggerKind = "path" | "pull-request" | "slash-command" | "skill";
 export type ComposerSlashCommand = "model" | "side" | "btw" | "clear" | ProviderSessionView;
@@ -77,7 +78,7 @@ export function composerSubmissionIntentForKey(input: {
   prompt?: string;
 }): ComposerSubmissionIntent | null {
   const { event } = input;
-  if (event.isComposing || event.keyCode === 229 || event.repeat) return null;
+  if (isImeKeyDown(event) || event.repeat) return null;
   const command = resolveShortcutCommand(event, input.keybindings, {
     ...(input.platform === undefined ? {} : { platform: input.platform }),
     context: {

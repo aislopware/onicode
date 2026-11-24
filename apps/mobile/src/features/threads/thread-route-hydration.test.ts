@@ -113,6 +113,13 @@ describe("threadRouteOpensDraft", () => {
     expect(threadRouteOpensDraft(failedDetail)).toBe(false);
   });
 
+  it.each(["available", "unsupported"] as const)(
+    "keeps the route for an environment this app is not connected to (%s)",
+    (connectionState) => {
+      expect(threadRouteOpensDraft({ connectionState, detailStatus: "empty" })).toBe(false);
+    },
+  );
+
   it("opens a draft once the thread can't arrive", () => {
     expect(
       threadRouteOpensDraft({ connectionState: "reconnecting", detailStatus: "deleted" }),

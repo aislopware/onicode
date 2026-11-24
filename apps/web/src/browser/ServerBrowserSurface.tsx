@@ -48,6 +48,7 @@ import { m } from "~/i18n/messages";
 import { cn } from "~/lib/utils";
 import { refreshPreviewStreamAccess, usePreviewStreamAccess } from "~/state/previewStream";
 import { observeResize } from "~/lib/observeResize";
+import { isImeKeyDown } from "../lib/imeKeyDown";
 
 export interface ServerBrowserHandle {
   readonly navigate: (url: string) => void;
@@ -819,8 +820,7 @@ export function ServerBrowserSurface(props: {
     if (controlRef.current?.controller !== "you") return;
     keySentRef.current = false;
     if (
-      event.nativeEvent.isComposing ||
-      event.keyCode === 229 ||
+      isImeKeyDown(event.nativeEvent) ||
       event.key === "Process" ||
       event.key === "Unidentified"
     ) {

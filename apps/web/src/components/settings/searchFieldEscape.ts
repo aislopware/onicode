@@ -1,9 +1,10 @@
 import type { KeyboardEvent } from "react";
 
+import { isImeKeyDown } from "../../lib/imeKeyDown";
+
 type SearchFieldKeyDown = Pick<
   KeyboardEvent,
   | "key"
-  | "keyCode"
   | "repeat"
   | "defaultPrevented"
   | "altKey"
@@ -12,7 +13,7 @@ type SearchFieldKeyDown = Pick<
   | "shiftKey"
   | "preventDefault"
   | "stopPropagation"
-> & { readonly nativeEvent: Pick<globalThis.KeyboardEvent, "isComposing"> };
+> & { readonly nativeEvent: Pick<globalThis.KeyboardEvent, "isComposing" | "keyCode"> };
 
 /**
  * Esc empties a filled search field without closing the Settings page or dialog around it; an
@@ -26,7 +27,7 @@ export function clearSearchOnEscape(
 ): void {
   if (event.key !== "Escape" || event.defaultPrevented) return;
   if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-  const composing = event.nativeEvent.isComposing || event.keyCode === 229;
+  const composing = isImeKeyDown(event.nativeEvent);
   // A held Esc that just emptied the field must not go on to close the page.
   if (!composing && query === "" && !event.repeat) return;
   event.stopPropagation();

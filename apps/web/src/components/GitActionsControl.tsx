@@ -138,6 +138,7 @@ import { formatDiffCount } from "@onicode/client-runtime/diff-count";
 import { formatCompactDiffCount } from "./chat/DiffStatLabel";
 import { ChangeBreakdownGrid } from "./pullRequest/ChangeBreakdownGrid";
 import { useOpenLink } from "~/browser/useOpenLink";
+import { isImeKeyDown } from "../lib/imeKeyDown";
 
 /** The folder a Git actions control acts on: a thread's own folder or a tracked repository. */
 export interface GitActionsTarget {
@@ -742,7 +743,7 @@ export function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
                     if (event.key !== "Enter") {
                       return;
                     }
-                    if (event.nativeEvent.isComposing || event.keyCode === 229) {
+                    if (isImeKeyDown(event.nativeEvent)) {
                       return;
                     }
                     event.preventDefault();

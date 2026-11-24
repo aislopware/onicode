@@ -98,8 +98,7 @@ describe("collectServerUpdateTargets", () => {
   });
 
   it("says why a disconnected server was skipped when its connection says", () => {
-    const replaced =
-      "This address now runs a different Onicode install (b7a4, not 0359). Remove this connection and add it again.";
+    const replaced = "A different Onicode install answers at this address.";
     const { skipped } = collectServerUpdateTargets(
       [
         machine("replaced", "0.0.40", "boot-service", {
@@ -108,10 +107,29 @@ describe("collectServerUpdateTargets", () => {
           connectionError: replaced,
         }),
         machine("silent", "0.0.40", "boot-service", { connected: false, connectionError: null }),
+        machine("blank", "0.0.40", "boot-service", { connected: false, connectionError: "" }),
         machine("switched-off", "0.0.40", "boot-service", {
           connected: false,
           serverConfig: null,
           turnedOff: true,
+        }),
+        // Settings says "Client not supported" for these, not the saved on/off choice.
+        machine("unsupported-off", "0.0.40", "boot-service", {
+          connected: false,
+          serverConfig: null,
+          turnedOff: true,
+          unsupported: true,
+          connectionError: "This client requires a newer server.",
+        }),
+        machine("restarting", "0.0.40", "boot-service", {
+          connected: false,
+          connectionError: "Onicode on restarting did not answer.",
+          updateState: {
+            status: "running",
+            stage: "resuming",
+            fromVersion: "0.0.40",
+            targetVersion: "0.0.50",
+          },
         }),
       ],
       "0.0.50",
@@ -120,7 +138,10 @@ describe("collectServerUpdateTargets", () => {
     expect(skipped.map((entry) => [entry.label, entry.reason])).toEqual([
       ["replaced", replaced],
       ["silent", "not connected"],
+      ["blank", "not connected"],
       ["switched-off", "turned off"],
+      ["unsupported-off", "client not supported"],
+      ["restarting", "already updating"],
     ]);
   });
 

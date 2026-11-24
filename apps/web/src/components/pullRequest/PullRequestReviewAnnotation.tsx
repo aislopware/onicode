@@ -42,6 +42,7 @@ import {
   PullRequestMarkdownTextarea,
   type PullRequestCompletionScope,
 } from "./PullRequestMarkdownTextarea";
+import { isImeKeyDown } from "../../lib/imeKeyDown";
 
 const CARD_CLASS =
   "mx-3 my-2 rounded-xl border border-(--card-hairline) bg-card p-3 text-sm shadow-card";
@@ -55,7 +56,7 @@ function submitKeys(input: {
 }) {
   return (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Unclaimed, an IME Escape would reach the pull requests page and leave it.
-    if (event.nativeEvent.isComposing || event.keyCode === 229) {
+    if (isImeKeyDown(event.nativeEvent)) {
       event.stopPropagation();
       return;
     }

@@ -16,6 +16,7 @@ import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
 import { type CommandHandler, type CommandScopeOptions, registerCommands } from "./dispatcher";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { resolveThreadRouteTarget } from "../threadRoutes";
+import { isImeKeyDown } from "../lib/imeKeyDown";
 
 function consume(event: KeyboardEvent): void {
   event.preventDefault();
@@ -52,7 +53,7 @@ export function installCommandPaletteCommands(
       capture: true,
       when: isCommandPaletteMounted,
       onKeyDown: (event) => {
-        if (event.isComposing || event.keyCode === 229 || event.key !== "Escape") return false;
+        if (isImeKeyDown(event) || event.key !== "Escape") return false;
         const { open, mode } = useCommandPaletteStore.getState();
         if (!open || mode === "command") return false;
         consume(event);

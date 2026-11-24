@@ -1,5 +1,8 @@
 import { thrownErrorMessage } from "@onicode/client-runtime/errors";
-import { AuthSettingsWriteScope, EnvironmentAuthorizationError } from "@onicode/contracts";
+import {
+  EnvironmentAuthorizationError,
+  requiredScopesForServerSettingsPatch,
+} from "@onicode/contracts";
 import { readEnvironmentScope } from "../../state/session";
 import {
   isAtomCommandInterrupted,
@@ -56,15 +59,45 @@ function reportScriptFailure(result: AtomCommandResult<unknown, unknown>) {
   return mapAtomCommandResult(result, () => undefined);
 }
 
-export function useProjectScriptSettings(
-  targets: readonly {
-    environmentId: EnvironmentId;
-    settings: ServerSettings;
-    keybindings: ResolvedKeybindingsConfig;
-    project?: { id: ProjectId; scripts: readonly ProjectScript[] };
-    perKeyOverrides?: boolean;
-  }[],
+interface ProjectScriptTarget {
+  environmentId: EnvironmentId;
+  settings: ServerSettings;
+  keybindings: ResolvedKeybindingsConfig;
+  project?: { id: ProjectId; scripts: readonly ProjectScript[] };
+  perKeyOverrides?: boolean;
+}
+
+function planWrite(
+  target: ProjectScriptTarget,
+  transform: (current: readonly ProjectScript[]) => readonly ProjectScript[] | null,
 ) {
+  const { settings, project, perKeyOverrides } = target;
+  const current = project
+    ? resolveProjectScripts(settings, project)
+    : settings.defaultProjectScripts;
+  const nextScripts = transform(current);
+  const patch = project
+    ? projectOverridesPatch(
+        [
+          {
+            projectId: project.id,
+            keys: ["defaultProjectScripts"],
+            next:
+              nextScripts === null
+                ? clearProjectSettingsOverrides(settings, project.id, ["defaultProjectScripts"])
+                : {
+                    ...settings.projectSettingsOverrides[project.id],
+                    defaultProjectScripts: nextScripts,
+                  },
+          },
+        ],
+        perKeyOverrides === true,
+      )
+    : { defaultProjectScripts: nextScripts ?? [] };
+  return { target, current, nextScripts, patch };
+}
+
+export function useProjectScriptSettings(targets: readonly ProjectScriptTarget[]) {
   const projects = useProjects();
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
@@ -92,17 +125,20 @@ export function useProjectScriptSettings(
       });
       return AsyncResult.failure(Cause.fail(new Error(message)));
     }
-    if (
-      targets.some(
-        ({ environmentId }) => !readEnvironmentScope(environmentId, AuthSettingsWriteScope),
-      )
-    ) {
+    const writes = targets.map((target) => planWrite(target, transform));
+    // Every target is checked before the first write, so a denial leaves none half saved.
+    const missing = writes.flatMap(({ target, patch }) =>
+      requiredScopesForServerSettingsPatch(patch).filter(
+        (scope) => !readEnvironmentScope(target.environmentId, scope),
+      ),
+    )[0];
+    if (missing !== undefined) {
       return reportScriptFailure(
         AsyncResult.failure(
           Cause.fail(
             new EnvironmentAuthorizationError({
-              requiredScope: AuthSettingsWriteScope,
-              message: m(msg("This connection cannot change environment settings.")),
+              requiredScope: missing,
+              message: m(msg("This connection cannot change project actions.")),
             }),
           ),
         ),
@@ -110,48 +146,21 @@ export function useProjectScriptSettings(
     }
     savingRef.current = true;
     setSaving(true);
-    return writeTargets(transform, scriptId, keybinding).finally(() => {
+    return runWrites(writes, scriptId, keybinding).finally(() => {
       savingRef.current = false;
       setSaving(false);
     });
   }
 
-  async function writeTargets(
-    transform: (current: readonly ProjectScript[]) => readonly ProjectScript[] | null,
+  async function runWrites(
+    writes: ReadonlyArray<ReturnType<typeof planWrite>>,
     scriptId: string | undefined,
     keybinding: string | null | undefined,
   ): Promise<AtomCommandResult<void, unknown>> {
-    for (const { environmentId, settings, keybindings, project, perKeyOverrides } of targets) {
-      const current = project
-        ? resolveProjectScripts(settings, project)
-        : settings.defaultProjectScripts;
-      const nextScripts = transform(current);
+    for (const { target, current, nextScripts, patch } of writes) {
+      const { environmentId, settings, keybindings, project } = target;
       const effectiveScripts = nextScripts ?? settings.defaultProjectScripts;
-      const result = await updateSettings({
-        environmentId,
-        input: {
-          patch: project
-            ? projectOverridesPatch(
-                [
-                  {
-                    projectId: project.id,
-                    keys: ["defaultProjectScripts"],
-                    next:
-                      nextScripts === null
-                        ? clearProjectSettingsOverrides(settings, project.id, [
-                            "defaultProjectScripts",
-                          ])
-                        : {
-                            ...settings.projectSettingsOverrides[project.id],
-                            defaultProjectScripts: nextScripts,
-                          },
-                  },
-                ],
-                perKeyOverrides === true,
-              )
-            : { defaultProjectScripts: nextScripts ?? [] },
-        },
-      });
+      const result = await updateSettings({ environmentId, input: { patch } });
       if (result._tag === "Failure") return reportScriptFailure(result);
       const changedIds = scriptId
         ? [scriptId]

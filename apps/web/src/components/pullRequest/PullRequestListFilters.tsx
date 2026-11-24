@@ -59,6 +59,7 @@ import {
 import { resolveFilterOptions } from "./pullRequestListOptions";
 import { PullRequestActorAvatar } from "./pullRequestPresentation";
 import { PullRequestGlyph } from "./pullRequestIcons";
+import { isImeKeyDown } from "../../lib/imeKeyDown";
 
 export interface PullRequestFilterOption<Value extends string> {
   readonly value: Value;
@@ -131,7 +132,7 @@ export function PullRequestSearchInput({
           }
         }}
         onKeyDown={(event) => {
-          const composing = event.nativeEvent.isComposing || event.keyCode === 229;
+          const composing = isImeKeyDown(event.nativeEvent);
           if (event.key === "Enter" && !composing) onSubmit(event.currentTarget.value);
           if (event.key !== "Escape" || event.defaultPrevented) return;
           if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;

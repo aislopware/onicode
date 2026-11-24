@@ -1,7 +1,7 @@
 import { thrownErrorMessage } from "@onicode/client-runtime/errors";
 import { m } from "~/i18n/messages";
 import { useScopedSettingsWriteAllowed } from "./useScopedSettings";
-import { AuthSettingsWriteScope } from "@onicode/contracts";
+import { useAtomValue } from "@effect/atom-react";
 import { EnvironmentId, type OniProjectFileScript } from "@onicode/contracts";
 import {
   isAtomCommandInterrupted,
@@ -12,7 +12,9 @@ import { ChevronDownIcon, PlusIcon } from "lucide-react";
 import { T, useGT } from "gt-react";
 import { useState } from "react";
 import { useOniProjectFileState } from "../../hooks/useOniProjectFileScripts";
+import { environmentIdsKey } from "../../state/environmentAtomList";
 import { useEnvironments } from "../../state/environments";
+import { projectScriptsPermissionsAtom } from "../../state/server";
 import {
   EMPTY_PROJECT_SCRIPT_INPUT,
   editorRequestForScript,
@@ -38,7 +40,7 @@ import { useSettingsScope } from "./SettingsScopeContext";
 
 export function ProjectActionsSettings() {
   const gt = useGT();
-  const { scope, targets, target } = useSettingsScope();
+  const { scope, targets, target, connectedEnvironments } = useSettingsScope();
   const { environments } = useEnvironments();
   const isProjectScope = scope.kind === "project" || scope.kind === "checkout";
   const representativeConfig = target
@@ -52,6 +54,12 @@ export function ProjectActionsSettings() {
       JSON.stringify(candidate.settings.defaultProjectScripts) !== JSON.stringify(scripts),
   );
   const canWriteSettings = useScopedSettingsWriteAllowed();
+  const scriptPermissions = useAtomValue(
+    projectScriptsPermissionsAtom(
+      environmentIdsKey(connectedEnvironments.map(({ environmentId }) => environmentId)),
+    ),
+  );
+  const canEditScripts = scriptPermissions.length > 0 && scriptPermissions.every(Boolean);
   const [request, setRequest] = useState<ProjectScriptEditorRequest | null>(null);
   const memberById = new Map(
     isProjectScope ? scope.members.map((member) => [member.id, member]) : [],
@@ -126,6 +134,11 @@ export function ProjectActionsSettings() {
         description={gt(
           "Commands that run in this project's checkout or its worktree, with optional shortcuts.",
         )}
+        status={
+          canWriteSettings && !canEditScripts
+            ? gt("This connection cannot change project actions.")
+            : undefined
+        }
         onResetOverride={() => void persist(() => null)}
         control={
           <div className="flex flex-wrap items-center gap-1.5">
@@ -137,7 +150,7 @@ export function ProjectActionsSettings() {
                       id="import-scripts"
                       size="xs"
                       variant="ghost"
-                      disabled={saving || !canWriteSettings}
+                      disabled={saving || !canEditScripts}
                       type="button"
                     />
                   }
@@ -175,7 +188,7 @@ export function ProjectActionsSettings() {
             <Button
               size="xs"
               variant="outline"
-              disabled={saving || !canWriteSettings || targets.length === 0}
+              disabled={saving || !canEditScripts || targets.length === 0}
               onClick={() => setRequest({ scriptId: null, initial: EMPTY_PROJECT_SCRIPT_INPUT })}
             >
               <PlusIcon className="size-3.5" />
@@ -195,7 +208,7 @@ export function ProjectActionsSettings() {
         <ProjectActionsList
           scripts={scripts}
           keybindings={keybindings}
-          disabled={saving || !canWriteSettings}
+          disabled={saving || !canEditScripts}
           onEdit={(script) => setRequest(editorRequestForScript(script, keybindings))}
         />
       )}
@@ -211,7 +224,6 @@ export function ProjectActionsSettings() {
       {target && (
         <ProjectScriptEditorDialog
           environmentId={target.environmentId}
-          editScope={AuthSettingsWriteScope}
           request={request}
           scripts={scripts}
           onSubmit={submit}

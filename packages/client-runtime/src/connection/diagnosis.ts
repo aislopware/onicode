@@ -26,11 +26,13 @@ export interface ConnectionDiagnosisInput {
   readonly state: SupervisorConnectionState;
   readonly clientVersion?: string | undefined;
   readonly serverVersion?: string | null | undefined;
+  /** This desktop app's own server, which cannot be removed. */
+  readonly primary?: boolean | undefined;
 }
 
 interface Located {
   readonly hop: ConnectionHop;
-  readonly cause: "offline" | "outdated" | null;
+  readonly cause: "offline" | "outdated" | "mismatch" | null;
   /** The failure named no hop, so the hops before this one were never probed. */
   readonly guessed?: true;
 }
@@ -42,6 +44,9 @@ function locate(input: ConnectionDiagnosisInput): Located | null {
   }
   if (failure?._tag === "ConnectionBlockedError" && failure.serverUpdateRequired) {
     return { hop: "server", cause: "outdated" };
+  }
+  if (failure?._tag === "ConnectionBlockedError" && failure.environmentMismatch) {
+    return { hop: "server", cause: "mismatch" };
   }
   if (failure?.hop !== undefined) {
     return { hop: failure.hop, cause: null };
@@ -63,6 +68,8 @@ function headline(
       return resolve(msg("This device is offline"));
     case "outdated":
       return resolve(msg("{host} runs an older Onicode", { host }));
+    case "mismatch":
+      return resolve(msg("Another Onicode answers at the address of {host}", { host }));
     case null:
       break;
   }
@@ -72,7 +79,9 @@ function headline(
     case "server":
       return failure?.reason === "authentication" || failure?.reason === "permission"
         ? resolve(msg("Onicode on {host} did not accept this device", { host }))
-        : resolve(msg("Onicode on {host} did not answer", { host }));
+        : failure?.reason === "configuration"
+          ? resolve(msg("Could not connect to Onicode on {host}", { host }))
+          : resolve(msg("Onicode on {host} did not answer", { host }));
   }
 }
 
@@ -80,6 +89,7 @@ function steps(
   host: string,
   located: Located,
   failure: ConnectionAttemptError | null,
+  primary: boolean,
   resolve: MFunctionType,
 ): string[] {
   switch (located.cause) {
@@ -87,6 +97,21 @@ function steps(
       return [resolve(msg("Connect this device to the network. Onicode reconnects on its own."))];
     case "outdated":
       return [resolve(msg("Update Onicode on {host}.", { host }))];
+    case "mismatch":
+      return [
+        resolve(
+          msg(
+            "If this device is on another network, another machine may have that address there. Onicode tries again when the network changes.",
+          ),
+        ),
+        primary
+          ? resolve(msg("Restart Onicode on this device."))
+          : resolve(
+              msg("If Onicode on {host} was reinstalled, remove {host} and pair it again.", {
+                host,
+              }),
+            ),
+      ];
     case null:
       break;
   }
@@ -109,7 +134,10 @@ function steps(
             ),
           ]
         : [
-            resolve(msg("Make sure Onicode is running on {host}.", { host })),
+            // A configuration failure comes from a host that answered, or never asked it.
+            ...(failure?.reason === "configuration"
+              ? []
+              : [resolve(msg("Make sure Onicode is running on {host}.", { host }))]),
             resolve(msg("Retry. If it keeps failing, copy the diagnostics.")),
           ];
   }
@@ -176,7 +204,7 @@ export function presentConnectionDiagnosis(
   return {
     headline: headline(host, located, failure, resolve),
     hops,
-    steps: steps(host, located, failure, resolve),
+    steps: steps(host, located, failure, input.primary === true, resolve),
     facts,
   };
 }

@@ -428,6 +428,8 @@ describe("project settings permissions", () => {
     const draftId = DraftId.make("draft-handed-off");
     const [primaryProject, remoteProject] = state.projects;
     const drafts = useComposerDraftStore.getState();
+    // The store persists, so a draft left here shows up in the next file's sidebar.
+    using _drafts = { [Symbol.dispose]: () => useComposerDraftStore.setState(drafts, true) };
     drafts.setLogicalProjectDraftThreadId(
       "github.com/example/shared-repo",
       scopeProjectRef(primaryId, primaryProject!.id),

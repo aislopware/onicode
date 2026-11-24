@@ -5,7 +5,7 @@ import { visibilityParentKey } from "@onicode/client-runtime/state/threads";
 import type { ScopedThreadRef } from "@onicode/contracts";
 import * as Option from "effect/Option";
 import { Link, Navigate, useNavigate } from "@tanstack/react-router";
-import { T } from "gt-react";
+import { T, useGT } from "gt-react";
 import { useEffect, useState } from "react";
 
 import ChatView from "./ChatView";
@@ -13,6 +13,7 @@ import { BackgroundThreadContext, HiddenThreadContext } from "./chat/backgroundT
 import { Button } from "./ui/button";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "./ui/empty";
 import { SidebarInset } from "./ui/sidebar";
+import { WorkspacePageHeader } from "./WorkspacePageHeader";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useSidebarPendingFileDropStore } from "../sidebarPendingFileDropStore";
 import {
@@ -20,6 +21,7 @@ import {
   useAnyEnvironmentHiding,
   useQuietThreadShell,
 } from "../state/entities";
+import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { environmentUnreachableAtom } from "../state/presentation";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { useEnvironmentShellStatus } from "../state/shell";
@@ -248,21 +250,29 @@ export function ThreadRouteView({
 }
 
 function UnreachableEnvironmentState() {
+  const gt = useGT();
+  const conversationArea = workspaceAreaProps("conversation", 1, gt("Conversation"));
   return (
-    <Empty className="flex-1">
-      <EmptyHeader>
-        <EmptyTitle>
-          <T>Thread unavailable</T>
-        </EmptyTitle>
-        <EmptyDescription>
-          <T>This thread is on an environment this app is not connected to.</T>
-        </EmptyDescription>
-      </EmptyHeader>
-      <EmptyContent>
-        <Button render={<Link to="/settings/connections" />} size="sm">
-          <T>Open Environments</T>
-        </Button>
-      </EmptyContent>
-    </Empty>
+    <div
+      {...conversationArea}
+      className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-background"
+    >
+      <WorkspacePageHeader />
+      <Empty className="flex-1">
+        <EmptyHeader>
+          <EmptyTitle>
+            <T>Thread unavailable</T>
+          </EmptyTitle>
+          <EmptyDescription>
+            <T>This thread is on an environment this app is not connected to.</T>
+          </EmptyDescription>
+        </EmptyHeader>
+        <EmptyContent>
+          <Button render={<Link to="/settings/connections" />} size="sm">
+            <T>Open Environments</T>
+          </Button>
+        </EmptyContent>
+      </Empty>
+    </div>
   );
 }

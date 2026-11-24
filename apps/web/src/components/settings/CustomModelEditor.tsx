@@ -23,6 +23,7 @@ import {
   emptyEditorDescriptor,
   validateDraft,
 } from "./customModelEditor.logic";
+import { isImeKeyDown } from "../../lib/imeKeyDown";
 
 const CUSTOM_ID_VALUE = "__custom__";
 const START_FROM_NONE = "__none__";
@@ -308,7 +309,7 @@ export function CustomModelEditor({
     <div
       className="mx-2 mt-1 mb-2 flex flex-col gap-3 rounded-md border border-border p-3"
       onKeyDown={(event) => {
-        if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+        if (isImeKeyDown(event.nativeEvent)) return;
         if (event.key === "Escape") {
           event.preventDefault();
           event.stopPropagation();

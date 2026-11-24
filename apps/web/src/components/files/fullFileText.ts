@@ -156,6 +156,7 @@ export function useFullFileText(src: string, preview: string): FullFileText {
 
 interface MarkdownSplitState {
   readonly text: string;
+  readonly done: boolean;
   readonly split: SplitMarkdown;
 }
 
@@ -170,14 +171,15 @@ export function nextMarkdownSplit(
   if (shown === null || typeof shown === "string" || (shown.lines ?? 0) > RENDERED_MAX_LINES) {
     return null;
   }
-  const { text } = shown;
-  if (previous?.text === text) return previous;
-  // One download only appends, so a longer text starts with the one split before.
+  const { text, done } = shown;
+  if (previous?.text === text && previous.done === done) return previous;
+  // One download only appends, so a longer text starts with the one split before. Finishing
+  // without new text still settles the last line.
   const split =
-    previous !== null && text.length > previous.text.length
-      ? extendMarkdownSplit(previous.split, text)
-      : splitMarkdown(text);
-  return { text, split };
+    previous !== null && !previous.done && text.length >= previous.text.length
+      ? extendMarkdownSplit(previous.split, text, undefined, done)
+      : splitMarkdown(text, undefined, done);
+  return { text, done, split };
 }
 
 /** Markdown pieces of each swap, kept as long as the text; splitting 12 MB at once takes 0.5 s. */

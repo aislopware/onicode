@@ -7,6 +7,7 @@ import { textDirection } from "~/textDirection";
 
 import { ComposerContextActionsContext } from "../composerContextActions";
 import { Button } from "../ui/button";
+import { isImeKeyDown } from "../../lib/imeKeyDown";
 
 export function AssistantCitationCommentEditor({
   citation,
@@ -72,7 +73,7 @@ export function AssistantCitationCommentEditor({
       data-citation-comment-editor="true"
       onKeyDown={(event) => {
         event.stopPropagation();
-        if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+        if (isImeKeyDown(event.nativeEvent)) return;
         if (event.key === "Escape") {
           event.preventDefault();
           if (speech.state.phase !== "idle") speech.cancel();
@@ -95,12 +96,7 @@ export function AssistantCitationCommentEditor({
         value={comment}
         onChange={(event) => updateComment(event.currentTarget.value)}
         onKeyDown={(event) => {
-          if (
-            event.key === "Enter" &&
-            !event.shiftKey &&
-            !event.nativeEvent.isComposing &&
-            event.keyCode !== 229
-          ) {
+          if (event.key === "Enter" && !event.shiftKey && !isImeKeyDown(event.nativeEvent)) {
             event.preventDefault();
             if (event.metaKey || event.ctrlKey) {
               submitAndSend();

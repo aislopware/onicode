@@ -43,6 +43,7 @@ import {
   revealSettingsSearchTarget,
   useSearchableSetting,
 } from "./settingsSearch";
+import { isImeKeyDown } from "../../lib/imeKeyDown";
 
 let fontDefaultFamilies: { readonly sans: string | null; readonly code: string | null } | undefined;
 
@@ -517,7 +518,7 @@ function FontFamilySettingsRow({
           };
         }}
         onKeyDown={(event) => {
-          if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+          if (isImeKeyDown(event.nativeEvent)) return;
           if (event.key === "Enter") flushDraft();
           if (event.key === "Escape") {
             // Discard uncommitted typing without closing the settings page,

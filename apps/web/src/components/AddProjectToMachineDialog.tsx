@@ -61,6 +61,7 @@ import { Label } from "./ui/label";
 import { MiddleTruncate } from "./ui/middle-truncate";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "./ui/select";
 import { Toggle, ToggleGroup } from "./ui/toggle-group";
+import { clearSearchOnEscape } from "./settings/searchFieldEscape";
 
 interface AddProjectToMachineRequest {
   readonly projectRef: ScopedProjectRef;
@@ -405,7 +406,8 @@ function AddProjectToMachineDialog({ request }: { request: AddProjectToMachineRe
                 {canSearchFiles && (allIgnoredFiles.data?.truncated || fileQuery.length > 0) ? (
                   <Input
                     size="sm"
-                    type="search"
+                    type="text"
+                    role="searchbox"
                     aria-label={gt("Search ignored files")}
                     placeholder={gt("Search ignored files")}
                     value={fileQuery}
@@ -414,6 +416,7 @@ function AddProjectToMachineDialog({ request }: { request: AddProjectToMachineRe
                     // Enter would otherwise submit the clone.
                     onKeyDown={(event) => {
                       if (event.key === "Enter") event.preventDefault();
+                      clearSearchOnEscape(event, fileQuery, () => setFileQuery(""));
                     }}
                     spellCheck={false}
                     autoComplete="off"

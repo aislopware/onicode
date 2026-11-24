@@ -14,6 +14,7 @@ import { registerShortcutContext } from "../../shortcuts/dispatcher";
 import type { BranchToolbarHandle } from "../BranchToolbar";
 import { shouldTypeToFocusComposer } from "./composerFocusRedirect";
 import { composerShortcutCommands } from "./composerShortcuts";
+import { isImeKeyDown } from "../../lib/imeKeyDown";
 
 /** Returning false lets the key event through untouched. */
 type ChatShortcutHandler = (context: {
@@ -108,8 +109,7 @@ export function useChatShortcuts(input: ChatShortcutsInput) {
       event.key !== "Escape" ||
       !input.threadFindActive ||
       event.defaultPrevented ||
-      event.isComposing ||
-      event.keyCode === 229 ||
+      isImeKeyDown(event) ||
       isCommandPaletteOpen() ||
       isInSideChatPane(event.target) !== embedded
     )
