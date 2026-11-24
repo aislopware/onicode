@@ -3599,3 +3599,4 @@ f46fa62d59	take	feat(github): issues follow GitHub's issue statuses (#41795); is
 69d8f4217f	take	feat: auto-merge a stack through GitHub's includeStack (#41809); catalogs regenerated, translations taken from upstream, Onicode's ellipsis kept, agentContextBudget tool-list size adjusted by upstream's delta
 ceb820e24e	take	fix(scripts): server benchmark keeps the rounds it finished when a later run fails (#41716)
 337e8f00d6	take	fix(server): saving a workflow no longer blocks workflow calls until running agent steps finish (#41751)
+5bf6b122b5	take	fix(web): a long pull request search no longer ends in a broken character (#41838)
