@@ -434,6 +434,8 @@ export interface OrchestratorV2Shape {
   readonly restartContinuationPending: (run: OrchestrationV2Run) => Effect.Effect<boolean>;
   /** Declined continuations emit no thread event; this still wakes waiters. */
   readonly awaitRestartContinuation: (run: OrchestrationV2Run) => Effect.Effect<void>;
+  /** A capture that gives up emits no thread event; this still wakes waiters. */
+  readonly awaitLatestRunCapture: (threadId: ThreadId) => Effect.Effect<void>;
   /** A steer that misses its turn moves its message to another run once the worker settles it. */
   readonly steerDeliveryPending: (
     threadId: ThreadId,
@@ -1313,7 +1315,9 @@ function queuedRunCancellationEvents(
 
 function latestStartedRun(runs: ReadonlyArray<OrchestrationV2Run>): OrchestrationV2Run | undefined {
   return runs
-    .filter((run) => run.status !== "queued")
+    .filter(
+      (run) => run.status !== "queued" && !(run.status === "cancelled" && run.startedAt === null),
+    )
     .reduce<OrchestrationV2Run | undefined>(
       (latest, run) => (latest === undefined || run.ordinal > latest.ordinal ? run : latest),
       undefined,
@@ -2795,7 +2799,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
   ) {
     const plan = yield* planQueueStart(threadId, requested).pipe(
       Effect.catch((cause) =>
-        failQueuedRunStart(threadId, cause, requested?.queuedRunId).pipe(Effect.as(undefined)),
+        failQueuedRunStart(
+          threadId,
+          cause,
+          requested?.queuedRunId ?? queueStartsAwaitingCapture.get(threadId)?.options.queuedRunId,
+        ).pipe(Effect.as(undefined)),
       ),
     );
     if (plan === undefined) return;
@@ -14301,7 +14309,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const emitEvent = emit(input.events, input.command);
     const { runs, subagents } = input.projection;
     let { thread } = input.projection;
-    queueStartsAwaitingCapture.delete(thread.id);
     let recovery = thread.limitRecovery;
     const latest = latestExecutedRun(runs);
     if (latest?.status === "failed") {
@@ -17542,6 +17549,17 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             commandThreadId: commandThreadId(command),
           });
         }
+        // What holds or ends the queue voids a pick put off for the turn-end capture.
+        if (
+          command.type === "thread.stop" ||
+          (command.type === "run.interrupt" && command.holdQueue === true) ||
+          command.type === "thread.archive" ||
+          command.type === "thread.delete"
+        ) {
+          for (const threadId of [command.threadId, ...sideChatIds]) {
+            queueStartsAwaitingCapture.delete(threadId);
+          }
+        }
         if (command.type === "queue.resume" || command.type === "queued-run.start") {
           yield* startNextQueuedRunAfterCommit(
             command.type,
@@ -17731,7 +17749,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
   // A capture that gives up writes no run update, so what waits for it goes on from here.
   const captureWatches = yield* FiberMap.make<RunId>();
   const reactOnceCaptureGivesUp = (
-    stored: OrchestrationV2StoredEvent,
+    threadId: ThreadId,
     run: OrchestrationV2Run,
   ): Effect.Effect<void> => {
     const effectId = RunExecutionService.checkpointCaptureEffectId(run.id, run.activeAttemptId);
@@ -17739,12 +17757,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       Effect.andThen(effectOutbox.get(effectId)),
       Effect.flatMap((effect) =>
         Option.exists(effect, ({ status }) => status === "failed")
-          ? threadReactions.run(stored.event.threadId, handleRunUpdate(stored))
+          ? threadReactions.run(threadId, reactToRunUpdate(threadId, run))
           : Effect.void,
       ),
       Effect.catch((cause) =>
         Effect.logWarning("Failed to watch a run's checkpoint capture", {
-          threadId: stored.event.threadId,
+          threadId,
           runId: run.id,
           cause,
         }),
@@ -17754,105 +17772,106 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     );
   };
 
-  const handleRunUpdate: (stored: OrchestrationV2StoredEvent) => Effect.Effect<void> = Effect.fn(
-    "Orchestrator.handleRunUpdate",
-  )(
-    function* (stored: OrchestrationV2StoredEvent) {
-      if (stored.event.type !== "run.updated") return;
-      const threadId = stored.event.threadId;
-      const run = stored.event.payload;
-      const captureAwaited = yield* awaitsCheckpointCapture(run);
-      // Take parent and child locks sequentially, never nested: delegation holds the parent
-      // while writing child events, so nesting parent inside child would invert the order.
-      // The keyed semaphores are neither reentrant nor deadlock-aware.
-      if (delegatedTaskTerminalStatus(run.status) !== null && !captureAwaited) {
-        // Before the parent hears of the failure: a pending continuation keeps the task open.
-        if (run.status === "failed" && run.restartContinuationOfRunId !== undefined) {
-          yield* threadDispatch.withLock(threadId, retryContinuationStart(threadId, run.id)).pipe(
-            Effect.catchCause((cause) =>
-              Effect.logWarning("Failed to schedule a restart continuation retry", {
-                threadId,
-                runId: run.id,
-                cause,
-              }),
-            ),
-          );
-        }
-        // A failed run queues no checkpoint capture, whose effect would retry this.
-        yield* threadDispatch
-          .withLock(threadId, finalizeDelegatedCompletionDelivery(threadId, run.id))
-          .pipe(
-            Effect.catchCause((cause) =>
-              Effect.logWarning("Retrying a delegated completion delivery's settlement", {
-                threadId,
-                runId: run.id,
-                cause,
-              }).pipe(
-                Effect.andThen(
-                  retryAfterCommit(
-                    `settle:${threadId}:${run.id}`,
-                    threadDispatch.withLock(
-                      threadId,
-                      retryDelegatedCompletionDeliverySettlement(threadId, run.id),
-                    ),
-                    { threadId, runId: run.id },
-                  ),
-                ),
-              ),
-            ),
-          );
-        yield* threadDispatch
-          .withLock(
-            threadId,
-            (run.status === "completed"
-              ? releaseUnattendedHolds(threadId, run.id)
-              : Effect.void
-            ).pipe(
-              Effect.andThen(
-                acceptReadResults(threadId, [run.id]).pipe(
-                  Effect.catchCause((cause) =>
-                    Effect.logWarning("Failed to accept a delegated result the agent read", {
-                      threadId,
-                      cause,
-                    }),
-                  ),
-                ),
-              ),
-              Effect.andThen(
-                requeueUnreadSteers(threadId, [run.id]).pipe(
-                  Effect.catchCause((cause) =>
-                    Effect.logWarning("Failed to read unread steers", { threadId, cause }),
-                  ),
-                ),
-              ),
-              Effect.andThen(
-                startNextQueuedRunAfterCommit("run-ended", threadId, {
-                  endedRunId: run.id,
-                  ...(run.status === "failed" ? { failedRunId: run.id } : {}),
+  const handleRunUpdate = (stored: OrchestrationV2StoredEvent) =>
+    stored.event.type === "run.updated"
+      ? reactToRunUpdate(stored.event.threadId, stored.event.payload)
+      : Effect.void;
+
+  const reactToRunUpdate: (threadId: ThreadId, run: OrchestrationV2Run) => Effect.Effect<void> =
+    Effect.fn("Orchestrator.handleRunUpdate")(
+      function* (threadId: ThreadId, run: OrchestrationV2Run) {
+        const captureAwaited = yield* awaitsCheckpointCapture(run);
+        // Take parent and child locks sequentially, never nested: delegation holds the parent
+        // while writing child events, so nesting parent inside child would invert the order.
+        // The keyed semaphores are neither reentrant nor deadlock-aware.
+        if (delegatedTaskTerminalStatus(run.status) !== null && !captureAwaited) {
+          // Before the parent hears of the failure: a pending continuation keeps the task open.
+          if (run.status === "failed" && run.restartContinuationOfRunId !== undefined) {
+            yield* threadDispatch.withLock(threadId, retryContinuationStart(threadId, run.id)).pipe(
+              Effect.catchCause((cause) =>
+                Effect.logWarning("Failed to schedule a restart continuation retry", {
+                  threadId,
+                  runId: run.id,
+                  cause,
                 }),
               ),
-            ),
-          )
-          .pipe(
-            Effect.catchCause((cause) =>
-              Effect.logWarning("Failed to start the next queued V2 run", { threadId, cause }),
-            ),
-          );
-      }
-      yield* updateDelegatedParentTask(threadId, run.id);
-      if (captureAwaited) yield* reactOnceCaptureGivesUp(stored, run);
-    },
-    (effect, stored) =>
-      effect.pipe(
-        Effect.catchCause((cause) =>
-          Effect.logWarning("Failed to react to V2 run update", {
-            threadId: stored.event.threadId,
-            sequence: stored.sequence,
-            cause,
-          }),
+            );
+          }
+          // A failed run queues no checkpoint capture, whose effect would retry this.
+          yield* threadDispatch
+            .withLock(threadId, finalizeDelegatedCompletionDelivery(threadId, run.id))
+            .pipe(
+              Effect.catchCause((cause) =>
+                Effect.logWarning("Retrying a delegated completion delivery's settlement", {
+                  threadId,
+                  runId: run.id,
+                  cause,
+                }).pipe(
+                  Effect.andThen(
+                    retryAfterCommit(
+                      `settle:${threadId}:${run.id}`,
+                      threadDispatch.withLock(
+                        threadId,
+                        retryDelegatedCompletionDeliverySettlement(threadId, run.id),
+                      ),
+                      { threadId, runId: run.id },
+                    ),
+                  ),
+                ),
+              ),
+            );
+          yield* threadDispatch
+            .withLock(
+              threadId,
+              (run.status === "completed"
+                ? releaseUnattendedHolds(threadId, run.id)
+                : Effect.void
+              ).pipe(
+                Effect.andThen(
+                  acceptReadResults(threadId, [run.id]).pipe(
+                    Effect.catchCause((cause) =>
+                      Effect.logWarning("Failed to accept a delegated result the agent read", {
+                        threadId,
+                        cause,
+                      }),
+                    ),
+                  ),
+                ),
+                Effect.andThen(
+                  requeueUnreadSteers(threadId, [run.id]).pipe(
+                    Effect.catchCause((cause) =>
+                      Effect.logWarning("Failed to read unread steers", { threadId, cause }),
+                    ),
+                  ),
+                ),
+                Effect.andThen(
+                  startNextQueuedRunAfterCommit("run-ended", threadId, {
+                    endedRunId: run.id,
+                    ...(run.status === "failed" ? { failedRunId: run.id } : {}),
+                  }),
+                ),
+              ),
+            )
+            .pipe(
+              Effect.catchCause((cause) =>
+                Effect.logWarning("Failed to start the next queued V2 run", { threadId, cause }),
+              ),
+            );
+        }
+        yield* updateDelegatedParentTask(threadId, run.id);
+        if (captureAwaited) yield* reactOnceCaptureGivesUp(threadId, run);
+      },
+      (effect, threadId, run) =>
+        effect.pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning("Failed to react to V2 run update", {
+              threadId,
+              runId: run.id,
+              cause,
+            }),
+          ),
         ),
-      ),
-  );
+    );
 
   // Projections already contain historical terminals; replaying them delays startup queue promotion with database size.
   const terminalEventsAfterSequence = yield* eventSink.latestSequence().pipe(Effect.orDie);
@@ -18124,6 +18143,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               const parentThreadId = thread?.lineage.parentThreadId;
               if (parentThreadId === undefined || parentThreadId === null) return;
               yield* threadDispatch.withLock(parentThreadId, finalizeAppOwnedSubagent(threadId));
+              // No live run update is left to watch a capture that outlived the last process.
+              const awaiting = yield* runAwaitingCapture(threadId);
+              if (awaiting !== undefined) yield* reactOnceCaptureGivesUp(threadId, awaiting);
             }).pipe(
               Effect.catchCause((cause) =>
                 Effect.logWarning("Failed to recover terminal app-owned subagent", {
@@ -18398,6 +18420,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         return awaitsRestartContinuation(run).pipe(Effect.orElseSucceed(() => false));
       },
     ),
+    awaitLatestRunCapture,
     awaitRestartContinuation: Effect.fn("OrchestratorV2.awaitRestartContinuation")(function (run) {
       return effectOutbox.awaitSettled(`effect:restart-continuation:${run.id}`).pipe(Effect.ignore);
     }),

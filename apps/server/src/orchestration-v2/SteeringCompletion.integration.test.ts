@@ -1796,7 +1796,7 @@ it.effect("sends the picked queued message when Send now lands before the turn's
   }),
 );
 
-it.effect.each(["stop", "unstartable"] as const)(
+it.effect.each(["stop", "unstartable", "another cancelled"] as const)(
   "a Send now before the turn's capture keeps to its own message: %s",
   (scenario) =>
     Effect.gen(function* () {
@@ -1835,6 +1835,7 @@ it.effect.each(["stop", "unstartable"] as const)(
         yield* send("third");
         const second = yield* runOf("second");
         const third = yield* runOf("third");
+        if (scenario === "another cancelled") yield* send("fourth");
         yield* endTurnBeforeCapture(events, threadId, started[0]!);
         if (scenario === "unstartable") {
           yield* (yield* EventSink.EventSinkV2).write({
@@ -1856,6 +1857,26 @@ it.effect.each(["stop", "unstartable"] as const)(
           threadId,
           runId: third.id,
         });
+        if (scenario === "another cancelled") {
+          // A later message cancelled before it ran is not a newer turn.
+          yield* orchestrator.dispatch({
+            type: "queued-run.cancel",
+            commandId: CommandId.make("cancel-fourth"),
+            threadId,
+            runId: (yield* runOf("fourth")).id,
+          });
+          const picked = yield* settled(
+            (event) =>
+              event.type === "run.updated" &&
+              (event.payload.id === second.id || event.payload.id === third.id) &&
+              event.payload.status !== "queued",
+          );
+          yield* worker.drain();
+          yield* Fiber.join(picked);
+          yield* worker.drain();
+          assert.equal(started[1]?.message.messageId, MessageId.make("message:third"));
+          return;
+        }
         if (scenario === "unstartable") {
           const failed = yield* settled(
             (event) => event.type === "run.updated" && event.payload.status === "failed",

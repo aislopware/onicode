@@ -733,6 +733,9 @@ it.effect("waitForThread can wait past an ended run for the thread's delegated w
     // The run ended, but a task it delegated still runs and will wake the thread.
     let runs = [run(runId, 1, "completed", 1)];
     let subagents = [{ status: "running" }];
+    // The wake's turn-end capture gives up, which records no event.
+    const captureAwaited = yield* Deferred.make<void>();
+    const captureGaveUp = yield* Deferred.make<void>();
     const stored = (sequence: number, event: object) =>
       ({ sequence, event: { threadId, ...event } }) as unknown as OrchestrationV2StoredEvent;
     const layerTest = ThreadManagementService.layer.pipe(
@@ -741,7 +744,12 @@ it.effect("waitForThread can wait past an ended run for the thread's delegated w
         Layer.mock(Orchestrator.OrchestratorV2)({
           getThreadEventSequence: () => Effect.succeed(0),
           restartContinuationPending: () => Effect.succeed(false),
-          delegatedTaskResultPending: () => Effect.succeed(false),
+          delegatedTaskResultPending: () =>
+            Deferred.isDone(captureGaveUp).pipe(Effect.map((done) => !done)),
+          awaitLatestRunCapture: () =>
+            Deferred.succeed(captureAwaited, undefined).pipe(
+              Effect.andThen(Deferred.await(captureGaveUp)),
+            ),
           streamStoredEventsFrom: (input) =>
             input?.eventType === "subagent.updated"
               ? Stream.fromEffect(Deferred.succeed(subscribed, undefined)).pipe(
@@ -791,6 +799,8 @@ it.effect("waitForThread can wait past an ended run for the thread's delegated w
     subagents = [{ status: "completed" }];
     runs = [...runs, run(wakeRunId, 2, "completed", 3)];
     yield* Queue.offer(events, stored(1, { type: "subagent.updated", payload: {} }));
+    yield* Effect.raceFirst(Deferred.await(captureAwaited), Fiber.await(fiber));
+    yield* Deferred.succeed(captureGaveUp, undefined);
     const result = yield* Fiber.join(fiber);
 
     expect(result).toMatchObject({
