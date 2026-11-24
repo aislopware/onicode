@@ -3644,3 +3644,4 @@ a4029d4b91	take	test conflict: kept both citation tests (Onicode fold cases + up
 f02d7b7ad8	take	conflict: wrapped Onicode's richer no-model fallback (checking/policy/project reasons) in upstream's KeyboardStickyView
 b3fff82014	take	test adapted: Onicode's model picker placeholder is "Search models"
 d0689976cd	take	taken as is; Onicode has the same two .bench.ts files and the unit (bench) project resolves
+66947c7749	take	taken as is
