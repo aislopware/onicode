@@ -14,7 +14,12 @@ import type {
   ThreadId,
 } from "@onicode/contracts";
 import { create } from "zustand";
-import { DraftId, composerTargetKey, useComposerDraftStore } from "./composerDraftStore";
+import {
+  DraftId,
+  composerFileNeedsReattach,
+  composerTargetKey,
+  useComposerDraftStore,
+} from "./composerDraftStore";
 import { pendingDraftWork } from "./components/chat/pendingDraftWork";
 import { pendingThreadImports } from "./components/chat/pendingThreadImports";
 import {
@@ -319,12 +324,14 @@ export function captureQuestionAnswerSend(input: {
     const drafts = useComposerDraftStore.getState();
     const attachmentIds = questionKeys.flatMap((key) => {
       const draft = drafts.getComposerDraft(key);
-      // The composer that uploads attachments may show another thread by now, so images that
-      // finished preparing after it left start uploading here.
-      for (const image of draft?.images ?? []) {
+      const attachments = draft ? [...draft.images, ...draft.files] : [];
+      // The composer that uploads attachments may show another thread by now, so those that
+      // landed after it left start uploading here.
+      for (const image of attachments) {
+        if (image.type === "file" && composerFileNeedsReattach(image)) continue;
         startAttachmentUpload({ environmentId, image, draftTarget: key });
       }
-      return draft ? [...draft.images, ...draft.files].map((attachment) => attachment.id) : [];
+      return attachments.map((attachment) => attachment.id);
     });
     // An answer goes only with its attachments uploaded; a live composer waits on that too.
     // A move to another question since the press, or a live press that advanced first, wins.
