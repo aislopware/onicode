@@ -29,10 +29,8 @@ import {
 } from "../../composerDraftStore";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import {
-  awaitAttachmentUploads,
   getUploadedAttachments,
   refreshExpiredAttachmentUploads,
-  startAttachmentUpload,
   useAttachmentUploadStore,
 } from "../../lib/attachmentUploadQueue";
 import { composerDraftContentChanged } from "./composerSend.logic";
@@ -51,6 +49,7 @@ import {
   threadContextsReferencedByAnswer,
 } from "../../pendingUserInput";
 import {
+  captureQuestionAnswerSend,
   questionAttachmentDraftId,
   isUserInputRequestSettled,
   returnLateAnswerToThreadDraft,
@@ -701,29 +700,16 @@ export function usePendingThreadRequests(input: {
   const onAdvanceActivePendingUserInputStable = useStableCallback(onAdvanceActivePendingUserInput);
   // Pins the question open at the press: the chat view outlives a switch to another thread.
   const captureQuestionAnswer = useStableCallback(() => {
-    const advance = onAdvanceActivePendingUserInput;
     const scope = draftScope;
-    const { questionKeys } = pendingUserInputDraftKeys(scope);
-    const questionIndex = () =>
-      readPendingUserInputDraft(scope).activePendingProgress?.questionIndex;
-    const indexAtPress = questionIndex();
-    return () => {
-      const drafts = useComposerDraftStore.getState();
-      const attachmentIds = questionKeys.flatMap((key) => {
-        const draft = drafts.getComposerDraft(key);
-        // The composer that uploads attachments may show another thread by now, so images that
-        // finished preparing after it left start uploading here.
-        for (const image of draft?.images ?? []) {
-          startAttachmentUpload({ environmentId: scope.environmentId, image, draftTarget: key });
-        }
-        return draft ? [...draft.images, ...draft.files].map((attachment) => attachment.id) : [];
-      });
-      // An answer goes only with its attachments uploaded; a live composer waits on that too.
-      // A move to another question since the press, or a live press that advanced first, wins.
-      void awaitAttachmentUploads(attachmentIds).then(() => {
-        if (questionIndex() === indexAtPress) advance();
-      });
-    };
+    if (!scope.activeThreadId || !scope.activePendingUserInput) return () => {};
+    return captureQuestionAnswerSend({
+      environmentId: scope.environmentId,
+      threadId: scope.activeThreadId,
+      requestId: scope.activePendingUserInput.requestId,
+      questionKeys: pendingUserInputDraftKeys(scope).questionKeys,
+      questionIndex: () => readPendingUserInputDraft(scope).activePendingProgress?.questionIndex,
+      advance: onAdvanceActivePendingUserInput,
+    });
   });
 
   const onPreviousActivePendingUserInputQuestion = () => {

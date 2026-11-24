@@ -22,7 +22,11 @@ import {
   countPreparingComposerImages,
   movePreparingComposerImagesToThread,
 } from "./components/chat/preparingComposerImages";
-import { releaseDraftAttachments } from "./lib/attachmentUploadQueue";
+import {
+  awaitAttachmentUploads,
+  releaseDraftAttachments,
+  startAttachmentUpload,
+} from "./lib/attachmentUploadQueue";
 import {
   carryDisplacedCustomAnswerIntoPrompt,
   threadContextsReferencedByAnswer,
@@ -295,6 +299,36 @@ export function isUserInputRequestSettled(
 ): boolean {
   const key = scopedThreadKey(scopeThreadRef(environmentId, threadId));
   return settledRequestsByThread.get(key)?.has(requestId) ?? false;
+}
+
+/** An answer pressed now, which sends once its attachments upload, even after its composer left. */
+export function captureQuestionAnswerSend(input: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly requestId: RuntimeRequestId;
+  readonly questionKeys: ReadonlyArray<DraftId>;
+  readonly questionIndex: () => number | undefined;
+  readonly advance: () => void;
+}): () => void {
+  const { environmentId, questionKeys, questionIndex, advance } = input;
+  const indexAtPress = questionIndex();
+  return () => {
+    const drafts = useComposerDraftStore.getState();
+    const attachmentIds = questionKeys.flatMap((key) => {
+      const draft = drafts.getComposerDraft(key);
+      // The composer that uploads attachments may show another thread by now, so images that
+      // finished preparing after it left start uploading here.
+      for (const image of draft?.images ?? []) {
+        startAttachmentUpload({ environmentId, image, draftTarget: key });
+      }
+      return draft ? [...draft.images, ...draft.files].map((attachment) => attachment.id) : [];
+    });
+    // An answer goes only with its attachments uploaded; a live composer waits on that too.
+    // A move to another question since the press, or a live press that advanced first, wins.
+    void awaitAttachmentUploads(attachmentIds).then(() => {
+      if (questionIndex() === indexAtPress) advance();
+    });
+  };
 }
 
 /** Text meant for a question that has since closed goes to the thread's draft, as a stopped answer does. */
