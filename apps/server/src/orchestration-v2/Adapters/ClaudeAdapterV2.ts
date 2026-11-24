@@ -6736,6 +6736,12 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
       Effect.provideService(Path.Path, path),
     );
 
+  // Outlives sessions: idle release reopens one every few minutes. A connected server is forgotten,
+  // so losing its sign-in later is announced again.
+  const announcedMcpSignIns = new Set<string>();
+  const mcpSignInKey = (nativeThreadId: string, server: string) =>
+    `${nativeThreadId}\u0000${server}`;
+
   return ProviderAdapter.ProviderAdapterV2.of({
     instanceId: adapterOptions.instanceId,
     driver: CLAUDE_PROVIDER,
@@ -9723,10 +9729,6 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             registry: target.toolCalls,
           });
 
-        // Keyed by native thread and server: one notice per server for as long as the session runs.
-        const announcedMcpSignIns = new Set<string>();
-        const mcpSignInKey = (liveQuery: ClaudeLiveQueryContext, server: string) =>
-          `${liveQuery.nativeThreadId}\u0000${server}`;
         /** Claude reports a server that needs a sign-in only in its status, which settles after start. */
         const announceMcpSignIns = Effect.fn("ClaudeAdapterV2.announceMcpSignIns")(function* (
           liveQuery: ClaudeLiveQueryContext,
@@ -9744,15 +9746,12 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           const userStatuses = statuses.filter(
             (status) => status.name !== ONICODE_CLAUDE_MCP_SERVER,
           );
-          liveQuery.checkMcpSignIns = userStatuses.some(
-            (status) =>
-              status.status === "pending" &&
-              !announcedMcpSignIns.has(mcpSignInKey(liveQuery, status.name)),
-          );
+          liveQuery.checkMcpSignIns = userStatuses.some((status) => status.status === "pending");
           for (const status of userStatuses) {
+            const key = mcpSignInKey(liveQuery.nativeThreadId, status.name);
+            if (status.status === "connected") announcedMcpSignIns.delete(key);
             // Every claude.ai connector the user never connected reports this too.
             if (status.status !== "needs-auth" || status.scope === "claudeai") continue;
-            const key = mcpSignInKey(liveQuery, status.name);
             if (announcedMcpSignIns.has(key)) continue;
             announcedMcpSignIns.add(key);
             const nativeItemId = `mcp-sign-in:${context.providerTurnId}:${status.name}`;
@@ -14954,15 +14953,25 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     context.claudeCodeVersion = message.claude_code_version;
                   }
                   if (message.type === "system" && message.subtype === "init") {
+                    for (const server of message.mcp_servers ?? []) {
+                      if (server.status === "connected") {
+                        announcedMcpSignIns.delete(
+                          mcpSignInKey(context.nativeThreadId, server.name),
+                        );
+                      }
+                    }
                     // Recorded frames from older CLIs can omit the list.
                     context.checkMcpSignIns = (message.mcp_servers ?? []).some(
                       (server) =>
-                        (server.status === "pending" || server.status === "needs-auth") &&
                         server.name !== ONICODE_CLAUDE_MCP_SERVER &&
                         // claude.ai connectors the user never connected need a sign-in too.
                         !server.name.startsWith("claude.ai ") &&
-                        // A server reports this every turn until signed in; its notice shows once.
-                        !announcedMcpSignIns.has(mcpSignInKey(context, server.name)),
+                        (server.status === "pending" ||
+                          (server.status === "needs-auth" &&
+                            // A server reports this every turn until signed in; its notice shows once.
+                            !announcedMcpSignIns.has(
+                              mcpSignInKey(context.nativeThreadId, server.name),
+                            ))),
                     );
                   }
                   if (

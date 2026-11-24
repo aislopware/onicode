@@ -3772,3 +3772,4 @@ b197474104	take	taken as is
 e62e5122ad	take	taken as is
 ff7d03ddfd	take	fix(client-runtime): omit failed image reads from viewed-image previews (#42265)
 f99ef08bb8	take	fix(cli): onicode policy templates expands ~ in the output directory (#42267)
+1a01d7ee6f	take	fix(server): Claude asks to sign in to each MCP server once per thread (#42263); kept Onicode's ONICODE_CLAUDE_MCP_SERVER filter and already-announced needs-auth init skip, adopted upstream's adapter-scoped set and connected clearing
