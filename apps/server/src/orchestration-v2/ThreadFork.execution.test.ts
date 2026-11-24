@@ -1789,6 +1789,65 @@ it.effect.each<{
   }).pipe(Effect.provide(forkCases[0]!.layer)),
 );
 
+it.effect("merge-back carries only the fork's context since its latest /clear", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const parentId = ThreadId.make("merge-back-clear-parent");
+    const parentRunId = RunId.make("merge-back-clear-parent-run");
+    const forkId = ThreadId.make("merge-back-clear-fork");
+    const clearRunId = RunId.make("merge-back-clear-fork-run-2");
+    yield* createParent(parentId);
+    yield* writeParentRun({
+      threadId: parentId,
+      runId: parentRunId,
+      ordinal: 1,
+      status: "completed",
+      text: "Parent work",
+    });
+    yield* orchestrator.dispatch({
+      type: "thread.fork",
+      commandId: CommandId.make("merge-back-clear-fork"),
+      sourceThreadId: parentId,
+      targetThreadId: forkId,
+      sourcePoint: { type: "run", runId: parentRunId },
+      createdBy: "user",
+      creationSource: "web",
+    });
+    yield* writeParentRun({
+      threadId: forkId,
+      runId: RunId.make("merge-back-clear-fork-run-1"),
+      ordinal: 1,
+      status: "completed",
+      text: "BEFORE_CLEAR_MARKER",
+      stable: true,
+    });
+    yield* writeParentRun({
+      threadId: forkId,
+      runId: clearRunId,
+      ordinal: 2,
+      status: "completed",
+      text: "AFTER_CLEAR_MARKER",
+      stable: true,
+      freshContext: true,
+    });
+    yield* orchestrator.dispatch({
+      type: "thread.merge_back",
+      commandId: CommandId.make("merge-back-clear-merge"),
+      sourceThreadId: forkId,
+      targetThreadId: parentId,
+      sourcePoint: { type: "run", runId: clearRunId },
+      createdBy: "user",
+      creationSource: "web",
+    });
+    yield* askSideChat(parentId, "merge-back-clear-consume");
+
+    const parent = yield* orchestrator.getThreadProjection(parentId);
+    const context = parent.contextHandoffs.map((handoff) => handoff.summaryText).join("\n");
+    assert.include(context, "AFTER_CLEAR_MARKER");
+    assert.notInclude(context, "BEFORE_CLEAR_MARKER");
+  }).pipe(Effect.provide(forkCases[0]!.layer)),
+);
+
 it.effect("merge-back rejects a second fork's context until the first is consumed", () =>
   Effect.gen(function* () {
     const orchestrator = yield* Orchestrator.OrchestratorV2;

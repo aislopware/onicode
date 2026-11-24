@@ -90,10 +90,33 @@ export const layer = Layer.effect(
     });
 
     const forThread = Effect.fn("McpAppModelContext.forThread")(function* (threadId: ThreadId) {
-      // Match by id across fork lineage; later source rollbacks leave the fork's copy intact.
+      // Match by id across fork lineage; later source rollbacks leave the fork's copy intact,
+      // while a started /clear (fresh, not scheduled) run on this thread drops older notes.
       return yield* sql<McpAppModelContextEntry>`
+        WITH boundary AS (
+          SELECT COALESCE(MAX(b.ordinal), 0) AS min_ordinal
+          FROM orchestration_v2_projection_runs AS b
+          WHERE b.thread_id = ${threadId}
+            AND json_extract(b.payload_json, '$.freshContext') = 1
+            AND b.status <> 'queued'
+            -- Mirrors startedFreshRun: a run that never started cleared nothing.
+            AND NOT (
+              b.status IN ('cancelled', 'rolled_back')
+              AND json_extract(b.payload_json, '$.startedAt') IS NULL
+              AND json_extract(b.payload_json, '$.restartContinuationOfRunId') IS NULL
+            )
+            -- Mirrors scheduledRunIds: the run's first prompt says whether a schedule sent it.
+            AND (
+              SELECT json_extract(ti.payload_json, '$.scheduledTaskId')
+              FROM orchestration_v2_projection_turn_items AS ti
+              WHERE ti.run_id = b.run_id AND ti.type = 'user_message'
+              ORDER BY ti.ordinal
+              LIMIT 1
+            ) IS NULL
+        )
         SELECT context.item_id AS "itemId", context.server, context.tool, context.text
         FROM mcp_app_model_context AS context
+        CROSS JOIN boundary
         JOIN orchestration_v2_projection_turn_items AS item
           ON item.turn_item_id = context.item_id
         LEFT JOIN orchestration_v2_projection_runs AS run
@@ -103,6 +126,10 @@ export const layer = Layer.effect(
             run.status IS NULL
             OR run.status <> 'rolled_back'
             OR run.thread_id <> context.thread_id
+          )
+          AND (
+            boundary.min_ordinal = 0
+            OR (run.thread_id = context.thread_id AND run.ordinal >= boundary.min_ordinal)
           )
         ORDER BY context.updated_at, context.item_id
       `.pipe(NodeSqliteClient.readOnly, Effect.mapError(fail));
