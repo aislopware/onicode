@@ -5586,6 +5586,49 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       reads: [{ lint: "success", test: "success" }],
       told: [[]],
     },
+    // A rerun failing after the start's passing read is news, though the last watch never read.
+    {
+      label: "passing, then a rerun failed, last watch unread",
+      atStart: "passing",
+      lastHeadSha: "ad70160aaa",
+      lastUnread: true,
+      start: { checksPending: false, checksPassed: true, headSha: "ad70160aaa" },
+      reads: [{ lint: "success", test: "failure" }],
+      told: [["test"]],
+    },
+    // A push onto a conflict before the first read is news for the new head.
+    {
+      label: "passing, then pushed onto a conflict, last watch read no head",
+      atStart: "passing",
+      lastHeadSha: null,
+      lastUnread: true,
+      readConflicting: true,
+      start: { checksPending: false, checksPassed: true, headSha: "0ld0000000" },
+      // Its CI still runs, so the conflict is the only news.
+      reads: [{ lint: "success", test: "pending" }],
+      told: [[]],
+      tellsMore: true,
+    },
+    // The gate passed with an advisory check failing, which passed again before this start.
+    {
+      label: "passing after an advisory failure the last watch told",
+      atStart: "passing",
+      lastHeadSha: "ad70160aaa",
+      lastPassed: true,
+      start: { checksPending: false, checksPassed: true, headSha: "ad70160aaa" },
+      reads: [{ lint: "success", test: "success" }],
+      told: [[]],
+    },
+    // A start read can leave out a run awaiting approval, so the last watch's notice stands.
+    {
+      label: "passing beside a run the last watch told awaits approval",
+      atStart: "passing",
+      lastHeadSha: "ad70160aaa",
+      lastAwaitingApproval: true,
+      start: { checksPending: false, checksPassed: true, headSha: "ad70160aaa" },
+      reads: [{ lint: "success", test: "action-required" }],
+      told: [[]],
+    },
     // A push that left the conflict in place is told again, though its CI had passed.
     {
       label: "rewatched passing but conflicting",
@@ -5674,6 +5717,11 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
             headSha: row.lastHeadSha,
             conflicting: "lastConflicting" in row,
             failedChecks: "lastUnread" in row ? [] : ["test"],
+            ...("lastPassed" in row && { passed: true }),
+            ...("lastAwaitingApproval" in row && {
+              awaitingApproval: ["https://ci.example/runs/1"],
+              approvalAnnounced: true,
+            }),
           },
         });
         yield* orchestrator.dispatch({

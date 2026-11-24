@@ -79,7 +79,9 @@ export function evaluatePullRequestWatch(
   // A read without a head says nothing about pushes, so it keeps the last known one.
   const headSha = detail.headSha ?? watch.headSha;
   const headMoved = watch.headSha !== null && headSha !== watch.headSha;
-  const checksBaseline = watch.awaitingBaseline !== undefined && !headMoved;
+  // A watch that starts from a passing read has its baseline: any failure after it is news.
+  const checksBaseline = watch.awaitingBaseline !== undefined && !headMoved && !watch.passed;
+  const conflictBaseline = watch.awaitingBaseline === "all" && !headMoved;
 
   // Hosts can return no checks on read failure; preserve prior state.
   let failedChecks = headMoved ? [] : watch.failedChecks;
@@ -290,11 +292,11 @@ export function evaluatePullRequestWatch(
 
   // Like a failed check, a conflict or rebase a push did not resolve is news for the new head.
   const toldConflict = !headMoved && watch.conflicting;
-  if (watch.awaitingBaseline !== "all" && detail.mergeability === "conflicting" && !toldConflict) {
+  if (!conflictBaseline && detail.mergeability === "conflicting" && !toldConflict) {
     changes.push({ kind: "conflicting" });
   }
   const toldRebase = !headMoved && watch.rebaseRequired === true;
-  if (watch.awaitingBaseline !== "all" && detail.rebaseRequired === true && !toldRebase) {
+  if (!conflictBaseline && detail.rebaseRequired === true && !toldRebase) {
     changes.push({ kind: "needs-rebase" });
   }
   // A new head starts unwarned, so an inconclusive first read must not carry the old warning.

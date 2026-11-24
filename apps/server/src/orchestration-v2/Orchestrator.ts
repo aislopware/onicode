@@ -5656,12 +5656,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               ? command.headSha
               : undefined;
           const lastWatch = readHead === undefined ? ended : undefined;
-          // The caller read CI passing where the last watch saw it unfinished or failing.
+          // The caller read every check passing, so the last watch's check news is history. A run
+          // awaiting approval can be missing from that read, so it holds its news.
           const passedSinceLastWatch =
             command.type === "thread.pull-request.watch" &&
             command.checksPassed === true &&
             lastWatch !== undefined &&
-            !lastWatch.passed;
+            (lastWatch.awaitingApproval?.length ?? 0) === 0;
           const watch =
             command.type === "thread.pull-request-watch.sync"
               ? existing.watch?.startedAt === command.startedAt
