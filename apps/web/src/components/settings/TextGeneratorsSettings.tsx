@@ -668,6 +668,7 @@ function TextGeneratorModelList({
         <Input
           type="text"
           role="searchbox"
+          enterKeyHint="search"
           placeholder={gt("Search models")}
           aria-label={gt("Search models")}
           autoFocus
