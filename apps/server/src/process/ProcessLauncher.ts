@@ -143,11 +143,11 @@ const killChild = (child: HostedChild) => {
   if (child.groupLeader) {
     try {
       process.kill(-child.pid, "SIGKILL");
-      return;
     } catch {
-      // It may have left the group it led.
+      // The group is gone.
     }
   }
+  // A leader may have left the group it led.
   try {
     process.kill(child.pid, "SIGKILL");
   } catch {
@@ -399,23 +399,37 @@ export const make = Effect.fn("ProcessLauncher.make")(function* (
     );
   });
 
-  // Closing the channel drops writes still queued in it, such as a release the launcher must
-  // read before it kills what it still holds; a write's callback runs once those before it went.
-  const flush = (launcher: Launcher) =>
+  // Disconnecting would drop writes still queued in the channel, such as a release, so the
+  // launcher reads a shutdown after them and exits on its own; one that does not is hung.
+  const shutDownGracefully = (launcher: Launcher) =>
     Effect.callback<void>((resume) => {
-      const request: LauncherRequest = { type: "flush" };
-      launcher.worker.send(request, () => resume(Effect.void));
-    }).pipe(Effect.timeoutOption("1 second"));
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        resume(Effect.void);
+      };
+      launcher.worker.once("exit", finish);
+      const request: LauncherRequest = { type: "shutdown" };
+      launcher.worker.send(request, (error) => {
+        if (error) finish();
+      });
+    }).pipe(
+      Effect.timeoutOption("1 second"),
+      Effect.flatMap((exited) => Effect.sync(() => close(launcher, Option.isNone(exited)))),
+    );
 
   yield* Effect.addFinalizer(() =>
     Effect.suspend(() => {
       shutDown = true;
       const launcher = current;
       if (launcher === undefined) return Effect.void;
-      return Effect.andThen(
-        launcher.closed || !launcher.worker.connected ? Effect.void : flush(launcher),
-        Effect.sync(() => close(launcher)),
-      );
+      // Commands spawned from here on fork the server instead.
+      current = undefined;
+      if (launcher.closed || !launcher.worker.connected || !Deferred.isDoneUnsafe(launcher.ready)) {
+        return Effect.sync(() => close(launcher));
+      }
+      return shutDownGracefully(launcher);
     }),
   );
   // Start while the server is still small; the launcher's own fork is the last full-size one.

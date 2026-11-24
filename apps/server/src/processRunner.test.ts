@@ -572,6 +572,14 @@ describe("ProcessRunner.layer", () => {
                 launcherArgs.some((arg) => String(arg).includes("process-launcher"))
               ) {
                 helper.once("exit", () => Deferred.doneUnsafe(helperExited, Exit.void));
+                // Holds each write back a turn, in order, as a busy channel queues them.
+                const send = helper.send.bind(helper) as (...rest: Array<unknown>) => boolean;
+                helper.send = ((...rest: Array<unknown>) => {
+                  setImmediate(() => {
+                    if (helper.connected) send(...rest);
+                  });
+                  return true;
+                }) as typeof helper.send;
               }
               return helper;
             }) as typeof spawn;
@@ -590,6 +598,7 @@ describe("ProcessRunner.layer", () => {
           yield* Layer.buildWithScope(ProcessLauncher.layerServer, server),
           ChildProcessSpawner.ChildProcessSpawner,
         );
+        const test = yield* Effect.scope;
         const status = (pid: number) =>
           fs.readFileString(`/proc/${pid}/status`).pipe(Effect.orElseSucceed(() => ""));
         // As externalLauncher opens an editor; the server stops right after, with nothing between.
@@ -603,6 +612,17 @@ describe("ProcessRunner.layer", () => {
             }),
           )
           .pipe(
+            // In the test's scope, not the spawn's, which closes before the server stops.
+            Effect.tap((handle) =>
+              Scope.addFinalizer(
+                test,
+                Effect.sync(() => {
+                  try {
+                    process.kill(handle.pid, "SIGKILL");
+                  } catch {}
+                }),
+              ),
+            ),
             Effect.tap((handle) =>
               Effect.map(status(handle.pid), (before) =>
                 expect(before.match(/^PPid:\s*(\d+)$/m)?.[1], "the helper spawned it").not.toBe(
@@ -615,13 +635,6 @@ describe("ProcessRunner.layer", () => {
             Effect.scoped,
             Effect.tap(() => Scope.close(server, Exit.void)),
           );
-        yield* Effect.addFinalizer(() =>
-          Effect.sync(() => {
-            try {
-              process.kill(pid, "SIGKILL");
-            } catch {}
-          }),
-        );
         yield* Deferred.await(helperExited);
 
         // A SIGKILL marks the process at once, though it may not have run since.

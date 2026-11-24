@@ -4,6 +4,7 @@ import type {
   DesktopHostTelemetrySnapshot,
   ResourceMonitorSnapshotEvent,
 } from "@onicode/contracts";
+import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -72,17 +73,51 @@ function layerTelemetryFor(
 
 describe("ProcessDiagnostics", () => {
   it.live.skipIf(HostProcess.Platform.defaultValue() !== "linux")(
-    "refuses to signal the process launcher that hosts the server's commands",
+    "keeps the process launcher out of the list and refuses to signal it",
     () =>
       Effect.gen(function* () {
         const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
         const command = yield* spawner.spawn(ChildProcess.make("sh", ["-c", "echo $PPID"]));
         const launcher = Number(yield* command.stdout.pipe(Stream.decodeText(), Stream.mkString));
         expect(launcher).not.toBe(process.pid);
-        const processDiagnostics = yield* ProcessDiagnostics.ProcessDiagnostics;
+        const agent = launcher + 100_000;
+        const row = (pid: number, ppid: number, name: string) => ({
+          pid,
+          ppid,
+          startTimeMs: 2_000,
+          runTimeMs: 4_000,
+          name,
+          command: name,
+          status: "Running",
+          cpuPercent: 0,
+          cpuTimeMs: 0,
+          residentBytes: 1_024,
+          virtualBytes: 2_048,
+          ioReadBytes: 0,
+          ioWriteBytes: 0,
+          ioSemantics: "storage" as const,
+        });
+        const processDiagnostics = Context.get(
+          yield* Layer.build(
+            ProcessDiagnostics.layer.pipe(
+              Layer.provide(
+                layerTelemetryFor(
+                  makeNativeSnapshot([
+                    row(launcher, SERVER_PID, "node"),
+                    row(agent, launcher, "codex"),
+                  ]),
+                ),
+              ),
+            ),
+          ),
+          ProcessDiagnostics.ProcessDiagnostics,
+        );
 
+        const listed = (yield* processDiagnostics.read).processes;
+        expect(listed.map((entry) => [entry.pid, entry.depth])).toEqual([[agent, 0]]);
+        // The launcher ignores SIGINT, so a regression signals nothing that matters.
         expect(
-          yield* processDiagnostics.signal({ pid: launcher, startTimeMs: 1, signal: "SIGINT" }),
+          yield* processDiagnostics.signal({ pid: launcher, startTimeMs: 2_000, signal: "SIGINT" }),
         ).toEqual({
           pid: launcher,
           signal: "SIGINT",
@@ -91,12 +126,7 @@ describe("ProcessDiagnostics", () => {
         });
       }).pipe(
         Effect.scoped,
-        Effect.provide(
-          Layer.mergeAll(
-            ProcessDiagnostics.layer.pipe(Layer.provide(layerTelemetryFor(makeNativeSnapshot([])))),
-            ProcessLauncher.layerServer,
-          ).pipe(Layer.provideMerge(NodeServices.layer)),
-        ),
+        Effect.provide(ProcessLauncher.layerServer.pipe(Layer.provideMerge(NodeServices.layer))),
       ),
   );
 
