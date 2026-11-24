@@ -12,6 +12,7 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import * as ServerConfig from "../config.ts";
+import * as ProcessLauncher from "./ProcessLauncher.ts";
 
 const ProcessIdentity = Schema.Struct({
   pid: Schema.Int.check(Schema.isBetween({ minimum: 2, maximum: Number.MAX_SAFE_INTEGER })),
@@ -127,7 +128,7 @@ const make = Effect.gen(function* () {
     hasOtherLiveOwner,
     register: (pid: number) => {
       const provider = identity(pid);
-      if (provider === undefined || provider.ppid !== process.pid) {
+      if (provider === undefined || !ProcessLauncher.isServerChild(provider.ppid)) {
         throw new Error("Cannot identify spawned provider");
       }
       // A rename keeps startup from seeing a partial write. The child is gated

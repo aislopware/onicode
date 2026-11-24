@@ -1078,13 +1078,20 @@ effectIt.effect("stops only a job's own process group", () =>
       { pid: 401, ppid: 400, pgid: 400 },
       { pid: 500, ppid: serverPid, pgid: 500 }, // terminal shell
       { pid: 600, ppid: 500, pgid: 600 }, // terminal job
+      { pid: 150, ppid: serverPid, pgid: 10 }, // the Linux process launcher
+      { pid: 700, ppid: 150, pgid: 700 }, // an agent CLI the launcher spawned
+      { pid: 710, ppid: 700, pgid: 700 },
+      { pid: 800, ppid: 700, pgid: 800 }, // its tool shell's job
     ];
     const table = new Map(rows.map((row) => [row.pid, row]));
+    const isServerChild = (ppid: number) => ppid === serverPid || ppid === 150;
     expect(PortScanner.stoppableProcessGroup(table, 401, serverPid)).toBe(400);
     expect(PortScanner.stoppableProcessGroup(table, 600, serverPid)).toBe(600);
+    expect(PortScanner.stoppableProcessGroup(table, 800, serverPid, isServerChild)).toBe(800);
     for (const pid of [20, 210, 500, 999]) {
       expect(PortScanner.stoppableProcessGroup(table, pid, serverPid)).toBeNull();
     }
+    expect(PortScanner.stoppableProcessGroup(table, 710, serverPid, isServerChild)).toBeNull();
     // The tool shell is the command; its `npm run dev &` job only inherited the name.
     const variables = new Map([
       [200, new Map<string, string>()],

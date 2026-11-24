@@ -15,6 +15,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";
+import * as Scope from "effect/Scope";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
@@ -546,6 +547,125 @@ describe("ProcessRunner.layer", () => {
         expect((yield* Effect.flip(Fiber.join(run)))._tag).toBe("ProcessSpawnError");
         yield* Deferred.await(commandGone);
       }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  // Editors and file managers are spawned unreferenced so they outlive the server, with unsaved work.
+  it.live.skipIf(HostProcess.Platform.defaultValue() !== "linux")(
+    "leaves a command it unreferenced running when the server stops",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const helperExited = Deferred.makeUnsafe<void>();
+        const childProcess: typeof NodeChildProcess = NodeModule.createRequire(import.meta.url)(
+          "node:child_process",
+        );
+        const spawn = childProcess.spawn;
+        yield* Effect.acquireRelease(
+          Effect.sync(() => {
+            childProcess.spawn = ((...args: Parameters<typeof spawn>) => {
+              const helper = spawn(...args);
+              const launcherArgs = args[1];
+              if (
+                Array.isArray(launcherArgs) &&
+                launcherArgs.some((arg) => String(arg).includes("process-launcher"))
+              ) {
+                helper.once("exit", () => Deferred.doneUnsafe(helperExited, Exit.void));
+              }
+              return helper;
+            }) as typeof spawn;
+            NodeModule.syncBuiltinESMExports();
+          }),
+          () =>
+            Effect.sync(() => {
+              childProcess.spawn = spawn;
+              NodeModule.syncBuiltinESMExports();
+            }),
+        );
+        const server = yield* Scope.make();
+        const spawner = Context.get(
+          yield* Layer.buildWithScope(ProcessLauncher.layerServer, server),
+          ChildProcessSpawner.ChildProcessSpawner,
+        );
+        // As externalLauncher opens an editor.
+        const pid = yield* spawner
+          .spawn(
+            ChildProcess.make("sleep", ["1000"], {
+              detached: true,
+              stdin: "ignore",
+              stdout: "ignore",
+              stderr: "ignore",
+            }),
+          )
+          .pipe(
+            Effect.tap((handle) => handle.unref),
+            Effect.map((handle) => handle.pid),
+            Effect.scoped,
+          );
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => {
+            try {
+              process.kill(pid, "SIGKILL");
+            } catch {}
+          }),
+        );
+        const status = () =>
+          fs.readFileString(`/proc/${pid}/status`).pipe(Effect.orElseSucceed(() => ""));
+        expect((yield* status()).match(/^PPid:\s*(\d+)$/m)?.[1], "the helper spawned it").not.toBe(
+          String(process.pid),
+        );
+
+        yield* Scope.close(server, Exit.void);
+        yield* Deferred.await(helperExited);
+
+        // A SIGKILL marks the process at once, though it may not have run since.
+        const after = yield* status();
+        expect(after.match(/^State:\s*(\S)/m)?.[1]).toBe("S");
+        expect(
+          BigInt(`0x${after.match(/^ShdPnd:\s*([0-9a-f]+)$/m)?.[1] ?? "0"}`) & (1n << 8n),
+        ).toBe(0n);
+      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  // KeepAwake, device hosts and computer use spawn children that lead no process group.
+  it.live.skipIf(HostProcess.Platform.defaultValue() !== "linux")(
+    "kills a command without a process group of its own when its helper hangs",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const fifo = `${yield* fs.makeTempDirectoryScoped()}/alive`;
+        NodeChildProcess.execFileSync("mkfifo", [fifo]);
+        // Reaches EOF once the command, its only writer, is gone.
+        const alive = new NodeNet.Socket({
+          fd: NodeFS.openSync(fifo, NodeFS.constants.O_RDONLY | NodeFS.constants.O_NONBLOCK),
+          readable: true,
+          writable: false,
+        });
+        const helperPid = Deferred.makeUnsafe<number>();
+        const commandGone = Deferred.makeUnsafe<void>();
+        alive.once("data", (chunk) =>
+          Deferred.doneUnsafe(helperPid, Exit.succeed(Number(String(chunk).trim()))),
+        );
+        alive.once("end", () => Deferred.doneUnsafe(commandGone, Exit.void));
+        const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+        yield* spawner.spawn(
+          ChildProcess.make("sh", ["-c", `exec 3>"$0"; echo $PPID >&3; exec sleep 1000`, fifo], {
+            detached: false,
+          }),
+        );
+        process.kill(expectHelperPid(String(yield* Deferred.await(helperPid))), "SIGSTOP");
+
+        // The stopped helper never answers, so it is closed as hung.
+        yield* Effect.flip(spawner.spawn(ChildProcess.make("true", [])));
+        yield* Deferred.await(commandGone);
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(
+          Layer.effect(
+            ChildProcessSpawner.ChildProcessSpawner,
+            ProcessLauncher.make("1 second"),
+          ).pipe(Layer.provideMerge(NodeServices.layer)),
+        ),
+      ),
   );
 
   it.live.skipIf(HostProcess.Platform.defaultValue() !== "linux")(

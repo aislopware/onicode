@@ -10,6 +10,15 @@ export interface LauncherSpawnRequest {
   readonly options: NodeChildProcess.SpawnOptions;
 }
 
+/** Sent when a child is unreferenced or referenced again; an unreferenced child outlives the server. */
+export interface LauncherRefRequest {
+  readonly type: "ref";
+  readonly id: number;
+  readonly referenced: boolean;
+}
+
+export type LauncherRequest = LauncherSpawnRequest | LauncherRefRequest;
+
 export interface LauncherError {
   readonly message: string;
   readonly code?: string | undefined;
@@ -59,11 +68,13 @@ export function runProcessLauncher(): void {
   const send = (event: LauncherEvent, socket?: NodeNet.Socket) =>
     channel(event, socket, undefined, () => {});
   const children = new Map<number, NodeChildProcess.ChildProcess>();
+  const released = new Set<number>();
 
   // Group signals target the server; this process exits when the server's channel closes.
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(signal, () => {});
   process.on("disconnect", () => {
-    for (const child of children.values()) {
+    for (const [id, child] of children) {
+      if (released.has(id)) continue;
       try {
         process.kill(-child.pid!, "SIGKILL");
       } catch {
@@ -73,8 +84,13 @@ export function runProcessLauncher(): void {
     process.exit(0);
   });
 
-  process.on("message", (request: LauncherSpawnRequest) => {
+  process.on("message", (request: LauncherRequest) => {
     const { id } = request;
+    if (request.type === "ref") {
+      if (request.referenced) released.delete(id);
+      else released.add(id);
+      return;
+    }
     let child: NodeChildProcess.ChildProcess;
     try {
       child = NodeChildProcess.spawn(request.command, [...request.args], request.options);
@@ -91,7 +107,10 @@ export function runProcessLauncher(): void {
     child.stderr = null;
     child.stdio.fill(null);
     child.on("error", (cause) => {
-      if (child.pid === undefined) for (const socket of stdio) socket?.destroy();
+      if (child.pid === undefined) {
+        released.delete(id);
+        for (const socket of stdio) socket?.destroy();
+      }
       send({ type: "error", id, error: toLauncherError(cause) });
     });
     child.once("spawn", () => {
@@ -105,6 +124,7 @@ export function runProcessLauncher(): void {
     });
     child.once("exit", (code, signal) => {
       children.delete(id);
+      released.delete(id);
       send({ type: "exit", id, code, signal });
     });
   });
