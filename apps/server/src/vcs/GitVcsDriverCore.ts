@@ -196,7 +196,6 @@ class BaseBranchCacheKey extends Data.Class<{
   gitCommonDir: string;
   refName: string;
   allowRemoteOfCurrent: boolean;
-  inputsStamp: string;
 }> {}
 
 class BaseBranchInputsStampKey extends Data.Class<{
@@ -2594,10 +2593,16 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     return null;
   });
 
-  // A base is chosen by which refs exist and where a remote's HEAD points, never by where a ref
-  // points, so this hashes effective config, packed-refs and reftable stats, loose ref names and
-  // loose HEAD symrefs. Directory stats are left out: Git for Windows' no-op fetch touches
-  // refs/remotes/<remote>. Cost: one git process, a listing per refs directory, a few stats.
+  // A base is chosen by effective config, which refs exist and where a remote's HEAD points, never
+  // by where a ref points, so commits and fetches keep the stamp. packed-refs names are re-read only
+  // when the file changes; a loose ref shadowing a packed one adds no name. Directory stats are left
+  // out: Git for Windows' no-op fetch touches refs/remotes/<remote>.
+  const packedRefNames = new Map<
+    string,
+    { readonly token: string; readonly hash: string; readonly names: ReadonlySet<string> }
+  >();
+  const sha256Hex = (text: string) =>
+    Effect.map(digest.digest(Digest.sha256, new TextEncoder().encode(text)), Hex.encode);
   const readBaseBranchInputsStamp = Effect.fn("GitVcsDriverCore.readBaseBranchInputsStamp")(
     function* (cwd: string, gitCommonDir: string) {
       const effectiveConfig = yield* executeGit(
@@ -2607,9 +2612,6 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         { allowNonZeroExit: true },
       );
       if (effectiveConfig.exitCode !== 0 || effectiveConfig.stdoutTruncated) return null;
-      const configHash = Hex.encode(
-        yield* digest.digest(Digest.sha256, new TextEncoder().encode(effectiveConfig.stdout)),
-      );
       const statToken = (target: string, read = (file: string) => fileSystem.stat(file)) =>
         read(target).pipe(
           Effect.map(
@@ -2621,16 +2623,35 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           ),
           Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed("-")),
         );
-      const tokens = yield* Effect.forEach(
-        ["packed-refs", "reftable/tables.list"],
-        (name) => statToken(path.join(gitCommonDir, name)),
+      const packedRefsPath = path.join(gitCommonDir, "packed-refs");
+      // Reftable keeps no names in files, so its table list's stat stands in for them.
+      const [packedToken, reftableToken] = yield* Effect.all(
+        [statToken(packedRefsPath), statToken(path.join(gitCommonDir, "reftable", "tables.list"))],
         { concurrency: "unbounded" },
       );
-      const directories = [
-        path.join(gitCommonDir, "refs", "heads"),
-        path.join(gitCommonDir, "refs", "remotes"),
-      ];
-      const looseRefs: Array<string> = [];
+      let packed = packedRefNames.get(gitCommonDir);
+      if (packed?.token !== packedToken) {
+        const contents =
+          packedToken === "-"
+            ? ""
+            : yield* fileSystem
+                .readFileString(packedRefsPath)
+                .pipe(Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed("")));
+        const names = contents
+          .split("\n")
+          .map((line) => line.slice(line.indexOf(" ") + 1))
+          .filter((name) => name.startsWith("refs/heads/") || name.startsWith("refs/remotes/"));
+        packed = {
+          token: packedToken,
+          hash: yield* sha256Hex(names.join("\0")),
+          names: new Set(names),
+        };
+        packedRefNames.set(gitCommonDir, packed);
+      }
+      const remotesDirectory = path.join(gitCommonDir, "refs", "remotes");
+      const directories = [path.join(gitCommonDir, "refs", "heads"), remotesDirectory];
+      const looseNames: Array<string> = [];
+      const remoteHeads: Array<string> = [];
       for (let index = 0; index < directories.length; index++) {
         const directory = directories[index]!;
         // Reftable repositories keep refs/heads as a placeholder file.
@@ -2642,18 +2663,33 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         );
         for (const entry of entries.toSorted((a, b) => a.name.localeCompare(b.name))) {
           const entryPath = path.join(directory, entry.name);
-          if (entry.type === "Directory") directories.push(entryPath);
-          else looseRefs.push(entryPath);
+          if (entry.type === "Directory") {
+            directories.push(entryPath);
+            continue;
+          }
+          const name = path.relative(gitCommonDir, entryPath).split(path.sep).join("/");
+          if (!packed.names.has(name)) looseNames.push(name);
+          // A remote name may contain "/", so its HEAD can sit deeper than refs/remotes/<name>.
+          if (entry.name === "HEAD" && directory.startsWith(remotesDirectory + path.sep)) {
+            remoteHeads.push(entryPath);
+          }
         }
       }
       // lstat: a legacy symlinked symref names its target relative to the git dir, not its folder.
-      const symrefTokens = yield* Effect.forEach(
-        looseRefs.filter((ref) => path.basename(ref) === "HEAD"),
+      const remoteHeadTokens = yield* Effect.forEach(
+        remoteHeads,
         (ref) => statToken(ref, (file) => fileSystem.lstat(file)),
         { concurrency: "unbounded" },
       );
-      const stampInput = [...tokens, ...looseRefs, ...symrefTokens, configHash].join("\0");
-      return Hex.encode(yield* digest.digest(Digest.sha256, new TextEncoder().encode(stampInput)));
+      return yield* sha256Hex(
+        [
+          effectiveConfig.stdout,
+          packed.hash,
+          reftableToken,
+          ...looseNames,
+          ...remoteHeadTokens,
+        ].join("\0"),
+      );
     },
   );
   // Nothing outlives a read; concurrent reads, such as one status read's ahead count and branch
@@ -2662,8 +2698,25 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     (key: BaseBranchInputsStampKey) => readBaseBranchInputsStamp(key.cwd, key.gitCommonDir),
     { capacity: 2_048, timeToLive: () => Duration.zero },
   );
+  // Effective config and refs differ per worktree, never per directory inside one.
+  const readCurrentBaseBranchInputsStamp = Effect.fnUntraced(
+    function* (cacheCwd: string, gitCommonDir: string) {
+      const repositoryPaths = yield* Cache.get(repositoryPathsCache, cacheCwd);
+      return yield* Cache.get(
+        baseBranchInputsStampCache,
+        new BaseBranchInputsStampKey({
+          cwd: repositoryPaths?.worktreeRoot ?? cacheCwd,
+          gitCommonDir,
+        }),
+      );
+    },
+    Effect.orElseSucceed(() => null),
+  );
+  // The stamp lives in the value, not the key: a key per stamp would leave every superseded
+  // stamp's entry behind until capacity evicts it, since TTL only expires a key that is read again.
   const baseBranchCache = yield* Cache.makeWith(
     Effect.fnUntraced(function* (key: BaseBranchCacheKey) {
+      const inputsStamp = yield* readCurrentBaseBranchInputsStamp(key.cwd, key.gitCommonDir);
       const trace = { dependsOnRemoteOfCurrent: false, degraded: false };
       const base = yield* findBaseBranchForNoUpstream(
         key.cwd,
@@ -2671,7 +2724,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         { allowRemoteOfCurrent: key.allowRemoteOfCurrent },
         trace,
       );
-      return { base, ...trace };
+      return { base, inputsStamp, ...trace };
     }),
     {
       capacity: 2_048,
@@ -2688,34 +2741,30 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       options?: { readonly allowRemoteOfCurrent?: boolean },
     ) {
       const cacheCwd = yield* repositoryPathsCacheKey(cwd);
-      const repositoryPaths = yield* Cache.get(repositoryPathsCache, cacheCwd).pipe(
+      const gitCommonDir = (yield* Cache.get(repositoryPathsCache, cacheCwd).pipe(
         Effect.orElseSucceed(() => null),
-      );
-      const gitCommonDir = repositoryPaths?.gitCommonDir;
-      // Effective config and refs differ per worktree, never per directory inside one.
-      const inputsStamp =
-        gitCommonDir === undefined
-          ? null
-          : yield* Cache.get(
-              baseBranchInputsStampCache,
-              new BaseBranchInputsStampKey({
-                cwd: repositoryPaths?.worktreeRoot ?? cacheCwd,
-                gitCommonDir,
-              }),
-            ).pipe(Effect.orElseSucceed(() => null));
-      if (gitCommonDir === undefined || inputsStamp === null) {
+      ))?.gitCommonDir;
+      if (gitCommonDir === undefined) {
         return yield* findBaseBranchForNoUpstream(cwd, refName, options);
       }
-      const key = { cwd: cacheCwd, gitCommonDir, refName, inputsStamp };
+      const key = { cwd: cacheCwd, gitCommonDir, refName };
       const allowRemoteOfCurrent = options?.allowRemoteOfCurrent === true;
       const cacheKey = new BaseBranchCacheKey({ ...key, allowRemoteOfCurrent });
       const otherKey = new BaseBranchCacheKey({
         ...key,
         allowRemoteOfCurrent: !allowRemoteOfCurrent,
       });
+      const cached = yield* Cache.getOption(baseBranchCache, cacheKey);
+      if (Option.isSome(cached)) {
+        const inputsStamp = yield* readCurrentBaseBranchInputsStamp(cacheCwd, gitCommonDir);
+        if (inputsStamp !== null && inputsStamp === cached.value.inputsStamp) {
+          return cached.value.base;
+        }
+        yield* Cache.invalidate(baseBranchCache, cacheKey);
+      }
       const entry = yield* Cache.get(baseBranchCache, cacheKey);
       // A fallback forced by a failed remote lookup must not outlive the failure.
-      if (entry.degraded) {
+      if (entry.degraded || entry.inputsStamp === null) {
         yield* Cache.invalidate(baseBranchCache, cacheKey);
       } else if (!entry.dependsOnRemoteOfCurrent) {
         yield* Cache.set(baseBranchCache, otherKey, entry);
