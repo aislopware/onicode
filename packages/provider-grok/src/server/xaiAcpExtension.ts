@@ -223,7 +223,7 @@ function isXAiSpawnOrTaskTool(
 // Display titles such as "Get task output: <id>" leave the canonical name in metadata.
 function xAiCanonicalToolName(toolCall: AcpToolCallState): string {
   const name = unknownRecord(unknownRecord(toolCall.data.meta)?.["x.ai/tool"])?.name;
-  return typeof name === "string" ? name : titleKey(toolCall);
+  return nonEmptyString(name) ?? titleKey(toolCall);
 }
 
 function isXAiGetSubagentOutputTool(
