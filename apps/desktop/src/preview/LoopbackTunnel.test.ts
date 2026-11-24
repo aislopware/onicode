@@ -1,4 +1,4 @@
-import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeWS from "@effect/platform-node/NodeWS";
 import { EnvironmentId } from "@onicode/contracts";
 import * as HostProcess from "@onicode/shared/HostProcess";
@@ -12,6 +12,9 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
 import * as Result from "effect/Result";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
+import * as Sink from "effect/Sink";
+import * as Stream from "effect/Stream";
 
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
@@ -137,7 +140,7 @@ const challenge = (login: LoginListener, authInfo: Partial<Electron.AuthInfo>) =
 const makeTunnel = (
   /** A function answers each access request with its current value. */
   tunnelUrl: string | null | (() => string | null),
-  host: Layer.Layer<never> = Layer.empty,
+  host: Layer.Layer<never> | Layer.Layer<ChildProcessSpawner.ChildProcessSpawner> = Layer.empty,
   { answerAccess = true }: { readonly answerAccess?: boolean } = {},
 ) =>
   Effect.gen(function* () {
@@ -161,7 +164,7 @@ const makeTunnel = (
                 }),
             }),
             SecureRandom.layerWebCrypto,
-            NodeFileSystem.layer,
+            NodeServices.layer,
             NetService.layer,
             host,
             Layer.mock(ElectronWindow.ElectronWindow, {
@@ -655,6 +658,22 @@ it.effect("forwards a port over the tunnel on the same local port until stopped"
   }),
 );
 
+/** Connects to a local port; true when the connection closes before any byte comes back. */
+const closedWithoutReply = (port: number, host = "127.0.0.1") =>
+  Effect.promise(
+    () =>
+      new Promise<boolean>((resolve) => {
+        const socket = NodeNet.connect(port, host);
+        socket.on("error", () => undefined);
+        socket.on("close", () => resolve(true));
+        socket.on("data", () => {
+          resolve(false);
+          socket.destroy();
+        });
+        socket.write(Uint8Array.of(3));
+      }),
+  );
+
 it.effect("closes another OS user's connection to a forward without tunnelling it", () =>
   Effect.gen(function* () {
     const endpoint = yield* listenEndpoint();
@@ -671,20 +690,37 @@ it.effect("closes another OS user's connection to a forward without tunnelling i
       remotePort: yield* unusedPort,
     });
     const probes = endpoint.requests.length;
-    const closed = yield* Effect.promise(
-      () =>
-        new Promise<boolean>((resolve) => {
-          const socket = NodeNet.connect(forward.localPort, "127.0.0.1");
-          socket.on("error", () => undefined);
-          socket.on("close", () => resolve(true));
-          socket.on("data", () => resolve(false));
-          socket.write(Uint8Array.of(3));
-        }),
-    );
-    expect(closed).toBe(true);
+    expect(yield* closedWithoutReply(forward.localPort)).toBe(true);
     expect(endpoint.requests.length).toBe(probes);
   }),
 );
+
+/** Stands in for the system's own tools: each command prints what `print` returns for it. */
+const systemTools = (print: (command: string, args: ReadonlyArray<string>) => string) =>
+  Layer.succeed(
+    ChildProcessSpawner.ChildProcessSpawner,
+    ChildProcessSpawner.make((command) =>
+      Effect.sync(() => {
+        const { command: name, args } = command as unknown as {
+          readonly command: string;
+          readonly args: ReadonlyArray<string>;
+        };
+        return ChildProcessSpawner.makeHandle({
+          pid: ChildProcessSpawner.ProcessId(1),
+          exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(0)),
+          isRunning: Effect.succeed(false),
+          kill: () => Effect.void,
+          unref: Effect.succeed(Effect.void),
+          stdin: Sink.drain,
+          stdout: Stream.make(new TextEncoder().encode(print(name, args))),
+          stderr: Stream.empty,
+          all: Stream.empty,
+          getInputFd: () => Sink.drain,
+          getOutputFd: () => Stream.empty,
+        });
+      }),
+    ),
+  );
 
 // A container without IPv6, or a sandbox that lists ::1 yet refuses the bind, has none to use.
 const hasIpv6Loopback = await new Promise<boolean>((resolve) => {
@@ -692,6 +728,63 @@ const hasIpv6Loopback = await new Promise<boolean>((resolve) => {
   server.once("error", () => resolve(false));
   server.listen(0, "::1", () => server.close(() => resolve(true)));
 });
+
+const ownUserId = process.getuid?.() ?? 501;
+
+it.effect.each(
+  [
+    { platform: "darwin", client: "own", host: "127.0.0.1", end: "127.0.0.1", served: true },
+    // lsof takes and prints IPv6 in brackets.
+    { platform: "darwin", client: "own", host: "::1", end: "[::1]", served: true },
+    {
+      platform: "darwin",
+      client: "another user's",
+      host: "127.0.0.1",
+      end: "127.0.0.1",
+      served: false,
+    },
+    { platform: "darwin", client: "unlisted", host: "127.0.0.1", end: "127.0.0.1", served: false },
+    { platform: "win32", client: "unlisted", host: "127.0.0.1", end: "127.0.0.1", served: true },
+  ].filter(({ host }) => !host.includes(":") || hasIpv6Loopback),
+)(
+  "on $platform serves a forward's $client client on $host: $served",
+  ({ platform, client, host, end, served }) =>
+    Effect.gen(function* () {
+      const endpoint = yield* listenEndpoint();
+      const commands: Array<string> = [];
+      let port = 0;
+      const lsof = (args: ReadonlyArray<string>) => {
+        const clientEnd = /^-iTCP@(.+)$/.exec(args[1] ?? "")?.[1] ?? "";
+        // lsof prints nothing for an address it does not accept.
+        if (!clientEnd.startsWith(`${end}:`)) return "";
+        // The listener's accepted socket is this app's own and is always listed.
+        const accepted = `p100\nu${ownUserId}\nf30\nn${end}:${port}->${clientEnd}\n`;
+        if (client === "unlisted") return accepted;
+        const owner = client === "own" ? ownUserId : ownUserId + 1;
+        return `${accepted}p200\nu${owner}\nf12\nn${clientEnd}->${end}:${port}\n`;
+      };
+      const { tunnel } = yield* makeTunnel(
+        `ws://127.0.0.1:${addressPort(endpoint.server)}/api/preview/tunnel`,
+        Layer.mergeAll(
+          Layer.succeed(HostProcess.Platform, platform as NodeJS.Platform),
+          Layer.succeed(HostProcess.UserId, platform === "win32" ? undefined : ownUserId),
+          systemTools((command, args) => {
+            commands.push(command);
+            return command === "/usr/sbin/lsof" ? lsof(args) : "";
+          }),
+        ),
+      );
+      const forward = yield* tunnel.forward({
+        environmentId: EnvironmentId.make("remote"),
+        remotePort: yield* unusedPort,
+      });
+      port = forward.localPort;
+      const probes = endpoint.requests.length;
+      expect(yield* closedWithoutReply(port, host)).toBe(!served);
+      expect(endpoint.requests.length).toBe(probes + (served ? 1 : 0));
+      expect(commands).toEqual(platform === "darwin" ? ["/usr/sbin/lsof"] : []);
+    }),
+);
 
 it.effect.each(
   [

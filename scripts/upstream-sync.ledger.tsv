@@ -3678,3 +3678,4 @@ fb04b4d199	take	conflict: annotation refusal placed before Onicode's hover-is-no
 29c852eada	take	conflicts: kept Onicode's lease-based task-folder removal and removal signature with projectCommands added; dropped relay/webhook code from ws.ts; kept both ws tests
 27c2d01a83	skip	limits workflow webhook hooks; Onicode has no webhook triggers or hooks (removed surface, see e414cfd4be): no webhookRoute.ts, no Workflows.deliver
 66259ff051	take	dropped trackSwitch parts (Onicode has one release channel); kept Onicode's capsule titles and compact layout
+596a2374d0	take	adapted: Onicode's proxy is HTTP with Basic auth (no SOCKS), so the macOS lsof owner check guards forwarded ports only; fixed upstream's lsof address for IPv6 (needs [::1], forwards bind ::1 too); SOCKS tests replaced by forward owner cases; lsof measured ~45 ms per forward connection; SECURITY.md and 05_remote updated
