@@ -9,6 +9,10 @@ inputs:
     description: Arguments for `vp install`, such as filters. Empty installs the whole workspace.
     required: false
     default: ""
+  save-toolchain:
+    description: Set to "true" only from toolchain-cache.yml, whose job runs no project code before setup-vp saves.
+    required: false
+    default: "false"
 runs:
   using: composite
   steps:
@@ -16,6 +20,16 @@ runs:
     # installer, so an npm outage does not fail jobs. On a miss, vp gives each
     # Node.js download attempt 10 minutes by default; it retries 3 times and
     # resumes partial bytes, so a shorter limit costs a slow download only a retry.
+    # setup-vp saves the toolchain in its post step, after the job's own steps, so a
+    # job that installs or runs project code never saves: a changed ~/.vite-plus would
+    # reach the release jobs that restore it.
+    - name: Refuse to save the toolchain after an install
+      if: inputs.save-toolchain == 'true' && inputs.install != 'false'
+      shell: bash
+      run: |
+        echo "::error::save-toolchain needs install: false"
+        exit 1
+
     - name: Setup Vite+
       uses: voidzero-dev/setup-vp@cab1ab9eaff52d4857875f4f2c016e36af8f2c76 # v1.22.0
       env:
@@ -24,6 +38,7 @@ runs:
         node-version-file: package.json
         cache: false
         cache-toolchain: true
+        cache-save: ${{ inputs.save-toolchain }}
         run-install: false
 
     # No pnpm store cache: on a hosted runner the registry is faster than the cache.
