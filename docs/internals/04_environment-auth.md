@@ -80,6 +80,10 @@ The environment issues its own sessions and enforces their capabilities. See
 - **Thread-only tools refuse outside callers in handlers.** Tools that act as a calling thread
   (`request_secret`, `delegate_task`) are hidden from these callers, but hiding is only discovery:
   handlers still refuse with `thread_credential_required`.
+- **Only the broadest mode drives workflows.** A workflow run picks its own modes, so only a caller
+  at the broadest mode a thread may run in here (full access, or an administrator's ceiling below
+  it) can start or change runs, change what workflows store, or read webhook paths. Narrower
+  callers can still read runs.
 - **Peer-link client pairing.** Only a full-access peer link may mint a one-time client pairing on
   the linked environment (its agents can already run `onicode auth pairing create`). The linked side
   enforces this itself, and the operation stays a human-triggered RPC/HTTP route rather than an MCP

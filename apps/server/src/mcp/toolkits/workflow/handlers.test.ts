@@ -212,8 +212,9 @@ const emptyRun = { run: undefined, steps: [], references: [] } as never;
 it.effect("under an administrator's ceiling, a caller at the ceiling starts runs", () =>
   Effect.gen(function* () {
     const start = { action: "start", workflow: "release", idempotencyKey: "trial" };
+    const started: Array<string> = [];
     const workflows = {
-      start: () => Effect.succeed({ runId: "run-1" }),
+      start: (name: string) => Effect.sync(() => (started.push(name), { runId: "run-1" })),
       get: () => Effect.succeed(emptyRun),
     };
     const narrowedTo = (runtimeMode: "auto" | "approval-required") => ({
@@ -222,11 +223,13 @@ it.effect("under an administrator's ceiling, a caller at the ceiling starts runs
     });
     expect(
       yield* lastResult(start).pipe(Effect.provide(handlersWith(workflows, narrowedTo("auto")))),
-    ).not.toMatchObject({ code: "capability_denied" });
+    ).toEqual({ steps: [], references: [] });
+    expect(started).toEqual(["release"]);
     expect(
       yield* lastResult(start).pipe(
         Effect.provide(handlersWith(workflows, narrowedTo("approval-required"))),
       ),
     ).toMatchObject({ code: "capability_denied" });
+    expect(started).toEqual(["release"]);
   }),
 );
