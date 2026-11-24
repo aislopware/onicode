@@ -2289,8 +2289,16 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           runIds: [message.runId],
         });
         const run = runs.runs[0];
-        // The run-end reaction its capture starts requeues it, held when a Stop ended the run.
-        if (run !== undefined && (yield* awaitsCheckpointCapture(run))) return;
+        if (run !== undefined && (yield* awaitsCheckpointCapture(run))) {
+          // A steer still pending is requeued by the run-end reaction its capture starts.
+          const { turnItems } = yield* projectionStore.getThreadRecords(threadId, ["turnItems"], {
+            turnItemTypes: ["notification"],
+            turnItemStatuses: ["pending"],
+            turnItemRunIds: [run.id],
+          });
+          const steerItemId = idAllocator.derive.userTurnItem({ messageId: delivery.messageId });
+          if (turnItems.some((item) => item.id === steerItemId)) return;
+        }
         const turns = yield* projectionStore.getThreadRecords(threadId, ["providerTurns"], {
           providerTurnAttemptIds: run?.activeAttemptId == null ? [] : [run.activeAttemptId],
         });
@@ -18440,6 +18448,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       child.thread.forkedFrom?.type === "node" &&
       child.thread.forkedFrom.nodeId === taskId &&
       !followUpIds.has(taskId) &&
+      !monitorUpdateRunIds(child.messages).has(capturing.id) &&
       ![...followUpIds].some(owns)
     );
   };
@@ -18493,7 +18502,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                 : dispatchWithReceipt(command),
             );
             const child = yield* readChild;
-            const followUpRun = delegatedTaskResultRun(delegatedTaskRuns(child, input.taskId));
+            // The Stop committing with the marker holds the queue, so a queued run is not the one cut.
+            const followUpRun = delegatedTaskResultRun(
+              delegatedTaskRuns(child, input.taskId).map((run) =>
+                run.status === "queued" ? { ...run, queueHeld: true } : run,
+              ),
+            );
             const monitorRunIds = new Set(
               child.messages
                 .filter((message) => message.notification?.source.kind === "monitor")

@@ -2168,6 +2168,94 @@ it.layer(Layer.merge(layerTest, ProviderContinuationRequests.layer))(
       }),
     );
 
+    // Only a steer still pending is requeued once the capture of the run it was steered into lands.
+    it.effect("re-offers a steer whose run ended while its capture is pending", () =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const eventSink = yield* EventSink.EventSinkV2;
+        const requests = yield* ProviderContinuationRequests.ProviderContinuationRequests;
+        const now = yield* DateTime.now;
+        const threadId = ThreadId.make("thread:steered-capturing");
+        const runId = RunId.make("run:steered-capturing");
+        const taskId = NodeId.make("node:steered-capturing-task");
+        const messageId = MessageId.make(`message:delegated-delivery:${threadId}`);
+        const hostRunId = RunId.make("run:steered-capturing:host");
+        yield* seedParentWithTerminalTask({
+          threadId,
+          projectId: ProjectId.make("project:steered-capturing"),
+          runId,
+          rootNodeId: NodeId.make("node:steered-capturing-root"),
+          taskId,
+          deliveryState: "claimed",
+          completionWake: "always",
+          deliveryTaskIds: [taskId],
+          now,
+        });
+        // The queue is shared with the tests after this one, so the offer goes nowhere.
+        using offer = vi.spyOn(requests, "offer").mockImplementation(() => Effect.void);
+        yield* eventSink.writeWithEffects({
+          commandId: reconcileCommandId("steered-capturing"),
+          events: [
+            {
+              id: EventId.make("event:steered-capturing:delivery-message"),
+              type: "message.updated",
+              threadId,
+              runId: hostRunId,
+              occurredAt: now,
+              payload: {
+                id: messageId,
+                threadId,
+                runId: hostRunId,
+                nodeId: null,
+                role: "user",
+                text: `Delegated task ${taskId} reached a terminal state.`,
+                attachments: [],
+                streaming: false,
+                createdBy: "agent",
+                creationSource: "server",
+                createdAt: now,
+                updatedAt: now,
+                delegatedCompletion: { parentRunId: runId, generation: 1, taskIds: [taskId] },
+              },
+            },
+            runEvent({
+              threadId,
+              runId: hostRunId,
+              ordinal: 2,
+              status: "completed",
+              now,
+              providerThreadId: parentProviderThreadId(threadId),
+              userMessageId: MessageId.make("message:steered-capturing:host"),
+            }),
+          ],
+          effects: [
+            {
+              id: RunExecutionService.checkpointCaptureEffectId(hostRunId, null),
+              commandId: reconcileCommandId("steered-capturing"),
+              threadId,
+              request: {
+                type: "checkpoint.capture",
+                runId: hostRunId,
+                scopeId: CheckpointScopeId.make("scope:steered-capturing"),
+              },
+            },
+          ],
+        });
+
+        yield* orchestrator.recoverDelegatedTasks;
+
+        assert.isTrue(
+          offer.mock.calls.some(([request]) => request.delegatedCompletion?.parentRunId === runId),
+        );
+        // Its capture never lands; archived, the thread offers nothing into the next test's queue.
+        yield* orchestrator.dispatch({
+          type: "thread.archive",
+          commandId: CommandId.make("command:steered-capturing:archive"),
+          threadId,
+        });
+      }),
+    );
+
     it.effect("recovers a reserved delivery without loading conversation history", () =>
       Effect.gen(function* () {
         const orchestrator = yield* Orchestrator.OrchestratorV2;
@@ -3840,6 +3928,87 @@ it.layer(Layer.merge(layerTest, ProviderContinuationRequests.layer))(
         }),
     );
 
+    it.effect("a monitor update's capture does not hold the task the thread was forked for", () =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const eventSink = yield* EventSink.EventSinkV2;
+        const now = yield* DateTime.now;
+        const parentThreadId = ThreadId.make("thread:monitor-capturing-parent");
+        const projectId = ProjectId.make("project:monitor-capturing");
+        const parentRunId = RunId.make("run:monitor-capturing-parent");
+        const rootNodeId = NodeId.make("node:monitor-capturing-parent");
+        yield* seedParentWithTerminalTask({
+          threadId: parentThreadId,
+          projectId,
+          runId: parentRunId,
+          rootNodeId,
+          taskId: NodeId.make("node:monitor-capturing-seed"),
+          deliveryState: "acknowledged",
+          now,
+        });
+        const child = yield* seedRestartCancelledChild({
+          parentThreadId,
+          projectId,
+          parentRunId,
+          rootNodeId,
+          name: "monitor-capturing-child",
+          completionWake: "always",
+          continuationPending: false,
+          runStatus: "completed",
+          now,
+        });
+        yield* orchestrator.recoverDelegatedTasks;
+        const monitorMessageId = MessageId.make("message:monitor-capturing-update");
+        yield* orchestrator.dispatch({
+          type: "message.dispatch",
+          createdBy: "agent",
+          creationSource: "server",
+          commandId: CommandId.make("command:monitor-capturing-update"),
+          threadId: child.childThreadId,
+          messageId: monitorMessageId,
+          text: "A monitor reported new output.",
+          attachments: [],
+          notification: { source: { kind: "monitor" }, outcome: "updated", summary: "Updated" },
+          dispatchMode: { type: "queue_after_active" },
+        });
+        const monitorRun = (yield* orchestrator.getThreadProjection(child.childThreadId)).runs.find(
+          (run) => run.userMessageId === monitorMessageId,
+        )!;
+        yield* eventSink.writeWithEffects({
+          commandId: reconcileCommandId("monitor-capturing-ended"),
+          events: [
+            {
+              id: EventId.make("event:monitor-capturing-completed"),
+              type: "run.updated",
+              threadId: child.childThreadId,
+              runId: monitorRun.id,
+              occurredAt: now,
+              payload: { ...monitorRun, status: "completed", startedAt: now, completedAt: now },
+            },
+          ],
+          effects: [
+            {
+              id: RunExecutionService.checkpointCaptureEffectId(
+                monitorRun.id,
+                monitorRun.activeAttemptId,
+              ),
+              commandId: reconcileCommandId("monitor-capturing-ended"),
+              threadId: child.childThreadId,
+              request: {
+                type: "checkpoint.capture",
+                runId: monitorRun.id,
+                scopeId: CheckpointScopeId.make("scope:monitor-capturing"),
+              },
+            },
+          ],
+        });
+
+        assert.isFalse(
+          yield* orchestrator.delegatedTaskAwaitsCapture(child.childThreadId, child.taskId),
+        );
+      }),
+    );
+
     it.effect("cancelling a follow-up keeps it open while its run captures", () =>
       Effect.gen(function* () {
         const orchestrator = yield* Orchestrator.OrchestratorV2;
@@ -3890,7 +4059,7 @@ it.layer(Layer.merge(layerTest, ProviderContinuationRequests.layer))(
           (run) => run.userMessageId === MessageId.make("message:followup-capturing-follow-up"),
         )!;
         const followupTaskId = followupRun.delegatedTaskId!;
-        // The task's newest run was cancelled before it started; the one before it captures.
+        // The task's newer runs never started; the one before them captures.
         yield* eventSink.writeWithEffects({
           commandId: reconcileCommandId("followup-capturing-ended"),
           events: [
@@ -3917,6 +4086,24 @@ it.layer(Layer.merge(layerTest, ProviderContinuationRequests.layer))(
                 status: "cancelled",
                 startedAt: null,
                 completedAt: now,
+              },
+            },
+            // A wake the follow-up queued, which the Stop holds.
+            {
+              id: EventId.make("event:followup-capturing-queued"),
+              type: "run.updated",
+              threadId: child.childThreadId,
+              runId: RunId.make("run:followup-capturing-queued"),
+              occurredAt: now,
+              payload: {
+                ...followupRun,
+                id: RunId.make("run:followup-capturing-queued"),
+                ordinal: followupRun.ordinal + 2,
+                userMessageId: MessageId.make("message:followup-capturing-queued"),
+                activeAttemptId: null,
+                status: "queued",
+                startedAt: null,
+                completedAt: null,
               },
             },
           ],
