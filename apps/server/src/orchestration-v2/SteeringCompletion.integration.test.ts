@@ -42,6 +42,7 @@ import * as EffectOutbox from "./EffectOutbox.ts";
 import * as EventSink from "./EventSink.ts";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import * as Orchestrator from "./Orchestrator.ts";
+import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ProviderReplayHarness from "./testkit/ProviderReplayHarness.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
@@ -531,6 +532,8 @@ const nextTurnSelectionHarness = Effect.fn("nextTurnSelectionHarness")(function*
   steersDuringCompaction = true,
   // Runs after each read of a steer's target, which the worker makes while it prepares the offer.
   afterSteerTargetRead: () => Effect.Effect<void> = () => Effect.void,
+  // Fails the next reads that plan a queued run's start.
+  queueReads: { failures: number } = { failures: 0 },
 ) {
   const driver = ProviderDriverKind.make(nativeGoals === undefined ? "codex" : "opencode");
   const cwd = yield* checkpointWorkspace(name);
@@ -681,6 +684,12 @@ const nextTurnSelectionHarness = Effect.fn("nextTurnSelectionHarness")(function*
       runEffectWorker: false,
       wrapProjectionStore: (store) => ({
         ...store,
+        canStartQueuedRun: (threadId) =>
+          Effect.suspend(() => {
+            if (queueReads.failures === 0) return store.canStartQueuedRun(threadId);
+            queueReads.failures -= 1;
+            return Effect.fail(new ProjectionStore.ProjectionStoreReadError({ threadId }));
+          }),
         getProviderControlContext: (threadId, target) =>
           store
             .getProviderControlContext(threadId, target)
@@ -1799,12 +1808,23 @@ it.effect("sends the picked queued message when Send now lands before the turn's
   }),
 );
 
-it.effect.each(["stop", "unstartable", "another cancelled"] as const)(
+it.effect.each(["stop", "unstartable", "unreadable", "another cancelled"] as const)(
   "a Send now before the turn's capture keeps to its own message: %s",
   (scenario) =>
     Effect.gen(function* () {
+      const queueReads = { failures: 0 };
       const { events, started, layer, startFirstTurn } = yield* nextTurnSelectionHarness(
         `send-queued-during-capture-${scenario}`,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        queueReads,
       );
       yield* Effect.gen(function* () {
         const orchestrator = yield* Orchestrator.OrchestratorV2;
@@ -1880,7 +1900,8 @@ it.effect.each(["stop", "unstartable", "another cancelled"] as const)(
           assert.equal(started[1]?.message.messageId, MessageId.make("message:third"));
           return;
         }
-        if (scenario === "unstartable") {
+        if (scenario === "unreadable") queueReads.failures = 1;
+        if (scenario === "unstartable" || scenario === "unreadable") {
           const failed = yield* settled(
             (event) => event.type === "run.updated" && event.payload.status === "failed",
           );
@@ -1888,6 +1909,27 @@ it.effect.each(["stop", "unstartable", "another cancelled"] as const)(
           yield* Fiber.join(failed);
           assert.equal((yield* runOf("third")).status, "failed");
           assert.notEqual((yield* runOf("second")).status, "failed");
+          if (scenario === "unreadable") return;
+          // The failed message never ran, so the turn that follows it is the latest one.
+          yield* TestClock.adjust("1 second");
+          const secondRunning = yield* settled(
+            (event) => event.type === "provider-turn.updated" && event.payload.status === "running",
+          );
+          yield* orchestrator.dispatch({
+            type: "queued-run.start",
+            commandId: CommandId.make("send-second-now"),
+            threadId,
+            runId: second.id,
+          });
+          yield* worker.drain();
+          yield* Fiber.join(secondRunning);
+          yield* (yield* ThreadCommandExecutor.ThreadCommandExecutor).withLock(
+            threadId,
+            Effect.void,
+          );
+          yield* endTurnBeforeCapture(events, threadId, started[1]!);
+          yield* send("fourth");
+          assert.equal((yield* runOf("fourth")).status, "queued");
           return;
         }
         // Stop takes the pick back with the queue it holds.
@@ -1896,17 +1938,7 @@ it.effect.each(["stop", "unstartable", "another cancelled"] as const)(
           commandId: CommandId.make("stop-during-capture"),
           threadId,
         });
-        yield* worker.drain();
-        const fourthRunning = yield* settled(
-          (event) => event.type === "provider-turn.updated" && event.payload.status === "running",
-        );
         yield* send("fourth");
-        yield* worker.drain();
-        yield* Fiber.join(fourthRunning);
-        // Ingestion checks turn ownership under this lock after committing the running turn.
-        yield* (yield* ThreadCommandExecutor.ThreadCommandExecutor).withLock(threadId, Effect.void);
-        assert.equal(started[1]?.message.messageId, MessageId.make("message:fourth"));
-        yield* endTurnBeforeCapture(events, threadId, started[1]!);
         const nextStarted = yield* settled(
           (event) =>
             event.type === "run.updated" &&
@@ -1916,7 +1948,7 @@ it.effect.each(["stop", "unstartable", "another cancelled"] as const)(
         yield* worker.drain();
         yield* Fiber.join(nextStarted);
         yield* worker.drain();
-        assert.equal(started[2]?.message.messageId, MessageId.make("message:second"));
+        assert.equal(started[1]?.message.messageId, MessageId.make("message:second"));
       }).pipe(Effect.provide(layer));
     }),
 );

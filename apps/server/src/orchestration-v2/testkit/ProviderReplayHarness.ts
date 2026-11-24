@@ -570,6 +570,7 @@ export function layerWithRegistry<Error>(
         recoverDelegatedTask: orchestrator.recoverDelegatedTask,
         cancelDelegatedTask: orchestrator.cancelDelegatedTask,
         delegatedTaskResultPending: orchestrator.delegatedTaskResultPending,
+        latestRunAwaitsCapture: orchestrator.latestRunAwaitsCapture,
         streamStoredEventsFrom: orchestrator.streamStoredEventsFrom,
       });
     }),

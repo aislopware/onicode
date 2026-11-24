@@ -243,6 +243,11 @@ export interface EffectOutboxV2Shape {
     threadId: ThreadId,
     messageId: MessageId,
   ) => Effect.Effect<ReadonlyArray<OrchestrationEffectV2>, EffectOutboxError>;
+  /** Every turn-end capture that has not landed, whatever process queued it. */
+  readonly unsettledCaptures: Effect.Effect<
+    ReadonlyArray<{ readonly threadId: ThreadId; readonly runId: RunId }>,
+    EffectOutboxError
+  >;
   readonly cancelUnsettled: (input: {
     readonly threadId: ThreadId;
     readonly effectTypes: ReadonlyArray<OrchestrationEffectRequestV2["type"]>;
@@ -511,6 +516,25 @@ export const layer: Layer.Layer<EffectOutboxV2, never, SqlClient.SqlClient> = La
               : new EffectOutboxError({ operation: "steers", cause }),
           ),
         ),
+      unsettledCaptures: sql<EffectRow>`
+        SELECT *
+        FROM orchestration_v2_effect_outbox
+        WHERE effect_type = 'checkpoint.capture'
+          AND status IN ('pending', 'running')
+      `.pipe(
+        NodeSqliteClient.readOnly,
+        Effect.flatMap((rows) => decodeRows("unsettled-captures", rows)),
+        Effect.map((effects) =>
+          effects.flatMap(({ threadId, request }) =>
+            request.type === "checkpoint.capture" ? [{ threadId, runId: request.runId }] : [],
+          ),
+        ),
+        Effect.mapError((cause) =>
+          isEffectOutboxError(cause)
+            ? cause
+            : new EffectOutboxError({ operation: "unsettled-captures", cause }),
+        ),
+      ),
       cancelUnsettled: Effect.fn("EffectOutbox.cancelUnsettled")(
         function* ({ threadId, effectTypes, reason }) {
           if (effectTypes.length === 0) return [];

@@ -608,12 +608,12 @@ it.effect("stopping a delegated child with a queued message does not report the 
   }),
 );
 
-it.effect.each(["lands", "gives up"] as const)(
+it.effect.each(["lands", "gives up", "gives up after a restart"] as const)(
   "a delegated child's task stays open until its turn-end capture %s",
   (capture) =>
     Effect.gen(function* () {
       const { turns, terminal, layerTest, start } = yield* delegatedChildHarness(
-        `delegated-capture-window-${capture.replace(" ", "-")}`,
+        `delegated-capture-window-${capture.replaceAll(" ", "-")}`,
         captureWindowParentId,
       );
       return yield* Effect.gen(function* () {
@@ -624,14 +624,17 @@ it.effect.each(["lands", "gives up"] as const)(
           childRun.id,
           childRun.activeAttemptId,
         );
-        // The run's reaction has seen the capture pending.
+        // The run's reaction has seen the capture pending. A restart loses that watch.
         const captureWatched = yield* Deferred.make<void>();
+        const watchLost = { current: capture === "gives up after a restart" };
         const awaitSettled = outbox.awaitSettled;
         using _watch = vi
           .spyOn(outbox, "awaitSettled")
           .mockImplementation((id) =>
             (id === effectId ? Deferred.succeed(captureWatched, undefined) : Effect.void).pipe(
-              Effect.andThen(awaitSettled(id)),
+              Effect.andThen(
+                id === effectId && watchLost.current ? Effect.never : awaitSettled(id),
+              ),
             ),
           );
         const childEnded = yield* watch(
@@ -647,6 +650,8 @@ it.effect.each(["lands", "gives up"] as const)(
         yield* Fiber.join(childEnded);
 
         // The capture can still turn a Stop into the outcome or requeue an unread steer.
+        if (capture !== "lands") yield* Deferred.await(captureWatched);
+        watchLost.current = false;
         yield* orchestrator.recoverDelegatedTasks;
         const during = yield* orchestrator.getThreadProjection(captureWindowParentId);
         assert.isNull(during.subagents.find((row) => row.id === task.id)?.result ?? null);
@@ -656,14 +661,13 @@ it.effect.each(["lands", "gives up"] as const)(
         );
         assert.isTrue(yield* orchestrator.delegatedTaskResultPending(childThreadId));
 
-        if (capture === "gives up") {
+        if (capture !== "lands") {
           const taskEnded = yield* watch(
             (event) =>
               event.type === "subagent.updated" &&
               event.payload.id === task.id &&
               event.payload.status === "completed",
           );
-          yield* Deferred.await(captureWatched);
           const workerId = "capture-gives-up";
           for (;;) {
             const claimed = yield* outbox.claimNext({ workerId });
