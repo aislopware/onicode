@@ -240,6 +240,11 @@ export const listen: Effect.Effect<
                 yield* retryLater(state);
                 return false;
               }
+              // A cache cleaner may have deleted the archive; download it again before preparing.
+              if (yield* updates.forgetLostDownload) {
+                yield* retryLater(yield* updates.getState);
+                return false;
+              }
               if (state.downloadedVersion === null) {
                 yield* publishReport(
                   state,
