@@ -920,10 +920,12 @@ export const make = Effect.gen(function* () {
         .flatMap(runsTheProviderTook)
         .filter((run) => visibleRunIds.has(run.id))
         .map((run) => run.modelSelection);
-      // An imported thread has no runs; its selection is the imported session's model.
-      const fallbackSelections = records.every(({ runs }) => runs.length === 0)
-        ? [thread.modelSelection]
-        : [];
+      // Imported history has no runs; its thread's selection is the imported session's model.
+      const fallbackSelections =
+        visibleTurnItems.some(({ item }) => item.runId === null) &&
+        records.every(({ runs }) => runs.length === 0)
+          ? [thread.modelSelection]
+          : [];
       const providers = yield* providerRegistry.getProviders;
       const producedBy = Arr.dedupeWith(
         (runSelections.length > 0 ? runSelections : fallbackSelections).map(
