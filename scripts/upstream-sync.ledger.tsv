@@ -3566,3 +3566,4 @@ eecb58c6d6	take	taken without the hosted pairing confirmation (PairingRouteSurfa
 7c95302f7a	skip	T3's release pipeline: EAS preview/production, Vercel web/marketing deploys, npm trusted publisher, record-build-tag. kept Onicode's setup-ci-deps: it caches the toolchain through setup-vp's cache-toolchain, and the toolchain cache is saved only from trusted main/release runs (PR caches stay scoped to the PR ref), so upstream's restore/save split is not needed
 784da01b29	take	fix(web): Esc in Find in PDF clears it without closing the sheet (#41749)
 e3b79cd0bf	take	taken; the cloud/ boot service and pinned runtime hunks applied to Onicode's service/ copies, Onicode's issue-link fallback in useOpenPullRequest also opens web links only
+0858096472	take	fix: Forgejo and GitCafe merges carry the expected head commit (#41773)
