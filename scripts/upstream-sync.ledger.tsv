@@ -3581,3 +3581,4 @@ f82de6567c	take	taken as is
 85aaef42d4	take	taken as is
 c5918e5d24	take	taken as is
 d244be81ba	take	taken as is
+258945f42f	skip	kept Onicode's single mcp__onicode__ Pi registration: the commit only lightens upstream's hidden mcp__t3_code__ alias tools, which Onicode dropped in 829d4cf43a (see 34a7ab3641)
