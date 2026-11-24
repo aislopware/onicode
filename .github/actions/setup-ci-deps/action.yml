@@ -24,7 +24,7 @@ runs:
     # job that installs or runs project code never saves: a changed ~/.vite-plus would
     # reach the release jobs that restore it.
     - name: Refuse to save the toolchain after an install
-      if: inputs.save-toolchain == 'true' && inputs.install != 'false'
+      if: inputs.save-toolchain != 'false' && inputs.save-toolchain != '' && inputs.install != 'false'
       shell: bash
       run: |
         echo "::error::save-toolchain needs install: false"
@@ -38,7 +38,8 @@ runs:
         node-version-file: package.json
         cache: false
         cache-toolchain: true
-        cache-save: ${{ inputs.save-toolchain }}
+        # A boolean expression, so an empty input cannot fall back to setup-vp's default of saving.
+        cache-save: ${{ inputs.save-toolchain == 'true' }}
         run-install: false
 
     # No pnpm store cache: on a hosted runner the registry is faster than the cache.

@@ -15,10 +15,10 @@ on:
       - pnpm-lock.yaml
       - .github/actions/setup-ci-deps/action.yml
       - .github/workflows/toolchain-cache.yml
-  # Refills a key GitHub evicted after 7 days unread, such as the Windows one
-  # only releases read.
+  # Reads each key twice a week so GitHub's 7-day eviction never reaches one
+  # only releases read, such as Windows', and refills one that was evicted.
   schedule:
-    - cron: "17 3 * * 1"
+    - cron: "17 3 * * 1,4"
 
 permissions:
   contents: read
@@ -53,3 +53,9 @@ jobs:
         with:
           install: "false"
           save-toolchain: "true"
+
+      # vp downloads pnpm on first use, and setup-vp saves only a complete
+      # installation. Only version files are checked out, so this runs no project code.
+      - name: Fetch pnpm
+        shell: bash
+        run: vp pm cache dir

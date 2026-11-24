@@ -171,8 +171,9 @@ export function resolveAddressBarInput(
       return normalizePreviewUrl(trimmed);
     }
     const authority = trimmed.split(/[/?#]/, 1)[0] ?? "";
-    const host = authority.replace(/^[^@]*@/, "").replace(/:\d+$/, "");
-    const hasPort = host.length < authority.replace(/^[^@]*@/, "").length;
+    const hostAndPort = authority.replace(/^.*@/, "");
+    const host = hostAndPort.replace(/:\d+$/, "");
+    const hasPort = host.length < hostAndPort.length;
     if (hasPort || ADDRESS_HOST_PATTERN.test(host) || /^[^.]+(?:\.[^.]+)+\.?$/.test(host)) {
       try {
         return normalizePreviewUrl(trimmed);

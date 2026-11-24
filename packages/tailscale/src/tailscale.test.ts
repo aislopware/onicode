@@ -193,6 +193,8 @@ describe("tailscale", () => {
             "/n": { Proxy: "http://user:pass@127.0.0.1:3773" },
             "/o": { Proxy: "http://[0:0:0:0:0:ffff:7f00:1]:3773" },
             "/p": { Proxy: "http://127.0.0.1:03773" },
+            // Go ends the userinfo at the last `@`.
+            "/q": { Proxy: "http://alice@corp.com:pass@127.0.0.1:3773" },
           },
         },
       },
@@ -225,6 +227,7 @@ describe("tailscale", () => {
           ["/n", undefined],
           ["/o", undefined],
           ["/p", undefined],
+          ["/q", undefined],
         ] as const
       ).map(([mount, ambiguous]) => ({
         servePort: 10000,

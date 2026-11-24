@@ -611,7 +611,7 @@ const expandProxy = (proxy: string) =>
  * URL, which rejects `box.1` and rewrites `127.1`; none for a Unix socket.
  */
 const dialedHostPort = (url: string) => {
-  const match = /^(https?|tcp):\/\/(?:[^@/?#]*@)?(\[[^\]]*\]|[^/?#:]*)(?::(\d*))?/iu.exec(url);
+  const match = /^(https?|tcp):\/\/(?:[^/?#]*@)?(\[[^\]]*\]|[^/?#:@]*)(?::(\d*))?/iu.exec(url);
   if (match === null) return undefined;
   const [, scheme = "", host = "", port] = match;
   return { host, port: port || (scheme.toLowerCase() === "https" ? "443" : "80") };

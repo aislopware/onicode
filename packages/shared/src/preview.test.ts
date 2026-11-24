@@ -95,6 +95,8 @@ describe("resolveAddressBarInput", () => {
     expect(resolveAddressBarInput("example.com:8080")).toBe("https://example.com:8080/");
     expect(resolveAddressBarInput("[::1]:3000")).toBe("http://[::1]:3000/");
     expect(resolveAddressBarInput("192.168.1.5:3000")).toBe("https://192.168.1.5:3000/");
+    // The host follows the last `@`, as the URL parser reads it.
+    expect(resolveAddressBarInput("a@b@localhost")).toBe("http://a%40b@localhost/");
   });
 
   it("searches for text that is not an address", () => {

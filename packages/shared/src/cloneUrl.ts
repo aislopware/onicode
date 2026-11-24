@@ -33,12 +33,18 @@ function parseCloneUrl(url: string): {
 }
 
 /**
- * Drops what an HTTP(S) remote can carry as a login: userinfo and the query. SSH URLs keep
- * their user, which is part of the address.
+ * Drops what a URL remote can carry as a login: a password, the userinfo of non-SSH URLs and an
+ * HTTP(S) query. SSH URLs keep their user, which is part of the address.
  */
 export function withoutRemoteUrlCredentials(url: string): string {
-  if (!/^https?:\/\//i.test(url)) return url;
-  return url.replace(/^(https?:\/\/)[^/?#]*@/i, "$1").replace(/\?[^#]*/, "");
+  const match = /^([a-z][a-z0-9+.-]*):\/\/(?:([^/?#]*)@)?/i.exec(url);
+  if (match === null) return url;
+  const [prefix, scheme = "", userinfo] = match;
+  const user = userinfo?.split(":", 1)[0];
+  const rest = url.slice(prefix.length);
+  const kept = /^ssh$/i.test(scheme) && user ? `${user}@` : "";
+  const withoutLogin = `${scheme}://${kept}${rest}`;
+  return /^https?$/i.test(scheme) ? withoutLogin.replace(/\?[^#]*/, "") : withoutLogin;
 }
 
 export function cloneUrlProtocol(url: string): CloneProtocol | null {
