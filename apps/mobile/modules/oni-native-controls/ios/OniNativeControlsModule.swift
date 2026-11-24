@@ -42,10 +42,13 @@ public final class OniNativeControlsModule: Module {
       Events("onSelectionChange", "onCompose")
       Prop("tabs") { (view: OniSidebarTabBarView, value: [String]) in view.tabs = value }
       Prop("selectedTab") { (view: OniSidebarTabBarView, value: String) in view.selectedTab = value }
+      Prop("labels") { (view: OniSidebarTabBarView, value: [String: String]) in view.labels = value }
+      Prop("composeLabel") { (view: OniSidebarTabBarView, value: String) in view.composeLabel = value }
       Prop("selectedColor") { (view: OniSidebarTabBarView, value: UIColor) in view.selectedColor = value }
       Prop("showsCompose") { (view: OniSidebarTabBarView, value: Bool) in view.showsCompose = value }
       Prop("compact") { (view: OniSidebarTabBarView, value: Bool) in view.compact = value }
       Prop("appearance") { (view: OniSidebarTabBarView, value: String) in view.appearance = value }
+      OnViewDidUpdateProps { (view: OniSidebarTabBarView) in view.applyItemsIfNeeded() }
     }
 
     View(OniLayoutMetricsView.self) {

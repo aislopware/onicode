@@ -198,11 +198,15 @@ export const make = Effect.fn("ProviderCommitBatch.make")(function* (
     yield* backlog.releaseAll;
   });
   yield* Effect.addFinalizer(() => shutdown);
+  // A write can run once its earlier writes are done and its snapshots ran; one still behind an
+  // earlier write waits for that one, which is checked on its own.
+  const canRun = (reservation: Reservation, ran: ReadonlySet<Job>) => {
+    if (reservation.earlier.some((earlier) => reservations.has(earlier))) return false;
+    for (const job of reservation.jobs) if (pending.has(job) && !ran.has(job)) return false;
+    return true;
+  };
   // Waits for snapshots and writes registered so far on `threadIds`; omitted, on every thread.
   // Streams holding those snapshots rank first meanwhile, so a busier stream cannot starve them.
-  const needs = (reservation: Reservation, job: Job): boolean =>
-    reservation.jobs.has(job) ||
-    reservation.earlier.some((earlier) => reservations.has(earlier) && needs(earlier, job));
   const earlierWork = (threadIds?: ReadonlyArray<string>) => {
     const jobs = Array.from(pending).filter((job) => overlaps(threadIds, [job.threadId]));
     const writes = Array.from(reservations)
@@ -374,31 +378,29 @@ export const make = Effect.fn("ProviderCommitBatch.make")(function* (
         // Units of a stream that stopped; they settle once the transaction's outcome is known.
         const stopped = new Set<Unit>();
         let taken = 0;
+        // Jobs of the units taken so far, settled once this transaction commits.
+        const ran = new Set<Job>();
         const work = Effect.gen(function* () {
           // A retried transaction runs this again from the first unit.
           outcomes.clear();
           stopped.clear();
+          ran.clear();
           taken = 0;
           const startedAt = yield* Clock.monotonicTimeNanos;
           for (const unit of units) {
             const { job } = unit;
-            // Cutting only helps a write that needs none of the units still to run.
+            // Cutting only helps a write that waits on no snapshot but those already taken; one
+            // still queued, here or in a later batch, holds it past this transaction anyway.
             if (
               taken > 0 &&
               reservations.size > 0 &&
               (yield* Clock.monotonicTimeNanos) - startedAt >= MAX_HOLD_NANOS &&
-              Array.from(reservations).some((reservation) =>
-                units
-                  .slice(taken)
-                  .every(
-                    (unit) =>
-                      !needs(reservation, unit.job) &&
-                      !unit.superseded.some((job) => needs(reservation, job)),
-                  ),
-              )
+              Array.from(reservations).some((reservation) => canRun(reservation, ran))
             )
               return;
             taken++;
+            ran.add(job);
+            for (const replaced of unit.superseded) ran.add(replaced);
             if (!job.stream.owner.active) {
               stopped.add(unit);
               continue;

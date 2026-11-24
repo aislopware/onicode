@@ -40,10 +40,19 @@ final class OniSidebarTabBarView: ExpoView, UITabBarDelegate {
   private let composeButton = UIButton(type: .system)
   private lazy var tabBarTrailing = tabBar.trailingAnchor.constraint(equalTo: trailingAnchor)
   private var itemsByTab: [String: UITabBarItem] = [:]
+  private var englishLabels: [String: String] = [:]
+  // Items go on the bar once all props of an update are set: UIKit loses the accessible names of
+  // nil-titled items changed while on the bar, so JS remounts the view when tabs or labels change.
+  private var itemsStale = true
   var tabs = ["threads", "pullRequests", "issues", "usage", "settings"] {
-    didSet { if tabs != oldValue { updateItems() } }
+    didSet { if tabs != oldValue { itemsStale = true } }
   }
   var selectedTab = "threads" { didSet { updateSelection() } }
+  // VoiceOver names in the app's language, for a JS bundle that sends them.
+  var labels: [String: String] = [:] {
+    didSet { if labels != oldValue { itemsStale = true } }
+  }
+  var composeLabel = "New chat" { didSet { composeButton.accessibilityLabel = composeLabel } }
   var selectedColor: UIColor = .systemBlue { didSet { tabBar.tintColor = selectedColor } }
   var compact = false {
     didSet {
@@ -84,13 +93,12 @@ final class OniSidebarTabBarView: ExpoView, UITabBarDelegate {
     // UIKit's floating row changes with window geometry. Follow its laid-out items
     // instead of estimating their position from a second set of safe-area updates.
     tabBar.onContentLayout = { [weak self] frame in self?.layoutCompose(alongside: frame) }
-    composeButton.accessibilityLabel = "New chat"
+    composeButton.accessibilityLabel = composeLabel
     composeButton.addAction(UIAction { [weak self] _ in self?.onCompose() }, for: .touchUpInside)
     composeButton.isHidden = true
     addSubview(composeButton)
     configureCompose()
     prepareItems()
-    updateItems()
   }
 
   private func configureCompose() {
@@ -109,7 +117,7 @@ final class OniSidebarTabBarView: ExpoView, UITabBarDelegate {
   private func prepareItems() {
     let iconBundle = Bundle(for: Self.self).url(forResource: "OniNativeControlIcons", withExtension: "bundle").flatMap(Bundle.init(url:))
     let pullRequestIcon = UIImage(named: "pull-request", in: iconBundle, compatibleWith: nil)?.withRenderingMode(.alwaysTemplate)
-    let labels = [
+    englishLabels = [
       "threads": "Chats", "pullRequests": "PRs", "issues": "Issues", "workflows": "Workflows",
       "usage": "Usage", "settings": "Settings",
     ]
@@ -118,20 +126,22 @@ final class OniSidebarTabBarView: ExpoView, UITabBarDelegate {
       "threads": "text.bubble", "workflows": "point.3.connected.trianglepath.dotted",
       "usage": "chart.bar.xaxis", "settings": "gearshape",
     ]
-    for (tab, label) in labels {
+    for tab in englishLabels.keys {
       let icon = tab == "pullRequests" ? pullRequestIcon : tab == "issues" ? issueIcon : UIImage(systemName: symbols[tab] ?? "circle")
       let item = UITabBarItem(title: nil, image: tabIcon(icon), tag: 0)
-      item.accessibilityLabel = label
       item.accessibilityIdentifier = "workspace-tab-\(tab)"
       if tab == "threads" { item.selectedImage = tabIcon(UIImage(systemName: "text.bubble.fill")) }
       itemsByTab[tab] = item
     }
   }
 
-  private func updateItems() {
+  func applyItemsIfNeeded() {
+    guard itemsStale else { return }
+    itemsStale = false
     tabBar.items = tabs.enumerated().compactMap { index, tab in
       guard let item = itemsByTab[tab] else { return nil }
       item.tag = index
+      item.accessibilityLabel = labels[tab] ?? englishLabels[tab]
       return item
     }
     updateSelection()

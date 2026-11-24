@@ -78,6 +78,9 @@ class OniWorkspaceNavigationModule : Module() {
       Prop("newThreadTitle") { view: OniWorkspaceNavigationView, value: String ->
         view.newThreadTitle = value
       }
+      Prop("closeRailTitle") { view: OniWorkspaceNavigationView, value: String ->
+        view.closeRailTitle = value
+      }
       Prop("selectedTab") { view: OniWorkspaceNavigationView, value: String ->
         view.selectedTab = value
       }
@@ -139,6 +142,7 @@ class OniWorkspaceNavigationView(
   var tabTitles by mutableStateOf(emptyMap<String, String>())
   var expandedTabTitles by mutableStateOf(emptyMap<String, String>())
   var newThreadTitle by mutableStateOf("New thread")
+  var closeRailTitle by mutableStateOf("Close navigation rail")
   var selectedTab by mutableStateOf("threads")
   var rail by mutableStateOf(false)
   var floating by mutableStateOf(false)
@@ -299,7 +303,7 @@ class OniWorkspaceNavigationView(
       val railShape = RoundedCornerShape(topEnd = 16.dp * fraction, bottomEnd = 16.dp * fraction)
       if (fraction > 0f) {
         Scrim(
-          contentDescription = "Close navigation rail",
+          contentDescription = closeRailTitle,
           onClick = { expanded = false },
           alpha = { fraction },
         )

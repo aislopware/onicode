@@ -1215,17 +1215,21 @@ describe("evaluatePullRequestWatch", () => {
 Review triggered.
 
 </details>`;
-    // GitHub's GraphQL API names bots without the "[bot]" suffix that its REST API adds.
-    for (const [login, acknowledgement] of [
-      ["coderabbitai[bot]", codeRabbitReply("Review triggered.")],
-      ["coderabbitai[bot]", codeRabbitReply("Full review triggered.")],
-      ["coderabbitai[bot]", current],
-      ["coderabbitai", current],
+    // GitHub's GraphQL API names bots without the "[bot]" suffix that its REST API adds. On
+    // GitLab, CodeRabbit posts as a user or access-token bot that the group made for it.
+    for (const [login, acknowledgement, isBot] of [
+      ["coderabbitai[bot]", codeRabbitReply("Review triggered."), false],
+      ["coderabbitai[bot]", codeRabbitReply("Full review triggered."), false],
+      ["coderabbitai[bot]", current, false],
+      ["coderabbitai", current, false],
+      ["CodeRabbit-Reviewer", current, false],
+      ["group_42_bot_5f0e3c", current, true],
     ] as const) {
       const queued = {
         ...remark(login, "2026-10-02T12:06:00Z", acknowledgement),
         kind: "issue-comment" as const,
         path: null,
+        author: { login, name: null, avatarUrl: null, ...(isBot ? { isBot } : {}) },
       };
       const watching = watch({ headSha: "aaaaaaaaaa", wakes: 2 });
       const progress = evaluatePullRequestWatch(watching, detail(), [queued]);

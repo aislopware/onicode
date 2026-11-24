@@ -42,9 +42,16 @@ const isFailedCheck = (check: PullRequestCheck) =>
 const workflowRunOf = (url: string | null) => url?.match(/^.*\/actions\/runs\/\d+/)?.[0] ?? null;
 const approvalKey = (check: PullRequestCheck) => workflowRunOf(check.url) ?? check.name;
 
+// GitLab has no CodeRabbit app: it posts as a user or access-token bot made for it, named freely.
+const mayBeCodeRabbit = (author: PullRequestComment["author"]) =>
+  author !== null &&
+  (author.isBot === true ||
+    /coderabbit/i.test(author.login) ||
+    /coderabbit/i.test(author.name ?? ""));
+
 function isReviewAcknowledgement(remark: PullRequestComment): boolean {
   return (
-    remark.author?.login.toLowerCase().replace(/\[bot\]$/, "") === "coderabbitai" &&
+    mayBeCodeRabbit(remark.author) &&
     /<!-- This is an auto-generated reply by CodeRabbit -->[\s\S]*?<summary>[^\p{L}<]*Actions? performed<\/summary>\s*(?:<dl>\s*<dd>\s*<br>\s*)?(?:Full review|Review) triggered\./u.test(
       remark.body.slice(0, 1_000),
     )
