@@ -487,9 +487,26 @@ layer("GitLabCli.layer", (it) => {
       reference: "https://gitlab.example.com/group/project/-/merge_requests/42",
       withheld: { GITLAB_TOKEN: "", GITLAB_ACCESS_TOKEN: "", OAUTH_TOKEN: "" },
     },
-  ])(
+    { remote: "https://gitlab.com/group/project.git", reference: "42", withheld: {} },
+    {
+      remote: "https://gitlab.com:8443/group/project.git",
+      reference: "42",
+      withheld: { GITLAB_TOKEN: "", GITLAB_ACCESS_TOKEN: "", OAUTH_TOKEN: "" },
+    },
+    {
+      remote: "",
+      reference: "42",
+      environment: { GITLAB_HOST: " " },
+      withheld: { GITLAB_TOKEN: "", GITLAB_ACCESS_TOKEN: "", OAUTH_TOKEN: "" },
+    },
+  ] as ReadonlyArray<{
+    remote: string;
+    reference: string;
+    environment?: NodeJS.ProcessEnv;
+    withheld: Record<string, string>;
+  }>)(
     "keeps the environment token from the host glab picks for $reference in a $remote checkout",
-    ({ remote, reference, withheld }) =>
+    ({ remote, reference, environment, withheld }) =>
       Effect.gen(function* () {
         const environments: Array<unknown> = [];
         const glab = yield* GitLabCli.make.pipe(
@@ -498,14 +515,19 @@ layer("GitLabCli.layer", (it) => {
               process: {
                 run: (input) => {
                   if (input.command === "git")
-                    return Effect.succeed(processOutput(`origin\t${remote} (fetch)\n`));
+                    return Effect.succeed(
+                      processOutput(remote === "" ? "" : `origin\t${remote} (fetch)\n`),
+                    );
                   environments.push(input.env);
                   return Effect.succeed(processOutput("{}"));
                 },
               },
             }),
           ),
-          Effect.provideService(HostProcess.Environment, { GITLAB_TOKEN: "default-host-token" }),
+          Effect.provideService(HostProcess.Environment, {
+            GITLAB_TOKEN: "default-host-token",
+            ...environment,
+          }),
         );
         yield* glab.checkoutMergeRequest({ cwd: "/repo", reference });
 

@@ -549,6 +549,14 @@ const hostOf = (value: string, apiScheme: "http" | "https") => {
 const apiSchemeOf = (environment: NodeJS.ProcessEnv) =>
   environment.GLAB_API_PROTOCOL?.trim().toLowerCase() === "http" ? "http" : "https";
 
+const httpRemoteHost = (url: string) => {
+  try {
+    return new URL(url).host;
+  } catch {
+    return undefined;
+  }
+};
+
 /** glab's default host as `hostOf` spells it, or undefined when it does not parse. */
 export const defaultHost = (environment: NodeJS.ProcessEnv) =>
   // Like glab, the first set variable wins, even a blank one.
@@ -592,7 +600,10 @@ export const make = Effect.gen(function* () {
       .pipe(
         Effect.map((result) =>
           result.stdout.split("\n").some((line) => {
-            const remote = parseGitRemoteHost(line.trim().split(/\s+/)[1] ?? "");
+            const url = line.trim().split(/\s+/)[1] ?? "";
+            // An HTTP(S) remote's port is the web server's, so it must match like a named host.
+            if (/^https?:\/\//i.test(url)) return httpRemoteHost(url) !== defaultGitLabHost;
+            const remote = parseGitRemoteHost(url);
             return remote !== null && remote.hostname !== defaultHostname;
           }),
         ),
@@ -606,11 +617,12 @@ export const make = Effect.gen(function* () {
         named.every((host) => isDefaultHost(host, environment)) ? {} : WITHOUT_ENVIRONMENT_TOKEN,
       );
     }
-    return hasEnvironmentToken(environment)
-      ? checkoutHasOtherHost(input.cwd).pipe(
-          Effect.map((other) => (other ? WITHOUT_ENVIRONMENT_TOKEN : {})),
-        )
-      : Effect.succeed({});
+    if (!hasEnvironmentToken(environment)) return Effect.succeed({});
+    // With no default host, no checkout host can be the token's.
+    if (defaultGitLabHost === undefined) return Effect.succeed(WITHOUT_ENVIRONMENT_TOKEN);
+    return checkoutHasOtherHost(input.cwd).pipe(
+      Effect.map((other) => (other ? WITHOUT_ENVIRONMENT_TOKEN : {})),
+    );
   };
 
   // GitLab answers a signed-out read of a private project with the 404 of a missing one.
