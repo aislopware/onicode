@@ -25,6 +25,7 @@ import {
 import * as HostProcess from "@onicode/shared/HostProcess";
 
 import * as ProcessRunner from "../processRunner.ts";
+import { windowsPowerShellPath } from "@onicode/shared/windowsSystem";
 import { isExactServiceVersion, parseServiceState, SERVICE_STATE_FILE } from "./serviceProtocol.ts";
 
 const PINNED_RUNTIME_DIR = "runtime";
@@ -787,7 +788,7 @@ const runningExecutables = Effect.fn("service.pinned_runtime.running_executables
     .run({
       ...(platform === "win32"
         ? {
-            command: "powershell.exe",
+            command: windowsPowerShellPath(yield* HostProcess.Environment),
             args: [
               "-NoProfile",
               "-NonInteractive",
