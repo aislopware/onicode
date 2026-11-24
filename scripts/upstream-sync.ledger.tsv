@@ -3706,3 +3706,4 @@ dc326236ea	take	taken as is
 47329274bc	take	taken as is
 60c9cb927e	take	kept Onicode's PR-watch registration-pass rule (already the same condition, plus the rerun-outside-gate count); took upstream's comment and tests (awaitingBaseline checks, optional CI still running)
 74d73ac23f	take	taken as is; peer-linked threads open through LinkedThreadPage, so the unreachable state only covers catalog environments; mobile counterpart noted as follow-up
+8fcd0a8f76	take	taken as is; Windows x64 is a supported platform
