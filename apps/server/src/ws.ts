@@ -36,6 +36,7 @@ import {
   type AuthAccessStreamEvent,
   AuthProvidersManageScope,
   type AuthEnvironmentScope,
+  ProviderDriverKind,
   WorkflowRequestError,
   AuthSessionId,
   type DiscoveredLocalServerList,
@@ -189,6 +190,7 @@ import * as ServerSelfUpdate from "./service/selfUpdate.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as SecretResolver from "@onicode/secret-provider-core/server/SecretResolver";
+import * as ManagedProviders from "./policy/managedProviders.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import { invalidateSettingsSecrets } from "./sourceControl/sourceControlHostSecrets.ts";
 import * as DatabaseStorage from "./persistence/DatabaseStorage.ts";
@@ -1536,6 +1538,14 @@ export const layerWsRpc = (
       ) {
         const project = yield* acpRegistrySessions.project(input.projectId);
         const { instance, manager } = yield* acpRegistrySessions.sessionManager(input.instanceId);
+        // Only a probed agent advertises listing, so a read never installs or first-starts one.
+        const snapshot = yield* instance.snapshot.getSnapshot;
+        if (snapshot.nativeSessions?.canList !== true) {
+          return yield* new AcpRegistryOperationError({
+            reason: "session_list_unsupported",
+            message: "The ACP agent does not advertise session listing.",
+          });
+        }
         const listed = yield* manager.listSessions({
           cwd: project.workspaceRoot,
           ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
@@ -2316,9 +2326,19 @@ export const layerWsRpc = (
         [WS_METHODS.serverPrepareAcpRegistryAgent]: (input) =>
           Effect.annotateCurrentSpan({ "acp_registry.agent_id": input.agentId }).pipe(
             Effect.andThen(
-              acpRegistryCatalog
-                .prepare(input)
-                .pipe(Effect.mapError(AcpRegistrySupport.toAcpRegistryOperationError)),
+              Effect.suspend(() => {
+                const blocked = ManagedProviders.disallowedDriverReason(
+                  serverSettings.managedPolicy,
+                  ProviderDriverKind.make("acpRegistry"),
+                );
+                return blocked === undefined
+                  ? acpRegistryCatalog
+                      .prepare(input)
+                      .pipe(Effect.mapError(AcpRegistrySupport.toAcpRegistryOperationError))
+                  : Effect.fail(
+                      new AcpRegistryOperationError({ reason: "install_failed", message: blocked }),
+                    );
+              }),
             ),
           ),
         [WS_METHODS.serverUninstallAcpRegistryManagedBinary]: (input) =>
