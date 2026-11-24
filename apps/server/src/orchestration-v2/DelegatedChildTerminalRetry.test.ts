@@ -16,12 +16,15 @@ import { checkpointWorkspace } from "@onicode/provider-testing/replayWorkspace";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 
 import { ClaudeProviderCapabilitiesV2 } from "./Adapters/ClaudeAdapterV2.ts";
+import * as EffectOutbox from "./EffectOutbox.ts";
 import * as EffectWorker from "./EffectWorker.ts";
+import * as RunExecutionService from "./RunExecutionService.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
@@ -604,39 +607,66 @@ it.effect("stopping a delegated child with a queued message does not report the 
   }),
 );
 
-it.effect("a delegated child's task stays open until its turn-end capture lands", () =>
-  Effect.gen(function* () {
-    const { turns, terminal, layerTest, start } = yield* delegatedChildHarness(
-      "delegated-capture-window",
-      captureWindowParentId,
-    );
-    return yield* Effect.gen(function* () {
-      const { orchestrator, watch, settle, task, childThreadId } = yield* start;
-      const childRun = (yield* orchestrator.getThreadProjection(childThreadId)).runs[0]!;
-      const childEnded = yield* watch(
-        (event) =>
-          event.type === "run.updated" &&
-          event.payload.id === childRun.id &&
-          event.payload.status === "completed",
+it.effect.each(["lands", "gives up"] as const)(
+  "a delegated child's task stays open until its turn-end capture %s",
+  (capture) =>
+    Effect.gen(function* () {
+      const { turns, terminal, layerTest, start } = yield* delegatedChildHarness(
+        `delegated-capture-window-${capture.replace(" ", "-")}`,
+        captureWindowParentId,
       );
-      yield* terminal(
-        turns.find((entry) => entry.turn.threadId === childThreadId)!,
-        "completed",
-      );
-      yield* Fiber.join(childEnded);
+      return yield* Effect.gen(function* () {
+        const { orchestrator, watch, settle, task, childThreadId } = yield* start;
+        const childRun = (yield* orchestrator.getThreadProjection(childThreadId)).runs[0]!;
+        const childEnded = yield* watch(
+          (event) =>
+            event.type === "run.updated" &&
+            event.payload.id === childRun.id &&
+            event.payload.status === "completed",
+        );
+        yield* terminal(
+          turns.find((entry) => entry.turn.threadId === childThreadId)!,
+          "completed",
+        );
+        yield* Fiber.join(childEnded);
 
-      // The capture can still turn a Stop into the outcome or requeue an unread steer.
-      yield* orchestrator.recoverDelegatedTasks;
-      const during = yield* orchestrator.getThreadProjection(captureWindowParentId);
-      assert.isNull(during.subagents.find((row) => row.id === task.id)?.result ?? null);
-      assert.notInclude(
-        ["completed", "failed", "cancelled", "interrupted"],
-        during.subagents.find((row) => row.id === task.id)?.status,
-      );
+        // The capture can still turn a Stop into the outcome or requeue an unread steer.
+        yield* orchestrator.recoverDelegatedTasks;
+        const during = yield* orchestrator.getThreadProjection(captureWindowParentId);
+        assert.isNull(during.subagents.find((row) => row.id === task.id)?.result ?? null);
+        assert.notInclude(
+          ["completed", "failed", "cancelled", "interrupted"],
+          during.subagents.find((row) => row.id === task.id)?.status,
+        );
+        assert.isTrue(yield* orchestrator.delegatedTaskResultPending(childThreadId));
 
-      yield* settle;
-      const settled = yield* orchestrator.getThreadProjection(captureWindowParentId);
-      assert.equal(settled.subagents.find((row) => row.id === task.id)?.status, "completed");
-    }).pipe(Effect.provide(layerTest));
-  }),
+        if (capture === "gives up") {
+          const taskEnded = yield* watch(
+            (event) =>
+              event.type === "subagent.updated" &&
+              event.payload.id === task.id &&
+              event.payload.status === "completed",
+          );
+          const outbox = yield* EffectOutbox.EffectOutboxV2;
+          const effectId = RunExecutionService.checkpointCaptureEffectId(
+            childRun.id,
+            childRun.activeAttemptId,
+          );
+          const workerId = "capture-gives-up";
+          for (;;) {
+            const claimed = yield* outbox.claimNext({ workerId });
+            assert.isTrue(Option.isSome(claimed));
+            if (Option.isSome(claimed) && claimed.value.id === effectId) break;
+            yield* outbox.succeed({ effectId: Option.getOrThrow(claimed).id, workerId });
+          }
+          yield* outbox.fail({ effectId, workerId, error: "disk full" });
+          yield* Fiber.join(taskEnded);
+          return;
+        }
+        yield* settle;
+        const settled = yield* orchestrator.getThreadProjection(captureWindowParentId);
+        assert.equal(settled.subagents.find((row) => row.id === task.id)?.status, "completed");
+        assert.isFalse(yield* orchestrator.delegatedTaskResultPending(childThreadId));
+      }).pipe(Effect.provide(layerTest));
+    }),
 );
