@@ -5794,11 +5794,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               ? command.headSha
               : undefined;
           const lastWatch = readHead === undefined ? ended : undefined;
+          const startReadPassed =
+            command.type === "thread.pull-request.watch" && command.checksPassed === true;
           // The caller read every check passing, so the last watch's check news is history. A run
           // awaiting approval can be missing from that read, so it holds its news.
           const passedSinceLastWatch =
-            command.type === "thread.pull-request.watch" &&
-            command.checksPassed === true &&
+            startReadPassed &&
             lastWatch !== undefined &&
             (lastWatch.awaitingApproval?.length ?? 0) === 0;
           const watch =
@@ -5818,13 +5819,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                       passedChecks: [],
                       conflicting: false,
                       // Watching again must not repeat check or conflict news the last watch told.
-                      ...(readHead !== undefined && { passed: true }),
+                      ...((readHead !== undefined || (ended === undefined && startReadPassed)) && {
+                        passed: true,
+                      }),
                       ...(lastWatch && {
                         headSha: lastWatch.headSha ?? command.headSha ?? null,
-                        // A fresh read found CI running with nothing failing, so the failures the
-                        // last watch told are history: a rerun failing on this head is news.
+                        // A fresh read found CI passing, or running with nothing failing, so the
+                        // failures the last watch told are history: a rerun failing is news.
                         failedChecks:
-                          passedSinceLastWatch ||
+                          startReadPassed ||
                           (command.type === "thread.pull-request.watch" &&
                             command.checksPending === true)
                             ? []

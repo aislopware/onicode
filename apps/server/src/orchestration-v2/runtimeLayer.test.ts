@@ -5629,6 +5629,24 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       reads: [{ lint: "success", test: "action-required" }],
       told: [[]],
     },
+    // A first watch's passing start read is its baseline too.
+    {
+      label: "passing, then a rerun failed, first watch",
+      atStart: "passing",
+      start: { checksPending: false, checksPassed: true, headSha: "ad70160aaa" },
+      reads: [{ lint: "success", test: "failure" }],
+      told: [["test"]],
+    },
+    // A run awaiting approval holds its notice, but the failure the last watch told passed since.
+    {
+      label: "passing, then a rerun failed again beside a run awaiting approval",
+      atStart: "passing",
+      lastHeadSha: "ad70160aaa",
+      lastAwaitingApproval: true,
+      start: { checksPending: false, checksPassed: true, headSha: "ad70160aaa" },
+      reads: [{ lint: "success", test: "failure" }],
+      told: [["test"]],
+    },
     // A push that left the conflict in place is told again, though its CI had passed.
     {
       label: "rewatched passing but conflicting",

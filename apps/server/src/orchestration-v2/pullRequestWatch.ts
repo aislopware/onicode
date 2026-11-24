@@ -254,7 +254,7 @@ export function evaluatePullRequestWatch(
   // push. CI can register late on any host, so every host waits, but running out of time is news
   // only where a host always reports checks: elsewhere an empty list can mean there are none.
   const awaitedBefore =
-    headMoved || watch.awaitingBaseline === "all"
+    headMoved || (watch.awaitingBaseline === "all" && !watch.passed)
       ? DateTime.formatIso(DateTime.makeUnsafe(now))
       : (watch.checksAwaitedSince ?? null);
   let checksAwaitedSince = checks.length > 0 ? null : awaitedBefore;
