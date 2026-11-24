@@ -242,6 +242,9 @@ public final class OniTerminalView: ExpoView, UITextFieldDelegate, UIEditMenuInt
     }
   }
 
+  /// Copy of the text selection screen in the app's language; English where missing.
+  var labels: [String: String] = [:]
+
   var fontSize: CGFloat = 10 {
     didSet {
       guard oldValue != fontSize else { return }
@@ -647,7 +650,9 @@ public final class OniTerminalView: ExpoView, UITextFieldDelegate, UIEditMenuInt
     var children: [UIMenuElement] = Self.pasteCommand(in: suggestedActions).map { [$0] } ?? []
     if let text = menuText {
       children.append(
-        UIAction(title: "Select Text", image: UIImage(systemName: "text.cursor")) { [weak self] _ in
+        UIAction(
+          title: labels["selectText"] ?? "Select Text", image: UIImage(systemName: "text.cursor")
+        ) { [weak self] _ in
           self?.presentTextSelection(text)
         })
     }
@@ -669,7 +674,7 @@ public final class OniTerminalView: ExpoView, UITextFieldDelegate, UIEditMenuInt
     else { return }
 
     inputField.resignFirstResponder()
-    let controller = TerminalTextSelectionViewController(text: text, fontSize: fontSize)
+    let controller = TerminalTextSelectionViewController(text: text, fontSize: fontSize, labels: labels)
     let navigation = UINavigationController(rootViewController: controller)
     navigation.modalPresentationStyle = .pageSheet
     presenter.present(navigation, animated: !UIAccessibility.isReduceMotionEnabled)

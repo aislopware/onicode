@@ -14,6 +14,7 @@ import { vi } from "vite-plus/test";
 
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
+import { resolveLinkTarget } from "./linkTargets.ts";
 import * as TaskFolderStore from "./TaskFolderStore.ts";
 import * as WorkspaceFolders from "./WorkspaceFolders.ts";
 
@@ -527,6 +528,69 @@ it.layer(NodeServices.layer)("WorkspaceFolders", (it) => {
       );
     }).pipe(Effect.provide(TestClock.layer())),
   );
+
+  it.effect("reports a folder that first timed out waiting behind busy probes", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const tmp = yield* makeTempDir;
+      const workspaceRoot = path.join(tmp, "app");
+      const healthy = { name: "api", path: path.join(tmp, "api") };
+      const busy = ["a", "b", "c"].map((name) => path.join(tmp, "busy", name));
+      for (const folder of [workspaceRoot, path.join(healthy.path, ".git"), ...busy]) {
+        yield* fileSystem.makeDirectory(folder, { recursive: true });
+      }
+      const busyStarted = yield* Deferred.make<void>();
+      const releases: Array<() => void> = [];
+      const releaseAll = () => {
+        for (const release of releases.splice(0)) release();
+      };
+      const stat = vi.mocked(NodeFSP.stat);
+      const realStat = stat.getMockImplementation()!;
+      stat.mockImplementation(((target: string) => {
+        if (!busy.includes(target)) return realStat(target);
+        return new Promise((resolve) => {
+          releases.push(() => resolve(realStat(target)));
+          if (releases.length === busy.length) Deferred.doneUnsafe(busyStarted, Effect.void);
+        });
+      }) as typeof NodeFSP.stat);
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          releaseAll();
+          stat.mockImplementation(realStat);
+        }),
+      );
+      // Probes hold every slot: one outlived its caller's timeout, the others' callers moved on.
+      const [timedOut, ...movedOn] = yield* Effect.forEach(busy, (folder) =>
+        Effect.forkChild(resolveLinkTarget(folder)),
+      );
+      yield* Deferred.await(busyStarted);
+      yield* Fiber.interruptAll(movedOn);
+      yield* TestClock.adjust("1 second");
+      assert.equal(yield* Fiber.join(timedOut!), undefined);
+
+      yield* Effect.gen(function* () {
+        const workspaceFolders = yield* WorkspaceFolders.WorkspaceFolders;
+        // The pool queues a caller with a fresh `Promise.withResolvers`; nothing else here makes one.
+        const queued = yield* Deferred.make<void>();
+        const withResolvers = Promise.withResolvers;
+        const queueSpy = vi.spyOn(Promise, "withResolvers").mockImplementation((() => {
+          Deferred.doneUnsafe(queued, Effect.void);
+          return withResolvers.call(Promise);
+        }) as typeof Promise.withResolvers);
+        yield* Effect.addFinalizer(() => Effect.sync(() => queueSpy.mockRestore()));
+
+        const listing = yield* Effect.forkChild(workspaceFolders.list({ projectId }));
+        yield* Deferred.await(queued);
+        yield* TestClock.adjust("1 second");
+        releaseAll();
+        assert.deepEqual(yield* Fiber.join(listing), {
+          folders: [{ ...healthy, state: "git" }],
+        });
+      }).pipe(Effect.provide(layerFor({ workspaceRoot, trackedFolders: [healthy] })));
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
   it.effect("gives a task folder thread its worktrees, never the checkouts they came from", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

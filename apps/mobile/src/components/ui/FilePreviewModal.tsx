@@ -30,11 +30,30 @@ const NativeControls = requireNativeModule<{
     selectedIndex: number,
     sourceIdentifiers: readonly string[],
     identifier: string,
+    ...labels: readonly [labels?: Readonly<Record<string, string>>]
   ): Promise<void>;
+  /** Absent on native builds whose `presentFiles` refuses the labels. */
+  readonly presentFilesTakesLabels?: boolean;
   updateFile(identifier: string, index: number, uri: string | null): Promise<void>;
   dismissFile(identifier: string): Promise<void>;
   isFilePreviewFinished(identifier: string): boolean;
 }>("OniNativeControls");
+
+function imageViewerLabels() {
+  return {
+    loadFailed: m(msg("This image could not be loaded.")),
+    retry: m(msg("Try Again")),
+    save: m(msg("Save to Photos")),
+    saved: m(msg("Saved to Photos")),
+    saveFailedTitle: m(msg("Could not save image")),
+    saveFailed: m(msg("Photos could not save this image.")),
+    saveNotAllowed: m(msg("Allow {app} to add photos in Settings.", { app: "Onicode" })),
+    ok: m(msg("OK")),
+    close: m(msg("Close")),
+    share: m(msg("Share", { $context: "verb, opens the system share sheet" })),
+    position: m(msg("{position} of {total}", { position: "{position}", total: "{total}" })),
+  };
+}
 
 // Null tells the viewer an image failed; undefined means its URL has not arrived yet.
 const nativeUri = (image: FilePreviewImage) => (image.failed ? null : image.uri);
@@ -64,6 +83,9 @@ function NativeFilePreview(props: FilePreviewViewerProps) {
     if (presented.kind === "image") {
       const { images, selectedIndex } = presented;
       delivered.current = images.map((image) => image.uri);
+      const labels = NativeControls.presentFilesTakesLabels
+        ? ([imageViewerLabels()] as const)
+        : ([] as const);
       presentation = NativeControls.presentFiles(
         images.map((image) => image.uri ?? null),
         images.map(
@@ -72,6 +94,7 @@ function NativeFilePreview(props: FilePreviewViewerProps) {
         selectedIndex,
         images.map((image) => image.sourceIdentifier ?? ""),
         identifier,
+        ...labels,
       );
     } else {
       const { uri, name, sourceIdentifier } = presented;

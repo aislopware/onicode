@@ -1,4 +1,6 @@
 import { installAgentAwareness } from "./features/agent-awareness/agentAwareness";
+import { setAndroidNotificationStrings } from "./features/agent-awareness/androidNotifications";
+import { androidNotificationStrings } from "./features/agent-awareness/androidNotificationStrings";
 import { installCrashReporting } from "./features/diagnostics/crash-reporting-startup";
 import { ShakeToReport } from "./features/diagnostics/ShakeToReport";
 import {
@@ -276,6 +278,16 @@ function QuickActionsLanguage() {
   return null;
 }
 
+function AndroidNotificationLanguage() {
+  const locale = useLocale();
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- publishes the app's language to the native notifications, which Android shows without JS
+  useEffect(() => {
+    if (Platform.OS === "android")
+      setAndroidNotificationStrings(androidNotificationStrings(locale));
+  }, [locale]);
+  return null;
+}
+
 export default function App() {
   return (
     <RegistryContext.Provider value={appAtomRegistry}>
@@ -304,6 +316,7 @@ function AppContent() {
     <>
       <SplashScreenCoordinator />
       <QuickActionsLanguage />
+      <AndroidNotificationLanguage />
       <SubscriptionUsageCoordinator />
       <GestureHandlerRootView className="flex-1" {...replayScrollPauseTouchHandlers}>
         <KeyboardProvider statusBarTranslucent>

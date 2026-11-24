@@ -17,6 +17,10 @@ class OniAgentNotificationsModule : Module() {
       }
     }
 
+    Function("setStrings") { strings: Map<String, String> ->
+      appContext.reactContext?.let { AgentNotifications.setStrings(it, strings) }
+    }
+
     Function("clear") {
       appContext.reactContext?.let { AgentNotifications.clear(it) }
     }

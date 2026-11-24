@@ -49,6 +49,10 @@ public class OniReviewDiffModule: Module {
         view.setStyleJson(styleJson)
       }
 
+      Prop("labels") { (view: OniReviewDiffView, labels: [String: String]) in
+        view.setLabels(labels)
+      }
+
       Prop("rowHeight") { (view: OniReviewDiffView, rowHeight: Double) in
         view.setRowHeight(CGFloat(rowHeight))
       }

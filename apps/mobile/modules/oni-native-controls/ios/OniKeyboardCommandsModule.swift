@@ -9,6 +9,11 @@ public final class OniKeyboardCommandsModule: Module {
       Prop("enabledCommands") { (view: OniKeyboardCommandsView, commands: [String]) in
         view.setEnabledCommands(commands)
       }
+      // JS supplies translated titles keyed by command id; "find" names Command-F and
+      // "threadJump" is a pattern with an {index} placeholder.
+      Prop("titles") { (view: OniKeyboardCommandsView, titles: [String: String]) in
+        view.titles = titles
+      }
       Events("onCommand")
     }
   }
@@ -17,6 +22,7 @@ public final class OniKeyboardCommandsModule: Module {
 public final class OniKeyboardCommandsView: ExpoView {
   let onCommand = EventDispatcher()
   private var enabledCommands = Set<String>()
+  var titles: [String: String] = [:]
   private let shortcutInputView = UIView(frame: .zero)
 
   public override var canBecomeFirstResponder: Bool { true }
@@ -37,7 +43,7 @@ public final class OniKeyboardCommandsView: ExpoView {
     let isPad = UIDevice.current.userInterfaceIdiom == .pad
     var commands = [
       enabledCommand("newTask", input: "n", modifiers: .command, action: #selector(newTask), title: "New Task"),
-      enabledCommand("focusSearch", input: "f", modifiers: .command, action: #selector(focusSearch), title: "Find"),
+      enabledCommand("focusSearch", input: "f", modifiers: .command, action: #selector(focusSearch), title: "Find", titleKey: "find"),
       isPad
         ? enabledCommand("commandPalette", input: "k", modifiers: .command, action: #selector(openCommandPalette), title: "Command Palette")
         : enabledCommand("focusSearch", input: "k", modifiers: .command, action: #selector(focusSearch), title: "Focus Search"),
@@ -65,7 +71,7 @@ public final class OniKeyboardCommandsView: ExpoView {
           input: String(index),
           modifiers: .command,
           action: #selector(jumpToThread(_:)),
-          title: "Go to Thread \(index)"
+          title: titles["threadJump"]?.replacingOccurrences(of: "{index}", with: String(index)) ?? "Go to Thread \(index)"
         )
       }
     }
@@ -85,10 +91,11 @@ public final class OniKeyboardCommandsView: ExpoView {
     input: String,
     modifiers: UIKeyModifierFlags,
     action: Selector,
-    title: String
+    title: String,
+    titleKey: String? = nil
   ) -> UIKeyCommand? {
     guard enabledCommands.contains(identifier) else { return nil }
-    return command(input, modifiers: modifiers, action: action, title: title)
+    return command(input, modifiers: modifiers, action: action, title: titles[titleKey ?? identifier] ?? title)
   }
 
   public required init(appContext: AppContext? = nil) {

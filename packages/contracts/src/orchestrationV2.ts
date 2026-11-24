@@ -2406,16 +2406,43 @@ export type OrchestrationV2LatestVisibleMessageSummary =
   typeof OrchestrationV2LatestVisibleMessageSummary.Type;
 
 // Clients that predate GitRefName decode a shell's branch as TrimmedNonEmptyString: one made only
-// of Unicode whitespace would fail their whole thread list, so the shell sends it as no branch.
+// of Unicode whitespace would fail their whole thread list, so the shell sends it as no branch, and
+// a pull request snapshot or stack that names one as none.
+const omitBlankBranches = <A>(branches: (value: A) => ReadonlyArray<string>) =>
+  SchemaTransformation.transform<A | null, A | null>({
+    decode: (value) => value,
+    encode: (value) =>
+      value !== null && branches(value).some((branch) => branch.trim().length === 0) ? null : value,
+  });
+
 const ThreadShellBranch = Schema.NullOr(GitRefName).pipe(
   Schema.decodeTo(
     Schema.NullOr(GitRefName),
-    SchemaTransformation.transform({
-      decode: (branch) => branch,
-      encode: (branch) => (branch !== null && branch.trim().length === 0 ? null : branch),
-    }),
+    omitBlankBranches<string>((branch) => [branch]),
   ),
 );
+
+const ThreadShellPullRequestLink = Schema.Struct({
+  ...ThreadPullRequestLink.fields,
+  snapshot: ThreadPullRequestLink.fields.snapshot.pipe(
+    Schema.decodeTo(
+      Schema.toType(ThreadPullRequestLink.fields.snapshot),
+      omitBlankBranches<ThreadPullRequestSnapshot>((snapshot) => [
+        snapshot.headBranch,
+        snapshot.baseBranch,
+      ]),
+    ),
+  ),
+  stack: ThreadPullRequestLink.fields.stack.pipe(
+    Schema.decodeTo(
+      Schema.toType(ThreadPullRequestLink.fields.stack),
+      omitBlankBranches<ThreadPullRequestStack>((stack) => [
+        stack.base,
+        ...stack.layers.map((layer) => layer.headBranch),
+      ]),
+    ),
+  ),
+});
 
 export const OrchestrationV2ThreadShell = Schema.Struct({
   ...OrchestrationV2CreationFields,
@@ -2429,7 +2456,7 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   branch: ThreadShellBranch,
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
   linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
-  pullRequests: Schema.optional(Schema.Array(ThreadPullRequestLink)),
+  pullRequests: Schema.optional(Schema.Array(ThreadShellPullRequestLink)),
   branchPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   /** Issues linked to this thread; optional so pre-linking servers still decode. */
   issues: Schema.optional(Schema.Array(ThreadIssueLink)),

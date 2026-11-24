@@ -81,6 +81,12 @@ class OniWorkspaceNavigationModule : Module() {
       Prop("closeRailTitle") { view: OniWorkspaceNavigationView, value: String ->
         view.closeRailTitle = value
       }
+      Prop("collapseRailTitle") { view: OniWorkspaceNavigationView, value: String ->
+        view.collapseRailTitle = value
+      }
+      Prop("expandRailTitle") { view: OniWorkspaceNavigationView, value: String ->
+        view.expandRailTitle = value
+      }
       Prop("selectedTab") { view: OniWorkspaceNavigationView, value: String ->
         view.selectedTab = value
       }
@@ -143,6 +149,8 @@ class OniWorkspaceNavigationView(
   var expandedTabTitles by mutableStateOf(emptyMap<String, String>())
   var newThreadTitle by mutableStateOf("New thread")
   var closeRailTitle by mutableStateOf("Close navigation rail")
+  var collapseRailTitle by mutableStateOf("Collapse navigation rail")
+  var expandRailTitle by mutableStateOf("Expand navigation rail")
   var selectedTab by mutableStateOf("threads")
   var rail by mutableStateOf(false)
   var floating by mutableStateOf(false)
@@ -325,8 +333,7 @@ class OniWorkspaceNavigationView(
           IconButton(
             onClick = { expanded = !expanded },
             modifier = Modifier.semantics {
-              contentDescription =
-                if (expanded) "Collapse navigation rail" else "Expand navigation rail"
+              contentDescription = if (expanded) collapseRailTitle else expandRailTitle
             },
           ) {
             Icon(

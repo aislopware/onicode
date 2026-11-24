@@ -46,6 +46,7 @@ abstract class AgentNotificationsFixture {
       }
     )
     AgentNotifications.clear(context)
+    AgentNotifications.setStrings(context, emptyMap())
     AgentNotifications.configure(context, "device", "onicode-dev", true)
     AgentNotifications.setThreadOnScreen("/threads/environment/thread")
   }
@@ -853,5 +854,91 @@ class AgentNotificationsThreadAlertTest : AgentNotificationsFixture() {
 
     AgentNotifications.clearThread(context, "/threads/environment/thread")
     assertTrue(manager.activeNotifications.isEmpty())
+  }
+}
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [24, 26, 33, 36], manifest = Config.NONE)
+class AgentNotificationsLanguageTest : AgentNotificationsFixture() {
+  private val russian = mapOf(
+    "locale" to "ru",
+    "alertChannel" to "Оповещения агентов",
+    "activityChannel" to "Текущая активность агентов",
+    "needYou" to "{count, plural, one {{count} ждёт вас} few {{count} ждут вас} " +
+      "many {{count} ждут вас} other {{count} ждут вас}}",
+    "activeCount" to "{count, plural, one {{count} активный} few {{count} активных} " +
+      "many {{count} активных} other {{count} активных}}",
+    "workingCount" to "{count, plural, one {{count} работает} few {{count} работают} " +
+      "many {{count} работают} other {{count} работают}}",
+    "statusApproval" to "Одобрение",
+    "statusWorking" to "Работает",
+    "chipApprove" to "Одобр.",
+    "chipLive" to "{count} акт.",
+    "actionApprove" to "Одобрить",
+    "actionDismiss" to "Скрыть",
+  )
+
+  private fun card() =
+    manager.activeNotifications.single { it.tag == "oni-agent-activity" }.notification
+
+  private fun title() = card().extras.getCharSequence(Notification.EXTRA_TITLE).toString()
+
+  private fun chip() = card().extras.getString(NotificationCompat.EXTRA_SHORT_CRITICAL_TEXT)
+
+  private fun several(attention: Int) = update("several", true) + mapOf(
+    "activity_line_0" to "Approval\tFirst\tProject",
+    "activity_line_1" to "Working\tSecond\tProject",
+    "activity_phase" to "waiting_for_approval",
+    "activity_active_count" to "5",
+    "activity_attention_count" to attention.toString(),
+  )
+
+  @Test
+  fun cardsUseTheSavedLanguageAndItsPlurals() {
+    AgentNotifications.setStrings(context, russian)
+    // Opting out and back in, or a new install id, must not bring English back.
+    AgentNotifications.clear(context)
+    AgentNotifications.configure(context, "device", "onicode-dev", true)
+
+    AgentNotifications.receive(context, several(1))
+    assertEquals("1 ждёт вас", title())
+    assertEquals("Project · 5 активных", card().extras.getString(Notification.EXTRA_SUB_TEXT))
+    assertEquals(
+      "Одобрение First\nРаботает Second",
+      card().extras.getCharSequence(Notification.EXTRA_BIG_TEXT).toString()
+    )
+    assertEquals(listOf("Одобрить", "Скрыть"), card().actions.map { it.title.toString() })
+    assertEquals("Одобр.", chip())
+
+    AgentNotifications.receive(context, several(22))
+    assertEquals("22 ждут вас", title())
+
+    val running = several(0) + ("activity_phase" to "running")
+    AgentNotifications.receive(context, running + ("activity_active_count" to "21"))
+    assertEquals("21 работает", title())
+    assertEquals("9+ акт.", chip())
+  }
+
+  @Test
+  fun missingAndMalformedTextsStayEnglish() {
+    AgentNotifications.setStrings(
+      context,
+      mapOf("locale" to "ru", "needYou" to "{count, plural, one {", "actionDismiss" to " ")
+    )
+    AgentNotifications.receive(context, several(2))
+    assertEquals("2 need you", title())
+    assertEquals(listOf("Approve", "Dismiss"), card().actions.map { it.title.toString() })
+  }
+
+  @Test
+  @Config(sdk = [26, 33, 36])
+  fun aLanguageSwitchRenamesTheChannels() {
+    AgentNotifications.setStrings(context, russian)
+    assertEquals(
+      listOf("Оповещения агентов", "Текущая активность агентов"),
+      listOf("agent-alerts", "agent-activity").map {
+        manager.getNotificationChannel(it).name.toString()
+      }
+    )
   }
 }

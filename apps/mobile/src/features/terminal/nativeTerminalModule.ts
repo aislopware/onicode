@@ -44,6 +44,14 @@ export interface NativeTerminalSurfaceProps extends ViewProps {
   readonly fontSize: number;
   /** `[cols, rows]` of the shared PTY, or empty before the server reports one. */
   readonly sharedGrid?: ReadonlyArray<number>;
+  /** iOS only: copy of the text selection screen. */
+  readonly labels?: {
+    readonly selectText: string;
+    readonly title: string;
+    readonly copyAll: string;
+    readonly output: string;
+    readonly done: string;
+  };
   readonly onInput?: (event: NativeSyntheticEvent<TerminalInputEvent>) => void;
   /** iOS only: clipboard text from a system paste (edit menu, ⌘V, shortcut bar). */
   readonly onPaste?: (event: NativeSyntheticEvent<TerminalPasteEvent>) => void;

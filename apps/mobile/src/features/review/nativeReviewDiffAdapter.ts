@@ -128,8 +128,6 @@ export function createNativeReviewDiffStyle(
     fileHeaderSubtextFontWeight: "medium",
     fileHeaderStatusFontSize: 9,
     fileHeaderStatusFontWeight: "bold",
-    emptyStateFontSize: 12,
-    emptyStateFontWeight: "medium",
   } as const;
 }
 

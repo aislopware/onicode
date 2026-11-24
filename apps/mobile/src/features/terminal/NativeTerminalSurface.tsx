@@ -220,6 +220,7 @@ const ReadyTerminalSurface = memo(function ReadyTerminalSurface({
   grid,
   ...props
 }: ReadyTerminalSurfaceProps) {
+  const gt = useGT();
   const fontSize = props.fontSize ?? MOBILE_TYPOGRAPHY.label.fontSize;
   const { themeAppearance } = useAppearancePreferences();
   const theme = props.theme ?? getMobileTerminalTheme(themeAppearance);
@@ -297,6 +298,13 @@ const ReadyTerminalSurface = memo(function ReadyTerminalSurface({
           initialBuffer={streaming ? "" : props.buffer}
           fontSize={fontSize}
           sharedGrid={sharedGrid}
+          labels={{
+            selectText: gt("Select Text", { $context: "edit menu item" }),
+            title: gt("Terminal text"),
+            copyAll: gt("Copy All", { $context: "button, copies the terminal text" }),
+            output: gt("Terminal output"),
+            done: gt("Done", { $context: "button that closes the sheet" }),
+          }}
           style={{ flex: 1 }}
           themeConfig={buildGhosttyThemeConfig(theme)}
           onInput={handleNativeInput}

@@ -107,6 +107,7 @@ interface NativeComposerEditorProps extends ViewProps {
   readonly enterBehavior: string;
   readonly submitTitle: string;
   readonly alternateSubmitTitle: string;
+  readonly keyCommandTitles: Readonly<Record<string, string>>;
   readonly scrollEnabled: boolean;
   readonly autoFocus: boolean;
   readonly autoCorrect: boolean;
@@ -372,6 +373,15 @@ export function ComposerEditor({
   }, []);
   const themeJson = JSON.stringify(createNativeComposerTheme(theme));
   const resolvedTextStyle = StyleSheet.flatten(textStyle) ?? {};
+  const keyCommandTitles = useMemo(
+    () => ({
+      newLine: gt("New Line"),
+      previousPrompt: gt("Previous Prompt"),
+      nextPrompt: gt("Next Prompt"),
+      pasteAsText: gt("Paste as Text"),
+    }),
+    [gt],
+  );
   return (
     <NativeView
       ref={nativeRef}
@@ -398,6 +408,7 @@ export function ComposerEditor({
       enterBehavior={props.enterBehavior ?? DEFAULT_COMPOSER_ENTER_BEHAVIOR}
       submitTitle={props.submitTitle ?? gt("Send Message")}
       alternateSubmitTitle={props.alternateSubmitTitle ?? props.submitTitle ?? gt("Send Message")}
+      keyCommandTitles={keyCommandTitles}
       scrollEnabled={props.scrollEnabled ?? true}
       autoFocus={props.autoFocus ?? false}
       autoCorrect={props.autoCorrect ?? true}

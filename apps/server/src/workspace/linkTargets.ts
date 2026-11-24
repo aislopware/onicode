@@ -200,15 +200,22 @@ export const resolveLinkTarget = (fullPath: string, options?: LinkTargetOptions)
     Effect.map((target) => (target === LINK_PROBE_CROWDED ? undefined : target)),
   );
 
+// A crowded answer says nothing of the folder, so it queues again a bounded number of times.
+const resolveUncrowded = (fullPath: string) =>
+  Effect.repeat(resolveLinkTargetOrCrowded(fullPath), {
+    while: (target) => target === LINK_PROBE_CROWDED,
+    times: 2,
+  }).pipe(Effect.map((target) => (target === LINK_PROBE_CROWDED ? undefined : target)));
+
 /**
  * A folder's state and real path, from probes bounded like a link's: `undefined` when the folder
  * or its `.git` did not answer in time, as on a stalled mount.
  */
 export const probeFolder = Effect.fn("linkTargets.probeFolder")(function* (folder: string) {
-  const target = yield* resolveLinkTarget(folder);
+  const target = yield* resolveUncrowded(folder);
   if (target === undefined) return undefined;
   if (target === null) return { state: "missing" as const, realPath: folder };
-  const git = yield* resolveLinkTarget(NodePath.join(folder, ".git"));
+  const git = yield* resolveUncrowded(NodePath.join(folder, ".git"));
   if (git === undefined) return undefined;
   return {
     state: git === null ? ("plain" as const) : ("git" as const),

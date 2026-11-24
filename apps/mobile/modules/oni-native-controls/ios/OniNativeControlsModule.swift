@@ -18,12 +18,14 @@ public final class OniNativeControlsModule: Module {
   public func definition() -> ModuleDefinition {
     Events("videoPlaybackChange")
     Constants {
+      var supportsWorkspaceColumns = false
       if #available(iOS 26.0, *) {
-        return [
-          "supportsWorkspaceColumns": NSClassFromString("RNSSplitHostComponentView") != nil,
-        ]
+        supportsWorkspaceColumns = NSClassFromString("RNSSplitHostComponentView") != nil
       }
-      return ["supportsWorkspaceColumns": false]
+      return [
+        "supportsWorkspaceColumns": supportsWorkspaceColumns,
+        "presentFilesTakesLabels": true,
+      ]
     }
     View(OniSegmentedControlView.self) {
       ViewName("SegmentedControl")
@@ -76,7 +78,7 @@ public final class OniNativeControlsModule: Module {
     }.runOnQueue(.main)
 
     // A nil URL is still resolving in JS and arrives later through updateFile.
-    AsyncFunction("presentFiles") { (urls: [URL?], titles: [String], selectedIndex: Int, sourceIdentifiers: [String], identifier: String, promise: Promise) in
+    AsyncFunction("presentFiles") { (urls: [URL?], titles: [String], selectedIndex: Int, sourceIdentifiers: [String], identifier: String, labels: [String: String]?, promise: Promise) in
       guard !urls.isEmpty, urls.count == titles.count, urls.count == sourceIdentifiers.count,
         urls.indices.contains(selectedIndex)
       else {
@@ -89,6 +91,7 @@ public final class OniNativeControlsModule: Module {
       else { throw URLError(.cannotLoadFromNetwork) }
       let viewer = OniNativeImageViewer(
         identifier: identifier, sources: self.presentationSources, sourceIdentifiers: sourceIdentifiers,
+        labels: OniImageViewerLabels(labels ?? [:]),
         onFinish: { [weak self] in self?.setFinishedFilePreview(identifier) },
         completion: { [weak self] error in
           if self?.imageViewer?.identifier == identifier { self?.imageViewer = nil }
@@ -349,11 +352,8 @@ public final class OniNativeControlsModule: Module {
   private static func saveImageToLibrary(url: URL, mimeType: String, name: String, promise: Promise) {
     PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
       guard status == .authorized || status == .limited else {
-        promise.reject(NSError(
-          domain: "OniNativePhotos",
-          code: 1,
-          userInfo: [NSLocalizedDescriptionKey: "Allow Onicode to add photos in Settings."]
-        ))
+        // JS translates by code; the English text is for JS that shows the message as is.
+        promise.reject("ERR_PHOTOS_NOT_ALLOWED", "Allow Onicode to add photos in Settings.")
         return
       }
       PHPhotoLibrary.shared().performChanges({
@@ -364,12 +364,10 @@ public final class OniNativeControlsModule: Module {
       }, completionHandler: { saved, error in
         if saved {
           promise.resolve(nil)
+        } else if let error {
+          promise.reject(error)
         } else {
-          promise.reject(error ?? NSError(
-            domain: "OniNativePhotos",
-            code: 2,
-            userInfo: [NSLocalizedDescriptionKey: "Photos could not save this image."]
-          ))
+          promise.reject("ERR_PHOTOS_SAVE_FAILED", "Photos could not save this image.")
         }
       })
     }

@@ -481,6 +481,53 @@ describe("thread shell branches", () => {
     const decodeOld = Schema.decodeUnknownSync(Schema.NullOr(TrimmedNonEmptyString));
     expect(sent.map((branch) => decodeOld(branch))).toEqual([null, "feat", null]);
   });
+
+  it("sends a pull request with such a branch without the part that names it", () => {
+    const encode = Schema.encodeSync(OrchestrationV2ThreadShell.fields.pullRequests);
+    const snapshot = {
+      state: "open" as const,
+      title: "Feature",
+      headBranch: "feat\u3000",
+      baseBranch: "main",
+      isDraft: false,
+      updatedAt: null,
+      syncedAt: "2026-10-01T00:00:00.000Z",
+    };
+    const layer = { number: 1, headBranch: "feat", state: "open" as const };
+    const stack = {
+      kind: "native" as const,
+      id: "stack-1",
+      number: 1,
+      url: "https://github.com/acme/app/pull/1",
+      base: "main",
+      layers: [layer],
+    };
+    const link = {
+      host: "github.com",
+      repository: "acme/app",
+      number: 1,
+      url: "https://github.com/acme/app/pull/1",
+      source: "manual" as const,
+      linkedAt: "2026-10-01T00:00:00.000Z",
+      snapshot,
+      stack,
+    };
+    expect(
+      encode([
+        link,
+        { ...link, snapshot: { ...snapshot, headBranch: "\u3000" } },
+        { ...link, snapshot: { ...snapshot, baseBranch: "\u3000" } },
+        { ...link, stack: { ...stack, base: "\u3000" } },
+        { ...link, stack: { ...stack, layers: [layer, { ...layer, headBranch: "\u3000" }] } },
+      ]),
+    ).toEqual([
+      link,
+      { ...link, snapshot: null },
+      { ...link, snapshot: null },
+      { ...link, stack: null },
+      { ...link, stack: null },
+    ]);
+  });
 });
 
 describe("thread open stats", () => {

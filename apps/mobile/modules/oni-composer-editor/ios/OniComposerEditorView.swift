@@ -105,7 +105,28 @@ private final class ComposerTextView: UITextView {
   /// JS supplies the actual send outcomes so the iPad Command-hold HUD names the configured actions.
   var submitTitle = "Send Message"
   var alternateSubmitTitle = "Send Message"
+  var newLineTitle = "New Line"
+  var previousPromptTitle = "Previous Prompt"
+  var nextPromptTitle = "Next Prompt"
+  var pasteAsTextTitle = "Paste as Text"
   private var bypassTextPasteInterception = false
+  private let ownedTextStorage: NSTextStorage
+
+  // `init(usingTextLayoutManager:)` never runs this class's property initializers.
+  init() {
+    ownedTextStorage = NSTextStorage()
+    let layoutManager = NSLayoutManager()
+    ownedTextStorage.addLayoutManager(layoutManager)
+    let container = NSTextContainer(size: CGSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
+    container.widthTracksTextView = true
+    layoutManager.addTextContainer(container)
+    super.init(frame: .zero, textContainer: container)
+  }
+
+  @available(*, unavailable)
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) is unavailable")
+  }
 
   override var keyCommands: [UIKeyCommand]? {
     var commands = super.keyCommands ?? []
@@ -134,7 +155,7 @@ private final class ComposerTextView: UITextView {
         modifierFlags: .shift,
         action: #selector(insertNewline(_:))
       )
-      newline.discoverabilityTitle = "New Line"
+      newline.discoverabilityTitle = newLineTitle
       newline.wantsPriorityOverSystemBehavior = true
       commands.append(newline)
     } else {
@@ -162,7 +183,7 @@ private final class ComposerTextView: UITextView {
         modifierFlags: [],
         action: #selector(recallOlderPrompt(_:))
       )
-      older.discoverabilityTitle = "Previous Prompt"
+      older.discoverabilityTitle = previousPromptTitle
       older.wantsPriorityOverSystemBehavior = true
       commands.append(older)
     }
@@ -172,7 +193,7 @@ private final class ComposerTextView: UITextView {
         modifierFlags: [],
         action: #selector(recallNewerPrompt(_:))
       )
-      newer.discoverabilityTitle = "Next Prompt"
+      newer.discoverabilityTitle = nextPromptTitle
       newer.wantsPriorityOverSystemBehavior = true
       commands.append(newer)
     }
@@ -182,7 +203,7 @@ private final class ComposerTextView: UITextView {
         modifierFlags: [.command, .shift],
         action: #selector(pasteInline(_:))
       )
-      pasteAsText.discoverabilityTitle = "Paste as Text"
+      pasteAsText.discoverabilityTitle = pasteAsTextTitle
       pasteAsText.wantsPriorityOverSystemBehavior = true
       commands.append(pasteAsText)
     }
@@ -549,7 +570,7 @@ private final class ComposerTextView: UITextView {
 public final class OniComposerEditorView: ExpoView, UITextViewDelegate, UITextDropDelegate, UIGestureRecognizerDelegate {
   // This view reads `layoutManager`, which otherwise swaps a live TextKit 2 view to
   // TextKit 1 mid-edit; that swap can leave typed text laid out but never drawn.
-  private let textView = ComposerTextView(usingTextLayoutManager: false)
+  private let textView = ComposerTextView()
   private let placeholderLabel = UILabel()
   private var value = ""
   private var tokensJson = "[]"
@@ -933,6 +954,13 @@ public final class OniComposerEditorView: ExpoView, UITextViewDelegate, UITextDr
 
   func setAlternateSubmitTitle(_ title: String) {
     textView.alternateSubmitTitle = title
+  }
+
+  func setKeyCommandTitles(_ titles: [String: String]) {
+    textView.newLineTitle = titles["newLine"] ?? "New Line"
+    textView.previousPromptTitle = titles["previousPrompt"] ?? "Previous Prompt"
+    textView.nextPromptTitle = titles["nextPrompt"] ?? "Next Prompt"
+    textView.pasteAsTextTitle = titles["pasteAsText"] ?? "Paste as Text"
   }
 
   func setTextPasteThresholdBytes(_ threshold: Int) {
