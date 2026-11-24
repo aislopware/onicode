@@ -200,17 +200,10 @@ it.layer(NodeServices.layer)("onicode uninstall launcher", (it) => {
       assert.isUndefined(yield* findOwnedLauncher({ launchedAs: theirs, versionsDir }));
       assert.isUndefined(yield* findOwnedLauncher({ launchedAs: copy, versionsDir }));
       assert.isUndefined(yield* findOwnedLauncher({ launchedAs: undefined, versionsDir }));
-      // A script launcher execs by absolute path, so argv0 names the executable.
       const scriptDir = path.join(root, "script-bin");
       const script = path.join(scriptDir, "onicode");
       yield* fs.makeDirectory(scriptDir);
       yield* fs.writeFileString(script, posixLauncherScript(exe), { mode: 0o755 });
-      assert.equal(
-        yield* findOwnedLauncher({ launchedAs: exe, versionsDir }).pipe(
-          Effect.provideService(HostProcess.Environment, { PATH: scriptDir }),
-        ),
-        script,
-      );
       const editedScript = path.join(scriptDir, "oni-edited");
       yield* fs.writeFileString(editedScript, `${posixLauncherScript(exe)}# mine\n`);
 
@@ -291,6 +284,34 @@ it.layer(NodeServices.layer)("onicode uninstall launcher", (it) => {
         [cmd],
       );
     }).pipe(Effect.provideService(HostProcess.Platform, "linux")),
+  );
+
+  // The PATH search splits on ":" and needs exec bits, which a Windows host's files lack.
+  it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
+    "finds the script launcher on PATH that runs this executable",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const root = yield* fs
+          .makeTempDirectoryScoped({ prefix: "oni-uninstall-" })
+          .pipe(Effect.flatMap(fs.realPath));
+        const versionsDir = path.join(root, "runtime/versions");
+        const exe = path.join(versionsDir, "1.0.0/onicode");
+        yield* fs.makeDirectory(path.dirname(exe), { recursive: true });
+        yield* fs.writeFileString(exe, "");
+        const scriptDir = path.join(root, "script-bin");
+        const script = path.join(scriptDir, "onicode");
+        yield* fs.makeDirectory(scriptDir);
+        yield* fs.writeFileString(script, posixLauncherScript(exe), { mode: 0o755 });
+        // A script launcher execs by absolute path, so argv0 names the executable.
+        assert.equal(
+          yield* findOwnedLauncher({ launchedAs: exe, versionsDir }).pipe(
+            Effect.provideService(HostProcess.Environment, { PATH: scriptDir }),
+          ),
+          script,
+        );
+      }).pipe(Effect.provideService(HostProcess.Platform, "linux")),
   );
 });
 

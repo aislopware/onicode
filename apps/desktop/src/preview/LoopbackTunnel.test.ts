@@ -6,6 +6,7 @@ import * as NetService from "@onicode/shared/Net";
 import { expect, it } from "@effect/vitest";
 import * as NodeNet from "node:net";
 import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -707,7 +708,9 @@ it.effect.each([
 );
 
 /** Stands in for the system's own tools: each command prints what `print` returns for it. */
-const systemTools = (print: (command: string, args: ReadonlyArray<string>) => string) =>
+const systemTools = (
+  print: (command: string, args: ReadonlyArray<string>) => string | Effect.Effect<string>,
+) =>
   Layer.succeed(
     ChildProcessSpawner.ChildProcessSpawner,
     ChildProcessSpawner.make((command) =>
@@ -716,6 +719,7 @@ const systemTools = (print: (command: string, args: ReadonlyArray<string>) => st
           readonly command: string;
           readonly args: ReadonlyArray<string>;
         };
+        const output = print(name, args);
         return ChildProcessSpawner.makeHandle({
           pid: ChildProcessSpawner.ProcessId(1),
           exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(0)),
@@ -723,7 +727,11 @@ const systemTools = (print: (command: string, args: ReadonlyArray<string>) => st
           kill: () => Effect.void,
           unref: Effect.succeed(Effect.void),
           stdin: Sink.drain,
-          stdout: Stream.make(new TextEncoder().encode(print(name, args))),
+          stdout: Stream.fromEffect(
+            (Effect.isEffect(output) ? output : Effect.succeed(output)).pipe(
+              Effect.map((text) => new TextEncoder().encode(text)),
+            ),
+          ),
           stderr: Stream.empty,
           all: Stream.empty,
           getInputFd: () => Sink.drain,
@@ -807,6 +815,106 @@ it.effect.each(
       expect(endpoint.requests.length).toBe(probes + (served ? 1 : 0));
       expect(commands).toEqual(platform === "darwin" ? ["/usr/sbin/lsof"] : []);
     }),
+);
+
+it.effect("runs one lsof at a time, shared by the ends that wait, 100 addresses per run", () =>
+  Effect.gen(function* () {
+    const calls: Array<ReadonlyArray<string>> = [];
+    const firstStarted = yield* Deferred.make<void>();
+    const releaseFirst = yield* Deferred.make<void>();
+    const lsofSockets = yield* LoopbackTunnel.makeLsofSockets((args) => {
+      calls.push(args);
+      return (
+        calls.length === 1
+          ? Deferred.succeed(firstStarted, undefined).pipe(
+              Effect.andThen(Deferred.await(releaseFirst)),
+            )
+          : Effect.void
+      ).pipe(Effect.as(`run ${calls.length}`));
+    });
+    const lookup = (port: number) =>
+      lsofSockets(`127.0.0.1:${port}`).pipe(Effect.forkChild({ startImmediately: true }));
+    const first = yield* lookup(1);
+    yield* Deferred.await(firstStarted);
+    const later = yield* Effect.forEach(
+      Array.from({ length: 101 }, (_, index) => index + 2),
+      lookup,
+    );
+    yield* Deferred.succeed(releaseFirst, undefined);
+    expect(yield* Fiber.join(first)).toBe("run 1");
+    expect(new Set(yield* Fiber.joinAll(later))).toEqual(new Set(["run 2\nrun 3"]));
+    const ends = (from: number, to: number) =>
+      Array.from({ length: to - from + 1 }, (_, index) => `-iTCP@127.0.0.1:${from + index}`);
+    expect(calls).toEqual([
+      ["-nP", ...ends(1, 1), "-F", "un"],
+      ["-nP", ...ends(2, 101), "-F", "un"],
+      ["-nP", ...ends(102, 102), "-F", "un"],
+    ]);
+  }),
+);
+
+it.effect("on darwin runs one owner lookup at a time, shared by the clients that wait for it", () =>
+  Effect.gen(function* () {
+    const endpoint = yield* listenEndpoint();
+    const firstLookup = yield* Deferred.make<void>();
+    const releaseFirst = yield* Deferred.make<void>();
+    let port = 0;
+    let lookups = 0;
+    let running = 0;
+    let overlapped = false;
+    const { tunnel } = yield* makeTunnel(
+      `ws://127.0.0.1:${addressPort(endpoint.server)}/api/preview/tunnel`,
+      Layer.mergeAll(
+        Layer.succeed(HostProcess.Platform, "darwin"),
+        Layer.succeed(HostProcess.UserId, ownUserId),
+        systemTools((_command, args) => {
+          lookups++;
+          running++;
+          overlapped ||= running > 1;
+          // lsof lists the sockets of every -i it was given, as they were when it ran.
+          const rows = args
+            .flatMap((arg) => /^-iTCP@(.+)$/.exec(arg)?.slice(1) ?? [])
+            .map((end) => `p200\nu${ownUserId}\nf12\nn${end}->127.0.0.1:${port}\n`)
+            .join("");
+          return (
+            lookups === 1
+              ? Deferred.succeed(firstLookup, undefined).pipe(
+                  Effect.andThen(Deferred.await(releaseFirst)),
+                )
+              : Effect.void
+          ).pipe(Effect.as(rows), Effect.ensuring(Effect.sync(() => running--)));
+        }),
+      ),
+    );
+    const forward = yield* tunnel.forward({
+      environmentId: EnvironmentId.make("remote"),
+      remotePort: yield* unusedPort,
+    });
+    port = forward.localPort;
+    const first = yield* exchangeWithPort(port, Uint8Array.of(1)).pipe(Effect.forkChild);
+    yield* Deferred.await(firstLookup);
+    const later = [2, 3].map((byte) => {
+      const socket = NodeNet.connect(port, "127.0.0.1").on("error", () => undefined);
+      return {
+        connected: new Promise((resolve) => socket.once("connect", resolve)),
+        reply: new Promise<number[]>((resolve) => {
+          socket.once("data", (chunk: Buffer) => {
+            resolve([...chunk]);
+            socket.destroy();
+          });
+          socket.write(Uint8Array.of(byte));
+        }),
+      };
+    });
+    yield* Effect.promise(() => Promise.all(later.map(({ connected }) => connected)));
+    yield* Deferred.succeed(releaseFirst, undefined);
+    expect(yield* Fiber.join(first)).toEqual([0xee, 1]);
+    expect(yield* Effect.promise(() => Promise.all(later.map(({ reply }) => reply)))).toEqual([
+      [0xee, 2],
+      [0xee, 3],
+    ]);
+    expect(overlapped).toBe(false);
+  }),
 );
 
 it.effect.each(

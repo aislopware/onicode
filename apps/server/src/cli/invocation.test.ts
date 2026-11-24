@@ -80,77 +80,80 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
     }),
   );
 
-  it.effect("names this install's launcher when onicode is not on PATH", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const home = yield* fs.makeTempDirectoryScoped();
-      const shim = path.join(home, ".local bin", "onicode");
-      yield* fs.makeDirectory(path.dirname(shim), { recursive: true });
-      yield* fs.writeFileString(shim, "#!/bin/sh\n", { mode: 0o755 });
-      const desktop = {
-        node: "/tmp/.mount_Oniabc/onicode",
-        entry: "/tmp/.mount_Oniabc/resources/app.asar/apps/server/dist/bin.mjs",
-        env: { ONICODE_CLI_PATH: shim },
-      };
+  // The PATH search splits on ":" and needs exec bits, which a Windows host's files lack.
+  it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
+    "names this install's launcher when onicode is not on PATH",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const home = yield* fs.makeTempDirectoryScoped();
+        const shim = path.join(home, ".local bin", "onicode");
+        yield* fs.makeDirectory(path.dirname(shim), { recursive: true });
+        yield* fs.writeFileString(shim, "#!/bin/sh\n", { mode: 0o755 });
+        const desktop = {
+          node: "/tmp/.mount_Oniabc/onicode",
+          entry: "/tmp/.mount_Oniabc/resources/app.asar/apps/server/dist/bin.mjs",
+          env: { ONICODE_CLI_PATH: shim },
+        };
 
-      expect(yield* rootCommand(desktop)).toBe(`sudo '${shim}' browser setup`);
+        expect(yield* rootCommand(desktop)).toBe(`sudo '${shim}' browser setup`);
 
-      // An unrelated `onicode` on PATH, such as an older npm global, is another install's CLI.
-      expect(yield* rootCommand({ ...desktop, path: yield* pathWithOni })).toBe(
-        `sudo '${shim}' browser setup`,
-      );
+        // An unrelated `onicode` on PATH, such as an older npm global, is another install's CLI.
+        expect(yield* rootCommand({ ...desktop, path: yield* pathWithOni })).toBe(
+          `sudo '${shim}' browser setup`,
+        );
 
-      // The link the app installs onto PATH leads to its own launcher, so plain `onicode` is right.
-      const linked = yield* fs.makeTempDirectoryScoped();
-      yield* fs.symlink(shim, path.join(linked, "onicode"));
-      expect(yield* rootCommand({ ...desktop, path: linked })).toBe(
-        'sudo env "PATH=$PATH" onicode browser setup',
-      );
+        // The link the app installs onto PATH leads to its own launcher, so plain `onicode` is right.
+        const linked = yield* fs.makeTempDirectoryScoped();
+        yield* fs.symlink(shim, path.join(linked, "onicode"));
+        expect(yield* rootCommand({ ...desktop, path: linked })).toBe(
+          'sudo env "PATH=$PATH" onicode browser setup',
+        );
 
-      expect(
-        yield* rootCommand({
-          node: "/opt/onicode/onicode",
-          entry: "/opt/onicode/onicode",
-          executable: true,
-        }),
-      ).toBe("sudo /opt/onicode/onicode browser setup");
+        expect(
+          yield* rootCommand({
+            node: "/opt/onicode/onicode",
+            entry: "/opt/onicode/onicode",
+            executable: true,
+          }),
+        ).toBe("sudo /opt/onicode/onicode browser setup");
 
-      // A standalone executable started directly (systemd, no launcher) is still this install.
-      expect(
-        yield* rootCommand({
-          node: "/opt/onicode/onicode",
-          entry: "/opt/onicode/onicode",
-          executable: true,
-          path: yield* pathWithOni,
-        }),
-      ).toBe("sudo /opt/onicode/onicode browser setup");
+        // A standalone executable started directly (systemd, no launcher) is still this install.
+        expect(
+          yield* rootCommand({
+            node: "/opt/onicode/onicode",
+            entry: "/opt/onicode/onicode",
+            executable: true,
+            path: yield* pathWithOni,
+          }),
+        ).toBe("sudo /opt/onicode/onicode browser setup");
 
-      // A global npm launcher runs the downloaded executable; PATH's `onicode` is that launcher.
-      const prefix = path.join(home, "npm");
-      const npmLauncher = path.join(prefix, "lib/node_modules/onicode/bin/onicode.mjs");
-      yield* fs.makeDirectory(path.dirname(npmLauncher), { recursive: true });
-      yield* fs.makeDirectory(path.join(prefix, "bin"));
-      yield* fs.writeFileString(npmLauncher, "", { mode: 0o755 });
-      yield* fs.writeFileString(
-        path.join(prefix, "lib/node_modules/onicode/package.json"),
-        `{"name":"onicode","version":"${packageJson.version}"}`,
-      );
-      yield* fs.symlink(npmLauncher, path.join(prefix, "bin/onicode"));
-      expect(
-        yield* rootCommand({
-          node: "/home/theo/.onicode/runtime/versions/1.0.0/onicode",
-          entry: "/home/theo/.onicode/runtime/versions/1.0.0/onicode",
-          executable: true,
-          path: path.join(prefix, "bin"),
-          env: { ONICODE_NPM_LAUNCHER_PATH: npmLauncher },
-        }),
-      ).toBe('sudo env "PATH=$PATH" onicode browser setup');
+        // A global npm launcher runs the downloaded executable; PATH's `onicode` is that launcher.
+        const prefix = path.join(home, "npm");
+        const npmLauncher = path.join(prefix, "lib/node_modules/onicode/bin/onicode.mjs");
+        yield* fs.makeDirectory(path.dirname(npmLauncher), { recursive: true });
+        yield* fs.makeDirectory(path.join(prefix, "bin"));
+        yield* fs.writeFileString(npmLauncher, "", { mode: 0o755 });
+        yield* fs.writeFileString(
+          path.join(prefix, "lib/node_modules/onicode/package.json"),
+          `{"name":"onicode","version":"${packageJson.version}"}`,
+        );
+        yield* fs.symlink(npmLauncher, path.join(prefix, "bin/onicode"));
+        expect(
+          yield* rootCommand({
+            node: "/home/theo/.onicode/runtime/versions/1.0.0/onicode",
+            entry: "/home/theo/.onicode/runtime/versions/1.0.0/onicode",
+            executable: true,
+            path: path.join(prefix, "bin"),
+            env: { ONICODE_NPM_LAUNCHER_PATH: npmLauncher },
+          }),
+        ).toBe('sudo env "PATH=$PATH" onicode browser setup');
 
-      expect(
-        yield* rootCommand({ ...desktop, env: { ONICODE_CLI_PATH: path.join(home, "gone") } }),
-      ).toBe('sudo env "PATH=$PATH" onicode browser setup');
-    }),
+        expect(
+          yield* rootCommand({ ...desktop, env: { ONICODE_CLI_PATH: path.join(home, "gone") } }),
+        ).toBe('sudo env "PATH=$PATH" onicode browser setup');
+      }),
   );
 });
 
@@ -272,121 +275,132 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
     }),
   );
 
-  it.effect("requires the npm prefix's bin to point to the running package", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const root = yield* fs.realPath(yield* fs.makeTempDirectoryScoped());
-      const prefix = path.join(root, "bunx-tools");
-      const packageRoot = path.join(prefix, "lib/node_modules/onicode");
-      const entry = path.join(packageRoot, "dist/bin.mjs");
-      const globalBin = path.join(prefix, "bin/onicode");
-      yield* fs.makeDirectory(path.dirname(entry), { recursive: true });
-      yield* fs.makeDirectory(path.dirname(globalBin), { recursive: true });
-      yield* fs.writeFileString(entry, "");
-      yield* fs.writeFileString(
-        path.join(packageRoot, "package.json"),
-        '{"name":"onicode","version":"0.0.45","bin":{"onicode":"./dist/bin.mjs"}}',
-      );
-      const resolve = resolveServerInstallation.pipe(
-        Effect.provideService(HostProcess.Arguments, ["node", entry]),
-        Effect.provideService(HostProcess.IsExecutable, false),
-        Effect.provideService(HostProcess.Platform, "linux"),
-      );
-      expect(yield* resolve).toBeNull();
-      yield* fs.symlink(entry, globalBin);
-      expect(yield* resolve).toEqual({ kind: "npm-global", prefix });
-      yield* fs.remove(globalBin);
-      yield* fs.writeFileString(globalBin, "an unrelated onicode command");
-      expect(yield* resolve).toBeNull();
-      expect(yield* resolve.pipe(Effect.provideService(HostProcess.Platform, "win32"))).toBeNull();
-    }),
-  );
-
-  it.effect("proves the downloaded executable was started by a global npm launcher", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const root = yield* fs.realPath(yield* fs.makeTempDirectoryScoped());
-      const prefix = path.join(root, "bunx-tools");
-      const packageRoot = path.join(prefix, "lib/node_modules/onicode");
-      const launcher = path.join(packageRoot, "bin/onicode.mjs");
-      const executable = path.join(root, ".onicode/runtime/versions/1.0.0/onicode");
-      yield* fs.makeDirectory(path.dirname(launcher), { recursive: true });
-      yield* fs.makeDirectory(path.dirname(executable), { recursive: true });
-      yield* fs.makeDirectory(path.join(prefix, "bin"));
-      yield* fs.writeFileString(launcher, "");
-      yield* fs.writeFileString(executable, "");
-      yield* fs.symlink(launcher, path.join(prefix, "bin/onicode"));
-      const resolve = resolveServerInstallation.pipe(
-        Effect.provideService(HostProcess.ExecutablePath, executable),
-        Effect.provideService(HostProcess.Arguments, [executable, executable]),
-        Effect.provideService(HostProcess.IsExecutable, true),
-        Effect.provideService(HostProcess.Platform, "linux"),
-        Effect.provideService(HostProcess.Environment, { ONICODE_NPM_LAUNCHER_PATH: launcher }),
-      );
-      for (const [version, expected] of [
-        ["0.0.1", null],
-        [packageJson.version, { kind: "npm-global", prefix }],
-      ] as const) {
+  // These build a POSIX install (symlinks, ":"-separated PATH, exec bits) on the host's files.
+  it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
+    "requires the npm prefix's bin to point to the running package",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const root = yield* fs.realPath(yield* fs.makeTempDirectoryScoped());
+        const prefix = path.join(root, "bunx-tools");
+        const packageRoot = path.join(prefix, "lib/node_modules/onicode");
+        const entry = path.join(packageRoot, "dist/bin.mjs");
+        const globalBin = path.join(prefix, "bin/onicode");
+        yield* fs.makeDirectory(path.dirname(entry), { recursive: true });
+        yield* fs.makeDirectory(path.dirname(globalBin), { recursive: true });
+        yield* fs.writeFileString(entry, "");
         yield* fs.writeFileString(
           path.join(packageRoot, "package.json"),
-          `{"name":"onicode","version":"${version}","bin":{"onicode":"./bin/onicode.mjs"}}`,
+          '{"name":"onicode","version":"0.0.45","bin":{"onicode":"./dist/bin.mjs"}}',
         );
-        expect(yield* resolve).toEqual(expected);
-      }
-    }),
-  );
-
-  it.effect("names the launcher that started a downloaded runtime", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const root = yield* fs.realPath(yield* fs.makeTempDirectoryScoped());
-      // The install script's launcher names ~/.onicode, which here links to a home elsewhere.
-      const executable = path.join(root, "data/onicode/runtime/versions/1.0.0/onicode");
-      const launcher = path.join(root, "bin/onicode");
-      const copy = path.join(root, "bin/oni-copy");
-      yield* fs.makeDirectory(path.dirname(executable), { recursive: true });
-      yield* fs.makeDirectory(path.dirname(launcher), { recursive: true });
-      yield* fs.writeFileString(executable, "", { mode: 0o755 });
-      yield* fs.writeFileString(copy, "", { mode: 0o755 });
-      yield* fs.symlink(path.join(root, "data/onicode"), path.join(root, ".onicode"));
-      yield* fs.symlink(path.join(root, ".onicode/runtime/versions/1.0.0/onicode"), launcher);
-      // Earlier PATH entries hold a directory and a non-executable file named onicode.
-      yield* fs.makeDirectory(path.join(root, "shadow-dir/onicode"), { recursive: true });
-      yield* fs.makeDirectory(path.join(root, "shadow-file"));
-      yield* fs.writeFileString(path.join(root, "shadow-file/onicode"), "");
-      const resolve = (invokedAs: string, PATH = "shadow-dir:shadow-file:bin") =>
-        resolveServerInstallation.pipe(
-          Effect.provideService(HostProcess.ExecutablePath, executable),
-          Effect.provideService(HostProcess.IsExecutable, true),
-          Effect.provideService(HostProcess.InvokedAs, invokedAs),
-          Effect.provideService(HostProcess.WorkingDirectory, root),
-          Effect.provideService(HostProcess.Environment, { PATH }),
-          Effect.provideService(HostProcess.HomeDirectory, root),
+        const resolve = resolveServerInstallation.pipe(
+          Effect.provideService(HostProcess.Arguments, ["node", entry]),
+          Effect.provideService(HostProcess.IsExecutable, false),
           Effect.provideService(HostProcess.Platform, "linux"),
         );
-      const baseDir = path.join(root, ".onicode");
+        expect(yield* resolve).toBeNull();
+        yield* fs.symlink(entry, globalBin);
+        expect(yield* resolve).toEqual({ kind: "npm-global", prefix });
+        yield* fs.remove(globalBin);
+        yield* fs.writeFileString(globalBin, "an unrelated onicode command");
+        expect(yield* resolve).toBeNull();
+        expect(
+          yield* resolve.pipe(Effect.provideService(HostProcess.Platform, "win32")),
+        ).toBeNull();
+      }),
+  );
 
-      expect(yield* resolve("onicode")).toEqual({ kind: "oni-launcher", launcher, baseDir });
-      expect(yield* resolve(launcher)).toEqual({ kind: "oni-launcher", launcher, baseDir });
-      expect(yield* resolve(executable)).toBeNull();
-      expect(yield* resolve(copy)).toBeNull();
+  // POSIX install layout on the host's files, as above.
+  it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
+    "proves the downloaded executable was started by a global npm launcher",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const root = yield* fs.realPath(yield* fs.makeTempDirectoryScoped());
+        const prefix = path.join(root, "bunx-tools");
+        const packageRoot = path.join(prefix, "lib/node_modules/onicode");
+        const launcher = path.join(packageRoot, "bin/onicode.mjs");
+        const executable = path.join(root, ".onicode/runtime/versions/1.0.0/onicode");
+        yield* fs.makeDirectory(path.dirname(launcher), { recursive: true });
+        yield* fs.makeDirectory(path.dirname(executable), { recursive: true });
+        yield* fs.makeDirectory(path.join(prefix, "bin"));
+        yield* fs.writeFileString(launcher, "");
+        yield* fs.writeFileString(executable, "");
+        yield* fs.symlink(launcher, path.join(prefix, "bin/onicode"));
+        const resolve = resolveServerInstallation.pipe(
+          Effect.provideService(HostProcess.ExecutablePath, executable),
+          Effect.provideService(HostProcess.Arguments, [executable, executable]),
+          Effect.provideService(HostProcess.IsExecutable, true),
+          Effect.provideService(HostProcess.Platform, "linux"),
+          Effect.provideService(HostProcess.Environment, { ONICODE_NPM_LAUNCHER_PATH: launcher }),
+        );
+        for (const [version, expected] of [
+          ["0.0.1", null],
+          [packageJson.version, { kind: "npm-global", prefix }],
+        ] as const) {
+          yield* fs.writeFileString(
+            path.join(packageRoot, "package.json"),
+            `{"name":"onicode","version":"${version}","bin":{"onicode":"./bin/onicode.mjs"}}`,
+          );
+          expect(yield* resolve).toEqual(expected);
+        }
+      }),
+  );
 
-      // The script launcher execs the runtime by absolute path, so argv0 names the runtime.
-      yield* fs.remove(launcher);
-      yield* fs.writeFileString(
-        launcher,
-        posixLauncherScript(path.join(root, ".onicode/runtime/versions/1.0.0/onicode")),
-        { mode: 0o755 },
-      );
-      expect(yield* resolve(executable, path.join(root, "bin"))).toEqual({
-        kind: "oni-launcher",
-        launcher,
-        baseDir,
-      });
-    }),
+  // POSIX install layout on the host's files, as above.
+  it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
+    "names the launcher that started a downloaded runtime",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const root = yield* fs.realPath(yield* fs.makeTempDirectoryScoped());
+        // The install script's launcher names ~/.onicode, which here links to a home elsewhere.
+        const executable = path.join(root, "data/onicode/runtime/versions/1.0.0/onicode");
+        const launcher = path.join(root, "bin/onicode");
+        const copy = path.join(root, "bin/oni-copy");
+        yield* fs.makeDirectory(path.dirname(executable), { recursive: true });
+        yield* fs.makeDirectory(path.dirname(launcher), { recursive: true });
+        yield* fs.writeFileString(executable, "", { mode: 0o755 });
+        yield* fs.writeFileString(copy, "", { mode: 0o755 });
+        yield* fs.symlink(path.join(root, "data/onicode"), path.join(root, ".onicode"));
+        yield* fs.symlink(path.join(root, ".onicode/runtime/versions/1.0.0/onicode"), launcher);
+        // Earlier PATH entries hold a directory and a non-executable file named onicode.
+        yield* fs.makeDirectory(path.join(root, "shadow-dir/onicode"), { recursive: true });
+        yield* fs.makeDirectory(path.join(root, "shadow-file"));
+        yield* fs.writeFileString(path.join(root, "shadow-file/onicode"), "");
+        const resolve = (invokedAs: string, PATH = "shadow-dir:shadow-file:bin") =>
+          resolveServerInstallation.pipe(
+            Effect.provideService(HostProcess.ExecutablePath, executable),
+            Effect.provideService(HostProcess.IsExecutable, true),
+            Effect.provideService(HostProcess.InvokedAs, invokedAs),
+            Effect.provideService(HostProcess.WorkingDirectory, root),
+            Effect.provideService(HostProcess.Environment, { PATH }),
+            Effect.provideService(HostProcess.HomeDirectory, root),
+            Effect.provideService(HostProcess.Platform, "linux"),
+          );
+        const baseDir = path.join(root, ".onicode");
+
+        expect(yield* resolve("onicode")).toEqual({ kind: "oni-launcher", launcher, baseDir });
+        expect(yield* resolve(launcher)).toEqual({ kind: "oni-launcher", launcher, baseDir });
+        expect(yield* resolve(executable)).toBeNull();
+        expect(yield* resolve(copy)).toBeNull();
+
+        // The script launcher execs the runtime by absolute path, so argv0 names the runtime.
+        yield* fs.remove(launcher);
+        yield* fs.writeFileString(
+          launcher,
+          posixLauncherScript(path.join(root, ".onicode/runtime/versions/1.0.0/onicode")),
+          { mode: 0o755 },
+        );
+        expect(yield* resolve(executable, path.join(root, "bin"))).toEqual({
+          kind: "oni-launcher",
+          launcher,
+          baseDir,
+        });
+      }),
   );
 
   it.effect("leaves local, standalone, missing and unreadable installs unknown", () =>
