@@ -278,6 +278,16 @@ describe("splitMarkdown", () => {
       "",
     ];
     expect(starts(closerInFence.join("\n"))).toEqual(["<details>", "after"]);
+    // A piece held open past the render limit goes back to the held cut once its line ends.
+    const head = ["<details>", "", "a".repeat(8 * 1024), "", ""].join("\n");
+    const longLine = "x".repeat(LARGE_MARKDOWN_CHUNK_MAX_CHARS - head.length);
+    expect(starts(head + longLine)).toEqual(["<details>"]);
+    expect(starts(`${head}${longLine}x`)).toEqual(["<details>"]);
+    expect(starts(`${head}${longLine}x\n`)).toEqual(["<details>", `${longLine}x`]);
+    expect(starts(`${head}\`\`\`json\n${longLine}\n\`\`\`\n\n</details>`)).toEqual([
+      "<details>",
+      "```json",
+    ]);
   });
 
   it("treats an autolink line as a paragraph, so a following fence still opens", () => {
@@ -411,6 +421,7 @@ describe("extendMarkdownSplit", () => {
   // The first definition fits under the shared cap, so the cap is nearly spent past the cut: the
   // longer one after it no longer fits, the short one does.
   const cappedDefinitions = `# A\n\n[a]: /${"a".repeat(16_000)}\n\n# B\n\n[b]: /${"b".repeat(400)}\n\n[c]: /c\n\n# C\n`;
+  const heldPastLimit = `<details>\n\nintro\n\npara ${"x".repeat(LARGE_MARKDOWN_CHUNK_MAX_CHARS)}\n\n</details>\n\n# B\n`;
   const near = (text: string, marker: string, offsets: readonly number[]) =>
     offsets.map((offset) => text.indexOf(marker) + offset);
   it.each([
@@ -458,6 +469,15 @@ describe("extendMarkdownSplit", () => {
         LARGE_MARKDOWN_CHUNK_MAX_CHARS,
         LARGE_MARKDOWN_CHUNK_MAX_CHARS + 5,
         largeFootnoteText.length - 3,
+      ],
+    },
+    {
+      name: "a details piece held past the render limit",
+      text: heldPastLimit,
+      cuts: [
+        ...near(heldPastLimit, "para", [0, 3, LARGE_MARKDOWN_CHUNK_MAX_CHARS - 20]),
+        ...near(heldPastLimit, "\n\n</details>", [0, 1, 2, 3]),
+        heldPastLimit.length - 2,
       ],
     },
   ])("splits $name as if split whole", ({ text, cuts, reusesFrom = 0 }) => {
