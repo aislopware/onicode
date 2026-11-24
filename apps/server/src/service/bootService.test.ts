@@ -20,6 +20,7 @@ import { vi } from "vite-plus/test";
 import * as ProcessRunner from "../processRunner.ts";
 import { serviceLauncherLockPath } from "../serviceLauncher.ts";
 import * as BootService from "./bootService.ts";
+import { symlinksSupported } from "@onicode/shared/testing/symlinks";
 import { pinnedRuntimePaths } from "./pinnedRuntime.ts";
 import { RESTORE_OOMD_WATCH_SCRIPT } from "./userManagerOom.ts";
 import {
@@ -1252,102 +1253,134 @@ process.disconnect();
     }),
   );
 
-  it.effect("treats a symlinked Onicode home path as the same home", () =>
-    Effect.gen(function* () {
-      const { service, fs, baseDir, commands, makeService } = yield* makeHarness();
-      yield* service.install();
-      const path = yield* Path.Path;
-      const linkDir = yield* fs.makeTempDirectoryScoped({ prefix: "oni-symlink-home-" });
-      const aliasDir = path.join(linkDir, "a$$b");
-      yield* fs.symlink(baseDir, aliasDir);
+  it.effect.skipIf(!symlinksSupported)(
+    "treats a symlinked Onicode home path as the same home",
+    () =>
+      Effect.gen(function* () {
+        const { service, fs, baseDir, commands, makeService } = yield* makeHarness();
+        yield* service.install();
+        const path = yield* Path.Path;
+        const linkDir = yield* fs.makeTempDirectoryScoped({ prefix: "oni-symlink-home-" });
+        const aliasDir = path.join(linkDir, "a$$b");
+        yield* fs.symlink(baseDir, aliasDir);
 
-      const alias = yield* makeService(undefined, "1.2.3", aliasDir);
-      expect(yield* alias.status).toMatchObject({ current: true });
-      expect((yield* alias.status).otherBaseDir).toBeUndefined();
-      // A spelling the unit has to quote and escape is still current.
-      const spacedDir = path.join(linkDir, "Onicode 100%");
-      yield* fs.symlink(baseDir, spacedDir);
-      const spaced = yield* makeService(undefined, "1.2.3", spacedDir);
-      expect(yield* spaced.status).toMatchObject({ current: true });
-      expect(yield* alias.restart).toBe("restarted");
-      commands.length = 0;
-      yield* alias.withStopped(Effect.void);
-      expect(commands).toContain("systemctl --user stop onicode.service");
-      expect((yield* alias.install()).baseDir).toBe(aliasDir);
-      expect(yield* service.status).toMatchObject({ current: true });
-      expect((yield* service.status).otherBaseDir).toBeUndefined();
-    }),
+        const alias = yield* makeService(undefined, "1.2.3", aliasDir);
+        expect(yield* alias.status).toMatchObject({ current: true });
+        expect((yield* alias.status).otherBaseDir).toBeUndefined();
+        // A spelling the unit has to quote and escape is still current.
+        const spacedDir = path.join(linkDir, "Onicode 100%");
+        yield* fs.symlink(baseDir, spacedDir);
+        const spaced = yield* makeService(undefined, "1.2.3", spacedDir);
+        expect(yield* spaced.status).toMatchObject({ current: true });
+        expect(yield* alias.restart).toBe("restarted");
+        commands.length = 0;
+        yield* alias.withStopped(Effect.void);
+        expect(commands).toContain("systemctl --user stop onicode.service");
+        expect((yield* alias.install()).baseDir).toBe(aliasDir);
+        expect(yield* service.status).toMatchObject({ current: true });
+        expect((yield* service.status).otherBaseDir).toBeUndefined();
+      }),
   );
 
-  it.effect("keeps a symlinked home current when the install directory is inside it", () =>
-    Effect.gen(function* () {
-      const { fs, baseDir, makeService } = yield* makeHarness();
-      const path = yield* Path.Path;
-      const installed = yield* makeService(
-        undefined,
-        "1.2.3",
-        baseDir,
-        undefined,
-        undefined,
-        undefined,
-        path.join(baseDir, "bin"),
-      );
-      yield* installed.install();
-      const linkDir = yield* fs.makeTempDirectoryScoped({ prefix: "oni-symlink-home-" });
-      const aliasDir = path.join(linkDir, "alias");
-      yield* fs.symlink(baseDir, aliasDir);
+  it.effect.skipIf(!symlinksSupported)(
+    "keeps a symlinked home current when the install directory is inside it",
+    () =>
+      Effect.gen(function* () {
+        const { fs, baseDir, makeService } = yield* makeHarness();
+        const path = yield* Path.Path;
+        const installed = yield* makeService(
+          undefined,
+          "1.2.3",
+          baseDir,
+          undefined,
+          undefined,
+          undefined,
+          path.join(baseDir, "bin"),
+        );
+        yield* installed.install();
+        const linkDir = yield* fs.makeTempDirectoryScoped({ prefix: "oni-symlink-home-" });
+        const aliasDir = path.join(linkDir, "alias");
+        yield* fs.symlink(baseDir, aliasDir);
 
-      // Read from the unit, or given at this spelling.
-      for (const installBinDir of [null, path.join(aliasDir, "bin")]) {
-        const alias = yield* makeService(
+        // Read from the unit, or given at this spelling.
+        for (const installBinDir of [null, path.join(aliasDir, "bin")]) {
+          const alias = yield* makeService(
+            undefined,
+            "1.2.3",
+            aliasDir,
+            undefined,
+            undefined,
+            undefined,
+            installBinDir,
+          );
+          expect(yield* alias.status).toMatchObject({ current: true });
+        }
+        const trailing = yield* makeService(
+          undefined,
+          "1.2.3",
+          `${aliasDir}${path.sep}`,
+          undefined,
+          undefined,
+          undefined,
+          null,
+        );
+        {
+          // Bare arguments in the unit's command line are not paths in the home.
+          using _cwd = vi.spyOn(process, "cwd").mockReturnValue(aliasDir);
+          expect(yield* trailing.status).toMatchObject({ current: true });
+        }
+
+        // Reinstalled from the other spelling, the unit's install directory follows it.
+        const reinstalled = yield* makeService(
           undefined,
           "1.2.3",
           aliasDir,
           undefined,
           undefined,
           undefined,
-          installBinDir,
+          null,
         );
-        expect(yield* alias.status).toMatchObject({ current: true });
-      }
-      const trailing = yield* makeService(
-        undefined,
-        "1.2.3",
-        `${aliasDir}${path.sep}`,
-        undefined,
-        undefined,
-        undefined,
-        null,
-      );
-      expect(yield* trailing.status).toMatchObject({ current: true });
+        yield* reinstalled.install();
+        for (const [home, installBinDir] of [
+          [aliasDir, path.join(aliasDir, "bin")],
+          [baseDir, path.join(baseDir, "bin")],
+        ] as const) {
+          const service = yield* makeService(
+            undefined,
+            "1.2.3",
+            home,
+            undefined,
+            undefined,
+            undefined,
+            installBinDir,
+          );
+          expect(yield* service.status).toMatchObject({ current: true });
+        }
 
-      // Reinstalled from the other spelling, the unit's install directory follows it.
-      const reinstalled = yield* makeService(
-        undefined,
-        "1.2.3",
-        aliasDir,
-        undefined,
-        undefined,
-        undefined,
-        null,
-      );
-      yield* reinstalled.install();
-      for (const [home, installBinDir] of [
-        [aliasDir, path.join(aliasDir, "bin")],
-        [baseDir, path.join(baseDir, "bin")],
-      ] as const) {
-        const service = yield* makeService(
+        // An install directory the unit spells its own way is compared as written.
+        const spelled = `${path.join(baseDir, "bin")}${path.sep}`;
+        yield* (yield* makeService(
           undefined,
           "1.2.3",
-          home,
+          baseDir,
           undefined,
           undefined,
           undefined,
-          installBinDir,
-        );
-        expect(yield* service.status).toMatchObject({ current: true });
-      }
-    }),
+          spelled,
+        )).install();
+        for (const home of [baseDir, aliasDir]) {
+          const service = yield* makeService(
+            undefined,
+            "1.2.3",
+            home,
+            undefined,
+            undefined,
+            undefined,
+            null,
+          );
+          expect(yield* service.status).toMatchObject({ current: true });
+        }
+      }),
   );
 
   it.effect("hands the whole install to systemd without changing the running service", () =>

@@ -1051,19 +1051,22 @@ export const make = Effect.fn("service.boot_service.make")(function* (input: {
     ).pipe(Effect.mapError((cause) => new BootServiceInstallError({ cause })));
   // Moves a path inside one spelling of this home to another, whatever its separators.
   const rebaseHome = (file: string, from: string, to: string) => {
+    // path.relative resolves a bare argument such as "__service-launcher" against the cwd.
+    if (from === to || !path.isAbsolute(file)) return file;
     const relative = path.relative(from, file);
     if (relative === "") return to;
     return relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)
       ? file
       : path.join(to, relative);
   };
-  const planForUnit = (unit: string): BootServicePlan => {
+  const planForUnit = (unit: string, rewrite = false): BootServicePlan => {
     const unitInstallBinDir = serviceUnitEnvironmentValueOf(unit, "ONICODE_INSTALL_BIN_DIR");
     const unitBaseDir = bootServiceBaseDirOf(unit);
-    // Install refuses another home's unit, so the unit's home is this one at some spelling.
+    // A rewrite moves the unit to this spelling of the home (install refuses another home's
+    // unit), so its install directory inside the home moves with it.
     const effectiveInstallBinDir =
       installBinDir ||
-      (unitInstallBinDir && unitBaseDir
+      (rewrite && unitInstallBinDir && unitBaseDir
         ? rebaseHome(unitInstallBinDir, unitBaseDir, input.baseDir)
         : unitInstallBinDir);
     return effectiveInstallBinDir ? { ...plan, installBinDir: effectiveInstallBinDir } : plan;
@@ -1408,7 +1411,7 @@ export const make = Effect.fn("service.boot_service.make")(function* (input: {
             .pipe(Effect.mapError((cause) => new BootServiceInstallError({ cause })));
           // Files can match the new version even when activation fails; keep that install retryable.
           yield* fs.writeFileString(restartPendingPath, `${input.cliVersion}\n`, { mode: 0o600 });
-          const plan = planForUnit(currentlyInstalled ? yield* readUnit() : "");
+          const plan = planForUnit(currentlyInstalled ? yield* readUnit() : "", true);
           yield* writeDurably(
             statePath,
             // @effect-diagnostics-next-line globalJsonInEffect:off - fixed launcher-owned document.
@@ -1601,7 +1604,8 @@ export const make = Effect.fn("service.boot_service.make")(function* (input: {
         baseDir: installedBaseDir,
         logPath: rebase(own.logPath),
         program: own.program.map(rebase),
-        ...(own.installBinDir ? { installBinDir: rebase(own.installBinDir) } : {}),
+        // One read from the unit is already at its spelling.
+        ...(installBinDir ? { installBinDir: rebase(installBinDir) } : {}),
       };
     };
     const normalizeUnit = (contents: string) =>

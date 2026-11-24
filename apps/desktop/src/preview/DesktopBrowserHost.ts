@@ -446,6 +446,7 @@ export const make = Effect.gen(function* () {
     tab.focusPending.clear();
     releaseFocusWhenIdle(tab);
     syncPainting(tab);
+    stopNudgingWithoutLiveWaits(tab);
   };
 
   const dropRelay = (tab: AttachedTab) => {
@@ -469,6 +470,7 @@ export const make = Effect.gen(function* () {
     }
     releaseFocusWhenIdle(tab);
     syncPainting(tab);
+    stopNudgingWithoutLiveWaits(tab);
   };
 
   /**
@@ -673,6 +675,8 @@ export const make = Effect.gen(function* () {
     tab.frameSessions.clear();
     for (const listener of listeners) listener();
     syncPainting(tab);
+    if (tab.nudging !== null) runFork(Fiber.interrupt(tab.nudging));
+    tab.nudging = null;
     if (announced) emit({ type: "detached", ...key });
   };
 
