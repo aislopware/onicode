@@ -363,7 +363,9 @@ export function toIssueSearch({
   };
 }
 
-export function toIssueSummary({ repository }: Issues.IssueSummary.Result) {
+export function toIssueSummary({
+  repository,
+}: Issues.IssueSummary.Result | Issues.IssueSummaryWithStatus.Result) {
   const issue = repository?.issue;
   return issue == null ? null : toSummary(issue);
 }

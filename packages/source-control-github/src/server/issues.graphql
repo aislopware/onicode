@@ -71,6 +71,33 @@ query IssueSummary($owner: String!, $name: String!, $number: Int!) {
   }
 }
 
+query IssueSummaryWithStatus($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    issue(number: $number) {
+      ...IssueRow
+      status {
+        ...PlanningStatusFields
+      }
+      assignees(first: 20) {
+        nodes {
+          login
+          name
+          avatarUrl
+        }
+      }
+      labels(first: 20) {
+        nodes {
+          name
+          color
+        }
+      }
+      comments {
+        totalCount
+      }
+    }
+  }
+}
+
 query IssueDetail($owner: String!, $name: String!, $number: Int!) {
   viewer {
     login

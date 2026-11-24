@@ -266,9 +266,16 @@ export const make = Effect.gen(function* () {
 
     getIssueSummary: Effect.fn("GitHubIssueTracker.getIssueSummary")(function* (input) {
       const { owner, name, number } = yield* issue(input, "getIssueSummary");
-      const summary = yield* client
+      const legacy = client
         .IssueSummary({ owner, name, number })
         .pipe(graphql(input.host, "getIssueSummary"), Effect.map(toIssueSummary));
+      const summary = yield* asksStatuses(input.host)
+        ? client.IssueSummaryWithStatus({ owner, name, number }).pipe(
+            graphql(input.host, "getIssueSummary"),
+            Effect.map(toIssueSummary),
+            Effect.catchIf(statusesRefused, () => legacy),
+          )
+        : legacy;
       if (summary === null) return yield* notFound("getIssueSummary");
       return summary;
     }),
