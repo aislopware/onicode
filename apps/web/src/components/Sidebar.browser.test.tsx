@@ -105,8 +105,8 @@ describe("sidebar header new thread", () => {
       projectId: projects[0]!.id,
     };
     const startThread = vi.fn().mockResolvedValue(null);
-    vi.mocked(useProjects).mockReturnValue(projects);
-    vi.mocked(useHandleNewThread).mockReturnValue({
+    using _useProjects = vi.mocked(useProjects).mockReturnValue(projects);
+    using _useHandleNewThread = vi.mocked(useHandleNewThread).mockReturnValue({
       activeDraftThread: null,
       activeThread: null,
       defaultProjectRef: currentProjectRef,
@@ -162,19 +162,21 @@ describe("sidebar project folder new thread", () => {
     };
     using _primary = vi.mocked(usePrimaryEnvironmentId).mockReturnValue(primary);
     using _connected = vi.mocked(useConnectedEnvironmentIds).mockReturnValue([primary, dev1]);
-    vi.mocked(useProjects).mockReturnValue([primaryCopy, dev1Copy]);
+    using _useProjects = vi.mocked(useProjects).mockReturnValue([primaryCopy, dev1Copy]);
     const dev1Thread = makeThreadFixture({
       environmentId: dev1,
       id: ThreadId.make("dev1-thread"),
       projectId: dev1Copy.id,
       title: "dev1 work",
     });
-    vi.mocked(useQuietThreadShells).mockReturnValue([dev1Thread]);
+    using _useQuietThreadShells = vi.mocked(useQuietThreadShells).mockReturnValue([dev1Thread]);
     const threadRef = scopeThreadRef(dev1, dev1Thread.id);
-    vi.mocked(useThreadRouteTarget).mockReturnValue({ kind: "server", threadRef });
+    using _useThreadRouteTarget = vi
+      .mocked(useThreadRouteTarget)
+      .mockReturnValue({ kind: "server", threadRef });
     const dev1ProjectRef = scopeProjectRef(dev1, dev1Copy.id);
     const startThread = vi.fn().mockResolvedValue(null);
-    vi.mocked(useHandleNewThread).mockReturnValue({
+    using _useHandleNewThread = vi.mocked(useHandleNewThread).mockReturnValue({
       activeDraftThread: null,
       activeThread: dev1Thread,
       defaultProjectRef: dev1ProjectRef,
@@ -206,12 +208,14 @@ describe("sidebar numbered jumps", () => {
     __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
     using _platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64");
     const web = project("web");
-    vi.mocked(useProjects).mockReturnValue([web]);
+    using _useProjects = vi.mocked(useProjects).mockReturnValue([web]);
     const thread = threadShell(web.id, 0);
-    vi.mocked(useQuietThreadShells).mockReturnValue([thread]);
+    using _useQuietThreadShells = vi.mocked(useQuietThreadShells).mockReturnValue([thread]);
     const threadRef = scopeThreadRef(thread.environmentId, thread.id);
-    vi.mocked(useThreadRouteTarget).mockReturnValue({ kind: "server", threadRef });
-    vi.mocked(useHandleNewThread).mockReturnValue({
+    using _useThreadRouteTarget = vi
+      .mocked(useThreadRouteTarget)
+      .mockReturnValue({ kind: "server", threadRef });
+    using _useHandleNewThread = vi.mocked(useHandleNewThread).mockReturnValue({
       activeDraftThread: null,
       activeThread: null,
       defaultProjectRef: null,
@@ -266,7 +270,8 @@ function threadShell(projectId: ProjectId, index: number): EnvironmentThreadShel
   });
 }
 
-function mockSidebarThreads(): ScopedThreadRef {
+function mockSidebarThreads() {
+  const mocks = new DisposableStack();
   const activeProject = project("active");
   const threads = Array.from({ length: 5 }, (_, index) => threadShell(activeProject.id, index));
   const routeThreadRef: ScopedThreadRef = {
@@ -274,11 +279,13 @@ function mockSidebarThreads(): ScopedThreadRef {
     threadId: threads[0]!.id,
   };
   // A real wall-clock minute tick mid-test re-renders every row and reads as a leak.
-  vi.mocked(useNowMinute).mockReturnValue("2026-01-01T00:00");
-  vi.mocked(useProjects).mockReturnValue([activeProject]);
-  vi.mocked(useQuietThreadShells).mockReturnValue(threads);
-  vi.mocked(useThreadRouteTarget).mockReturnValue({ kind: "server", threadRef: routeThreadRef });
-  vi.mocked(useHandleNewThread).mockReturnValue({
+  mocks.use(vi.mocked(useNowMinute)).mockReturnValue("2026-01-01T00:00");
+  mocks.use(vi.mocked(useProjects)).mockReturnValue([activeProject]);
+  mocks.use(vi.mocked(useQuietThreadShells)).mockReturnValue(threads);
+  mocks
+    .use(vi.mocked(useThreadRouteTarget))
+    .mockReturnValue({ kind: "server", threadRef: routeThreadRef });
+  mocks.use(vi.mocked(useHandleNewThread)).mockReturnValue({
     activeDraftThread: null,
     activeThread: null,
     defaultProjectRef: {
@@ -290,13 +297,13 @@ function mockSidebarThreads(): ScopedThreadRef {
     routeDraftId: null,
     routeThreadRef,
   });
-  return routeThreadRef;
+  return { routeThreadRef, [Symbol.dispose]: () => mocks.dispose() };
 }
 
 describe("sidebar render isolation", () => {
   // regression: any sidebar render rebuilt the thread list, so every row re-rendered with it
   it("does not re-render thread rows when the sidebar renders with nothing changed", async () => {
-    mockSidebarThreads();
+    using _threads = mockSidebarThreads();
     const routeReveal = { observedKey: null, pendingKey: null };
     // The app's GT provider, without which useGT() returns a new function every render.
     const sidebar = () => (
@@ -316,7 +323,8 @@ describe("sidebar render isolation", () => {
   });
 
   it("re-renders only the two affected rows when the open thread changes", async () => {
-    const routeThreadRef = mockSidebarThreads();
+    using threads = mockSidebarThreads();
+    const { routeThreadRef } = threads;
     const routeReveal = { observedKey: null, pendingKey: null };
     const sidebar = () => (
       <I18nProvider>
@@ -330,7 +338,7 @@ describe("sidebar render isolation", () => {
     const rowRenders = () => vi.mocked(SortableThreadRow.type).mock.calls;
 
     const beforeSwitch = rowRenders().length;
-    vi.mocked(useThreadRouteTarget).mockReturnValue({
+    using _useThreadRouteTarget = vi.mocked(useThreadRouteTarget).mockReturnValue({
       kind: "server",
       threadRef: { ...routeThreadRef, threadId: ThreadId.make("thread-1") },
     });
@@ -347,7 +355,8 @@ describe("sidebar render isolation", () => {
   // regression: #33100 Cmd+J re-rendered every sidebar row, which took hundreds of ms with many threads
   it("does not re-render thread rows when a quick Mod shortcut opens and focuses the terminal", async () => {
     using stack = new DisposableStack();
-    const routeThreadRef = mockSidebarThreads();
+    using threads = mockSidebarThreads();
+    const { routeThreadRef } = threads;
     const terminal = document.createElement("div");
     terminal.dataset.terminalOwner = "drawer";
     const terminalInput = document.createElement("textarea");
@@ -412,13 +421,15 @@ describe("sidebar thread rename", () => {
       using _command = vi.mocked(useOrchestrationCommand).mockReturnValue(updateMetadata);
       using _readScope = vi.mocked(readEnvironmentScope).mockReturnValue(true);
       using _scope = vi.mocked(useEnvironmentScope).mockReturnValue(true);
-      vi.mocked(useProjects).mockReturnValue([activeProject]);
-      vi.mocked(useQuietThreadShells).mockReturnValue([shellTitled("Fix the login redirect")]);
-      vi.mocked(useThreadRouteTarget).mockReturnValue({
+      using _useProjects = vi.mocked(useProjects).mockReturnValue([activeProject]);
+      using _useQuietThreadShells = vi
+        .mocked(useQuietThreadShells)
+        .mockReturnValue([shellTitled("Fix the login redirect")]);
+      using _useThreadRouteTarget = vi.mocked(useThreadRouteTarget).mockReturnValue({
         kind: "server",
         threadRef: routeThreadRef,
       });
-      vi.mocked(useHandleNewThread).mockReturnValue({
+      using _useHandleNewThread = vi.mocked(useHandleNewThread).mockReturnValue({
         activeDraftThread: null,
         activeThread: null,
         defaultProjectRef: {
@@ -459,10 +470,12 @@ describe("sidebar thread click", () => {
       environmentId: activeProject.environmentId,
       threadId: threads[0]!.id,
     };
-    vi.mocked(useProjects).mockReturnValue([activeProject]);
-    vi.mocked(useQuietThreadShells).mockReturnValue(threads);
-    vi.mocked(useThreadRouteTarget).mockReturnValue({ kind: "server", threadRef: routeThreadRef });
-    vi.mocked(useHandleNewThread).mockReturnValue({
+    using _useProjects = vi.mocked(useProjects).mockReturnValue([activeProject]);
+    using _useQuietThreadShells = vi.mocked(useQuietThreadShells).mockReturnValue(threads);
+    using _useThreadRouteTarget = vi
+      .mocked(useThreadRouteTarget)
+      .mockReturnValue({ kind: "server", threadRef: routeThreadRef });
+    using _useHandleNewThread = vi.mocked(useHandleNewThread).mockReturnValue({
       activeDraftThread: null,
       activeThread: null,
       defaultProjectRef: {
@@ -510,10 +523,12 @@ describe("sidebar thread menu", () => {
     using _localApi = vi
       .mocked(readLocalApi)
       .mockReturnValue({ contextMenu: { show } } as unknown as LocalApi);
-    vi.mocked(useProjects).mockReturnValue([activeProject]);
-    vi.mocked(useQuietThreadShells).mockReturnValue([thread]);
-    vi.mocked(useThreadRouteTarget).mockReturnValue({ kind: "server", threadRef });
-    vi.mocked(useHandleNewThread).mockReturnValue({
+    using _useProjects = vi.mocked(useProjects).mockReturnValue([activeProject]);
+    using _useQuietThreadShells = vi.mocked(useQuietThreadShells).mockReturnValue([thread]);
+    using _useThreadRouteTarget = vi
+      .mocked(useThreadRouteTarget)
+      .mockReturnValue({ kind: "server", threadRef });
+    using _useHandleNewThread = vi.mocked(useHandleNewThread).mockReturnValue({
       activeDraftThread: null,
       activeThread: null,
       defaultProjectRef: {
@@ -572,13 +587,13 @@ describe("sidebar settled pagination", () => {
       }),
     );
     threads.unshift(threadShell(activeProject.id, 100));
-    vi.mocked(useProjects).mockReturnValue([activeProject]);
-    vi.mocked(useQuietThreadShells).mockReturnValue(threads);
-    vi.mocked(useThreadRouteTarget).mockReturnValue({
+    using _useProjects = vi.mocked(useProjects).mockReturnValue([activeProject]);
+    using _useQuietThreadShells = vi.mocked(useQuietThreadShells).mockReturnValue(threads);
+    using _useThreadRouteTarget = vi.mocked(useThreadRouteTarget).mockReturnValue({
       kind: "server",
       threadRef: { environmentId: activeProject.environmentId, threadId: threads[0]!.id },
     });
-    vi.mocked(useHandleNewThread).mockReturnValue({
+    using _useHandleNewThread = vi.mocked(useHandleNewThread).mockReturnValue({
       activeDraftThread: null,
       activeThread: null,
       defaultProjectRef: {

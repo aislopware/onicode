@@ -72,7 +72,8 @@ function openedWrappers(text: string, closersOnly: boolean): number {
 
 const COMMENT_START = /^ {0,3}<!--/;
 const INDENTED_CODE = /^(?: {4}|\t)/;
-const INLINE_CODE = /(`+)(?:[^`]|[^`][\s\S]*?[^`])\1(?!`)/g;
+// A backtick run is whole, so a span never starts inside a longer run.
+const INLINE_CODE = /(?<!`)(`+)(?:[^`]|[^`][\s\S]*?[^`])\1(?!`)/g;
 
 /** Returns how to recognize the end of a block that `line` opens, or null for none. */
 function blockCloser(line: string): ((line: string) => boolean) | null {
@@ -221,7 +222,8 @@ function scanMarkdown(
   // A cut needs no open wrapper, so a resumed scan starts with none.
   let openWrappers = 0;
   let wrapperStart = 0;
-  let inComment = false;
+  // The kind of line whose comment is still open; it does not continue into another kind.
+  let commentIn: "html" | "text" | null = null;
   let inCommentBlock = false;
   let offset = from.start;
   let linesBefore = from.linesBefore;
@@ -285,19 +287,23 @@ function scanMarkdown(
         !htmlLine &&
         blockBefore === null &&
         closes === null &&
-        !/^ {0,3}</.test(line) &&
+        !SPANNING_BLOCKS.some(([open]) => open.test(line)) &&
         !INDENTED_CODE.test(line);
+      const kind = htmlLine ? "html" : textLine && !ATX_HEADING.test(line) ? "text" : null;
+      if (commentIn !== kind) commentIn = null;
       if (htmlLine || textLine) {
-        const [kept, stillInComment] = withoutComments(line, inComment);
+        const [kept, stillInComment] = withoutComments(
+          htmlLine ? line : line.replace(INLINE_CODE, ""),
+          commentIn !== null,
+        );
         const wasOpen = openWrappers > 0;
-        const counted = htmlLine ? kept : kept.replace(INLINE_CODE, "");
-        openWrappers = Math.max(0, openWrappers + openedWrappers(counted, !htmlLine));
+        openWrappers = Math.max(0, openWrappers + openedWrappers(kept, !htmlLine));
         if (!wasOpen && openWrappers > 0) wrapperStart = chars;
-        inComment = stillInComment;
+        commentIn = stillInComment ? kind : null;
       }
       inCommentBlock = (inCommentBlock || opensComment) && closes !== null;
-      // A comment left open spans only its HTML block.
-      if (closes === null && !inCommentBlock) inComment = false;
+      // A comment left open runs to the end of its paragraph or HTML block.
+      if (line.trim() === "" && !inCommentBlock) commentIn = null;
     }
     lines.push(line);
     chars += line.length + 1;

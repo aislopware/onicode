@@ -777,12 +777,16 @@ const WORD_BINARY_PARTS = new Set([
 ]);
 
 /** Where a relationship target points inside the package, or null when it leads outside. */
-function wordTarget(target: string, folder: string) {
+/** The archive path an internal relationship target names, or null for one outside the package. */
+function wordTarget(target: string, folder: string): string | null {
   // URL parsing ignores tabs and line ends anywhere, and C0 controls and spaces around the target.
   const address = target.replace(/[\t\n\r]/g, "").replace(/^[^!-\uffff]+|[^!-\uffff]+$/g, "");
   if (/^(?:[a-z][a-z\d+.-]*:|[/\\]{2})/i.test(address)) return null;
   const url = parseUrl(address, `https://docx.invalid/${folder}`);
-  return url?.origin === "https://docx.invalid" ? url : null;
+  // A literal ? or # in a ZIP name stays part of the path.
+  return url?.origin === "https://docx.invalid"
+    ? url.toString().slice("https://docx.invalid/".length)
+    : null;
 }
 
 function wordPartTypes() {
@@ -838,11 +842,8 @@ function wordPartTypes() {
         const role = type.slice(type.lastIndexOf("/") + 1);
         const folder = path === "_rels/.rels" ? "" : path.replace(/_rels\/[^/]+\.rels$/, "");
         const external = attr("TargetMode").toLowerCase() === "external";
-        const url = external ? null : wordTarget(attr("Target"), folder);
-        if (url) {
-          // Preserve archive URL resolution, including literal query/fragment
-          // characters in ZIP names rather than silently classifying another file.
-          const target = url.toString().slice("https://docx.invalid/".length);
+        const target = external ? null : wordTarget(attr("Target"), folder);
+        if (target !== null) {
           if (
             !WORD_BINARY_PARTS.has(role) &&
             role !== "hyperlink" &&
@@ -864,7 +865,7 @@ function wordPartTypes() {
             throw new PreviewError({ code: "word-limited-relationship" });
         }
         if (
-          (!url && !(role === "hyperlink" && externalUrl(attr("Target")))) ||
+          (target === null && !(role === "hyperlink" && externalUrl(attr("Target")))) ||
           WORD_DISABLED_PARTS.has(role)
         ) {
           start = xml.lastIndexOf("<", parser.position - 1);
@@ -1395,8 +1396,8 @@ export async function prepareOffice(
       if (tag.local !== "Relationship") return;
       const type = tag.attributes.Type?.value ?? "";
       const target = tag.attributes.Target?.value ?? "";
-      const path = wordTarget(target, "word/")?.pathname.slice(1);
-      if (path !== undefined && result.archive.has(path))
+      const path = wordTarget(target, "word/");
+      if (path !== null && result.archive.has(path))
         references.set(tag.attributes.Id?.value ?? "", type.slice(type.lastIndexOf("/") + 1));
     });
     const relationshipXml = archiveText(result.archive, "word/_rels/document.xml.rels");

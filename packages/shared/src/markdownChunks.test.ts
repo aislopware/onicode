@@ -189,7 +189,7 @@ describe("splitMarkdown", () => {
       "",
       "    </details>",
       "",
-      "<https://example.com> and </details> in prose",
+      "<https://example.com> <details> in prose",
       "",
       "Inside",
       "",
@@ -218,6 +218,34 @@ describe("splitMarkdown", () => {
       "",
     ];
     expect(starts(commentsAcrossLines.join("\n"))).toEqual(["<details> <!-- start", "after"]);
+    const closesInWrapper = (line: string) => ["<details>", "", line, "", "next", "", "last", ""];
+    for (const line of [
+      "<https://example.com> closes it </details>",
+      "Write `<!--` then </details>",
+      "Close ``</details>` here",
+    ]) {
+      expect(starts(closesInWrapper(line).join("\n"))).toEqual(["<details>", "next", "last"]);
+    }
+    // An HTML block ends the paragraph, so its unclosed comment was literal text.
+    const literalComment = ["<details>", "", "Intro <!-- start", "</details> -->", "", "next", ""];
+    expect(starts(literalComment.join("\n"))).toEqual(["<details>", "next"]);
+    const staysOpen = (lines: string[]) => [
+      ...lines,
+      "",
+      "Inside",
+      "",
+      "</details>",
+      "",
+      "after",
+      "",
+    ];
+    for (const lines of [
+      ["<details>", "", "$$ \\text{</details>} $$"],
+      ["<details>", "", "Intro <!-- start", "more </details> -->"],
+      ["<!-- note --> <details> <!-- start", "</details> -->"],
+    ]) {
+      expect(starts(staysOpen(lines).join("\n"))).toEqual([lines[0], "after"]);
+    }
     const shortComment = ["<!--> <details>", "", "Inside", "", "</details>", "", "after", ""];
     expect(starts(shortComment.join("\n"))).toEqual(["<!--> <details>", "after"]);
     // A wrapper after a big fence, with no blank line to cut at before it.

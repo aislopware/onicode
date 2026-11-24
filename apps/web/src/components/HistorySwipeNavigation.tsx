@@ -67,6 +67,8 @@ const MODAL_OR_PREVIEW_SELECTOR = [
   '[role="dialog"]',
   '[role="alertdialog"]',
   '[data-slot$="-popup"]',
+  // A submenu replaces its popup's slot.
+  '[data-slot="menu-sub-content"]',
   ...["dialog", "alert-dialog", "command-dialog", "sheet", "popover"].flatMap((modal) => [
     `[data-slot="${modal}-backdrop"]`,
     `[data-slot="${modal}-viewport"]`,

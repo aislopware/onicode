@@ -70,15 +70,18 @@ function ArchivedThreadChunk(props: {
         if (!node) return;
         return observeIntersection(
           node,
-          (entry) =>
+          (entry) => {
+            // Read with the entry's height; a later commit may change the row count.
+            const mountedRows = Number(node.dataset.mountedRows);
             setView((previous) =>
               nextArchivedChunkView(
                 previous,
                 entry.isIntersecting,
                 entry.boundingClientRect.height,
-                Number(node.dataset.mountedRows),
+                mountedRows,
               ),
-            ),
+            );
+          },
           { root: node.closest("[data-settings-page-scroll]"), rootMargin: "1200px 0px" },
         );
       }}
