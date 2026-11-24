@@ -365,6 +365,13 @@ export const make = Effect.gen(function* () {
       ),
     );
 
+  const stopNudgingWithoutLiveWaits = (tab: AttachedTab) => {
+    for (const held of tab.frameWaits) if (!held()) tab.frameWaits.delete(held);
+    if (tab.frameWaits.size > 0 || tab.nudging === null) return;
+    runFork(Fiber.interrupt(tab.nudging));
+    tab.nudging = null;
+  };
+
   /** Prods the guest while `work` is pending and `waits` holds; one loop serves all of a tab's waits. */
   const nudgedUntilSettled = <A>(
     tab: AttachedTab,
@@ -372,18 +379,12 @@ export const make = Effect.gen(function* () {
     work: () => Promise<A>,
   ) => {
     // A loop left with only dead waits may be sleeping toward a long prod; a new wait starts fresh.
-    for (const held of tab.frameWaits) if (!held()) tab.frameWaits.delete(held);
-    if (tab.frameWaits.size === 0 && tab.nudging !== null) {
-      runFork(Fiber.interrupt(tab.nudging));
-      tab.nudging = null;
-    }
+    stopNudgingWithoutLiveWaits(tab);
     tab.frameWaits.add(waits);
     startNudging(tab);
     return work().finally(() => {
       tab.frameWaits.delete(waits);
-      if (tab.frameWaits.size > 0 || tab.nudging === null) return;
-      runFork(Fiber.interrupt(tab.nudging));
-      tab.nudging = null;
+      stopNudgingWithoutLiveWaits(tab);
     });
   };
 

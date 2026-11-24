@@ -1310,6 +1310,43 @@ process.disconnect();
         );
         expect(yield* alias.status).toMatchObject({ current: true });
       }
+      const trailing = yield* makeService(
+        undefined,
+        "1.2.3",
+        `${aliasDir}${path.sep}`,
+        undefined,
+        undefined,
+        undefined,
+        null,
+      );
+      expect(yield* trailing.status).toMatchObject({ current: true });
+
+      // Reinstalled from the other spelling, the unit's install directory follows it.
+      const reinstalled = yield* makeService(
+        undefined,
+        "1.2.3",
+        aliasDir,
+        undefined,
+        undefined,
+        undefined,
+        null,
+      );
+      yield* reinstalled.install();
+      for (const [home, installBinDir] of [
+        [aliasDir, path.join(aliasDir, "bin")],
+        [baseDir, path.join(baseDir, "bin")],
+      ] as const) {
+        const service = yield* makeService(
+          undefined,
+          "1.2.3",
+          home,
+          undefined,
+          undefined,
+          undefined,
+          installBinDir,
+        );
+        expect(yield* service.status).toMatchObject({ current: true });
+      }
     }),
   );
 
