@@ -3561,3 +3561,4 @@ e65b19d15e	take	kept Onicode's lease signature and deleted-thread re-read inside
 9563012455	skip	kept Onicode's host-PATH rebuild (4c0b3478fc, #316): it rebuilds missing instances on any PATH change, including the login-shell re-read on headless servers and Windows registry PATH, where upstream's watcher only follows the desktop shell snapshot; upstream's in-flight race cases queued as a follow-up
 5e62206e7d	take	taken; isElectron gates dropped (desktop-only renderer, no env.ts), PickPreload keeps Onicode's shadow-root picking beside the page-world bridge
 78cffe29ec	take	taken; GitLab approval now also sends the expected head (GitLab answers 409 on a moved head), docs name only the desktop app
+46f360d8dd	take	taken; web and mobile reread only the names query (servers that answer only the full list are not reread, since listing asks every linked machine), hostedThreadLink import dropped

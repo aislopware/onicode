@@ -1,4 +1,4 @@
-import { useAtomValue } from "@effect/atom-react";
+import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import {
   linkableMachines,
   linkedEnvironmentNames,
@@ -12,7 +12,7 @@ import {
 import { AuthAccessWriteScope, type EnvironmentId } from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
 import { Atom } from "effect/reactivity";
-import { useMemo } from "react";
+import { useContext, useEffect, useEffectEvent, useMemo } from "react";
 
 import { connectionAtomRuntime } from "../connection/runtime";
 import { useNowMinuteMs } from "../lib/clock";
@@ -34,9 +34,11 @@ const peerLinkListsAtom = Atom.family((key: string) =>
 /**
  * The machines `environmentId` links to, by name, while it offers links, and none otherwise.
  * Its agents can read threads there, and so can a client allowed to read threads on it.
+ * A `wanted` machine this app is not connected to and the names lack makes them reread.
  */
 export function useLinkedEnvironments(
   environmentId: EnvironmentId | null,
+  wanted: ReadonlyArray<EnvironmentId> = [],
 ): ReadonlyMap<EnvironmentId, string> {
   const { environments } = useEnvironments();
   const query = linkNamesQuery(
@@ -52,6 +54,24 @@ export function useLinkedEnvironments(
       ? peerLinkEnvironment.list({ environmentId, input: {} })
       : null,
   );
+  // Older servers answer only the full list, which asks every linked machine, so only names reread.
+  const queried = query === "names" ? environmentId : null;
+  const connected = new Set(
+    environments
+      .filter((environment) => environment.connection.phase === "connected")
+      .map((environment) => environment.environmentId),
+  );
+  const missing = [...new Set(wanted)].filter((id) => id !== environmentId && !connected.has(id));
+  const refreshKey =
+    queried === null || missing.length === 0 ? "" : [queried, ...[...missing].sort()].join(" ");
+  const registry = useContext(RegistryContext);
+  const refreshLacking = useEffectEvent(() => {
+    if (queried !== null) peerLinkEnvironment.refreshNamesLacking(registry, queried, missing);
+  });
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- links made outside this app are not pushed, so meeting an unknown machine asks the server again
+  useEffect(() => {
+    if (refreshKey !== "") refreshLacking();
+  }, [refreshKey]);
   return useMemo(
     () =>
       linkedEnvironmentNames({
