@@ -3689,3 +3689,4 @@ de8551b05a	take	adapted: GitLab head pin already in Onicode (kept Onicode's pre-
 60682f7b01	take	taken as is
 9d3195b49d	take	taken as is
 110ed776c9	take	kept Onicode's GitLab pinned-review check (e6b2acf829): it refuses before request-changes, summary or line comments, upstream's only before line comments; upstream's duplicate test folded into Onicode's as a message assertion; workflow test and doc taken (doc as its own bullet in Onicode's rewritten section)
+6f15610d5b	take	taken as is
