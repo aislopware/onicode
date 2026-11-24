@@ -392,7 +392,10 @@ export function rebaseDraft(draft: DraftState, current: ScheduledTask): DraftSta
     current,
   );
   const untouched = (key: keyof DraftState) => sameValue(draft[key], loaded[key]);
-  const filtersEdited = webhookFilterDraftsChanged(draft.savedFilters, draft.filters);
+  // Filters a trip through the webhook mode left behind are no edit.
+  const filtersEdited =
+    draft.scheduleMode === "webhook" &&
+    webhookFilterDraftsChanged(draft.savedFilters, draft.filters);
   return {
     ...draft,
     ...(untouched("title") ? { title: now.title } : {}),

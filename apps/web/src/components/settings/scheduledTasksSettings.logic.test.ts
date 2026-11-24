@@ -217,6 +217,9 @@ describe("a scheduled task save refused by another client's change", () => {
     );
     expect(refiltered.scheduleMode).toBe("webhook");
     expect(refiltered.filters.map((row) => row.value)).toEqual(["closed"]);
+    // Filters left behind by a trip through the webhook mode are no edit.
+    const roundTrip = { ...taskToDraft(loaded), title: "Renamed", filters: hookDraft.filters };
+    expect(rebaseDraft(roundTrip, current).timeOfDay).toBe("10:30");
 
     // Another client bound a thread and changed the mode; the next save must not undo either.
     const bound = {

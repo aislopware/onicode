@@ -231,7 +231,7 @@ export type ScheduledTaskDraft = {
 };
 
 // Fields a mode leaves behind when the user switches away and back are not edits.
-function scheduleSignature(schedule: ScheduleDraft) {
+function scheduleSettingsSignature(schedule: ScheduleDraft) {
   const { mode } = schedule;
   const webhook = mode === "webhook";
   const signed = webhook && schedule.signatureEnabled;
@@ -251,7 +251,19 @@ function scheduleSignature(schedule: ScheduleDraft) {
         ]
       : null,
     webhook ? [schedule.replayKey, schedule.coalesceKey, schedule.coalesceWindowSeconds] : null,
-    webhook ? schedule.filters.map(({ path, op, value }) => [path, op, value]) : null,
+  ];
+}
+
+const filtersEdited = (schedule: ScheduleDraft) =>
+  schedule.mode === "webhook" &&
+  webhookFilterDraftsChanged(schedule.savedFilters, schedule.filters);
+
+function scheduleSignature(schedule: ScheduleDraft) {
+  return [
+    scheduleSettingsSignature(schedule),
+    schedule.mode === "webhook"
+      ? schedule.filters.map(({ path, op, value }) => [path, op, value])
+      : null,
   ];
 }
 
@@ -359,26 +371,24 @@ export function rebaseScheduledTaskDraft(
     draft.startFromOrigin === opened.startFromOrigin;
   const modelUntouched =
     JSON.stringify(draft.modelSelection) === JSON.stringify(loaded.modelSelection);
-  // By signature: filter rows get fresh ids each time a task is read.
   const nextSchedule = scheduleDraftForTask(current);
-  const scheduleUntouched =
-    JSON.stringify(scheduleSignature(draft.schedule)) ===
-    JSON.stringify(scheduleSignature(scheduleDraftForTask(loaded)));
+  const keptFilters = filtersEdited(draft.schedule);
+  // Edited filters belong to a webhook trigger, so they keep the task one.
+  const takeStoredSchedule =
+    JSON.stringify(scheduleSettingsSignature(draft.schedule)) ===
+      JSON.stringify(scheduleSettingsSignature(scheduleDraftForTask(loaded))) &&
+    !(keptFilters && nextSchedule.mode !== "webhook");
   return {
     ...draft,
     ...(draft.title === loaded.title ? { title: current.title } : {}),
     ...(draft.prompt === loaded.prompt ? { prompt: current.prompt } : {}),
     ...(draft.enabled === loaded.enabled ? { enabled: current.enabled } : {}),
-    schedule: scheduleUntouched
-      ? nextSchedule
-      : {
-          ...draft.schedule,
-          // Edited filter rows stay; untouched ones take what is stored now.
-          ...(webhookFilterDraftsChanged(draft.schedule.savedFilters, draft.schedule.filters)
-            ? {}
-            : { filters: nextSchedule.filters }),
-          savedFilters: nextSchedule.savedFilters,
-        },
+    schedule: {
+      ...(takeStoredSchedule ? nextSchedule : draft.schedule),
+      // Edited filter rows stay; untouched ones take what is stored now.
+      filters: keptFilters ? draft.schedule.filters : nextSchedule.filters,
+      savedFilters: nextSchedule.savedFilters,
+    },
     ...rebaseScheduledTaskDestination(draft, loaded, current),
     ...(workspaceUntouched
       ? {

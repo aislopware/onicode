@@ -318,6 +318,20 @@ describe("scheduled task worktree base", () => {
     expect(rebasedFilters).toMatchObject({ replayKey: "{{body.id}}" });
     expect(rebasedFilters.filters.map((filter) => filter.value)).toEqual(["closed"]);
     expect(rebasedFilters.savedFilters.map((filter) => filter.value)).toEqual(["closed"]);
+    // Edited filters stay, and the other webhook settings take the stored ones.
+    const filterEdited = editDraft(webhookTask);
+    const rebasedSigned = rebaseScheduledTaskDraft(
+      {
+        ...filterEdited,
+        schedule: {
+          ...filterEdited.schedule,
+          filters: filterEdited.schedule.filters.map((row) => ({ ...row, value: "closed" })),
+        },
+      },
+      signed,
+    ).schedule;
+    expect(rebasedSigned).toMatchObject({ signatureEnabled: true, signatureHeader: "x-signature" });
+    expect(rebasedSigned.filters.map((filter) => filter.value)).toEqual(["closed"]);
   });
 
   it("counts only edits the saved task would carry", () => {
