@@ -600,6 +600,9 @@ describe("settings mutation authorization", () => {
         { defaultProjectScripts: scripts },
         { projectScriptOverrides: { [projectId]: scripts } },
         { projectSettingsOverrides: { [projectId]: { defaultProjectScripts: scripts } } },
+        {
+          projectSettingsOverrideKeys: { [projectId]: { set: { defaultProjectScripts: scripts } } },
+        },
       ];
 
       const settingsOnly = yield* update([AuthSettingsWriteScope]);
@@ -615,6 +618,9 @@ describe("settings mutation authorization", () => {
           defaultAutoPull: true,
           projectScriptOverrides: { [projectId]: null },
           projectSettingsOverrides: { [projectId]: { defaultAutoPull: true } },
+          projectSettingsOverrideKeys: {
+            [projectId]: { set: { defaultAutoPull: true }, unset: ["defaultProjectScripts"] },
+          },
         },
       });
       expect(settingsOnly.handled()).toBe(1);
