@@ -3655,3 +3655,4 @@ ba37a1afa1	take	taken as is; mobile shows no done/total checks count
 ff6b10e0a0	take	conflicts: Claude phase reporting wired into Onicode's resolved-executable open and clearTurnWatch; Codex resume phase inside Onicode's resume-only deadline; ChatView keeps Onicode's split instanceId/driver props; ACP also reports resume for a runtime spawned for the session (Onicode's replacement path); startupPhaseThreadId is optional, so older mobile decodes it
 8aff2f9061	take	taken as is; scenario runs on the desktop target through onicode.ts
 3555296ca0	take	taken as is
+cf90d1a466	take	conflict: Onicode already resolved the temp dir with realPath and names the mode standalone; took the host-platform expectation
