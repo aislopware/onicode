@@ -198,6 +198,18 @@ describe("a scheduled task save refused by another client's change", () => {
     // A field the user changed keeps their value even when it also changed elsewhere.
     const retimed = rebaseDraft({ ...taskToDraft(loaded), timeOfDay: "08:00" }, current);
     expect(retimed.timeOfDay).toBe("08:00");
+
+    // Another client bound a thread and changed the mode; the next save must not undo either.
+    const bound = {
+      ...current,
+      threadId: ThreadId.make("thread:bound"),
+      threadMode: "fresh_session",
+    } as const;
+    expect(rebaseDraft(edited, bound)).toMatchObject({
+      threadId: "thread:bound",
+      savedThreadId: "thread:bound",
+      threadMode: "fresh_session",
+    });
   });
 });
 
