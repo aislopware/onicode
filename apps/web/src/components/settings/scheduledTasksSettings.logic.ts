@@ -302,7 +302,10 @@ export function rebaseDraft(draft: DraftState, current: ScheduledTask): DraftSta
 
 /** Identity of a model selection, its options included, for change detection. */
 export function modelSelectionKey(selection: ModelSelection): string {
-  return `${selection.instanceId}:${selection.model}:${JSON.stringify(selection.options ?? [])}`;
+  const options = (selection.options ?? [])
+    .map((option) => [option.id, option.value] as const)
+    .toSorted(([left], [right]) => left.localeCompare(right));
+  return `${selection.instanceId}:${selection.model}:${JSON.stringify(options)}`;
 }
 
 // Fields a mode leaves behind when the user switches away and back are not edits.

@@ -288,6 +288,15 @@ describe("unsaved scheduled task edits", () => {
     expect(hasDraftChanges(blank, pick("gpt-5", [{ id: "effort", value: "high" }]), shown)).toBe(
       true,
     );
+    const effortThenFast = pick("gpt-5", [
+      { id: "effort", value: "high" },
+      { id: "fastMode", value: true },
+    ]);
+    const fastThenEffort = pick("gpt-5", [
+      { value: true, id: "fastMode" },
+      { id: "effort", value: "high" },
+    ]);
+    expect(hasDraftChanges(effortThenFast, fastThenEffort, shown)).toBe(false);
   });
 });
 
