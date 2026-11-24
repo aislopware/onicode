@@ -1339,6 +1339,27 @@ it.effect("guards bad-signature floods separately from valid run admission", () 
   ),
 );
 
+it.effect("valid requests turned away by the run limit leave the rejection budget alone", () =>
+  withService(({ service, launches }) =>
+    Effect.gen(function* () {
+      const { task } = yield* service.upsert(yield* webhookTaskInput());
+      const outcomes = (count: number) =>
+        Effect.forEach(Array.from({ length: count }), () =>
+          Effect.gen(function* () {
+            const result = yield* service.triggerWebhook(requestFor(task));
+            if (result._tag === "accepted") yield* Queue.take(launches);
+            return result._tag === "rate_limited" ? result.outcome : result._tag;
+          }),
+        );
+      assert.deepEqual(new Set(yield* outcomes(60)), new Set(["accepted"]));
+      yield* TestClock.adjust("50 seconds");
+      assert.deepEqual(new Set(yield* outcomes(60)), new Set(["rate_limited"]));
+      yield* TestClock.adjust("11 seconds");
+      assert.deepEqual(yield* outcomes(1), ["accepted"]);
+    }),
+  ),
+);
+
 it.effect("start failures release the replay key for redelivery", () =>
   withService(
     ({ service, sql, launches }) =>

@@ -1596,6 +1596,7 @@ function WebhookScheduleDetails({
           label={gt("Deliveries")}
           value={gt("Recent requests")}
           borderTop
+          disabled={disabled}
           onPress={() => onOpenDeliveries(task)}
         />
       ) : null}
@@ -1890,7 +1891,13 @@ function EnvironmentTasks({
                 },
                 // A webhook task runs on a request; its deliveries show what came in.
                 ...(task.schedule.type === "webhook"
-                  ? [{ id: "deliveries", title: gt("Deliveries") }]
+                  ? [
+                      {
+                        id: "deliveries",
+                        title: gt("Deliveries"),
+                        attributes: { disabled: !canOperate },
+                      },
+                    ]
                   : [{ id: "run", title: gt("Run now"), attributes: { disabled: !canOperate } }]),
                 {
                   id: "delete",

@@ -2490,6 +2490,7 @@ export const layer = Layer.effect(
             (runWindow?.accepted.filter((entry) => DateTime.toEpochMillis(now) - entry.at < 60_000)
               .length ?? 0) >= WEBHOOK_RATE_LIMIT_PER_MINUTE
           ) {
+            yield* refundRejectionSlot;
             if ((yield* takeRateSlot(task.id, DateTime.toEpochMillis(now))) === "first_rejected")
               yield* log("rate_limited");
             yield* observe("rate_limited");
