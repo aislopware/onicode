@@ -191,16 +191,12 @@ const PROMPT_REFUSAL_TAGS = [
   "AcpSpawnError",
 ] as const;
 
-// ACP setup RPCs run before session/prompt, so their failures never sent the prompt.
+// Process setup RPCs that fail before any native session is touched. A failed session/load,
+// session/resume or session/set_* can mean the agent lost the session, so those keep recovery.
 const ACP_PRE_PROMPT_METHODS: ReadonlySet<unknown> = new Set([
   "initialize",
   "authenticate",
   "session/new",
-  "session/load",
-  "session/resume",
-  "session/set_model",
-  "session/set_mode",
-  "session/set_config_option",
 ]);
 
 const ACP_METHOD_ERROR_TAGS = [

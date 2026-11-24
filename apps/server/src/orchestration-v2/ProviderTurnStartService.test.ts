@@ -3800,7 +3800,7 @@ effectIt.effect("rejects citation expansion before opening a provider session", 
   }),
 );
 
-it("classifies ACP pre-prompt setup failures as refused before the prompt", () => {
+it("classifies ACP process setup failures as refused before the prompt, session failures not", () => {
   const wrap = (cause: unknown) =>
     new ProviderAdapter.ProviderAdapterTurnStartError({
       driver: ProviderDriverKind.make("antigravity"),
@@ -3811,15 +3811,25 @@ it("classifies ACP pre-prompt setup failures as refused before the prompt", () =
     });
 
   for (const method of [
-    "initialize",
-    "authenticate",
-    "session/new",
     "session/load",
     "session/resume",
     "session/set_model",
     "session/set_mode",
     "session/set_config_option",
   ]) {
+    expect(
+      ProviderTurnStart.refusedBeforePrompt(
+        wrap(
+          new EffectAcpErrors.AcpRequestError({
+            code: -32603,
+            errorMessage: `${method} failed`,
+            method,
+          }),
+        ),
+      ),
+    ).toBe(false);
+  }
+  for (const method of ["initialize", "authenticate", "session/new"]) {
     expect(
       ProviderTurnStart.refusedBeforePrompt(
         wrap(
