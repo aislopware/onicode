@@ -3774,3 +3774,4 @@ ff7d03ddfd	take	fix(client-runtime): omit failed image reads from viewed-image p
 f99ef08bb8	take	fix(cli): onicode policy templates expands ~ in the output directory (#42267)
 1a01d7ee6f	take	fix(server): Claude asks to sign in to each MCP server once per thread (#42263); kept Onicode's ONICODE_CLAUDE_MCP_SERVER filter and already-announced needs-auth init skip, adopted upstream's adapter-scoped set and connected clearing
 e3ff780247	take	fix(projects): keep # in clone folders for SCP-style remotes (#42266); kept Onicode's isRemote check over upstream's isLocalPath check (preserves implicit relative paths with #)
+83990ad9a2	take	fix(server): notebook attachments show a progress bar's last frame (#42272); bumped DocumentText VERSION 14->15 and kept OfficeArchive/extractedTextPath
