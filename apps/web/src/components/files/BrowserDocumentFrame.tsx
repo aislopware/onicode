@@ -46,6 +46,7 @@ import type { ExpandedImagePreview } from "~/components/chat/ExpandedImagePrevie
 import { useHtmlRenderTheme } from "~/hooks/useHtmlRenderTheme";
 import { shortcutConflictKey } from "~/keybindings";
 import { getKeyboardLayoutMap, useKeyboardLayoutLetters } from "~/keyboardLayout";
+import { useOpenIssueLink } from "~/lib/openIssueLink";
 import { useOpenChangeRequestLink } from "~/lib/openPullRequestLink";
 import { readLocalApi } from "~/localApi";
 import { cn } from "~/lib/utils";
@@ -368,6 +369,7 @@ export function HtmlRenderDocument(props: {
     },
   );
   const openChangeRequestLink = useOpenChangeRequestLink(props.threadRef);
+  const openIssueLink = useOpenIssueLink(props.threadRef);
   const openLink = useOpenLink(props.threadRef);
   const open = useEffectEvent((url: string, modifiers: { metaKey: boolean; ctrlKey: boolean }) => {
     if (modifiers.metaKey || modifiers.ctrlKey) {
@@ -376,14 +378,15 @@ export function HtmlRenderDocument(props: {
         .catch((cause: unknown) => console.error(cause));
       return;
     }
+    const event = {
+      ...modifiers,
+      preventDefault: () => undefined,
+      stopPropagation: () => undefined,
+    };
     if (
       props.threadRef !== undefined &&
-      openChangeRequestLink(
-        { ...modifiers, preventDefault: () => undefined, stopPropagation: () => undefined },
-        url,
-        undefined,
-        props.threadRef.environmentId,
-      )
+      (openChangeRequestLink(event, url, undefined, props.threadRef.environmentId) ||
+        openIssueLink(event, url, props.threadRef.environmentId))
     ) {
       return;
     }
