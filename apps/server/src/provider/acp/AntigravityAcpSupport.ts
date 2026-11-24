@@ -207,19 +207,25 @@ export function antigravitySessionMode(
 // MCP server's tool of the same name would pass.
 const ANTIGRAVITY_ONI_MCP_TITLE = /^Run mcp_onicode_(?<tool>[A-Za-z0-9_]+)\??$/;
 
+// call_mcp_tool is the one call whose rawInput names a server and tool; in every other call
+// rawInput is the tool's own arguments.
+const ANTIGRAVITY_PROXIED_MCP_TITLE = /^MCP Tool (?<tool>[A-Za-z0-9_]+)\??$/;
+
 function antigravityOniMcpTool(
   request: EffectAcpSchema.RequestPermissionRequest,
 ): string | undefined {
+  const title = request.toolCall.title?.trim() ?? "";
   const rawInput = unknownRecord(request.toolCall.rawInput);
-  if (rawInput?.ServerName !== undefined) {
-    return rawInput.ServerName === "onicode" &&
-      typeof rawInput.ToolName === "string" &&
-      ONICODE_MCP_TOOL_NAMES.has(rawInput.ToolName)
-      ? rawInput.ToolName
+  const proxiedTool = ANTIGRAVITY_PROXIED_MCP_TITLE.exec(title)?.groups?.tool;
+  if (proxiedTool !== undefined) {
+    return rawInput?.ServerName === "onicode" &&
+      rawInput.ToolName === proxiedTool &&
+      ONICODE_MCP_TOOL_NAMES.has(proxiedTool)
+      ? proxiedTool
       : undefined;
   }
   if (typeof rawInput?.CommandLine === "string") return undefined;
-  const tool = ANTIGRAVITY_ONI_MCP_TITLE.exec(request.toolCall.title?.trim() ?? "")?.groups?.tool;
+  const tool = ANTIGRAVITY_ONI_MCP_TITLE.exec(title)?.groups?.tool;
   return tool !== undefined && ONICODE_MCP_TOOL_NAMES.has(tool) ? tool : undefined;
 }
 
