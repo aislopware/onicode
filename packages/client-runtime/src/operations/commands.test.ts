@@ -906,7 +906,7 @@ describe("V2 environment commands", () => {
   );
 
   it.effect.each(["waiting", "completed", "rolled_back"] as const)(
-    "dispatches Stop for %s runs with background commands except rollback",
+    "dispatches Stop for %s runs with background commands and a queued follow-up except rollback",
     (status) =>
       Effect.gen(function* () {
         const waitingRunId = RunId.make("run-waiting");
@@ -926,6 +926,23 @@ describe("V2 environment commands", () => {
               status,
               requestedAt: v2Now,
               startedAt: v2Now,
+              completedAt: null,
+              checkpointId: null,
+              contextHandoffId: null,
+            },
+            {
+              id: RunId.make("run-queued"),
+              threadId: v2ThreadId,
+              ordinal: 2,
+              providerInstanceId: v2Projection.thread.providerInstanceId,
+              modelSelection: v2Projection.thread.modelSelection,
+              providerThreadId: null,
+              userMessageId: MessageId.make("message-queued"),
+              rootNodeId: null,
+              activeAttemptId: null,
+              status: "queued",
+              requestedAt: v2Now,
+              startedAt: null,
               completedAt: null,
               checkpointId: null,
               contextHandoffId: null,

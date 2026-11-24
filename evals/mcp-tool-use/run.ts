@@ -2277,14 +2277,20 @@ const recordForgeChange = (
  */
 const productRefusal = (sample: Sample, name: string, input: Readonly<Record<string, unknown>>) => {
   const world = sample.testCase.setup.world;
-  const expected =
-    typeof input.expectedHeadSha === "string" && input.expectedHeadSha.trim() !== ""
-      ? input.expectedHeadSha.trim()
-      : undefined;
+  const pinsHead = name === "pull_request_merge" || name === "pull_request_review";
+  const sha = input.expectedHeadSha;
+  // The tool schemas: required on merge, and a TrimmedNonEmptyString wherever it is given.
+  if (pinsHead && sha === undefined && name === "pull_request_merge") {
+    return 'Missing key\n  at ["expectedHeadSha"]';
+  }
+  if (pinsHead && sha !== undefined && (typeof sha !== "string" || sha.trim() === "")) {
+    return `Expected a non-blank string, got ${JSON.stringify(sha)}\n  at ["expectedHeadSha"]`;
+  }
+  const expected = typeof sha === "string" ? sha.trim() : undefined;
   if (name === "pull_request_review" && input.verdict === "approve" && expected === undefined) {
     return "Approving needs expectedHeadSha: the headSha pull_request_read reported for the commits you reviewed.";
   }
-  if ((name === "pull_request_merge" || name === "pull_request_review") && expected !== undefined) {
+  if (pinsHead && expected !== undefined) {
     const own = branchPullRequest(sample);
     const number = input.number ?? own.number;
     const pr = worldPullRequests(sample).find((candidate) => Number(candidate.number) === number);

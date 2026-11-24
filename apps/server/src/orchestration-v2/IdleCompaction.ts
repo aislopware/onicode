@@ -2,6 +2,7 @@ import { isListedThreadLineage, type OrchestrationV2ThreadProjection } from "@on
 import { compactionSinceUsage } from "@onicode/provider-core/server/handoffBudget";
 import { COMPACTION_SUGGESTION_MIN_TOKENS } from "@onicode/shared/claudeCompaction";
 import { derivePendingBackgroundWork } from "@onicode/shared/orchestrationV2PendingBackgroundWork";
+import { latestExecutedRun } from "@onicode/shared/orchestrationV2ThreadError";
 import * as DateTime from "effect/DateTime";
 
 // Claude Code's idleCompaction defaults to 200K and won't go below 100K. Below
@@ -52,13 +53,9 @@ export function idleCompactionWindow(
   if (thread.snoozedUntil != null && DateTime.toEpochMillis(thread.snoozedUntil) > nowMs)
     return null;
   if (!isListedThreadLineage(thread.lineage)) return null;
-  // A removed or steered queued message leaves a cancelled run that never started.
-  const latestRun = runs
-    .filter((run) => run.status !== "cancelled" || run.startedAt !== null)
-    .reduce<(typeof runs)[number] | null>(
-      (latest, run) => (latest === null || run.ordinal > latest.ordinal ? run : latest),
-      null,
-    );
+  // A queued message is the user's next turn; compacting first would delay it.
+  if (runs.some((run) => run.status === "queued")) return null;
+  const latestRun = latestExecutedRun(runs);
   if (latestRun?.status !== "completed" || latestRun.completedAt === null) return null;
   const message = messages.find((candidate) => candidate.id === latestRun.userMessageId);
   // Never compact a compaction, so one idle spell compacts at most once.

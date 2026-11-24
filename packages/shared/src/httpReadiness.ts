@@ -9,14 +9,21 @@ import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/h
 const DEFAULT_HTTP_READY_PROBE_TIMEOUT_MS = 1_000;
 const MAX_READINESS_BODY_BYTES = 64 * 1024;
 
-const readCappedBody = (response: HttpClientResponse.HttpClientResponse) => {
-  let bytes = 0;
-  return response.stream.pipe(
-    Stream.takeUntil((chunk) => (bytes += chunk.byteLength) >= MAX_READINESS_BODY_BYTES),
+const readCappedBody = (response: HttpClientResponse.HttpClientResponse) =>
+  response.stream.pipe(
+    Stream.mapAccum(
+      () => MAX_READINESS_BODY_BYTES,
+      (left, chunk: Uint8Array) => {
+        const part = chunk.subarray(0, left);
+        const rest = left - part.byteLength;
+        return [rest, [{ part, rest }]] as const;
+      },
+    ),
+    Stream.takeUntil(({ rest }) => rest === 0),
+    Stream.map(({ part }) => part),
     Stream.decodeText(),
     Stream.mkString,
   );
-};
 
 function describeReadinessCause(cause: unknown): unknown {
   if (cause instanceof Error) {
@@ -94,21 +101,18 @@ export const waitForHttpReady = Effect.fn("shared.httpReadiness.waitForHttpReady
     HttpClient.transform((effect) =>
       Effect.gen(function* () {
         attempt += 1;
-        const accept = input.accept;
         // A listener that sends headers and then stalls its body fails this probe, not the whole wait.
         const responseOption = yield* effect.pipe(
           Effect.tap((response) =>
-            accept === undefined
-              ? Effect.void
-              : readCappedBody(response).pipe(
-                  Effect.orElseSucceed(() => ""),
-                  Effect.flatMap(accept),
-                  Effect.flatMap((accepted) =>
-                    accepted
-                      ? Effect.void
-                      : Effect.fail(fail({ kind: "response-not-accepted", attempt })),
-                  ),
-                ),
+            readCappedBody(response).pipe(
+              Effect.orElseSucceed(() => ""),
+              Effect.flatMap((body) => input.accept?.(body) ?? Effect.succeed(true)),
+              Effect.flatMap((accepted) =>
+                accepted
+                  ? Effect.void
+                  : Effect.fail(fail({ kind: "response-not-accepted", attempt })),
+              ),
+            ),
           ),
           Effect.timeoutOption(Duration.millis(probeTimeoutMs)),
         );
