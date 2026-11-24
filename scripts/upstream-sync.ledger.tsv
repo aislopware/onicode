@@ -3686,3 +3686,4 @@ c9e22e5ff4	take	conflicts: imports kept beside Onicode's html-render bootstrap; 
 84a0c0516f	take	conflict: kept Onicode's receipt checks in intake test mocks
 a891304c84	take	taken as is
 de8551b05a	take	adapted: GitLab head pin already in Onicode (kept Onicode's pre-post head check from e6b2acf829: it also stops a summary or request-changes on a moved head); evals refusal and test rebased onto Onicode's no-unpushed harness; MCP tool list budget remeasured
+60682f7b01	take	taken as is
