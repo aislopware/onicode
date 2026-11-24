@@ -2708,6 +2708,7 @@
   "dff9e061996e7b1d": "Включить автослияние?",
   "dafc4bac6e5e37b0": "Отключить автослияние?",
   "88c7a80c40bbfe56": "Слить {layers} в {base} методом {kind, select, squash {squash} merge {merge} rebase {rebase} fastForward {fast-forward} other {{method}}}. Слои выше #{number} останутся открытыми.",
+  "892f08d21b8e48a9": "Слить {layers} в {base} методом {kind, select, squash {squash} merge {merge} rebase {rebase} fastForward {fast-forward} other {{method}}}, когда будут выполнены требования. Это может произойти сразу.",
   "700223fdcaa96bb7": "Слить #{number} методом {kind, select, squash {squash} merge {merge} rebase {rebase} fastForward {fast-forward} other {{method}}}, когда будут выполнены требования. Это может произойти сразу.",
   "de93a05a4db7ab76": "{term, select, mr {Запретить провайдеру автоматически сливать этот мерж-реквест.} cr {Запретить провайдеру автоматически сливать этот запрос на изменение.} other {Запретить провайдеру автоматически сливать этот пул-реквест.}}",
   "385ba70d2783260b": "Слить #{number} в {branch} методом {kind, select, squash {squash} merge {merge} rebase {rebase} fastForward {fast-forward} other {{method}}}.",

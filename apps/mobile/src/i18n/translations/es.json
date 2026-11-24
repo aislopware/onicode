@@ -2656,6 +2656,7 @@
   "dff9e061996e7b1d": "¿Activar la fusión automática?",
   "dafc4bac6e5e37b0": "¿Desactivar la fusión automática?",
   "88c7a80c40bbfe56": "Fusionar {layers} en {base} con {kind, select, squash {squash} merge {merge} rebase {rebase} fastForward {fast-forward} other {{method}}}. Las capas por encima de #{number} siguen abiertas.",
+  "892f08d21b8e48a9": "Fusionar {layers} en {base} con {kind, select, squash {squash} merge {merge} rebase {rebase} fastForward {fast-forward} other {{method}}} cuando se cumplan sus requisitos. Puede ocurrir de inmediato.",
   "700223fdcaa96bb7": "Fusionar #{number} con {kind, select, squash {squash} merge {merge} rebase {rebase} fastForward {fast-forward} other {{method}}} cuando se cumplan sus requisitos. Puede ocurrir de inmediato.",
   "de93a05a4db7ab76": "Impide que el proveedor fusione automáticamente esta {term, select, mr {merge request} cr {solicitud de cambios} other {pull request}}.",
   "385ba70d2783260b": "Fusionar #{number} en {branch} con {kind, select, squash {squash} merge {merge} rebase {rebase} fastForward {fast-forward} other {{method}}}.",
