@@ -3692,3 +3692,4 @@ de8551b05a	take	adapted: GitLab head pin already in Onicode (kept Onicode's pre-
 6f15610d5b	take	taken as is
 9010d7d5a1	take	adapted: kept Onicode's per-scan exclusion (both spellings of its folders, worktree setting read per scan), which already excludes sandboxes recorded by their real path; took the Codex-project fix by splitting Onicode-owned from scratch exclusion in that loader, realpathing the cwd like upstream; skipped upstream's 'offers an outside project reached through a link inside a symlinked base dir' test: Onicode excludes anything recorded under its base in either spelling (task folders link outside repos there), and upstream only offers it when the base itself is a symlink
 2ced06ef4a	take	taken as is
+f15d908759	take	taken as is (test merged next to Onicode's microphone tests)
