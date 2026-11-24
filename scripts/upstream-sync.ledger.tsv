@@ -3674,3 +3674,4 @@ d00aaac85f	take	fix(antigravity): a tool's own arguments no longer mark it as an
 bba3918e3c	take	fix(server): saving project scripts requires task operation scope
 f8b3ff0dff	take	fix(source-control): TanStack Source issue requests require a numeric issue key
 bb0862ead4	take	fix(client): a long run of fence markers is read in one pass
+fb04b4d199	take	conflict: annotation refusal placed before Onicode's hover-is-not-use check
