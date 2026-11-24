@@ -3640,3 +3640,4 @@ a4029d4b91	take	test conflict: kept both citation tests (Onicode fold cases + up
 3c3246e8ce	take	kept Onicode's boundedRedactedText for the failure message: it already cuts surrogate-safe and also redacts credentials; took upstream's test and scenario (scenario on the desktop target, native Thread actions menu)
 2c3d3b4501	take	constant conflict: kept Onicode's steer/mailbox prefixes beside upstream's exported grace constant
 72e7e8b044	take	taken as is; web and mobile share the client-runtime answer logic; Claude's empty-answer wording queued as a follow-up
+8032cbb66b	take	conflict: kept Onicode's registerShortcutContext effect beside upstream's side-chat-pane listener
