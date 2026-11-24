@@ -8,6 +8,7 @@ import {
   ThreadId,
   type ScheduledTaskDeleteInput,
   type ScheduledTaskDeleteResult,
+  type ScheduledTaskExpected,
   type ScheduledTaskListResult,
   type ScheduledTaskMutationResult,
   type ScheduledTaskRunNowInput,
@@ -115,7 +116,7 @@ export class ScheduledTaskService extends Context.Service<
         readonly keepModelSelection?: boolean;
         /**
          * Refuse the save unless the task still has the project and modes the caller checked,
-         * and the given title, prompt, enabled state and schedule it left alone.
+         * and the given fields it left alone.
          */
         readonly expected?: ScheduledTaskExpectation;
       },
@@ -151,6 +152,15 @@ function taskError(message: string, input?: { taskId?: ScheduledTaskId; cause?: 
   });
 }
 
+function changedError(stored: ScheduledTask, expectedThreadId: ThreadId | null | undefined) {
+  return taskError(
+    expectedThreadId !== undefined && stored.threadId !== expectedThreadId
+      ? "The task's thread changed while saving. Read the task again."
+      : "The task changed while saving. Read the task again.",
+    { taskId: stored.id },
+  );
+}
+
 function iso(value: DateTime.DateTime): string {
   return DateTime.formatIso(DateTime.toUtc(value));
 }
@@ -166,12 +176,31 @@ const UNSUCCESSFUL_RUN_ERRORS = {
 } as const;
 const localNow = DateTime.withCurrentZoneLocal(DateTime.nowInCurrentZone);
 
+const CHECKED_FIELDS = [
+  "title",
+  "prompt",
+  "enabled",
+  "schedule",
+  "projectId",
+  "threadMode",
+  "workspaceStrategy",
+  "modelSelection",
+  "runtimeMode",
+  "interactionMode",
+] as const;
+
 type ScheduledTaskExpectation = Partial<
-  Pick<
-    ScheduledTask,
-    "projectId" | "runtimeMode" | "interactionMode" | "title" | "prompt" | "enabled" | "schedule"
-  >
+  Pick<ScheduledTaskExpected, (typeof CHECKED_FIELDS)[number]>
 >;
+
+function matchesExpectation(task: ScheduledTask, expected: ScheduledTaskExpectation): boolean {
+  const stored: ScheduledTaskExpectation = { ...task, threadMode: scheduledTaskThreadMode(task) };
+  return CHECKED_FIELDS.every(
+    (field) =>
+      expected[field] === undefined ||
+      NodeUtil.isDeepStrictEqual(stored[field], expected[field]),
+  );
+}
 
 function nextRunAt(
   task: Pick<ScheduledTask, "enabled" | "schedule">,
@@ -388,7 +417,7 @@ export const layer = Layer.effect(
       WHERE task_id = ${id}
     `.pipe(NodeSqliteClient.readOnly);
 
-    const findTask = Effect.fn("ScheduledTaskService.findTask")(function* (id: ScheduledTaskId) {
+    const findStored = Effect.fn("ScheduledTaskService.findTask")(function* (id: ScheduledTaskId) {
       const rows = yield* getRows(id).pipe(
         Effect.mapError((cause) =>
           taskError("Could not load schedule task.", { taskId: id, cause }),
@@ -396,8 +425,11 @@ export const layer = Layer.effect(
       );
       const row = rows[0];
       if (row === undefined) return null;
-      return yield* decodeRow(row);
+      return { row, task: yield* decodeRow(row) };
     });
+
+    const findTask = (id: ScheduledTaskId) =>
+      findStored(id).pipe(Effect.map((stored) => stored?.task ?? null));
 
     const loadTask = Effect.fn("ScheduledTaskService.loadTask")(function* (id: ScheduledTaskId) {
       const task = yield* findTask(id);
@@ -423,6 +455,8 @@ export const layer = Layer.effect(
         readonly keepsModelSelection: boolean;
         readonly expectedThreadId: ThreadId | null | undefined;
         readonly expected: ScheduledTaskExpectation | undefined;
+        /** The row `expected` was compared with. Its JSON text must be unchanged at commit. */
+        readonly readRow: ScheduledTaskRow | null;
       },
     ) =>
       sql<{ task_id: string }>`
@@ -543,13 +577,14 @@ export const layer = Layer.effect(
                 OR scheduled_tasks.prompt = ${destination.expected?.prompt ?? null})
               AND (${destination.expected?.enabled === undefined ? 1 : 0} = 1
                 OR scheduled_tasks.enabled = ${destination.expected?.enabled ? 1 : 0})
-              -- schedule_json is always JSON.stringify of a decoded schedule, so text equality holds.
+              AND (${destination.expected?.threadMode === undefined ? 1 : 0} = 1
+                OR scheduled_tasks.thread_mode = ${destination.expected?.threadMode ?? null})
               AND (${destination.expected?.schedule === undefined ? 1 : 0} = 1
-                OR scheduled_tasks.schedule_json = ${
-                  destination.expected?.schedule === undefined
-                    ? null
-                    : JSON.stringify(destination.expected.schedule)
-                })
+                OR scheduled_tasks.schedule_json = ${destination.readRow?.schedule_json ?? null})
+              AND (${destination.expected?.workspaceStrategy === undefined ? 1 : 0} = 1
+                OR scheduled_tasks.workspace_strategy_json = ${destination.readRow?.workspace_strategy_json ?? null})
+              AND (${destination.expected?.modelSelection === undefined ? 1 : 0} = 1
+                OR scheduled_tasks.model_selection_json = ${destination.readRow?.model_selection_json ?? null})
             )
           )
         RETURNING task_id
@@ -564,15 +599,9 @@ export const layer = Layer.effect(
               ? taskError("Schedule task not found.", { taskId: task.id })
               : findTask(task.id).pipe(
                   Effect.flatMap((stored) =>
-                    taskError(
-                      stored === null
-                        ? "Schedule task not found."
-                        : destination.expectedThreadId !== undefined &&
-                            stored.threadId !== destination.expectedThreadId
-                          ? "The task's thread changed while saving. Read the task again."
-                          : "The task changed while saving. Read the task again.",
-                      { taskId: task.id },
-                    ),
+                    stored === null
+                      ? taskError("Schedule task not found.", { taskId: task.id })
+                      : changedError(stored, destination.expectedThreadId),
                   ),
                 ),
         ),
@@ -1219,7 +1248,8 @@ export const layer = Layer.effect(
       // Look up by the *resolved* id so idempotent creates (commandId replays)
       // keep their run history, and so real load failures propagate instead
       // of silently resetting an existing row.
-      const existingTask = yield* findTask(id);
+      const stored = yield* findStored(id);
+      const existingTask = stored?.task ?? null;
       const sameProject = existingTask?.projectId === input.projectId ? existingTask : null;
       const keepsModelSelection = options?.keepModelSelection === true && sameProject !== null;
       const modelSelection = keepsModelSelection
@@ -1304,20 +1334,37 @@ export const layer = Layer.effect(
         existingTask.projectId === input.projectId &&
         threadId === existingTask.threadId &&
         threadMode === scheduledTaskThreadMode(existingTask);
-      // Unbound since the read, this mode would have been refused.
+      // A save that leaves the stored thread in place cannot undo another client's binding.
+      const changesThread = threadId !== (existingTask?.threadId ?? null);
+      const loadedThreadId =
+        changesThread || threadMode === "new_thread" ? input.expected?.threadId : undefined;
       const expectedThreadId =
         options?.expectedThreadId !== undefined
           ? options.expectedThreadId
-          : keepsStoredThread && unboundModeDenial !== undefined
-            ? threadId
-            : undefined;
+          : loadedThreadId !== undefined
+            ? loadedThreadId
+            : // Unbound since the read, this mode would have been refused.
+              keepsStoredThread && unboundModeDenial !== undefined
+              ? threadId
+              : undefined;
+      const expected: ScheduledTaskExpectation | undefined =
+        input.expected === undefined && options?.expected === undefined
+          ? undefined
+          : { ...input.expected, ...options?.expected };
+      // The JSON columns compare decoded here, as an older row's text need not be canonical.
+      if (
+        existingTask !== null &&
+        expected !== undefined &&
+        !matchesExpectation(existingTask, expected)
+      ) {
+        return yield* changedError(existingTask, expectedThreadId);
+      }
       yield* saveTask(
         keepsStoredThread ? { ...task, threadId: null } : task,
         // A save checked against a binding cannot bring back a task deleted meanwhile.
         input.requireExisting === true ||
           expectedThreadId !== undefined ||
-          input.expected !== undefined ||
-          options?.expected !== undefined,
+          expected !== undefined,
         scheduleUnchanged ? existingTask.schedule : null,
         threadId === null && input.unbindThread === true ? (existingTask?.threadId ?? null) : null,
         {
@@ -1328,10 +1375,8 @@ export const layer = Layer.effect(
             NodeUtil.isDeepStrictEqual(workspaceStrategy, existingTask.workspaceStrategy),
           keepsModelSelection,
           expectedThreadId,
-          expected:
-            input.expected === undefined && options?.expected === undefined
-              ? undefined
-              : { ...input.expected, ...options?.expected },
+          expected,
+          readRow: stored?.row ?? null,
         },
       );
       yield* notifyChanged;

@@ -6,7 +6,6 @@ import {
   type ScheduledTask,
   type ScheduledTaskSchedule,
   type ScheduledTaskThreadMode,
-  type ScheduledTaskUpsertInput,
   type ScheduledTaskUpsertSchedule,
   scheduledTaskThreadMode,
   type ModelSelection,
@@ -16,6 +15,7 @@ import {
   type ThreadId,
 } from "@onicode/contracts";
 import type { EnvironmentThreadShell } from "@onicode/client-runtime/state/models";
+import { rebaseScheduledTaskDestination } from "@onicode/client-runtime/scheduled-task-draft";
 import { scheduleTimeZoneLabel } from "@onicode/client-runtime/scheduled-task-time-zone";
 import type { TimestampFormat } from "@onicode/contracts/settings";
 import { msg } from "gt-react";
@@ -137,15 +137,6 @@ export interface DraftState {
   readonly saved: ScheduledTask | null;
 }
 
-export const savedTaskFields = (
-  task: ScheduledTask,
-): NonNullable<ScheduledTaskUpsertInput["expected"]> => ({
-  title: task.title,
-  prompt: task.prompt,
-  enabled: task.enabled,
-  schedule: task.schedule,
-});
-
 /** Formats a date as a `datetime-local` input value in the browser's time zone. */
 export function toDateTimeLocalValue(date: Date): string {
   const pad = (value: number) => String(value).padStart(2, "0");
@@ -249,6 +240,13 @@ const SCHEDULE_FIELDS = [
   "weekdays",
 ] as const;
 
+const WORKSPACE_FIELDS = [
+  "workspaceMode",
+  "baseRef",
+  "startFromOrigin",
+  "existingWorktreePath",
+] as const;
+
 const sameValue = (left: unknown, right: unknown) =>
   left instanceof Set && right instanceof Set
     ? left.size === right.size && [...left].every((value) => right.has(value))
@@ -262,6 +260,11 @@ export function rebaseDraft(draft: DraftState, current: ScheduledTask): DraftSta
   if (draft.saved === null) return draft;
   const loaded = taskToDraft(draft.saved);
   const now = taskToDraft(current);
+  const destination = rebaseScheduledTaskDestination(
+    { ...draft, threadId: draft.threadId || null },
+    draft.saved,
+    current,
+  );
   const untouched = (key: keyof DraftState) => sameValue(draft[key], loaded[key]);
   return {
     ...draft,
@@ -278,9 +281,22 @@ export function rebaseDraft(draft: DraftState, current: ScheduledTask): DraftSta
           weekdays: now.weekdays,
         }
       : {}),
-    ...(untouched("threadId") ? { threadId: now.threadId } : {}),
-    ...(untouched("threadMode") ? { threadMode: now.threadMode } : {}),
+    projectId: destination.projectId,
+    threadId: destination.threadId ?? "",
+    threadMode: destination.threadMode,
     savedThreadId: now.savedThreadId,
+    ...(WORKSPACE_FIELDS.every(untouched)
+      ? {
+          workspaceMode: now.workspaceMode,
+          baseRef: now.baseRef,
+          startFromOrigin: now.startFromOrigin,
+          existingWorktreePath: now.existingWorktreePath,
+        }
+      : {}),
+    ...(untouched("modelKey") ? { modelKey: now.modelKey } : {}),
+    baseModelSelection: now.baseModelSelection,
+    ...(untouched("runtimeMode") ? { runtimeMode: now.runtimeMode } : {}),
+    ...(untouched("interactionMode") ? { interactionMode: now.interactionMode } : {}),
     saved: now.saved,
   };
 }

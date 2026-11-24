@@ -25,6 +25,7 @@ import {
   type AtomCommandResult,
 } from "@onicode/client-runtime/state/runtime";
 import { normalizeProjectPathForDispatch, resolvePastedPath } from "@onicode/shared/path";
+import { scheduledTaskExpected } from "@onicode/client-runtime/scheduled-task-draft";
 import { scheduledTaskWorktreeBaseRef } from "@onicode/client-runtime/scheduled-task-worktree";
 import { scheduleTimeZoneLabel } from "@onicode/client-runtime/scheduled-task-time-zone";
 import type { MessageResolver } from "../../i18n/messages";
@@ -71,7 +72,6 @@ import {
   editDraft,
   parseIntervalMinutes,
   rebaseScheduledTaskDraft,
-  savedTaskFields,
   scheduledTaskDefaultModel,
   scheduleFromDraft,
   unbindDraftFromThread,
@@ -777,7 +777,7 @@ function TaskForm({
         clampManagedRuntimeMode(config?.managedPolicy, draft.runtimeMode) ?? draft.runtimeMode,
       interactionMode: draft.task?.interactionMode ?? "default",
       creationSource: draft.task?.creationSource ?? "mobile",
-      ...(draft.task === null ? {} : { expected: savedTaskFields(draft) }),
+      ...(draft.task === null ? {} : { expected: scheduledTaskExpected(draft.task) }),
     };
     submissionPending.current = true;
     setSaving(true);

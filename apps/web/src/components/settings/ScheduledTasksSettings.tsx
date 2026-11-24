@@ -25,6 +25,7 @@ import type {
   ThreadId,
 } from "@onicode/contracts";
 import { scheduleTimeZoneLabel } from "@onicode/client-runtime/scheduled-task-time-zone";
+import { scheduledTaskExpected } from "@onicode/client-runtime/scheduled-task-draft";
 import { scheduledTaskWorktreeBaseRef } from "@onicode/client-runtime/scheduled-task-worktree";
 import {
   MIN_SCHEDULED_TASK_INTERVAL_MS,
@@ -87,7 +88,6 @@ import {
   scheduledTaskDefaultModel,
   weekdayShortLabel,
   rebaseDraft,
-  savedTaskFields,
   taskToDraft,
   unbindDraftFromThread,
   type DraftState,
@@ -1278,7 +1278,7 @@ function ScheduledTaskEditorForm({
         draft.runtimeMode,
       interactionMode: draft.interactionMode,
       creationSource: "web",
-      ...(draft.saved === null ? {} : { expected: savedTaskFields(draft.saved) }),
+      ...(draft.saved === null ? {} : { expected: scheduledTaskExpected(draft.saved) }),
     };
     // Lock before React renders, and keep successful creates locked until the form closes.
     submissionPending.current = true;

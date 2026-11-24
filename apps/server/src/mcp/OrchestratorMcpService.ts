@@ -2497,6 +2497,19 @@ const make = Effect.gen(function* () {
         const workspaceStrategy = keepWorkspace
           ? existing.workspaceStrategy
           : yield* scheduledTaskWorkspaceStrategy(threadId !== null, existing.projectId);
+        // Omitted keeps the stored mode, which another client may have changed since the read.
+        const threadMode =
+          input.freshSession === undefined && input.bindToCurrentThread === undefined
+            ? undefined
+            : (input.freshSession ??
+                (input.bindToCurrentThread !== false &&
+                  scheduledTaskThreadMode(existing) === "fresh_session"))
+              ? "fresh_session"
+              : threadId === null &&
+                  (input.bindToCurrentThread === false ||
+                    scheduledTaskThreadMode(existing) === "new_thread")
+                ? "new_thread"
+                : "continue";
         const upsertInput: ScheduledTaskUpsertInput = {
           id: existing.id,
           requireExisting: true,
@@ -2508,21 +2521,7 @@ const make = Effect.gen(function* () {
           // Null keeps the stored thread, which another client may have changed since the read.
           threadId: input.bindToCurrentThread === undefined ? null : threadId,
           unbindThread: input.bindToCurrentThread === false,
-          // Omitted keeps the stored mode, which another client may also have changed.
-          ...(input.freshSession === undefined && input.bindToCurrentThread === undefined
-            ? {}
-            : {
-                threadMode:
-                  (input.freshSession ??
-                  (input.bindToCurrentThread !== false &&
-                    scheduledTaskThreadMode(existing) === "fresh_session"))
-                    ? "fresh_session"
-                    : threadId === null &&
-                        (input.bindToCurrentThread === false ||
-                          scheduledTaskThreadMode(existing) === "new_thread")
-                      ? "new_thread"
-                      : "continue",
-              }),
+          ...(threadMode === undefined ? {} : { threadMode }),
           workspaceStrategy,
           modelSelection: existing.modelSelection,
           runtimeMode: existing.runtimeMode,
@@ -2543,6 +2542,9 @@ const make = Effect.gen(function* () {
               projectId: existing.projectId,
               runtimeMode: existing.runtimeMode,
               interactionMode: existing.interactionMode,
+              ...(threadMode === undefined
+                ? {}
+                : { threadMode: scheduledTaskThreadMode(existing) }),
               ...(input.title === undefined ? { title: existing.title } : {}),
               ...(input.prompt === undefined ? { prompt: existing.prompt } : {}),
               ...(input.enabled === undefined ? { enabled: existing.enabled } : {}),

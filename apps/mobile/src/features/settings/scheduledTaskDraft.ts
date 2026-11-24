@@ -1,3 +1,4 @@
+import { rebaseScheduledTaskDestination } from "@onicode/client-runtime/scheduled-task-draft";
 import { scheduledTaskThreadMode } from "@onicode/contracts";
 import type {
   ModelSelection,
@@ -221,18 +222,6 @@ export function createDraft(
   };
 }
 
-/** What an edit loaded, sent so a save is refused once another client changed it. */
-export function savedTaskFields(draft: ScheduledTaskDraft) {
-  return draft.task === null
-    ? undefined
-    : {
-        title: draft.task.title,
-        prompt: draft.task.prompt,
-        enabled: draft.task.enabled,
-        schedule: draft.task.schedule,
-      };
-}
-
 /**
  * After a save another client's change refused: fields the user left alone take the task's
  * current values, the user's edits stay, and the next save checks against what is stored now.
@@ -243,6 +232,15 @@ export function rebaseScheduledTaskDraft(
 ): ScheduledTaskDraft {
   const loaded = draft.task;
   if (loaded === null) return draft;
+  const opened = editDraft(loaded);
+  const now = editDraft(current);
+  const workspaceUntouched =
+    draft.workspace === opened.workspace &&
+    draft.baseRef === opened.baseRef &&
+    draft.checkoutPath === opened.checkoutPath &&
+    draft.startFromOrigin === opened.startFromOrigin;
+  const modelUntouched =
+    JSON.stringify(draft.modelSelection) === JSON.stringify(loaded.modelSelection);
   const scheduleUntouched =
     JSON.stringify(draft.schedule) === JSON.stringify(scheduleDraftForTask(loaded));
   return {
@@ -251,10 +249,17 @@ export function rebaseScheduledTaskDraft(
     ...(draft.prompt === loaded.prompt ? { prompt: current.prompt } : {}),
     ...(draft.enabled === loaded.enabled ? { enabled: current.enabled } : {}),
     ...(scheduleUntouched ? { schedule: scheduleDraftForTask(current) } : {}),
-    ...(draft.threadId === loaded.threadId ? { threadId: current.threadId } : {}),
-    ...(draft.threadMode === scheduledTaskThreadMode(loaded)
-      ? { threadMode: scheduledTaskThreadMode(current) }
+    ...rebaseScheduledTaskDestination(draft, loaded, current),
+    ...(workspaceUntouched
+      ? {
+          workspace: now.workspace,
+          baseRef: now.baseRef,
+          checkoutPath: now.checkoutPath,
+          startFromOrigin: now.startFromOrigin,
+        }
       : {}),
+    ...(modelUntouched ? { modelSelection: now.modelSelection } : {}),
+    ...(draft.runtimeMode === loaded.runtimeMode ? { runtimeMode: current.runtimeMode } : {}),
     task: current,
   };
 }
