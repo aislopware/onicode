@@ -21,6 +21,7 @@ import { pendingThreadImports } from "./components/chat/pendingThreadImports";
 import { formatInlineContextReference } from "./lib/composerContextReferences";
 import { threadContextReference } from "./lib/composerContextRecords";
 import {
+  captureQuestionAnswerSend,
   questionAttachmentDraftId,
   countQuestionAttachments,
   questionAttachmentDraftPrefix,
@@ -28,11 +29,20 @@ import {
   clearQuestionAttachmentDraft,
   onUnrestoredQuestionAttachments,
   usePendingUserInputAnswers,
+  usePendingUserInputQuestionIndex,
   useQuestionAttachmentPreparation,
 } from "./questionAttachments";
 
-const release = vi.hoisted(() => vi.fn());
-vi.mock("./lib/attachmentUploadQueue", () => ({ releaseDraftAttachments: release }));
+const { release, startUpload, awaitUploads } = vi.hoisted(() => ({
+  release: vi.fn(),
+  startUpload: vi.fn(),
+  awaitUploads: vi.fn<() => Promise<void>>(),
+}));
+vi.mock("./lib/attachmentUploadQueue", () => ({
+  releaseDraftAttachments: release,
+  startAttachmentUpload: startUpload,
+  awaitAttachmentUploads: awaitUploads,
+}));
 const environmentId = EnvironmentId.make("environment-1");
 const threadId = ThreadId.make("thread-1");
 const requestId = ApprovalRequestId.make("request-1");
@@ -40,7 +50,10 @@ beforeEach(() => {
   useComposerDraftStore.setState({ draftsByThreadKey: {}, draftThreadsByThreadKey: {} });
   useQuestionAttachmentPreparation.setState({ counts: {} });
   usePendingUserInputAnswers.setState({}, true);
+  usePendingUserInputQuestionIndex.setState({}, true);
   release.mockClear();
+  startUpload.mockClear();
+  awaitUploads.mockReset().mockResolvedValue(undefined);
 });
 it("keeps question files separate from the normal draft and other questions", () => {
   const revoke = vi.spyOn(URL, "revokeObjectURL");
@@ -307,3 +320,37 @@ it.each(["cancelled", "expired"] as const)(
     expect(getPreparingComposerImages(keys[3]!).map(({ id }) => id)).toEqual(["stay"]);
   },
 );
+
+it.each([
+  { settles: "never", sends: 1 },
+  { settles: "before it sends", sends: 0 },
+  { settles: "while its attachments upload", sends: 0 },
+])("a captured answer sends $sends times when its question settles $settles", async (row) => {
+  const captured = RuntimeRequestId.make(`captured-${row.settles}`);
+  const indexKey = userInputDraftKey(environmentId, threadId, captured);
+  const uploaded = Promise.withResolvers<void>();
+  awaitUploads.mockReturnValue(uploaded.promise);
+  const settle = () =>
+    makeThreadRequestsResolvedAnnouncer(
+      environmentId,
+      threadId,
+    )([{ id: captured, status: "resolved" }]);
+  const advance = vi.fn();
+  const send = captureQuestionAnswerSend({
+    environmentId,
+    threadId,
+    requestId: captured,
+    questionKeys: [questionAttachmentDraftId(environmentId, threadId, captured, "first")],
+    // Settling prunes the stored position, so a closed question reads as its first one.
+    questionIndex: () => usePendingUserInputQuestionIndex.getState()[indexKey] ?? 0,
+    advance,
+  });
+
+  if (row.settles === "before it sends") settle();
+  send();
+  if (row.settles === "while its attachments upload") settle();
+  uploaded.resolve();
+  await uploaded.promise;
+
+  expect(advance).toHaveBeenCalledTimes(row.sends);
+});
