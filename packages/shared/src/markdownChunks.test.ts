@@ -180,6 +180,61 @@ describe("splitMarkdown", () => {
       "",
     ].join("\n");
     expect(starts(closerInComment)).toEqual(["<details> <!-- </details>", "after"]);
+    const literalTags = [
+      "<details>",
+      "",
+      "<pre><details></pre>",
+      "",
+      "Use `</details>` to close it.",
+      "",
+      "    </details>",
+      "",
+      "<https://example.com> and </details> in prose",
+      "",
+      "Inside",
+      "",
+      "</details>",
+      "",
+      "after",
+      "",
+    ];
+    expect(starts(literalTags.join("\n"))).toEqual(["<details>", "after"]);
+    const oneLineScript = ['<script>let s = "<details>";</script>', "", "next", ""];
+    expect(starts(oneLineScript.join("\n"))).toEqual([
+      '<script>let s = "<details>";</script>',
+      "next",
+    ]);
+    const commentsAcrossLines = [
+      "<details> <!-- start",
+      "</details> -->",
+      "",
+      "Inside",
+      "",
+      "<!--",
+      "</details>",
+      "--> </details>",
+      "",
+      "after",
+      "",
+    ];
+    expect(starts(commentsAcrossLines.join("\n"))).toEqual(["<details> <!-- start", "after"]);
+    const shortComment = ["<!--> <details>", "", "Inside", "", "</details>", "", "after", ""];
+    expect(starts(shortComment.join("\n"))).toEqual(["<!--> <details>", "after"]);
+    // A wrapper after a big fence, with no blank line to cut at before it.
+    const wrapperAfterBigFence = [
+      "```",
+      "x".repeat(34 * 1024),
+      "```",
+      " <details>",
+      "",
+      "Inside",
+      "",
+      "</details>",
+      "",
+      "after",
+      "",
+    ];
+    expect(starts(wrapperAfterBigFence.join("\n"))).toEqual(["```", "after"]);
     const closerInFence = [
       "<details>",
       "",

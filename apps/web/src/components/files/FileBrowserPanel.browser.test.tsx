@@ -316,9 +316,10 @@ describe("FileBrowserPanel", () => {
     const search = page.getByRole("searchbox", { name: "Search repo files" });
     await userEvent.fill(search, "read");
     for (const { endsComposition, ...composition } of [
+      // First, before a compositionend leaves Base UI treating the next keydown as composing.
+      { key: "Escape", isComposing: false, keyCode: 229, endsComposition: false },
       { key: "Escape", isComposing: true, keyCode: 27, endsComposition: true },
       { key: "Escape", isComposing: false, keyCode: 229, endsComposition: true },
-      { key: "Escape", isComposing: false, keyCode: 229, endsComposition: false },
     ]) {
       // Safari ends the composition just before the Escape keydown.
       await act(() => {

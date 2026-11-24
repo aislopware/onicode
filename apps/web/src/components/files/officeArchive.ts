@@ -11,7 +11,7 @@ import {
   OFFICE_PREVIEW_MAX_ROWS,
   type OfficeWorkerRequest,
 } from "./officePreviewProtocol";
-import { PreviewError } from "./previewFailure";
+import { isPreviewError, PreviewError } from "./previewFailure";
 
 // Word limits, measured against the @betteroffice/docx engine, which lays out in its own worker.
 export const WORD_LIMITS = {
@@ -623,7 +623,8 @@ function workbookMainPart(archive: OfficeArchive) {
   });
   try {
     relationships.write(archiveText(archive, "_rels/.rels") ?? "").close();
-  } catch {
+  } catch (cause) {
+    if (isPreviewError(cause)) throw cause;
     return "";
   }
   return main;
@@ -775,6 +776,15 @@ const WORD_BINARY_PARTS = new Set([
   "signature",
 ]);
 
+/** Where a relationship target points inside the package, or null when it leads outside. */
+function wordTarget(target: string, folder: string) {
+  // URL parsing ignores tabs and line ends anywhere, and C0 controls and spaces around the target.
+  const address = target.replace(/[\t\n\r]/g, "").replace(/^[^!-\uffff]+|[^!-\uffff]+$/g, "");
+  if (/^(?:[a-z][a-z\d+.-]*:|[/\\]{2})/i.test(address)) return null;
+  const url = parseUrl(address, `https://docx.invalid/${folder}`);
+  return url?.origin === "https://docx.invalid" ? url : null;
+}
+
 function wordPartTypes() {
   const defaults = new Map<string, string>();
   const overrides = new Map<string, string>();
@@ -826,12 +836,9 @@ function wordPartTypes() {
         if (tag.local !== "Relationship" || !path.endsWith(".rels")) return;
         const type = attr("Type");
         const role = type.slice(type.lastIndexOf("/") + 1);
-        const rawTarget = attr("Target").trim();
         const folder = path === "_rels/.rels" ? "" : path.replace(/_rels\/[^/]+\.rels$/, "");
-        const external =
-          attr("TargetMode").toLowerCase() === "external" ||
-          /^(?:[a-z][a-z\d+.-]*:|[/\\]{2})/i.test(rawTarget);
-        const url = external ? null : parseUrl(rawTarget, `https://docx.invalid/${folder}`);
+        const external = attr("TargetMode").toLowerCase() === "external";
+        const url = external ? null : wordTarget(attr("Target"), folder);
         if (url) {
           // Preserve archive URL resolution, including literal query/fragment
           // characters in ZIP names rather than silently classifying another file.
@@ -857,7 +864,7 @@ function wordPartTypes() {
             throw new PreviewError({ code: "word-limited-relationship" });
         }
         if (
-          (!url && !(role === "hyperlink" && externalUrl(rawTarget))) ||
+          (!url && !(role === "hyperlink" && externalUrl(attr("Target")))) ||
           WORD_DISABLED_PARTS.has(role)
         ) {
           start = xml.lastIndexOf("<", parser.position - 1);
@@ -1388,8 +1395,8 @@ export async function prepareOffice(
       if (tag.local !== "Relationship") return;
       const type = tag.attributes.Type?.value ?? "";
       const target = tag.attributes.Target?.value ?? "";
-      const path = new URL(target, "https://docx.invalid/word/").pathname.slice(1);
-      if (result.archive.has(path))
+      const path = wordTarget(target, "word/")?.pathname.slice(1);
+      if (path !== undefined && result.archive.has(path))
         references.set(tag.attributes.Id?.value ?? "", type.slice(type.lastIndexOf("/") + 1));
     });
     const relationshipXml = archiveText(result.archive, "word/_rels/document.xml.rels");

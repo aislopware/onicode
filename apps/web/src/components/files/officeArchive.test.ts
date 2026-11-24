@@ -138,23 +138,42 @@ describe("Word preview limits", () => {
   });
 
   it.each([
-    ["a malformed external", "http://[placeholder]/", "External"],
-    ["a space-padded malformed", " http://[placeholder]/", "Internal"],
-    ["a UNC", String.raw`\\server\share\report.docx`, "Internal"],
-    ["a malformed UNC", String.raw`\\[server]\share`, "Internal"],
-    ["a malformed internal", "/&#9;/[placeholder]", "Internal"],
-  ])("drops %s hyperlink relationship while keeping body text", async (_, target, mode) => {
+    ["a malformed external", "hyperlink", "http://[placeholder]/", "External"],
+    ["a space-padded malformed", "hyperlink", " http://[placeholder]/", "Internal"],
+    ["a UNC", "hyperlink", String.raw`\\server\share\report.docx`, "Internal"],
+    ["a malformed UNC", "hyperlink", String.raw`\\[server]\share`, "Internal"],
+    ["a malformed internal", "hyperlink", "/&#9;/[placeholder]", "Internal"],
+    ["a tab-split protocol-relative", "hyperlink", "/&#9;/example.com/x", "Internal"],
+    ["a tab-split javascript", "hyperlink", "javascript&#9;:alert(1)", "Internal"],
+    ["a tab-split file", "hyperlink", "file&#9;:///etc/passwd", "Internal"],
+    ["a tab-split UNC", "hyperlink", String.raw`\&#9;\server\share`, "Internal"],
+    ["a line-split web", "header", "http&#10;://example.com/", "Internal"],
+    ["a line-split same-scheme", "header", "http&#13;s:header.xml", "Internal"],
+  ])("drops %s %s relationship while keeping body text", async (_, role, target, mode) => {
     const result = await prepared(
       wordFile(
         paragraph("Body text"),
         {},
         "",
-        `<Relationship Id="badLink" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="${target}" TargetMode="${mode}"/>`,
+        `<Relationship Id="badLink" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/${role}" Target="${target}" TargetMode="${mode}"/>`,
       ),
     );
     expect(result.truncated).toBe(false);
     expect(result.part("word/document.xml")).toContain("Body text");
     expect(result.part("word/_rels/document.xml.rels")).not.toContain("badLink");
+  });
+
+  // Trimming these spaces would alias the target to the document itself.
+  it.each(["&#160;", "&#65279;"])("keeps %s in a relationship target", async (space) => {
+    const result = await prepared(
+      wordFile(
+        paragraph("Body text"),
+        {},
+        "",
+        relationship("header", `${space}/word/document.xml`),
+      ),
+    );
+    expect(result.part("word/document.xml")).toContain("Body text");
   });
 });
 
@@ -168,12 +187,12 @@ function workbookFile(
 ) {
   const slash = workbookPath.lastIndexOf("/") + 1;
   return zipFixture({
-    ...files,
     "[Content_Types].xml": `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/${workbookPath}" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/></Types>`,
     "_rels/.rels": `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${relationship("officeDocument", workbookPath)}</Relationships>`,
     [workbookPath]: `<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ${R}><sheets><sheet name="Sample" sheetId="1" r:id="sheet"/></sheets></workbook>`,
     [`${workbookPath.slice(0, slash)}_rels/${workbookPath.slice(slash)}.rels`]: `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="sheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="${target}" TargetMode="${targetMode}"/>${extraRels}</Relationships>`,
     [sheetPath]: `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1"><v>42</v></c></row></sheetData></worksheet>`,
+    ...files,
   }).buffer;
 }
 
@@ -192,10 +211,27 @@ describe("Workbook relationship targets", () => {
     },
   );
 
-  it("refuses a worksheet whose relationship is external", async () => {
+  it.each<[string, string, string, Record<string, string>]>([
+    ["a worksheet whose relationship is external", "workbook-sheet-count", "External", {}],
+    [
+      "package relationships with a DOCTYPE",
+      "office-xml-declarations",
+      "Internal",
+      { "_rels/.rels": "<!DOCTYPE Relationships><Relationships/>" },
+    ],
+  ])("refuses %s", async (_, code, targetMode, files) => {
     await expect(
-      prepare(workbookFile("worksheets/sheet2.xml", "xl/worksheets/sheet2.xml", "", "External")),
-    ).rejects.toMatchObject({ code: "workbook-sheet-count" });
+      prepare(
+        workbookFile(
+          "worksheets/sheet2.xml",
+          "xl/worksheets/sheet2.xml",
+          "",
+          targetMode,
+          "xl/workbook.xml",
+          files,
+        ),
+      ),
+    ).rejects.toMatchObject({ code });
   });
 
   it.each<[string, string, string, Record<string, string>]>([

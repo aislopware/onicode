@@ -89,9 +89,9 @@ export function authoredImageFrameStyle(
   width: string | number | undefined,
   height: string | number | undefined,
 ): CSSProperties | undefined {
+  const positive = (value: number) => Number.isFinite(value) && value > 0;
   const parsedHeight = parseImageDimension(height);
-  const heightOnly =
-    !(parseImageDimension(width) > 0) && Number.isFinite(parsedHeight) && parsedHeight > 0;
+  const heightOnly = !positive(parseImageDimension(width)) && positive(parsedHeight);
   return heightOnly
     ? { maxWidth: `min(100%, 30rem, ${(parsedHeight * 16) / 9}px)` }
     : authoredImageSizeStyle(width, height);
@@ -424,6 +424,7 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
   readonly standalone?: boolean | undefined;
   readonly maxHeightRem?: number | undefined;
   readonly style?: CSSProperties | undefined;
+  readonly frameStyle?: CSSProperties | undefined;
   readonly className?: string | undefined;
   readonly imageProps?:
     | Omit<ComponentProps<"img">, "src" | "alt" | "className" | "style">
@@ -469,7 +470,7 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
       : undefined);
   const style =
     sizedStyle ?? (maxHeightRem !== 30 ? { maxHeight: `${maxHeightRem}rem` } : undefined);
-  const frameStyle = sizedStyle ?? unsizedFrameStyle(maxHeightRem);
+  const frameStyle = props.frameStyle ?? sizedStyle ?? unsizedFrameStyle(maxHeightRem);
   const actionsSource = assetMediaActionsSource({
     environmentId: props.environmentId,
     resource,

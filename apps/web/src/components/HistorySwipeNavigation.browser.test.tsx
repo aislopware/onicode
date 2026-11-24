@@ -56,6 +56,7 @@ describe("HistorySwipeNavigation", () => {
       false,
     ],
     ["swiping back over a sheet's viewport keeps the thread", "sheet-viewport", 0, -130, false],
+    ["swiping back over an open menu keeps the thread", "menu-popup", 0, -130, false],
   ] as const)("%s", async (_name, scroller, scrollLeft, deltaX, navigates) => {
     navigateHistory.mockReset();
     using _platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
@@ -68,7 +69,11 @@ describe("HistorySwipeNavigation", () => {
     if (scroller === "preview-viewport") panel.setAttribute("data-preview-viewport", "tab");
     if (scroller === "server-browser") panel.setAttribute("data-server-browser-surface", "tab");
     if (scroller === "alertdialog") panel.setAttribute("role", "alertdialog");
-    if (["dialog-backdrop", "alert-dialog-viewport", "sheet-viewport"].includes(scroller)) {
+    if (
+      ["dialog-backdrop", "alert-dialog-viewport", "sheet-viewport", "menu-popup"].includes(
+        scroller,
+      )
+    ) {
       panel.setAttribute("data-slot", scroller);
     }
     viewport.style.cssText =

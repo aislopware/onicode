@@ -409,9 +409,9 @@ describe("sidebar thread rename", () => {
       };
       const shellTitled = (title: string) => ({ ...threadShell(activeProject.id, 0), title });
       const updateMetadata = vi.fn().mockResolvedValue({ _tag: "Success" });
-      vi.mocked(useOrchestrationCommand).mockReturnValue(updateMetadata);
-      vi.mocked(readEnvironmentScope).mockReturnValue(true);
-      vi.mocked(useEnvironmentScope).mockReturnValue(true);
+      using _command = vi.mocked(useOrchestrationCommand).mockReturnValue(updateMetadata);
+      using _readScope = vi.mocked(readEnvironmentScope).mockReturnValue(true);
+      using _scope = vi.mocked(useEnvironmentScope).mockReturnValue(true);
       vi.mocked(useProjects).mockReturnValue([activeProject]);
       vi.mocked(useQuietThreadShells).mockReturnValue([shellTitled("Fix the login redirect")]);
       vi.mocked(useThreadRouteTarget).mockReturnValue({
@@ -507,7 +507,9 @@ describe("sidebar thread menu", () => {
     const thread = threadShell(activeProject.id, 0);
     const threadRef = { environmentId: activeProject.environmentId, threadId: thread.id };
     const show = vi.fn().mockResolvedValue(null);
-    vi.mocked(readLocalApi).mockReturnValue({ contextMenu: { show } } as unknown as LocalApi);
+    using _localApi = vi
+      .mocked(readLocalApi)
+      .mockReturnValue({ contextMenu: { show } } as unknown as LocalApi);
     vi.mocked(useProjects).mockReturnValue([activeProject]);
     vi.mocked(useQuietThreadShells).mockReturnValue([thread]);
     vi.mocked(useThreadRouteTarget).mockReturnValue({ kind: "server", threadRef });
@@ -588,7 +590,7 @@ describe("sidebar settled pagination", () => {
       routeDraftId: null,
       routeThreadRef: { environmentId: activeProject.environmentId, threadId: threads[0]!.id },
     });
-    vi.mocked(useServerConfigs).mockReturnValue(
+    using _serverConfigs = vi.mocked(useServerConfigs).mockReturnValue(
       new Map([
         [
           activeProject.environmentId,
