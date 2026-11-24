@@ -1,10 +1,15 @@
 import { selectedNavigationTab, visibleNavigationTabs } from "./navigation-tab-order";
 import { requireNativeView } from "expo";
+import { useGT, useMessages } from "gt-react-native";
 import { View, useWindowDimensions, type NativeSyntheticEvent, type ViewProps } from "react-native";
 import { useControlTheme } from "../../../components/ui/useControlTheme";
 import { nativeSidebarColumnWidth } from "../../../lib/layout";
 import { useDeviceType } from "../../../native/native-layout-metrics";
-import { useNavigationTabOrder, useHiddenNavigationTabs } from "./navigation-tabs";
+import {
+  WORKSPACE_TAB_LABELS,
+  useNavigationTabOrder,
+  useHiddenNavigationTabs,
+} from "./navigation-tabs";
 import { useWorkspaceTabs } from "./WorkspaceTabsContext";
 import { useSelectWorkspaceTab } from "./useSelectWorkspaceTab";
 import { useFloatingWorkspaceTabs } from "./useSystemWorkspaceTabBar";
@@ -15,6 +20,8 @@ const NativeSidebarTabBar = requireNativeView<
   ViewProps & {
     tabs: readonly string[];
     selectedTab: string;
+    labels: Readonly<Record<string, string>>;
+    composeLabel: string;
     selectedColor: string;
     appearance: string;
     showsCompose: boolean;
@@ -29,6 +36,8 @@ const NativeSidebarTabBar = requireNativeView<
  * column; over a page the window hosts it at the column's width, so both draw the same bar.
  */
 export function WorkspaceTabDock(props: { readonly placement: "column" | "window" }) {
+  const gt = useGT();
+  const m = useMessages();
   const workspace = useWorkspaceTabs()!;
   const { layout } = useAdaptiveWorkspaceLayout();
   const deviceType = useDeviceType();
@@ -42,6 +51,9 @@ export function WorkspaceTabDock(props: { readonly placement: "column" | "window
   // Floating tabs carry compose beside them, and keep its room when it's gone so the tabs hold still.
   const compact = useFloatingWorkspaceTabs();
   const onCompose = compact ? compose?.onPress : undefined;
+  const labels = Object.fromEntries(
+    tabs.map((tab) => [tab, tab === "settings" ? gt("Settings") : m(WORKSPACE_TAB_LABELS[tab])]),
+  );
   const width =
     props.placement === "column"
       ? undefined
@@ -51,7 +63,7 @@ export function WorkspaceTabDock(props: { readonly placement: "column" | "window
           ? nativeSidebarColumnWidth(layout)
           : windowWidth;
   // UIKit loses accessible names when updating nil-titled items in place.
-  const tabBarKey = tabs.join(":");
+  const tabBarKey = tabs.map((tab) => `${tab}=${labels[tab]}`).join(":");
   return (
     <View
       pointerEvents="box-none"
@@ -72,6 +84,8 @@ export function WorkspaceTabDock(props: { readonly placement: "column" | "window
           workspace.settingsOpen,
           hidden,
         )}
+        labels={labels}
+        composeLabel={compose?.label ?? gt("New chat")}
         selectedColor={colors["--color-primary"]}
         appearance={colorScheme}
         showsCompose={onCompose !== undefined}

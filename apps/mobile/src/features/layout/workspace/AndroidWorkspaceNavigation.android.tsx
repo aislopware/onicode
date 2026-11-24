@@ -43,6 +43,7 @@ interface NativeNavigationProps extends ViewProps {
   readonly tabTitles: Readonly<Record<string, string>>;
   readonly expandedTabTitles: Readonly<Record<string, string>>;
   readonly newThreadTitle: string;
+  readonly closeRailTitle: string;
   readonly selectedTab: AndroidWorkspaceNavigationTab;
   readonly dark: boolean;
   readonly textScale: number;
@@ -139,6 +140,7 @@ export function AndroidWorkspaceNavigation(props: {
         tabTitles={Object.fromEntries(tabs.map((tab) => [tab, m(TAB_TITLES[tab])]))}
         expandedTabTitles={{ pullRequests: gt("Pull requests") }}
         newThreadTitle={gt("New thread")}
+        closeRailTitle={gt("Close navigation rail")}
         selectedTab={selectedTab}
         dark={themeAppearance === "dark"}
         textScale={scale}
