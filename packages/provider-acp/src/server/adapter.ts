@@ -2964,6 +2964,8 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
         let scheduleDeferredFinalize: (context: ActiveAcpTurn) => Effect.Effect<void> = () =>
           Effect.void;
         let refreshModelSwitchCapability: Effect.Effect<void> = Effect.void;
+        let reportStartupPhase: (phase: string | undefined) => Effect.Effect<void> = () =>
+          Effect.void;
         // openSession configures the session itself; a late setup that lands
         // first waits here and is adopted once that configuration is in place.
         const lateSessionSetup: {
@@ -8656,6 +8658,9 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           prepareTerminalEnvironment(mcpContext, sessionId);
           yield* Ref.set(loadingSessionId, sessionId);
           const activated = yield* Effect.gen(function* () {
+            if (spawnedForSession || canLoadSession || canResumeSession) {
+              yield* reportStartupPhase("resume");
+            }
             // A runtime spawned for this session opens it at startup instead of an empty session/new.
             if (spawnedForSession) {
               return yield* runtime
@@ -8672,7 +8677,10 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                     driver,
                     detail: `ACP driver cannot load or resume session ${sessionId}`,
                   });
-          }).pipe(Effect.onError(() => Ref.set(loadingSessionId, null)));
+          }).pipe(
+            Effect.onError(() => Ref.set(loadingSessionId, null)),
+            Effect.ensuring(Effect.suspend(() => reportStartupPhase(undefined))),
+          );
           rememberTerminalEnvironment(activated.sessionId, yield* readMcpContext(threadId));
           return activated;
         });
@@ -9054,6 +9062,18 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               ...capabilities,
               sessions: { ...capabilities.sessions, supportsModelSwitchInSession },
             },
+            updatedAt: yield* DateTime.now,
+          };
+          yield* emitProviderEvent({ type: "provider_session.updated", driver, providerSession });
+        });
+        reportStartupPhase = Effect.fn("AcpAdapterV2.reportStartupPhase")(function* (
+          phase: string | undefined,
+        ) {
+          if (providerSession.startupPhase === phase) return;
+          const { startupPhase: _reported, ...reported } = providerSession;
+          providerSession = {
+            ...reported,
+            ...(phase === undefined ? {} : { startupPhase: phase }),
             updatedAt: yield* DateTime.now,
           };
           yield* emitProviderEvent({ type: "provider_session.updated", driver, providerSession });
