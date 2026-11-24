@@ -114,7 +114,7 @@ describe("splitMarkdown", () => {
       "after",
       "",
     ].join("\n");
-    expect(starts(text)).toEqual(["<!--", "```html", "after"]);
+    expect(starts(text)).toEqual(["<!--", "<details>", "<table><tr><td>", "```html", "after"]);
     const multiline = [
       "<details",
       '  class="faq"><!-- </details> -->',
@@ -129,6 +129,72 @@ describe("splitMarkdown", () => {
     expect(starts(multiline)).toEqual(["<details", "after"]);
     const unclosed = ["<details>", "", "x".repeat(32 * 1024), "", "after", ""].join("\n");
     expect(starts(unclosed)).toEqual(["<details>", "after"]);
+    const afterBigFence = [
+      "```",
+      "x".repeat(34 * 1024),
+      "```",
+      "",
+      "<details>",
+      "<summary>Small</summary>",
+      "",
+      "Inside",
+      "",
+      "</details>",
+      "",
+      "after",
+      "",
+    ].join("\n");
+    expect(starts(afterBigFence)).toEqual(["```", "<details>", "after"]);
+    const closedInParagraph = [
+      "<details>",
+      "<summary>Plan</summary>",
+      "",
+      "Done </details>",
+      "",
+      "next",
+      "",
+      "last",
+      "",
+    ].join("\n");
+    expect(starts(closedInParagraph)).toEqual(["<details>", "next", "last"]);
+    const afterComment = [
+      "<!-- note --> <details>",
+      "",
+      "Inside",
+      "",
+      "</details>",
+      "",
+      "after",
+      "",
+    ];
+    expect(starts(afterComment.join("\n"))).toEqual(["<!-- note --> <details>", "after"]);
+    const closerInComment = [
+      "<details> <!-- </details>",
+      "still a comment -->",
+      "",
+      "Inside",
+      "",
+      "</details>",
+      "",
+      "after",
+      "",
+    ].join("\n");
+    expect(starts(closerInComment)).toEqual(["<details> <!-- </details>", "after"]);
+    const closerInFence = [
+      "<details>",
+      "",
+      "```",
+      "</details>",
+      "```",
+      "",
+      "Inside",
+      "",
+      "</details>",
+      "",
+      "after",
+      "",
+    ];
+    expect(starts(closerInFence.join("\n"))).toEqual(["<details>", "after"]);
   });
 
   it("treats an autolink line as a paragraph, so a following fence still opens", () => {

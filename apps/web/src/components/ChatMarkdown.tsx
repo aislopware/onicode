@@ -210,6 +210,7 @@ import { MarkdownMermaidCodeBlock } from "./chat/MarkdownMermaidCodeBlock";
 import { MarkdownTable } from "./chat/MarkdownTable";
 import { MarkdownDetails } from "./chat/MarkdownDetails";
 import {
+  authoredImageFrameStyle,
   authoredImageSizeStyle,
   ChatMarkdownAssetImage,
   ChatMarkdownImage,
@@ -1828,6 +1829,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
           standalone={standalone}
           className={className}
           style={authoredSizeStyle}
+          frameStyle={authoredImageFrameStyle(width, height)}
           imageProps={imageProps}
           actionsSource={actionsSource}
           originalUrl={originalUrl}

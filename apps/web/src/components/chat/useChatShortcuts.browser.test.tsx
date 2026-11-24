@@ -273,12 +273,15 @@ it("lends app commands its context only outside a side chat pane", async () => {
   expect(ran).toEqual(["new"]);
 });
 
-it("leaves keys to a focused video player with controls", async () => {
+it.each([
+  ["video", () => <video ref={focusOnMount} controls />],
+  ["audio", () => <audio ref={focusOnMount} controls />],
+])("leaves keys to a focused %s player with controls", async (_kind, Player) => {
   const composerKeys: string[] = [];
   await using _screen = await render(
     <>
       <Chat composerKeys={composerKeys} />
-      <video ref={focusOnMount} controls />
+      <Player />
     </>,
     options,
   );

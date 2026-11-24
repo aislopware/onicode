@@ -897,6 +897,21 @@ describe("question answer paths", () => {
           expected: ["Correct primary chapter"],
           absent: ["Wrong alternate chapter", "[Skipped document part"],
         },
+        {
+          ext: "epub",
+          parts: {
+            "META-INF/container.xml":
+              '<container><rootfile full-path="OPS/book%201.opf"/></container>',
+            "OPS/book%201.opf":
+              '<package><item id="ch1" href="named.xhtml"/><itemref idref="ch1"/></package>',
+            "OPS/book 1.opf":
+              '<package><item id="ch1" href="twin.xhtml"/><itemref idref="ch1"/></package>',
+            "OPS/named.xhtml": "<html><p>Named package chapter</p></html>",
+            "OPS/twin.xhtml": "<html><p>Decoded twin chapter</p></html>",
+          },
+          expected: ["Named package chapter"],
+          absent: ["Decoded twin chapter", "[Skipped document part"],
+        },
         ...[false, true].flatMap((bom) =>
           [false, true].map((bigEndian) => {
             const encode = (source: string) => {

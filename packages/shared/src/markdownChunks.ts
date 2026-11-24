@@ -32,25 +32,28 @@ const closesAtBlankLine = (next: string) => next.trim() === "";
 // A <details> or <table> wraps the Markdown between its tags, across the blank lines that end
 // each HTML block, so a cut waits until the ones an HTML block opened are closed.
 const WRAPPER_TAG = /<(\/?)(?:details|table)(?=[\s/>]|$)/gi;
-// An end tag that never comes, or back-to-back wrappers, must not make one huge piece.
+// An end tag that never comes must not make one huge piece.
 const WRAPPED_MAX_CHARS = 32 * 1024;
+// A wrapper may start a piece of its own, so back-to-back wrappers stay apart.
+const WRAPPER_START = /^<(?:details|table)(?=[\s>]|$)/i;
 
 function withoutComments(line: string): string {
   let kept = "";
   let at = 0;
   for (let open = line.indexOf("<!--"); open !== -1; open = line.indexOf("<!--", at)) {
     const close = line.indexOf("-->", open + 4);
-    if (close === -1) break;
+    if (close === -1) return kept + line.slice(at, open);
     kept += line.slice(at, open);
     at = close + 3;
   }
   return kept + line.slice(at);
 }
 
-function openedWrappers(line: string): number {
+function openedWrappers(line: string, closersOnly: boolean): number {
   let opened = 0;
   for (const [, closing] of withoutComments(line).matchAll(WRAPPER_TAG)) {
-    opened += closing ? -1 : 1;
+    if (closing) opened -= 1;
+    else if (!closersOnly) opened += 1;
   }
   return opened;
 }
@@ -199,25 +202,28 @@ function scanMarkdown(
   let closes: ((line: string) => boolean) | null = null;
   // A cut needs no open wrapper, so a resumed scan starts with none.
   let openWrappers = 0;
+  let wrapperStart = 0;
   let offset = from.start;
   let linesBefore = from.linesBefore;
   const textLines = (from.start > 0 ? text.slice(from.start) : text).split("\n");
   for (const [index, line] of textLines.entries()) {
     const inFrontmatter = offset < frontmatter;
+    const blockBefore = closes;
     if (inFrontmatter) {
       // Masked to blank lines, so nothing inside is a cut, a block or a definition.
     } else if (closes !== null) {
       if (closes(line)) closes = null;
     } else {
       // The last line may still be growing; "1" can become "1. item" and "#" "#tag".
-      if (chars >= WRAPPED_MAX_CHARS) openWrappers = 0;
+      if (openWrappers > 0 && chars - wrapperStart >= WRAPPED_MAX_CHARS) openWrappers = 0;
       const cut =
         lines.length > 0 &&
         index < textLines.length - 1 &&
         chars >= targetChars &&
         openWrappers === 0 &&
         (ATX_HEADING.test(line) ||
-          (afterBlankLine && BLOCK_START.test(line) && !ORDERED_ITEM.test(line)));
+          (afterBlankLine &&
+            ((BLOCK_START.test(line) && !ORDERED_ITEM.test(line)) || WRAPPER_START.test(line))));
       if (cut) {
         chunks.push({ text: lines.join("\n"), lines: lines.length });
         resume = {
@@ -249,8 +255,17 @@ function scanMarkdown(
         definitionChars += line.length + 1;
       }
     }
-    if (closes === closesAtBlankLine)
-      openWrappers = Math.max(0, openWrappers + openedWrappers(line));
+    // HTML block lines open and close wrappers; a closer may also end a paragraph line. Lines in
+    // fences, comments and other spanning blocks count nothing.
+    if (
+      !inFrontmatter &&
+      (closes === closesAtBlankLine || (blockBefore === null && closes === null))
+    ) {
+      const htmlLine = closes === closesAtBlankLine || /^ {0,3}</.test(line);
+      const wasOpen = openWrappers > 0;
+      openWrappers = Math.max(0, openWrappers + openedWrappers(line, !htmlLine));
+      if (!wasOpen && openWrappers > 0) wrapperStart = chars;
+    }
     lines.push(line);
     chars += line.length + 1;
     afterBlankLine = inFrontmatter || line.trim() === "";

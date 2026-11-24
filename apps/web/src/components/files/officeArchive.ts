@@ -1,6 +1,7 @@
 import * as Schema from "effect/Schema";
 import { strToU8, zipSync } from "fflate";
 import { readZipDirectory, UnreadableZipEntryError } from "@onicode/client-runtime/zip/directory";
+import { parseUrl } from "@onicode/shared/url";
 import { SaxesParser } from "saxes";
 import { externalUrl } from "./office/links";
 
@@ -70,6 +71,9 @@ export function archiveText(archive: OfficeArchive, path: string) {
   return typeof content === "object" ? new TextDecoder().decode(content) : content;
 }
 
+const escapeAttribute = (value: string) =>
+  value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;");
+
 // Section properties terminate the section they describe, so the kept prefix
 // may depend on a paragraph or body section beyond the retained input window.
 function wordSections() {
@@ -90,8 +94,6 @@ function wordSections() {
   let tags = 0;
   let nextParagraph = false;
   let paragraphSection = false;
-  const escape = (value: string) =>
-    value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;");
   parser.on("opentag", (tag) => {
     names.push(tag.local);
     namespaceScopes.push(tag.ns);
@@ -107,7 +109,7 @@ function wordSections() {
       for (const prefix in scope) {
         const name = prefix ? `xmlns:${prefix}` : "xmlns";
         if (prefix !== "xml" && !tag.attributes[name])
-          namespaces += ` ${name}="${escape(scope[prefix]!)}"`;
+          namespaces += ` ${name}="${escapeAttribute(scope[prefix]!)}"`;
       }
       const start = window.lastIndexOf("<", parser.position - offset - 1);
       if (start < 0) throw new PreviewError({ code: "word-section-markup" });
@@ -597,7 +599,71 @@ function engineStyles(xml: string) {
     );
 }
 
+// Resolve as the engine does: literal ZIP names split on `/`, never URL syntax or escapes.
+function workbookTarget(folder: string, target: string) {
+  const segments = target.startsWith("/") ? [] : folder.split("/").filter(Boolean);
+  for (const segment of target.split("/")) {
+    if (segment === "..") segments.pop();
+    else if (segment && segment !== ".") segments.push(segment);
+  }
+  return segments.join("/");
+}
+
+function workbookMainPart(archive: OfficeArchive) {
+  let main = "";
+  const relationships = xmlParser();
+  relationships.on("opentag", (tag) => {
+    if (
+      !main &&
+      tag.local === "Relationship" &&
+      tag.attributes.Type?.value.endsWith("/officeDocument") &&
+      tag.attributes.TargetMode?.value.toLowerCase() !== "external"
+    )
+      main = workbookTarget("", tag.attributes.Target?.value ?? "");
+  });
+  try {
+    relationships.write(archiveText(archive, "_rels/.rels") ?? "").close();
+  } catch {
+    return "";
+  }
+  return main;
+}
+
+// The engine reads the workbook only from xl/workbook.xml.
+function relocateWorkbook(archive: OfficeArchive) {
+  const main = workbookMainPart(archive);
+  const content = archive.get(main);
+  if (main === "xl/workbook.xml" || content === undefined) return;
+  const slash = main.lastIndexOf("/") + 1;
+  const folder = main.slice(0, slash);
+  const rels = archiveText(archive, `${folder}_rels/${main.slice(slash)}.rels`);
+  archive.set("xl/workbook.xml", typeof content === "string" ? content : officeXml(content));
+  if (rels === undefined) {
+    archive.delete("xl/_rels/workbook.xml.rels");
+    return;
+  }
+  let relocated = "";
+  const parser = xmlParser();
+  parser.on("opentag", (tag) => {
+    if (tag.local !== "Relationship") return;
+    const external = tag.attributes.TargetMode?.value.toLowerCase() === "external";
+    relocated += "<Relationship";
+    for (const { name, value } of Object.values(tag.attributes)) {
+      if (name.includes(":") || name === "xmlns") continue;
+      const target = name === "Target" && !external ? `/${workbookTarget(folder, value)}` : value;
+      relocated += ` ${name}="${escapeAttribute(target)}"`;
+    }
+    relocated += "/>";
+  });
+  parser.write(rels).close();
+  archive.set(
+    "xl/_rels/workbook.xml.rels",
+    `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${relocated}</Relationships>`,
+  );
+}
+
 function boundWorkbook(archive: OfficeArchive) {
+  relocateWorkbook(archive);
   const paths = new Map<string, string>();
   // Chart sheets and other non-grid sheets hold no cells to bound.
   const otherSheets = new Set<string>();
@@ -609,15 +675,9 @@ function boundWorkbook(archive: OfficeArchive) {
     if (tag.local !== "Relationship") return;
     const type = tag.attributes.Type?.value;
     const target = tag.attributes.Target?.value ?? "";
-    // Resolve as the engine does: literal ZIP names split on `/`, never URL syntax or escapes.
-    const segments = target.startsWith("/") ? [] : ["xl"];
-    for (const segment of target.split("/")) {
-      if (segment === "..") segments.pop();
-      else if (segment && segment !== ".") segments.push(segment);
-    }
     const external = tag.attributes.TargetMode?.value.toLowerCase() === "external";
     // The engine reads an external worksheet from its default part, so leave it unresolved to refuse it.
-    const path = external && type?.endsWith("/worksheet") ? "" : segments.join("/");
+    const path = external && type?.endsWith("/worksheet") ? "" : workbookTarget("xl", target);
     if (type?.endsWith("/worksheet")) paths.set(tag.attributes.Id?.value ?? "", path);
     else if (/\/(?:chartsheet|dialogsheet|xlMacrosheet|xlIntlMacrosheet)$/.test(type ?? ""))
       otherSheets.add(tag.attributes.Id?.value ?? "");
@@ -766,16 +826,16 @@ function wordPartTypes() {
         if (tag.local !== "Relationship" || !path.endsWith(".rels")) return;
         const type = attr("Type");
         const role = type.slice(type.lastIndexOf("/") + 1);
+        const rawTarget = attr("Target").trim();
+        const folder = path === "_rels/.rels" ? "" : path.replace(/_rels\/[^/]+\.rels$/, "");
         const external =
           attr("TargetMode").toLowerCase() === "external" ||
-          /^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(attr("Target"));
-        if (!external) {
-          const folder = path === "_rels/.rels" ? "" : path.replace(/_rels\/[^/]+\.rels$/, "");
+          /^(?:[a-z][a-z\d+.-]*:|[/\\]{2})/i.test(rawTarget);
+        const url = external ? null : parseUrl(rawTarget, `https://docx.invalid/${folder}`);
+        if (url) {
           // Preserve archive URL resolution, including literal query/fragment
           // characters in ZIP names rather than silently classifying another file.
-          const target = new URL(attr("Target"), `https://docx.invalid/${folder}`)
-            .toString()
-            .slice("https://docx.invalid/".length);
+          const target = url.toString().slice("https://docx.invalid/".length);
           if (
             !WORD_BINARY_PARTS.has(role) &&
             role !== "hyperlink" &&
@@ -797,7 +857,7 @@ function wordPartTypes() {
             throw new PreviewError({ code: "word-limited-relationship" });
         }
         if (
-          (external && !(role === "hyperlink" && externalUrl(attr("Target")))) ||
+          (!url && !(role === "hyperlink" && externalUrl(rawTarget))) ||
           WORD_DISABLED_PARTS.has(role)
         ) {
           start = xml.lastIndexOf("<", parser.position - 1);

@@ -7,6 +7,7 @@ import {
   pdfPageScrollTop,
   pdfPageText,
   pdfPageWidth,
+  pdfResizedScrollTop,
   pdfRestoredScrollTop,
   stepPdfZoom,
   visiblePdfPages,
@@ -53,6 +54,9 @@ describe("mixed-height page layout", () => {
     expect(currentPdfPage(offsets, 3, 155)).toBe(1);
     expect(currentPdfPage(offsets, 3, 962)).toBe(1);
     expect(currentPdfPage(offsets, 3, 964)).toBe(2);
+    expect(currentPdfPage(offsets, 3, 1285)).toBe(2);
+    expect(currentPdfPage(offsets, 3, 5000)).toBe(2);
+    expect(currentPdfPage(pdfPageOffsets([], width), 0, 0)).toBe(0);
   });
 
   it("jumps to each page so that page becomes current", () => {
@@ -82,6 +86,8 @@ describe("mixed-height page layout", () => {
     // A page that shrank keeps the reader on its last pixel; a removed page falls back to the last.
     expect(pdfRestoredScrollTop(ratios, width, { page: 2, offset: 600 })).toBe(964 + 305);
     expect(pdfRestoredScrollTop(ratios.slice(0, 2), width, { page: 2, offset: 0 })).toBe(156);
+    // A place past the last page's end stays on the last page.
+    expect(pdfResizedScrollTop(ratios, { top: 1290, width }, width * 2)).toBe(2507);
   });
 });
 

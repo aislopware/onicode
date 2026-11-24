@@ -84,12 +84,25 @@ export function authoredImageSizeStyle(
   return undefined;
 }
 
+/** A height alone would squash the full-width 16:9 frame shown while the image loads. */
+export function authoredImageFrameStyle(
+  width: string | number | undefined,
+  height: string | number | undefined,
+): CSSProperties | undefined {
+  const parsedHeight = parseImageDimension(height);
+  const heightOnly =
+    !(parseImageDimension(width) > 0) && Number.isFinite(parsedHeight) && parsedHeight > 0;
+  return heightOnly
+    ? { maxWidth: `min(100%, 30rem, ${(parsedHeight * 16) / 9}px)` }
+    : authoredImageSizeStyle(width, height);
+}
+
 /**
- * An unavailable file has no dimensions, so its `aspect-video w-full` frame
- * would fill the row and `max-height` would squash it. Bound the width so the
- * frame stays 16:9 at the height cap.
+ * Without known dimensions the loading or unavailable `aspect-video w-full`
+ * frame would fill the row and `max-height` would squash it. Bound the width
+ * so the frame stays 16:9 at the height cap.
  */
-function unavailableImageSizeStyle(maxHeightRem: number): CSSProperties | undefined {
+function unsizedFrameStyle(maxHeightRem: number): CSSProperties | undefined {
   if (maxHeightRem === 30) return undefined;
   return { maxWidth: `min(100%, 30rem, ${(maxHeightRem * 16) / 9}rem)` };
 }
@@ -194,6 +207,8 @@ export function ChatMarkdownImage(props: {
   readonly standalone: boolean;
   readonly className?: string | undefined;
   readonly style?: CSSProperties | undefined;
+  /** The loading or unavailable frame's style; defaults to `style`. */
+  readonly frameStyle?: CSSProperties | undefined;
   readonly imageProps?:
     | Omit<ComponentProps<"img">, "src" | "alt" | "className" | "style">
     | undefined;
@@ -282,7 +297,7 @@ export function ChatMarkdownImage(props: {
           CHAT_MARKDOWN_IMAGE_FRAME_CLASS_NAME,
           "relative",
         )}
-        style={props.style}
+        style={props.frameStyle ?? props.style}
         {...(failed
           ? { role: "alert" as const }
           : { role: "status" as const, "aria-label": gt("Loading image") })}
@@ -447,15 +462,14 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
   const knownSize = assetUrl._tag === "Success" ? assetUrl.imageDimensions : undefined;
   const maxHeightRem = props.maxHeightRem ?? 30;
   const unavailable = assetUrl._tag === "Failure" && fallbackSrc === undefined;
-  const style =
+  const sizedStyle =
     props.style ??
     (knownSize
       ? authoredImageSizeStyle(knownSize.width, knownSize.height, maxHeightRem)
-      : unavailable
-        ? unavailableImageSizeStyle(maxHeightRem)
-        : maxHeightRem !== 30
-          ? { maxHeight: `${maxHeightRem}rem` }
-          : undefined);
+      : undefined);
+  const style =
+    sizedStyle ?? (maxHeightRem !== 30 ? { maxHeight: `${maxHeightRem}rem` } : undefined);
+  const frameStyle = sizedStyle ?? unsizedFrameStyle(maxHeightRem);
   const actionsSource = assetMediaActionsSource({
     environmentId: props.environmentId,
     resource,
@@ -501,6 +515,7 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
         props.className,
       )}
       style={style}
+      frameStyle={frameStyle}
       imageProps={props.imageProps}
       actionsSource={actionsSource}
       originalUrl={props.originalUrl}
