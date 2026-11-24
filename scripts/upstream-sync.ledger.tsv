@@ -3664,3 +3664,4 @@ a6c69be8df	take	fix(web,mobile): a parent parked on subagents no longer reads as
 8b8ec75b01	take	taken as is
 4afdfefde0	skip	T3 release pipeline: Onicode's release.yml has no finalize version-bump job (releases go through better-update), and no workflow-credentials test or set-release-version script to change
 667116eee9	take	taken as is; env for ping is read from the passed environment, as upstream does
+5b2299ca0a	take	fix(server): Claude review guides use project launch settings and only their own tool list
