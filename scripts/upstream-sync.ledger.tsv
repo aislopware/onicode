@@ -3642,3 +3642,4 @@ a4029d4b91	take	test conflict: kept both citation tests (Onicode fold cases + up
 72e7e8b044	take	taken as is; web and mobile share the client-runtime answer logic; Claude's empty-answer wording queued as a follow-up
 8032cbb66b	take	conflict: kept Onicode's registerShortcutContext effect beside upstream's side-chat-pane listener
 f02d7b7ad8	take	conflict: wrapped Onicode's richer no-model fallback (checking/policy/project reasons) in upstream's KeyboardStickyView
+b3fff82014	take	test adapted: Onicode's model picker placeholder is "Search models"
