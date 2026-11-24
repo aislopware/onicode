@@ -3621,3 +3621,4 @@ b1c83e180f	skip	guest links removed in Onicode (apps/server/src/guest does not e
 82af3cf2c3	take	fix(server): a thread resume replays a deleted thread from its deletion (#41874)
 036751b6f5	take	fix(web): Esc in project icon search clears it without closing the dialog (#41856)
 637cd28599	take	fix(client-runtime): Remove is no longer offered on a route the environment cannot lose (#41845)
+7913360b2e	take	CONFLICT test only: Onicode's principal has no session method. Speech http tests pass; server and mobile typecheck.
