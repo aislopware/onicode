@@ -263,6 +263,14 @@ const atCeilingClient: McpInvocationContext.McpInvocationScope = {
     narrowedTo: { runtimeMode: "auto", interactionMode: "default" },
   },
 };
+// A full-access client that narrowed itself, with no ceiling here.
+const narrowedClient: McpInvocationContext.McpInvocationScope = {
+  ...fullAccessClient,
+  client: {
+    ...fullAccessClient.client!,
+    narrowedTo: { runtimeMode: "auto", interactionMode: "default" },
+  },
+};
 const previewOnly = { ...fullAccess, capabilities: new Set(["preview"] as const) };
 
 it.effect.each([
@@ -346,6 +354,7 @@ it.effect.each([
   ["writes_owner_work", linkedClient, {}, "capability_denied"],
   ["writes_owner_work", fullAccessLinkedClient, {}, "ran"],
   ["writes_owner_work", atCeilingClient, {}, "ran"],
+  ["writes_owner_work", narrowedClient, {}, "capability_denied"],
   ["writes_environment", atCeilingClient, {}, "capability_denied"],
 ] as const)("%s from %o with %o: %s", ([tool, scope, args, expected]) =>
   call(tool, scope, args).pipe(

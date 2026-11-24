@@ -1359,6 +1359,22 @@ it.live("never rebuilds a missing plain project folder through a link on its way
         .pipe(Effect.flip);
       assert.include(refused.detail, "lies behind a link");
       assert.deepStrictEqual(yield* fileSystem.readDirectory(elsewhere), []);
+
+      // A request that may not run the project's layout command rebuilds plainly, through the same guard.
+      yield* fileSystem.writeFileString(
+        path.join(notes, "onicode.json"),
+        JSON.stringify({ worktreeLayout: { create: "true" } }),
+      );
+      const refusedWithoutCommands = yield* (yield* TaskFolders.TaskFolders)
+        .restore({
+          taskFolder,
+          branch: "feature",
+          projectCommands: false,
+          recreate: () => Effect.die("the repository's worktree is still there"),
+        })
+        .pipe(Effect.flip);
+      assert.include(refusedWithoutCommands.detail, "lies behind a link");
+      assert.deepStrictEqual(yield* fileSystem.readDirectory(elsewhere), []);
     }),
   ),
 );
