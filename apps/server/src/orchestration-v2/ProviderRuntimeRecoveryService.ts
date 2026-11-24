@@ -955,7 +955,8 @@ export const make = Effect.gen(function* () {
         (candidate) =>
           (candidate.status !== "stopped" && candidate.status !== "error") ||
           (candidate.status === "error" && (candidate.extensionStatuses?.length ?? 0) > 0) ||
-          candidate.startupPhase !== undefined,
+          candidate.startupPhase !== undefined ||
+          candidate.startupPhaseThreadId !== undefined,
       )) {
         events.push({
           id: yield* allocateEventId(),

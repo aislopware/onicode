@@ -176,7 +176,7 @@ export function registerNavigationHistoryCommands(router: AnyRouter): () => void
 // Capture phase, so F6 also leaves widgets that swallow keys, such as the terminal.
 function registerWorkspaceFocusCommands(router: AnyRouter): () => void {
   const move = (direction: 1 | -1) => (event: KeyboardEvent) => {
-    if (event.isComposing) return false;
+    if (isImeKeyDown(event)) return false;
     // Inside a dialog the move is refused, but the key is still consumed.
     event.preventDefault();
     event.stopPropagation();

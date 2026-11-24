@@ -23067,6 +23067,16 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         subagentRouting(harness.events, []).assistantTexts(outer?.childThreadId ?? undefined),
         ["OUTER_WORKING", "OUTER_DONE"],
       );
+      // The root thread shows the nested row too, but only its owner waits on it.
+      const nestedRows = harness.events.flatMap((event) =>
+        event.type === "turn_item.updated" &&
+        event.turnItem.type === "subagent" &&
+        event.turnItem.subagentId === nested?.id
+          ? [event.turnItem.background]
+          : [],
+      );
+      assert.isNotEmpty(nestedRows);
+      assert.isTrue(nestedRows.every((background) => background === true));
     }).pipe(
       Effect.provide(
         Layer.mergeAll(

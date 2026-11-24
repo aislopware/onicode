@@ -851,6 +851,14 @@ it.effect(
           status: "stopped",
           startupPhase: "plugins",
         },
+        // Recovered before the thread id was cleared too: only that id is left.
+        {
+          id: ProviderSessionId.make("provider_session_recovery_orphaned_thread"),
+          driver: ProviderDriverKind.make("opencode"),
+          providerInstanceId: ProviderInstanceId.make("opencode"),
+          status: "stopped",
+          startupPhaseThreadId: threadId,
+        },
       ],
       providerThreads: [
         {
@@ -966,6 +974,7 @@ it.effect(
           ["provider-thread.updated", "idle"],
           ["provider-session.updated", "stopped"],
           ["provider-session.updated", "stopped"],
+          ["provider-session.updated", "stopped"],
         ],
       );
       const messageEvent = events.find((event) => event.type === "message.updated");
@@ -984,6 +993,7 @@ it.effect(
         ),
         [
           [[], false, false],
+          [undefined, false, false],
           [undefined, false, false],
         ],
       );

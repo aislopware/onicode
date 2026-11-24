@@ -91,6 +91,8 @@ describe("AntigravityAdapterV2 flavor", () => {
       data: { rawOutput: "Started two agents." },
     });
     assert.equal(batch?.status, "running");
+    // Launched children run beside the parent, which works on instead of waiting.
+    assert.isTrue(batch?.background);
     assert.equal(batch?.prompt, "Started two agents.");
     assert.isNull(batch?.result);
     assert.isTrue(flavor.subagentsIdleOnTurnCompletion);
@@ -107,6 +109,7 @@ describe("AntigravityAdapterV2 flavor", () => {
         },
       },
     });
+    assert.isUndefined(launch?.background);
     assert.equal(launch?.title, "Readme Reader");
     assert.equal(launch?.prompt, "Read README.md");
 

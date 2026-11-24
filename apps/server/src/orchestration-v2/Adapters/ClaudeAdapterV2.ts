@@ -9100,9 +9100,11 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     )
                   : undefined));
           const model = input.model ?? priorTask?.model ?? null;
+          // A nested task's row shows on the root thread, but only its owner waits on it.
           const background =
             input.background === true ||
             (yield* Ref.get(backgroundedSubagentTaskIds)).has(input.taskId) ||
+            (yield* isNestedSubagentTask(input.taskId)) ||
             (!isReopen && existingSubagent?.background === true);
           const movesToCurrentRun =
             input.reopen === true && input.status === "running" && existingSubagent !== undefined;
