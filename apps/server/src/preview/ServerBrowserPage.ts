@@ -1054,7 +1054,7 @@ const focusTextTarget = (target: FocusCandidate | null) => {
 };
 
 // Playwright's own timeout covers finding the element, not a page that stops answering the evaluation.
-const pageAnswer = async <A>(answer: Promise<A>, timeout: number) => {
+const pageAnswer = async <A>(answer: Promise<A>, timeout: number, outcome: string) => {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const expired = new Promise<never>((_, reject) => {
     timer = setTimeout(
@@ -1062,7 +1062,7 @@ const pageAnswer = async <A>(answer: Promise<A>, timeout: number) => {
         reject(
           new ServerBrowserOperationError({
             tag: "PreviewAutomationTimeoutError",
-            message: `The page did not answer within ${timeout}ms, so no text was typed.`,
+            message: `The target was not found or the page did not answer within ${timeout}ms, so ${outcome}.`,
             detail: { timeoutMs: timeout },
           }),
         ),
@@ -1116,10 +1116,12 @@ export const type = async (page: Page, input: PreviewAutomationTypeInput) => {
   const deadline = Date.now() + timeoutMs;
   const remaining = () => Math.max(1, deadline - Date.now());
   const locator = targetLocator(page, input);
+  const untyped = "no text was typed";
   if (locator !== null && input.clear) {
     // Pickers and sliders take a value such as 2026-01-31 only from fill, and some reject an empty one.
     const timeout = remaining();
-    if (await pageAnswer(locator.evaluate(valueOnlyInput, undefined, { timeout }), timeout)) {
+    const check = locator.evaluate(valueOnlyInput, undefined, { timeout });
+    if (await pageAnswer(check, timeout, untyped)) {
       await locator.fill(input.text, { timeout: remaining() });
       return;
     }
@@ -1128,15 +1130,19 @@ export const type = async (page: Page, input: PreviewAutomationTypeInput) => {
     await typeKeys(page, input.text, timeoutMs, deadline);
     return;
   }
-  const focused =
+  const timeout = remaining();
+  const focused = await pageAnswer(
     locator === null
       ? // A `*:focus` locator needs Playwright's utility world, which some desktop tabs never get.
-        await pageAnswer(page.evaluate(focusTextTarget, null), remaining())
-      : await locator.evaluate(focusTextTarget, undefined, { timeout: remaining() });
+        page.evaluate(focusTextTarget, null)
+      : locator.evaluate(focusTextTarget, undefined, { timeout }),
+    timeout,
+    untyped,
+  );
   if (focused !== true) {
     throw new ServerBrowserOperationError({
       tag: "PreviewAutomationTargetNotEditableError",
-      message: "The target is not an enabled text field, so no text was typed.",
+      message: `The target is not an enabled text field, so ${untyped}.`,
     });
   }
   if (input.clear) {
@@ -1168,17 +1174,21 @@ export const select = async (
 ): Promise<PreviewAutomationSelectResult> => {
   const locator = targetLocator(page, input)!;
   const timeout = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const options = await locator.evaluate(
-    (element) =>
-      element.tagName === "SELECT"
-        ? Array.from(
-            (element as unknown as { options: ArrayLike<{ value: string; label: string }> })
-              .options,
-            ({ value, label }) => ({ value, label: label.trim() }),
-          )
-        : null,
-    undefined,
-    { timeout },
+  const options = await pageAnswer(
+    locator.evaluate(
+      (element) =>
+        element.tagName === "SELECT"
+          ? Array.from(
+              (element as unknown as { options: ArrayLike<{ value: string; label: string }> })
+                .options,
+              ({ value, label }) => ({ value, label: label.trim() }),
+            )
+          : null,
+      undefined,
+      { timeout },
+    ),
+    timeout,
+    "nothing was selected",
   );
   const values =
     options &&
@@ -1233,12 +1243,15 @@ export const press = async (page: Page, input: PreviewAutomationPressInput) => {
 export const scroll = async (page: Page, input: PreviewAutomationScrollInput) => {
   const delta = [input.deltaX ?? 0, input.deltaY ?? 0] as const;
   const locator = targetLocator(page, input);
-  if (locator === null) {
-    // Page-side code is passed as source: the server compiles without DOM types.
-    await page.evaluate(`scrollBy(${delta[0]}, ${delta[1]})`);
-    return;
-  }
-  await locator.evaluate((element, [x, y]) => element.scrollBy(x, y), delta);
+  const timeout = DEFAULT_TIMEOUT_MS;
+  await pageAnswer(
+    locator === null
+      ? // Page-side code is passed as source: the server compiles without DOM types.
+        page.evaluate(`scrollBy(${delta[0]}, ${delta[1]})`)
+      : locator.evaluate((element, [x, y]) => element.scrollBy(x, y), delta, { timeout }),
+    timeout,
+    "it may not have scrolled",
+  );
 };
 
 const UNRESPONSIVE_SCRIPT_PROBE_MS = 1_000;

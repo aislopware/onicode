@@ -186,8 +186,9 @@ const make = Effect.gen(function* () {
             attachments: [],
             mode: "queue",
             ...outputSchema,
-            createdBy: "system",
-            creationSource: "server",
+            // As `oni_thread_send` stamps it through a link: asked work, which resumes the thread.
+            createdBy: "agent",
+            creationSource: "mcp",
           })
           .pipe(Effect.mapError(failed("Could not send to the thread")));
         yield* showIssue(input.issue, threadId);

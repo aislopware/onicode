@@ -1273,6 +1273,16 @@ export const make = Effect.gen(function* () {
                 });
               }
             };
+            // One record over the limit is skipped, like one that is not JSON.
+            const withinLimit = <A>(read: () => A): A | undefined => {
+              if (selectedBytes > MAX_TRANSCRIPT_SCAN_BYTES) return undefined;
+              try {
+                return read();
+              } catch (cause) {
+                if (selectedBytes > MAX_TRANSCRIPT_SCAN_BYTES) return undefined;
+                throw cause;
+              }
+            };
             // Claude writes cwd before message, so a record with a large image need not be read to its end.
             let topLevelCwd: string | null = null;
             const createReader = () =>
@@ -1297,12 +1307,15 @@ export const make = Effect.gen(function* () {
               return true;
             };
             const finishRecord = () => {
-              reader.write(decoder.decode());
-              const value = reader.finish();
+              const value = withinLimit(() => {
+                reader.write(decoder.decode());
+                return reader.finish();
+              });
               reader = createReader();
               decoder = new TextDecoder();
               recordStarted = false;
               selectedBytes = 0;
+              topLevelCwd = null;
               return extractCwd(value, source);
             };
             const scanChunk = (chunk: Uint8Array): string | false | null | undefined => {
@@ -1312,10 +1325,13 @@ export const make = Effect.gen(function* () {
                 const end = newline === -1 ? chunk.byteLength : newline;
                 if (end > start) {
                   recordStarted = true;
-                  reader.write(decoder.decode(chunk.subarray(start, end), { stream: true }));
-                  if (topLevelCwd !== null) return reserveRecord() ? topLevelCwd : null;
+                  const text = decoder.decode(chunk.subarray(start, end), { stream: true });
+                  withinLimit(() => reader.write(text));
                 }
-                if (newline === -1) return undefined;
+                if (newline === -1) {
+                  if (topLevelCwd === null) return undefined;
+                  return reserveRecord() ? topLevelCwd : null;
+                }
                 if (!reserveRecord()) return null;
                 const cwd = finishRecord();
                 if (cwd !== null) return cwd;

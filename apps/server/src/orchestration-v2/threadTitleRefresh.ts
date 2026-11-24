@@ -1,8 +1,4 @@
-import type {
-  OrchestrationV2AppThread,
-  OrchestrationV2GeneratedTitle,
-  OrchestrationV2ThreadShell,
-} from "@onicode/contracts";
+import type { OrchestrationV2AppThread, OrchestrationV2GeneratedTitle } from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
 
 // A subject that three runs did not reveal is not worth a generation after every run.
@@ -34,17 +30,20 @@ export function awaitsTitleSubject(thread: GeneratedTitleThread): boolean {
 
 /**
  * Whether the thread holds something the title generator has not read. An unknown subject can
- * surface in any finished run; a known one moves only when the user writes again.
+ * surface in any finished run; a known one moves only when someone asks the thread for more.
  */
 export function generatedTitleIsStale(
   thread: GeneratedTitleThread,
-  shell: Pick<OrchestrationV2ThreadShell, "latestRunCompletedAt" | "latestUserAuthoredMessageAt">,
+  activity: {
+    readonly latestRunCompletedAt: DateTime.Utc | null;
+    readonly latestResumingMessageAt: DateTime.Utc | null;
+  },
 ): boolean {
-  if (shell.latestRunCompletedAt == null) return false;
+  if (activity.latestRunCompletedAt === null) return false;
   const coveredAt = thread.generatedTitle.coveredAt;
   if (coveredAt === null) return true;
   const latest = awaitsTitleSubject(thread)
-    ? shell.latestRunCompletedAt
-    : shell.latestUserAuthoredMessageAt;
-  return latest != null && DateTime.isGreaterThan(latest, coveredAt);
+    ? activity.latestRunCompletedAt
+    : activity.latestResumingMessageAt;
+  return latest !== null && DateTime.isGreaterThan(latest, coveredAt);
 }

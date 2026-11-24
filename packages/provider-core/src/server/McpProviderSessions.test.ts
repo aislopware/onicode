@@ -6,12 +6,23 @@ import * as McpProviderSessions from "./McpProviderSessions.ts";
 
 describe("McpProviderSessions tool results", () => {
   const threadId = ThreadId.make("thread-tool-results");
+  const session = {
+    environmentId: EnvironmentId.make("env-tool-results"),
+    threadId,
+    providerSessionId: "session-2",
+    providerInstanceId: ProviderInstanceId.make("codex"),
+    endpoint: "http://127.0.0.1/mcp",
+    authorizationHeader: "Bearer token",
+    browserToolsAvailable: false,
+  };
 
   it.effect(
     "requires exact (tool, input, output) match when reported and refuses ambiguous differing outputs",
     () =>
       Effect.gen(function* () {
         const sessions = yield* McpProviderSessions.McpProviderSessions;
+        yield* sessions.set(session);
+        yield* sessions.captureToolResults(threadId);
         yield* sessions.recordToolResult(
           threadId,
           "send_to_user",
@@ -104,18 +115,45 @@ describe("McpProviderSessions tool results", () => {
       }).pipe(Effect.provide(McpProviderSessions.layer)),
   );
 
+  it.effect("keeps no result for a session that does not capture, or once it is cleared", () =>
+    Effect.gen(function* () {
+      const sessions = yield* McpProviderSessions.McpProviderSessions;
+      const recordAndTake = Effect.gen(function* () {
+        yield* sessions.recordToolResult(
+          threadId,
+          "send_to_user",
+          { message: "Kept?" },
+          { sentMessage: "Kept?" },
+          {
+            providerSessionId: session.providerSessionId,
+            epoch: yield* sessions.toolResultEpoch(threadId),
+          },
+        );
+        return yield* sessions.takeToolResult(threadId, "send_to_user", { message: "Kept?" });
+      });
+      yield* sessions.set(session);
+      assert.strictEqual(yield* recordAndTake, undefined);
+
+      yield* sessions.captureToolResults(threadId);
+      assert.deepEqual(yield* recordAndTake, { sentMessage: "Kept?" });
+
+      // A request already past auth when its session is cleared reads the epoch afterwards.
+      yield* sessions.clear(threadId);
+      assert.strictEqual(yield* recordAndTake, undefined);
+
+      // Another provider's session on the thread does not inherit capture.
+      yield* sessions.set(session);
+      yield* sessions.captureToolResults(threadId);
+      yield* sessions.set({ ...session, providerSessionId: "session-3" });
+      assert.strictEqual(yield* sessions.toolResultEpoch(threadId), undefined);
+    }).pipe(Effect.provide(McpProviderSessions.layer)),
+  );
+
   it.effect("drops stale-session writes and clears unconsumed results on clearToolResults", () =>
     Effect.gen(function* () {
       const sessions = yield* McpProviderSessions.McpProviderSessions;
-      yield* sessions.set({
-        environmentId: EnvironmentId.make("env-tool-results"),
-        threadId,
-        providerSessionId: "session-2",
-        providerInstanceId: ProviderInstanceId.make("codex"),
-        endpoint: "http://127.0.0.1/mcp",
-        authorizationHeader: "Bearer token",
-        browserToolsAvailable: false,
-      });
+      yield* sessions.set(session);
+      yield* sessions.captureToolResults(threadId);
       // A handler finishing for replaced session-1 must not populate session-2.
       yield* sessions.recordToolResult(
         threadId,
@@ -136,7 +174,10 @@ describe("McpProviderSessions tool results", () => {
         { sentMessage: "Current" },
         { providerSessionId: "session-2" },
       );
+      // Drivers are swapped into a live session in place.
+      yield* sessions.set({ ...session, browserToolsAvailable: true });
       const turn1Epoch = yield* sessions.toolResultEpoch(threadId);
+      assert.isDefined(turn1Epoch);
       yield* sessions.clearToolResults(threadId);
       assert.strictEqual(
         yield* sessions.takeToolResult(threadId, "send_to_user", { message: "Current" }),

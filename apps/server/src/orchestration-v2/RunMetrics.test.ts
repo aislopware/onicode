@@ -1,5 +1,6 @@
 import { assert, describe, it } from "@effect/vitest";
 import {
+  CheckpointId,
   EventId,
   MessageId,
   ProjectId,
@@ -109,6 +110,41 @@ describe("makeRunOutcomeRecorder", () => {
     }),
   );
 
+  it.effect("counts a completed run as its turn-end capture leaves it", () =>
+    Effect.gen(function* () {
+      const recorder = makeRunOutcomeRecorder(() => Effect.succeed(false));
+      const record = commitWith(recorder);
+      const ended = (id: string) => ({
+        id: RunId.make(`run:metrics:${id}`),
+        status: "completed" as const,
+        startedAt: at("2026-10-19T12:00:30.000Z"),
+        completedAt: at("2026-10-19T12:10:30.000Z"),
+        checkpointId: null,
+      });
+      const captured = { checkpointId: CheckpointId.make("checkpoint:metrics") };
+      const [stopped, kept, givenUp] = [ended("stopped"), ended("kept"), ended("given-up")];
+      yield* record([
+        runUpdated(1, "p3", stopped),
+        runUpdated(2, "p3", kept),
+        runUpdated(3, "p3", givenUp),
+      ]);
+      assert.deepStrictEqual(yield* runSnapshots("p3"), []);
+
+      // A Stop accepted before the capture wins when it lands.
+      yield* record([runUpdated(4, "p3", { ...stopped, ...captured, status: "interrupted" })]);
+      yield* record([runUpdated(5, "p3", { ...kept, ...captured })]);
+      const { event } = runUpdated(6, "p3", givenUp);
+      if (event.type === "run.updated") yield* recorder.recordFinal(event.payload);
+
+      const counts = (yield* runSnapshots("p3")).flatMap((snapshot) =>
+        snapshot.type === "Counter"
+          ? [[String(snapshot.attributes?.["outcome"]), snapshot.state.count] as const]
+          : [],
+      );
+      assert.deepStrictEqual(Object.fromEntries(counts), { completed: 2, interrupted: 1 });
+    }),
+  );
+
   it.effect("does not count a rollback of a run that already finished", () =>
     Effect.gen(function* () {
       // A fresh recorder stands in for a restart, which forgets the runs already counted.
@@ -178,7 +214,7 @@ describe("EventSink run outcomes", () => {
     requestedAt: now,
     startedAt: at("2026-10-19T12:00:10.000Z"),
     completedAt: status === "running" ? null : at("2026-10-19T12:01:10.000Z"),
-    checkpointId: null,
+    checkpointId: status === "running" ? null : CheckpointId.make("checkpoint:metrics:sink"),
     contextHandoffId: null,
   });
   const runEvent = (type: "run.created" | "run.updated", status: OrchestrationV2Run["status"]) =>

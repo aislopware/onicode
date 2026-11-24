@@ -36,9 +36,15 @@ interface KeptToolResult {
   readonly output: Record<string, unknown>;
 }
 
-interface ToolResultState {
-  readonly entries: ReadonlyMap<ThreadId, ReadonlyArray<KeptToolResult>>;
-  readonly epochs: ReadonlyMap<ThreadId, number>;
+interface ToolResults {
+  readonly epoch: number;
+  readonly kept: ReadonlyArray<KeptToolResult>;
+}
+
+interface ProviderSession {
+  readonly config: McpProviderSessionConfig;
+  /** Set once the adapter asks for capture; most adapters never take results back. */
+  readonly toolResults: ToolResults | undefined;
 }
 
 // Key order must not change a hash: adapters hash the call's input as the agent echoed it.
@@ -84,7 +90,10 @@ export class McpProviderSessions extends Context.Service<
       input: PageInput,
       reported?: HtmlRenderReference,
     ) => Effect.Effect<HtmlRenderReference | undefined>;
-    readonly toolResultEpoch: (threadId: ThreadId) => Effect.Effect<number>;
+    /** Called by adapters that take results back, before the provider gets the MCP session. */
+    readonly captureToolResults: (threadId: ThreadId) => Effect.Effect<void>;
+    /** Undefined while the thread's session does not capture. */
+    readonly toolResultEpoch: (threadId: ThreadId) => Effect.Effect<number | undefined>;
     readonly recordToolResult: (
       threadId: ThreadId,
       toolName: string,
@@ -183,38 +192,47 @@ const matchingToolResultIndex = (
   return matches.every((index) => kept[index]!.outputJson === firstOutput) ? matches[0]! : -1;
 };
 
-const clearThreadToolResults = (state: ToolResultState, threadId: ThreadId): ToolResultState => {
-  const entries = new Map(state.entries);
-  entries.delete(threadId);
-  const epochs = new Map(state.epochs);
-  epochs.set(threadId, (state.epochs.get(threadId) ?? 0) + 1);
-  return { entries, epochs };
+const updateToolResults = (
+  sessions: ReadonlyMap<ThreadId, ProviderSession>,
+  threadId: ThreadId,
+  update: (current: ToolResults) => ToolResults,
+): ReadonlyMap<ThreadId, ProviderSession> => {
+  const session = sessions.get(threadId);
+  return session?.toolResults === undefined
+    ? sessions
+    : new Map(sessions).set(threadId, {
+        ...session,
+        toolResults: update(session.toolResults),
+      });
 };
 
 const make = Effect.gen(function* () {
-  const sessions = yield* Ref.make(new Map<ThreadId, McpProviderSessionConfig>());
+  // One Ref, so a late result cannot land between a session's removal and its results'.
+  const sessions = yield* Ref.make<ReadonlyMap<ThreadId, ProviderSession>>(new Map());
   const htmlRenders = yield* Ref.make(new Map<ThreadId, ReadonlyArray<KeptHtmlRender>>());
-  const toolResultState = yield* Ref.make<ToolResultState>({
-    entries: new Map(),
-    epochs: new Map(),
-  });
   return McpProviderSessions.of({
     set: Effect.fn("McpProviderSessions.set")(function* (config) {
       const current = yield* Ref.get(sessions);
-      if (current.get(config.threadId)?.providerSessionId !== config.providerSessionId) {
+      if (current.get(config.threadId)?.config.providerSessionId !== config.providerSessionId) {
         yield* Ref.update(htmlRenders, (kept) => {
           const next = new Map(kept);
           next.delete(config.threadId);
           return next;
         });
-        yield* Ref.update(toolResultState, (state) =>
-          clearThreadToolResults(state, config.threadId),
-        );
       }
-      yield* Ref.update(sessions, (current) => new Map(current).set(config.threadId, config));
+      yield* Ref.update(sessions, (current) => {
+        const existing = current.get(config.threadId);
+        return new Map(current).set(config.threadId, {
+          config,
+          toolResults:
+            existing?.config.providerSessionId === config.providerSessionId
+              ? existing.toolResults
+              : undefined,
+        });
+      });
     }),
     read: Effect.fn("McpProviderSessions.read")(function (threadId) {
-      return Ref.get(sessions).pipe(Effect.map((current) => current.get(threadId)));
+      return Ref.get(sessions).pipe(Effect.map((current) => current.get(threadId)?.config));
     }),
     clear: Effect.fn("McpProviderSessions.clear")(function (threadId) {
       return Ref.update(sessions, (current) => {
@@ -228,9 +246,6 @@ const make = Effect.gen(function* () {
             next.delete(threadId);
             return next;
           }),
-        ),
-        Effect.andThen(
-          Ref.update(toolResultState, (state) => clearThreadToolResults(state, threadId)),
         ),
       );
     }),
@@ -280,66 +295,69 @@ const make = Effect.gen(function* () {
         });
       },
     ),
+    captureToolResults: Effect.fn("McpProviderSessions.captureToolResults")(function (threadId) {
+      return Ref.update(sessions, (current) => {
+        const session = current.get(threadId);
+        return session === undefined || session.toolResults !== undefined
+          ? current
+          : new Map(current).set(threadId, { ...session, toolResults: { epoch: 0, kept: [] } });
+      });
+    }),
     toolResultEpoch: Effect.fn("McpProviderSessions.toolResultEpoch")(function (threadId) {
-      return Ref.get(toolResultState).pipe(Effect.map((state) => state.epochs.get(threadId) ?? 0));
+      return Ref.get(sessions).pipe(
+        Effect.map((current) => current.get(threadId)?.toolResults?.epoch),
+      );
     }),
     recordToolResult: Effect.fn("McpProviderSessions.recordToolResult")(
-      function* (threadId, toolName, input, output, options) {
-        const providerSessionId = options?.providerSessionId;
-        if (providerSessionId !== undefined) {
-          const activeSession = (yield* Ref.get(sessions)).get(threadId);
-          // A handler finishing after session replacement must not populate the new session.
+      function (threadId, toolName, input, output, options) {
+        return Ref.update(sessions, (current) => {
+          const session = current.get(threadId);
           if (
-            activeSession !== undefined &&
-            activeSession.providerSessionId !== providerSessionId
+            session?.toolResults === undefined ||
+            // A handler finishing after session replacement must not populate the new session.
+            (options?.providerSessionId !== undefined &&
+              options.providerSessionId !== session.config.providerSessionId) ||
+            // A handler finishing after its turn closed must not populate the next turn.
+            (options?.epoch !== undefined && options.epoch !== session.toolResults.epoch)
           ) {
-            return;
+            return current;
           }
-        }
-        const canonicalTool = resolveOniMcpToolId(toolName) ?? toolName;
-        const entry: KeptToolResult = {
-          toolName: canonicalTool,
-          inputHash: hashToolInput(input),
-          outputJson: stableStringify(output),
-          output,
-        };
-        const expectedEpoch = options?.epoch;
-        yield* Ref.update(toolResultState, (state) => {
-          // A handler finishing after its turn closed must not populate the next turn.
-          if (expectedEpoch !== undefined && (state.epochs.get(threadId) ?? 0) !== expectedEpoch) {
-            return state;
-          }
-          const entries = new Map(state.entries);
-          entries.set(
-            threadId,
-            [...(entries.get(threadId) ?? []), entry].slice(-MAX_KEPT_TOOL_RESULTS),
-          );
-          return { ...state, entries };
+          const entry: KeptToolResult = {
+            toolName: resolveOniMcpToolId(toolName) ?? toolName,
+            inputHash: hashToolInput(input),
+            outputJson: stableStringify(output),
+            output,
+          };
+          return updateToolResults(current, threadId, ({ epoch, kept }) => ({
+            epoch,
+            kept: [...kept, entry].slice(-MAX_KEPT_TOOL_RESULTS),
+          }));
         });
       },
     ),
     takeToolResult: Effect.fn("McpProviderSessions.takeToolResult")(
       function (threadId, toolName, input, reported) {
         const canonicalTool = resolveOniMcpToolId(toolName) ?? toolName;
-        return Ref.modify(toolResultState, (state) => {
-          const kept = state.entries.get(threadId) ?? [];
+        return Ref.modify(sessions, (current) => {
+          const kept = current.get(threadId)?.toolResults?.kept ?? [];
           const index = matchingToolResultIndex(kept, canonicalTool, input, reported);
           if (index === -1) {
-            return [undefined, state];
+            return [undefined, current];
           }
-          const rest = kept.filter((_, keptIndex) => keptIndex !== index);
-          const entries = new Map(state.entries);
-          if (rest.length === 0) {
-            entries.delete(threadId);
-          } else {
-            entries.set(threadId, rest);
-          }
-          return [kept[index]!.output, { ...state, entries }];
+          return [
+            kept[index]!.output,
+            updateToolResults(current, threadId, ({ epoch }) => ({
+              epoch,
+              kept: kept.filter((_, keptIndex) => keptIndex !== index),
+            })),
+          ];
         });
       },
     ),
     clearToolResults: Effect.fn("McpProviderSessions.clearToolResults")(function (threadId) {
-      return Ref.update(toolResultState, (state) => clearThreadToolResults(state, threadId));
+      return Ref.update(sessions, (current) =>
+        updateToolResults(current, threadId, ({ epoch }) => ({ epoch: epoch + 1, kept: [] })),
+      );
     }),
   });
 });
