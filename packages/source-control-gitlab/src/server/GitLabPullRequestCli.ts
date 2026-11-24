@@ -1602,18 +1602,21 @@ export const make = Effect.gen(function* () {
       }),
     );
 
-  const mergeRequestDetail = (input: {
-    readonly cwd: string;
-    readonly host?: string | undefined;
-    readonly repository: string;
-    readonly number: number;
-  }): Effect.Effect<GitLabMergeRequestDetail, GitLabPullRequestCliError> =>
+  const mergeRequestDetail = (
+    input: {
+      readonly cwd: string;
+      readonly host?: string | undefined;
+      readonly repository: string;
+      readonly number: number;
+    },
+    divergedCount = true,
+  ): Effect.Effect<GitLabMergeRequestDetail, GitLabPullRequestCliError> =>
     api({
       cwd: input.cwd,
       host: input.host,
-      path: `projects/${projectPath(input.repository)}/merge_requests/${input.number}?${query([
-        ["include_diverged_commits_count", "true"],
-      ])}`,
+      path: `projects/${projectPath(input.repository)}/merge_requests/${input.number}${
+        divergedCount ? `?${query([["include_diverged_commits_count", "true"]])}` : ""
+      }`,
     }).pipe(
       Effect.flatMap((result) => {
         const decoded = decodeMergeRequestDetailJson(result.stdout.trim());
@@ -3020,17 +3023,25 @@ export const make = Effect.gen(function* () {
         input.comments.length > 0 ||
         input.body.trim().length > 0;
       // Only /approve takes a SHA, so a pinned review checks the head before posting anything.
-      const pinnedRefs =
+      const pinned =
         input.expectedHeadSha !== undefined && postsBeforeApproval
-          ? Option.some(yield* getDiffRefs(input))
-          : Option.none<GitLabDiffRefs>();
-      if (Option.isSome(pinnedRefs) && pinnedRefs.value.headSha !== input.expectedHeadSha) {
-        return yield* new GitLabMutationRefusedError({
-          command: "glab",
-          cwd: input.cwd,
-          operation: "submitReview",
-          reasons: [`the head is now ${pinnedRefs.value.headSha}, not ${input.expectedHeadSha}`],
-        });
+          ? Option.some(yield* mergeRequestDetail(input, false))
+          : Option.none<GitLabMergeRequestDetail>();
+      if (Option.isSome(pinned)) {
+        // Line comments sit on diff_refs, which GitLab fills in after `sha` and leaves null on an
+        // empty diff, so only a review with line comments waits on them.
+        const head =
+          input.comments.length > 0
+            ? pinned.value.diffRefs?.headSha
+            : (pinned.value.headSha ?? pinned.value.diffRefs?.headSha);
+        if (head !== input.expectedHeadSha) {
+          return yield* new GitLabMutationRefusedError({
+            command: "glab",
+            cwd: input.cwd,
+            operation: "submitReview",
+            reasons: [`the head is now ${head ?? "unknown"}, not ${input.expectedHeadSha}`],
+          });
+        }
       }
       if (input.verdict === "request-changes") {
         // GitLab keeps the verdict on the reviewer, so the viewer joins the reviewers first.
@@ -3052,7 +3063,8 @@ export const make = Effect.gen(function* () {
         });
       }
       if (input.comments.length > 0) {
-        const refs = Option.isSome(pinnedRefs) ? pinnedRefs.value : yield* getDiffRefs(input);
+        const pinnedRefs = Option.isSome(pinned) ? pinned.value.diffRefs : undefined;
+        const refs = pinnedRefs ?? (yield* getDiffRefs(input));
         const rangedFileHeaders = input.comments.flatMap((comment) =>
           comment.startPosition !== undefined &&
           (comment.startPosition.kind !== "context" || comment.position.kind !== "context")
