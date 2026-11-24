@@ -1796,6 +1796,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
         .pipe(Effect.flip);
 
       assert.strictEqual(error._tag, "GitLabMutationRefusedError");
+      expect(error.message).toContain("the head is now moved, not head");
       expect(mockedExecute).toHaveBeenCalledTimes(1);
     }),
   );
