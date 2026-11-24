@@ -1,7 +1,9 @@
+import { scopedThreadKey } from "@onicode/client-runtime/environment";
 import { selectEnvironmentQueryData } from "@onicode/client-runtime/state/runtime";
 import { type ScopedThreadRef } from "@onicode/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { useGT } from "gt-react";
+import { useEffect } from "react";
 
 import { ComposerHandleContext } from "../../composerHandleContext";
 import type { SideChatParentPanel } from "../../lib/sideChatPane";
@@ -17,6 +19,7 @@ import {
 import ChatView from "../ChatView";
 import { useOpenThreadFamily } from "../ThreadRouteView";
 import { BackgroundThreadContext } from "../chat/backgroundThread";
+import { closeThreadFindIn } from "../chat/threadFindStore";
 
 /** Opens the thread as a full thread view. */
 export function useOpenThreadPage(): (threadRef: ScopedThreadRef) => void {
@@ -48,6 +51,9 @@ export function WorkflowThreadTabLabel({ threadRef }: { readonly threadRef: Scop
 export default function WorkflowThreadPane({ threadRef }: { readonly threadRef: ScopedThreadRef }) {
   const gt = useGT();
   const openThreadPage = useOpenThreadPage();
+  const threadKey = scopedThreadKey(threadRef);
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- find opened in this transcript closes with its tab, as a side chat's does with its pane
+  useEffect(() => () => closeThreadFindIn(threadKey), [threadKey]);
   const shell = useQuietThreadShell(threadRef);
   const live = isThreadRouteSnapshotAuthoritative(
     useEnvironmentShellStatus(threadRef.environmentId),
