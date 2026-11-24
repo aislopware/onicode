@@ -24,8 +24,8 @@ headless machine) gets the grants of whatever launched it, usually none.
 
 The proxy refuses a daemon of another version, so the daemon and every proxy
 run the one release pinned in
-[`ComputerDriver`](../../apps/server/src/computer/ComputerDriver.ts). Bump the
-version, sizes and hashes together.
+[`pinnedTools.json`](../../apps/server/src/tools/pinnedTools.json), which holds
+the version, sizes and hashes together.
 
 The approval mode is fixed when the daemon starts, so changing it restarts the
 daemon. A proxy never reconnects, and its session would keep a dead one. Each

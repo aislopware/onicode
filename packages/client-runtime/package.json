@@ -739,7 +739,7 @@
     "fflate": "0.8.3",
     "gt-i18n": "1.0.45",
     "three": "0.187.0",
-    "unbash": "^6.0.4"
+    "unbash": "^6.0.5"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",

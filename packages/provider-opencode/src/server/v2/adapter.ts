@@ -292,6 +292,10 @@ interface ActiveTurn {
   readonly takenSentMessages: Map<string, string | null>;
   heldEnd: TurnTerminal | undefined;
   awaitingStart: boolean;
+  /** session.command queued a user item without Onicode's ID that this turn has not seen yet. */
+  commandItemPending: boolean;
+  /** A wake's history begins at the first report or other client's prompt it is delivered. */
+  opening: boolean;
   /** Scope child tool IDs because model-generated IDs can repeat parent IDs. */
   readonly scope: string;
   usedSubagents: boolean;
@@ -344,14 +348,24 @@ interface OpenBlock {
   text: string;
 }
 
+// OpenCode 2.4 renamed experimental_image_generate and added video jobs.
+const mediaToolKinds: Readonly<Record<string, "image" | "video">> = {
+  experimental_image_generate: "image",
+  generate_image: "image",
+  generate_video: "video",
+};
+const mediaKind = (name: string | undefined) =>
+  name === undefined || !Object.hasOwn(mediaToolKinds, name) ? undefined : mediaToolKinds[name];
+
 interface ThreadState {
   readonly sessionId: string;
   providerThread: OrchestrationV2ProviderThread;
   publishedBackgroundWork?: boolean;
   sessionScopedBackground?: boolean;
-  readonly imageJobs: Map<
+  readonly mediaJobs: Map<
     string,
     {
+      readonly kind: "image" | "video";
       readonly turn: ActiveTurn;
       readonly toolId: string;
       readonly tool: { readonly name: string; input: Record<string, unknown> };
@@ -396,12 +410,24 @@ interface ThreadState {
       readonly childId: string;
       readonly report: BackgroundWorkReport;
       readonly text: string;
+      readonly during: ActiveTurn | undefined;
     }
   >;
   readonly stoppedChildren: Set<string>;
   readonly strandedSteers: Set<string>;
-  /** Prompts other clients queued while no Onicode turn ran, shown once delivered; `leads` the next wake if no report preceded it. */
-  readonly externalPrompts: Map<string, { readonly text: string; leads: boolean }>;
+  /**
+   * Prompts other clients or automations sent, shown once delivered. `leads` the next wake if no
+   * report preceded it and no turn ran; `during` is the turn running when it was queued.
+   */
+  readonly externalPrompts: Map<
+    string,
+    {
+      readonly text: string;
+      leads: boolean;
+      readonly during?: ActiveTurn;
+      readonly steer?: boolean;
+    }
+  >;
   mcp:
     | { readonly name: string; readonly directory: string; readonly credential: string }
     | undefined;
@@ -968,7 +994,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
     ): ThreadState => ({
       sessionId,
       providerThread,
-      imageJobs: new Map(),
+      mediaJobs: new Map(),
       goalRevision: 0,
       goalFresh: false,
       goalRefreshing: false,
@@ -1100,7 +1126,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
 
     const owesWork = (state: ThreadState) =>
       [...shells.values()].some((shell) => shell.state === state && shell.running) ||
-      [...state.imageJobs.values()].some((job) => job.status === "running") ||
+      [...state.mediaJobs.values()].some((job) => job.status === "running") ||
       state.wakes.length > 0 ||
       state.reports.size > 0 ||
       (state.subagent !== undefined && busy.has(state.sessionId)) ||
@@ -1348,6 +1374,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       turn: ActiveTurn,
       inboxId: string,
       text: string,
+      inputIntent: "turn_start" | "steer",
     ) {
       const now = yield* DateTime.now;
       const base = {
@@ -1386,7 +1413,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
           creationSource: "provider",
           type: "user_message",
           messageId,
-          inputIntent: "turn_start",
+          inputIntent,
           text,
           attachments: [],
         },
@@ -1481,19 +1508,21 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
           if (projected) return;
         }
       }
-      if (tool.name === "experimental_image_generate" && status === "completed") {
+      const kind = mediaKind(tool.name);
+      if (kind !== undefined && status === "completed") {
         const jobID = stringField(result?.metadata, "jobID");
         const path = stringField(result?.metadata, "path");
         const model = stringField(result?.metadata, "model");
         if (jobID !== undefined && path !== undefined && model !== undefined) {
-          // Tool success acknowledges launch, not the background image's outcome.
+          // Tool success acknowledges launch, not the background job's outcome.
           if (
-            state.imageJobs.get(jobID)?.status !== undefined &&
-            state.imageJobs.get(jobID)?.status !== "running"
+            state.mediaJobs.get(jobID)?.status !== undefined &&
+            state.mediaJobs.get(jobID)?.status !== "running"
           )
             return;
-          if (!state.imageJobs.has(jobID))
-            state.imageJobs.set(jobID, {
+          if (!state.mediaJobs.has(jobID))
+            state.mediaJobs.set(jobID, {
+              kind,
               turn,
               toolId: id,
               tool,
@@ -1777,6 +1806,8 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       takenSentMessages: new Map(),
       heldEnd: undefined,
       awaitingStart: options.awaitingStart,
+      commandItemPending: false,
+      opening: false,
       scope: options.scope,
       usedSubagents: false,
     });
@@ -1896,20 +1927,20 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
           });
         }
       }
-      const imageTasks = sessionsOf(state).flatMap((session) =>
-        [...session.imageJobs.entries()].flatMap(([taskId, job]) =>
+      const mediaTasks = sessionsOf(state).flatMap((session) =>
+        [...session.mediaJobs.entries()].flatMap(([taskId, job]) =>
           job.status === "running"
             ? [
                 {
                   taskId,
                   kind: "background_task" as const,
-                  description: `Image generation (${job.model})`,
+                  description: `${job.kind === "video" ? "Video" : "Image"} generation (${job.model})`,
                 },
               ]
             : [],
         ),
       );
-      const allTasks = roster.concat(imageTasks);
+      const allTasks = roster.concat(mediaTasks);
       const current = state.providerThread.pendingBackgroundTasks ?? [];
       if (
         state.publishedBackgroundWork === hasBackground(state) &&
@@ -2451,7 +2482,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
         yield* emitText(state, turn, open.block, open.kind, (text) => text, true);
       }
       for (const id of turn.tools.keys()) {
-        if ([...state.imageJobs.values()].some((job) => job.turn === turn && job.toolId === id))
+        if ([...state.mediaJobs.values()].some((job) => job.turn === turn && job.toolId === id))
           continue;
         yield* emitTool(
           state,
@@ -3051,7 +3082,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
             metadata: event.data.metadata,
           });
           if (
-            ![...state.imageJobs.values()].some(
+            ![...state.mediaJobs.values()].some(
               (job) => job.turn === turn && job.toolId === event.data.id,
             )
           )
@@ -3183,7 +3214,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       yield* offerWake(state, wake);
     });
 
-    const imageReport = Effect.fn("OpenCode2Adapter.imageReport")(function* (
+    const mediaReport = Effect.fn("OpenCode2Adapter.mediaReport")(function* (
       state: ThreadState,
       payload: {
         readonly text: string;
@@ -3191,7 +3222,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       },
     ) {
       const jobID = stringField(payload.metadata, "jobID");
-      const job = jobID === undefined ? undefined : state.imageJobs.get(jobID);
+      const job = jobID === undefined ? undefined : state.mediaJobs.get(jobID);
       const outcome = stringField(payload.metadata, "state");
       if (
         job === undefined ||
@@ -3214,7 +3245,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
         return;
       const files: Array<{ uri: string; mime: string }> = [];
       yield* Effect.gen(function* () {
-        if (outcome !== "completed" || previewPath === undefined) return;
+        if (outcome !== "completed" || previewPath === undefined || job.kind !== "image") return;
         const image = yield* (
           connection.external
             ? connection.readImage(previewPath, state.directory)
@@ -3279,6 +3310,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
           inboxId,
           childId: id ?? inboxId,
           text: payload.text,
+          during: state.active,
           report: {
             kind: "command",
             label: shell?.command ?? payload.description,
@@ -3325,8 +3357,8 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
         }
         return;
       }
-      if (stringField(payload.metadata, "source") === "experimental_image_generate") {
-        return yield* imageReport(state, payload);
+      if (mediaKind(stringField(payload.metadata, "source")) !== undefined) {
+        return yield* mediaReport(state, payload);
       }
       const childId = stringField(payload.metadata, "childID");
       if (stringField(payload.metadata, "source") !== "subagent" || childId === undefined) return;
@@ -3359,6 +3391,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
         inboxId,
         childId,
         text: payload.text,
+        during: state.active,
         report: {
           kind: "subagent",
           label: call?.title ?? stringField(payload.metadata, "description"),
@@ -3629,6 +3662,21 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
         const external = state.externalPrompts.get(event.data.inboxID);
         state.externalPrompts.delete(event.data.inboxID);
         const turn = state.active;
+        const queued = external ?? report;
+        // Items queued during this turn are its steers and reports, never where it begins.
+        if (
+          turn?.opening === true &&
+          event.type === "session.inbox.delivered" &&
+          (queued === undefined
+            ? event.data.inboxID === turn.providerTurn.nativeTurnRef?.nativeId
+            : queued.during !== turn)
+        ) {
+          turn.opening = false;
+          turn.providerTurn = {
+            ...turn.providerTurn,
+            nativeTurnRef: ref(event.data.inboxID, "weak"),
+          };
+        }
         if (turn !== undefined && turn.steers.delete(event.data.inboxID)) {
           turn.settledInbox.add(event.data.inboxID);
           if (event.type === "session.inbox.cancelled") yield* endIfSettled(state, turn);
@@ -3637,7 +3685,13 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
           external !== undefined &&
           turn !== undefined
         ) {
-          yield* emitExternalPrompt(state, turn, event.data.inboxID, external.text);
+          yield* emitExternalPrompt(
+            state,
+            turn,
+            event.data.inboxID,
+            external.text,
+            external.steer === true && external.during === turn ? "steer" : "turn_start",
+          );
         } else if (
           event.type === "session.inbox.delivered" &&
           report !== undefined &&
@@ -3660,9 +3714,30 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
           state.externalPrompts.set(event.data.inboxID, {
             text,
             leads: !held && state.reports.size === 0,
+            ...(held && state.active !== undefined
+              ? { during: state.active, steer: event.data.item.delivery === "steer" }
+              : {}),
           });
         }
         return;
+      }
+      if (
+        event.type === "session.inbox.enqueued" &&
+        event.data.item.type === "user" &&
+        state.subagent === undefined &&
+        state.active !== undefined &&
+        !isOwnPrompt(event.data.inboxID)
+      ) {
+        // A command queues its prompt before the start an unsettled turn still awaits.
+        if (state.active.commandItemPending) state.active.commandItemPending = false;
+        else if (!state.active.awaitingStart) {
+          state.externalPrompts.set(event.data.inboxID, {
+            text: event.data.item.payload.text,
+            leads: false,
+            during: state.active,
+            steer: event.data.item.delivery === "steer",
+          });
+        }
       }
       const started =
         event.type === "session.execution.started" || event.type === "unreadable.execution.started";
@@ -3697,9 +3772,9 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       }
       for (const state of threads.values()) {
         for (const call of runningCalls(state)) yield* settleCall(call, "failed");
-        for (const [jobID, job] of state.imageJobs) {
+        for (const [jobID, job] of state.mediaJobs) {
           if (job.status !== "running") continue;
-          yield* imageReport(state, { text: message, metadata: { jobID, state: "error" } });
+          yield* mediaReport(state, { text: message, metadata: { jobID, state: "error" } });
         }
         for (const wake of state.wakes.splice(0)) wake.dropped = true;
         state.reports.clear();
@@ -3795,7 +3870,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
                   metadata: part.state.metadata,
                 });
                 if (
-                  ![...state.imageJobs.values()].some(
+                  ![...state.mediaJobs.values()].some(
                     (job) => job.turn === turn && job.toolId === part.id,
                   )
                 )
@@ -3817,33 +3892,40 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
     });
 
     // Restarts retain the previous session.outcome; without an idle item, the lost execution was interrupted.
-    const recoverImages = Effect.fn("OpenCode2Adapter.recoverImages")(function* (
+    const recoverMediaJobs = Effect.fn("OpenCode2Adapter.recoverMediaJobs")(function* (
       state: ThreadState,
     ) {
-      if (![...state.imageJobs.values()].some((job) => job.status === "running")) return;
+      if (![...state.mediaJobs.values()].some((job) => job.status === "running")) return;
       yield* OpenCode2Client.paginate(
         { sessionID: Session.ID.make(state.sessionId), type: "synthetic" as const, limit: 100 },
         client.message.list,
       ).pipe(
         Stream.runForEach((message) =>
           message.type === "synthetic" &&
-          stringField(message.metadata, "source") === "experimental_image_generate"
-            ? imageReport(state, message)
+          mediaKind(stringField(message.metadata, "source")) !== undefined
+            ? mediaReport(state, message)
             : Effect.void,
         ),
       );
       if (
-        ![...state.imageJobs.values()].some((job) => job.status === "running") ||
+        ![...state.mediaJobs.values()].some((job) => job.status === "running") ||
         compareSemverVersions(connection.version, "2.2.6") < 0
       )
         return;
-      const jobs = yield* connection.imageJobs(state.sessionId);
-      for (const job of jobs) {
-        if (job.status === "running") continue;
-        yield* imageReport(state, {
-          text: `Image generation ${job.status}. Output path: ${job.path} (${job.model}).`,
-          metadata: { source: "experimental_image_generate", jobID: job.id, state: job.status },
-        });
+      const kinds = new Set(
+        [...state.mediaJobs.values()].flatMap((job) =>
+          job.status === "running" ? [job.kind] : [],
+        ),
+      );
+      for (const kind of kinds) {
+        for (const job of yield* connection.mediaJobs(state.sessionId, kind)) {
+          if (job.status === "running") continue;
+          const label = kind === "video" ? "Video" : "Image";
+          yield* mediaReport(state, {
+            text: `${label} generation ${job.status}. Output path: ${job.path}${job.model === undefined ? "" : ` (${job.model})`}.`,
+            metadata: { jobID: job.id, state: job.status },
+          });
+        }
       }
     });
 
@@ -3909,7 +3991,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       }
       for (const state of threads.values()) {
         yield* lock
-          .withPermit(recoverImages(state).pipe(Effect.timeout(INVENTORY_TIMEOUT)))
+          .withPermit(recoverMediaJobs(state).pipe(Effect.timeout(INVENTORY_TIMEOUT)))
           .pipe(Effect.ignore({ log: true }));
       }
       yield* lock.withPermit(
@@ -4564,6 +4646,8 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
             url: mcpSession!.endpoint,
             headers: { Authorization: wanted.credential },
             oauth: false,
+            // Onicode's server speaks only the initialize handshake; OpenCode 2.4's "auto" probes first.
+            protocol: "legacy",
           }),
           "Onicode's MCP server",
         );
@@ -4742,9 +4826,12 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
           const wake = state.wakes.shift()!;
           const turn = state.active;
           if (turn !== undefined && wake.after !== undefined) turn.before = wake.after;
-          // Fork and rollback cut where its history begins.
-          if (turn !== undefined && wake.first !== undefined) {
-            turn.providerTurn = { ...turn.providerTurn, nativeTurnRef: ref(wake.first, "weak") };
+          // Fork and rollback cut where its history begins; a prompt delivered before its reports moves it.
+          if (turn !== undefined) {
+            turn.opening = true;
+            if (wake.first !== undefined) {
+              turn.providerTurn = { ...turn.providerTurn, nativeTurnRef: ref(wake.first, "weak") };
+            }
           }
           if (wake.running) state.unsettled = false;
           yield* replay(wake);
@@ -4900,6 +4987,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
           const before = newest.data[0]?.id ?? null;
           yield* markBefore(sessionId, before);
           if (!sending()) return;
+          turn.commandItemPending = true;
           if (goalCommand?.type === "pause" || goalCommand?.type === "clear") {
             // OpenCode rejects pausing or clearing a missing goal; Codex treats that as a no-op.
             yield* client.session.command({ sessionID, ...command }).pipe(

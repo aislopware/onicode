@@ -80,18 +80,19 @@ const IMAGE_MIME: Readonly<Record<string, string>> = {
 };
 export const imagePreviewMime = (extension: string) => IMAGE_MIME[extension.toLowerCase()];
 
-const NativeImageJob = Schema.Struct({
-  kind: Schema.Literal("image"),
+const NativeMediaJob = Schema.Struct({
+  kind: Schema.Literals(["image", "video"]),
   id: Schema.String,
   sessionID: Schema.String,
   status: Schema.Literals(["running", "completed", "error", "cancelled"]),
   path: Schema.String,
-  model: Schema.String,
+  // Video jobs (OpenCode 2.4+) carry no model.
+  model: Schema.optional(Schema.String),
 });
 const decodeJobs = Schema.decodeUnknownEffect(
   Schema.Struct({ data: Schema.Array(Schema.Unknown) }),
 );
-const decodeImageJob = Schema.decodeUnknownOption(NativeImageJob);
+const decodeMediaJob = Schema.decodeUnknownOption(NativeMediaJob);
 
 /** events resolves on subscription acceptance; subscribe before work because the stream is volatile. */
 export interface OpenCode2Api {
@@ -102,9 +103,10 @@ export interface OpenCode2Api {
   readonly shellJobs?: (
     sessionID: string,
   ) => Effect.Effect<typeof ShellJobs.Type, HttpClientError.HttpClientError | Schema.SchemaError>;
-  readonly imageJobs: (
+  readonly mediaJobs: (
     sessionID: string,
-  ) => Effect.Effect<ReadonlyArray<typeof NativeImageJob.Type>, OpenCode2ImageError>;
+    kind: typeof NativeMediaJob.Type.kind,
+  ) => Effect.Effect<ReadonlyArray<typeof NativeMediaJob.Type>, OpenCode2ImageError>;
   readonly readImage: (
     path: string,
     directory: string,
@@ -235,10 +237,10 @@ export const make = Effect.gen(function* () {
                 Effect.flatMap(HttpClientResponse.schemaBodyJson(ShellJobs)),
               );
           }),
-          imageJobs: (sessionID: string) =>
+          mediaJobs: (sessionID, kind) =>
             authenticated
               .get(`${baseUrl}/api/experimental/job`, {
-                urlParams: { sessionID, kind: "image" },
+                urlParams: { sessionID, kind },
               })
               .pipe(
                 Effect.flatMap(HttpClientResponse.filterStatusOk),
@@ -246,8 +248,10 @@ export const make = Effect.gen(function* () {
                 Effect.flatMap(decodeJobs),
                 Effect.map((page) =>
                   page.data.flatMap((item) => {
-                    const job = decodeImageJob(item);
-                    return Option.isSome(job) && job.value.sessionID === sessionID
+                    const job = decodeMediaJob(item);
+                    return Option.isSome(job) &&
+                      job.value.kind === kind &&
+                      job.value.sessionID === sessionID
                       ? [job.value]
                       : [];
                   }),

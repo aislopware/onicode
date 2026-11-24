@@ -262,9 +262,10 @@ const attempt = Effect.fn("workflow.agent")(function* <A, I>(
             turn.turnId,
           ),
         ),
-        Effect.flatMap((turn) =>
-          Effect.map(Clock.currentTimeMillis, (startedAt): AgentTurn => ({ ...turn, startedAt })),
-        ),
+        Effect.zipWith(Clock.currentTimeMillis, (turn, startedAt): AgentTurn => ({
+          ...turn,
+          startedAt,
+        })),
         // No machine, no project, no link: for a step that takes failure as an answer, that is one.
         onFailure === "pause"
           ? identity

@@ -7,7 +7,7 @@ MODULE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 VENDOR_DIR="${MODULE_DIR}/../../../../native/libghostty-vt"
 PATCH_DIR="${SCRIPT_DIR}/libghostty-android-patches"
 
-GHOSTTY_REVISION="${GHOSTTY_REVISION:-d69f9ed83ca7275fa5afbba0fa968d0d9ada9f5a}"
+GHOSTTY_REVISION="${GHOSTTY_REVISION:-$(tr -d '[:space:]' < "${VENDOR_DIR}/VERSION")}"
 GHOSTTY_SOURCE_DIR="${GHOSTTY_SOURCE_DIR:-${HOME}/.cache/onicode/ghostty-${GHOSTTY_REVISION:0:8}}"
 GHOSTTY_ZIG_VERSION="${GHOSTTY_ZIG_VERSION:-0.17.1}"
 GHOSTTY_ZIG="${GHOSTTY_ZIG:-}"
@@ -98,6 +98,19 @@ apply_ghostty_patches() {
   done
 }
 
+# The iOS and web builds share this checkout and refuse a patched one.
+revert_ghostty_patches() {
+  [[ -d "${PATCH_DIR}" ]] || return 0
+  local patches=("${PATCH_DIR}"/*.patch) index patch_file
+  for ((index = ${#patches[@]} - 1; index >= 0; index--)); do
+    patch_file="${patches[index]}"
+    [[ -e "${patch_file}" ]] || continue
+    if git -C "${GHOSTTY_SOURCE_DIR}" apply --reverse --check "${patch_file}" >/dev/null 2>&1; then
+      git -C "${GHOSTTY_SOURCE_DIR}" apply --reverse "${patch_file}"
+    fi
+  done
+}
+
 if [[ -z "${ANDROID_NDK_HOME}" ]]; then
   die "ANDROID_NDK_HOME must point to an installed Android NDK"
 fi
@@ -105,6 +118,7 @@ fi
 
 ensure_zig
 ensure_ghostty_source
+trap revert_ghostty_patches EXIT
 apply_ghostty_patches
 
 strip_tool="${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt"
@@ -119,7 +133,7 @@ targets=(
 )
 
 build_root="$(mktemp -d)"
-trap 'rm -rf "${build_root}"' EXIT
+trap 'rm -rf "${build_root}" || true; revert_ghostty_patches' EXIT
 mkdir -p "${VENDOR_DIR}/include"
 
 for entry in "${targets[@]}"; do
@@ -148,5 +162,4 @@ done
 rm -rf "${VENDOR_DIR}/include/ghostty"
 cp -R "${build_root}/arm64-v8a/include/ghostty" "${VENDOR_DIR}/include/ghostty"
 cp "${GHOSTTY_SOURCE_DIR}/LICENSE" "${VENDOR_DIR}/LICENSE"
-printf '%s\n' "${GHOSTTY_REVISION}" > "${VENDOR_DIR}/VERSION"
 log "done"

@@ -2763,6 +2763,61 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),
   );
 
+  it.effect(
+    "shows another client's steer into a command turn that waited for a failed prompt to settle",
+    () =>
+      Effect.gen(function* () {
+        const inbox = (inboxID: string, text: string) =>
+          event("session.inbox.enqueued", {
+            inboxID,
+            sessionID: SESSION,
+            item: { type: "user", payload: { text }, delivery: "steer" },
+          });
+        const { runtime, thread } = yield* resumed([
+          out("session.prompt", { sessionID: SESSION, text: "<any>" }),
+          reply("session.prompt", {
+            status: 502,
+            body: { _tag: "UnknownError", message: "bad gateway" },
+          }),
+          out("session.active"),
+          replyData("session.active", {}),
+          out("command.list", "<any>"),
+          reply("command.list", { location: { directory: WORK }, data: [{ name: "review" }] }),
+          out("message.list", { sessionID: SESSION, order: "desc", limit: "1" }),
+          reply("message.list", { data: [], cursor: {} }),
+          out("session.command", { sessionID: SESSION, name: "review", text: "" }),
+          reply("session.command", null),
+          out("session.active"),
+          replyData("session.active", { [SESSION]: { type: "running" } }),
+          inbox("msg_command", "Review the working tree"),
+          event("session.execution.started", { sessionID: SESSION }),
+          event("session.inbox.delivered", { sessionID: SESSION, inboxID: "msg_command" }),
+          inbox("msg_automation", "Check the build"),
+          event("session.inbox.delivered", { sessionID: SESSION, inboxID: "msg_automation" }),
+          event("session.execution.succeeded", { sessionID: SESSION }),
+        ]);
+        let terminalCount = 0;
+        const events = yield* runtime.events.pipe(
+          Stream.takeUntil((e) => e.type === "turn.terminal" && ++terminalCount === 2),
+          Stream.runCollect,
+          Effect.forkScoped,
+        );
+        yield* runtime.startTurn(turnInput(thread)).pipe(Effect.ignore);
+        yield* runtime.startTurn({
+          ...secondTurn(thread),
+          message: { ...secondTurn(thread).message, text: "/review" },
+        });
+        assert.deepEqual(
+          (yield* Fiber.join(events)).flatMap((e) =>
+            e.type === "turn_item.updated" && e.turnItem.type === "user_message"
+              ? [`${e.turnItem.inputIntent}: ${e.turnItem.text}`]
+              : [],
+          ),
+          ["steer: Check the build"],
+        );
+      }),
+  );
+
   it.effect("checks the server before prompting again after a prompt request failed", () =>
     Effect.gen(function* () {
       const { runtime, thread } = yield* resumed([
@@ -4826,113 +4881,126 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       }),
   );
 
-  it.effect.each(["completed", "error", "cancelled"] as const)(
-    "retains native image job %s after its launch returns",
-    (outcome) =>
-      Effect.gen(function* () {
-        const tool = { sessionID: SESSION, assistantMessageID: "msg_assistant", id: "call-image" };
-        const notice = (sessionID: string) =>
-          event("session.inbox.enqueued", {
-            sessionID,
-            inboxID: `msg_image_${sessionID}`,
-            item: {
-              type: "synthetic",
-              delivery: "steer",
-              payload: {
-                description: "Image generation",
-                text:
-                  outcome === "completed"
-                    ? "Image outcome retained. Saved image: /work/opencode2/image.png (test/image)."
-                    : "Image outcome retained",
-                metadata: {
-                  source: "experimental_image_generate",
-                  jobID: "image_test",
-                  state: outcome,
-                  path: "/work/opencode2/image",
-                },
+  it.effect.each([
+    ["experimental_image_generate", "completed"],
+    ["experimental_image_generate", "error"],
+    ["experimental_image_generate", "cancelled"],
+    ["generate_image", "completed"],
+    ["generate_video", "completed"],
+  ] as const)("retains native %s job %s after its launch returns", ([name, outcome]) =>
+    Effect.gen(function* () {
+      const video = name === "generate_video";
+      const tool = { sessionID: SESSION, assistantMessageID: "msg_assistant", id: "call-image" };
+      const notice = (sessionID: string) =>
+        event("session.inbox.enqueued", {
+          sessionID,
+          inboxID: `msg_image_${sessionID}`,
+          item: {
+            type: "synthetic",
+            delivery: "steer",
+            payload: {
+              description: "Image generation",
+              text:
+                outcome !== "completed"
+                  ? "Image outcome retained"
+                  : video
+                    ? "Image outcome retained. Saved video: /work/opencode2/image.mp4."
+                    : "Image outcome retained. Saved image: /work/opencode2/image.png (test/image).",
+              metadata: {
+                source: name,
+                jobID: "image_test",
+                state: outcome,
+                path: "/work/opencode2/image",
               },
             },
-          });
-        const { runtime, thread } = yield* resumed(
-          [
-            out("session.prompt", { sessionID: SESSION, text: "<any>" }),
-            promptAccepted,
-            event("session.tool.input.started", { ...tool, name: "experimental_image_generate" }),
-            event("session.tool.called", { ...tool, input: { prompt: "A tree" }, executed: false }),
-            event(
-              "session.tool.success",
-              {
-                ...tool,
-                content: [{ type: "text", text: "Job launched" }],
-                metadata: {
-                  jobID: "image_test",
-                  path: "/work/opencode2/image",
-                  model: "test/image",
-                },
-                executed: false,
+          },
+        });
+      const { runtime, thread } = yield* resumed(
+        [
+          out("session.prompt", { sessionID: SESSION, text: "<any>" }),
+          promptAccepted,
+          event("session.tool.input.started", { ...tool, name }),
+          event("session.tool.called", { ...tool, input: { prompt: "A tree" }, executed: false }),
+          event(
+            "session.tool.success",
+            {
+              ...tool,
+              content: [{ type: "text", text: "Job launched" }],
+              metadata: {
+                jobID: "image_test",
+                path: "/work/opencode2/image",
+                model: "test/image",
               },
-              undefined,
-              2,
-            ),
-            event("session.execution.succeeded", { sessionID: SESSION }),
-            notice("ses_other"),
-            notice(SESSION),
-            ...(outcome === "completed"
-              ? [
-                  out("image.read", {
-                    path: "/api/fs/read/image.png",
-                    "location[directory]": WORK,
-                  }),
-                  reply("image.read", { imageBase64: "iVBORw0KGgo=" }),
-                ]
-              : []),
-          ],
-          { external: true },
-        );
-        let launched = false;
-        const events = yield* runtime.events.pipe(
-          Stream.takeUntil((e) => {
-            if (e.type !== "provider_thread.updated") return false;
-            if (
-              e.providerThread.pendingBackgroundTasks?.some((task) => task.taskId === "image_test")
-            )
-              launched = true;
-            return launched && e.pendingBackgroundWork === false;
-          }),
-          Stream.runCollect,
-          Effect.forkScoped,
-        );
-        yield* runtime.startTurn(turnInput(thread));
-        const collected = yield* Fiber.join(events);
-        const items = collected.flatMap((e) =>
-          e.type === "turn_item.updated" && e.turnItem.nativeItemRef?.nativeId === "call-image"
-            ? [e.turnItem]
-            : [],
-        );
+              executed: false,
+            },
+            undefined,
+            2,
+          ),
+          event("session.execution.succeeded", { sessionID: SESSION }),
+          notice("ses_other"),
+          notice(SESSION),
+          ...(outcome === "completed" && !video
+            ? [
+                out("image.read", {
+                  path: "/api/fs/read/image.png",
+                  "location[directory]": WORK,
+                }),
+                reply("image.read", { imageBase64: "iVBORw0KGgo=" }),
+              ]
+            : []),
+        ],
+        { external: true },
+      );
+      let launched = false;
+      const events = yield* runtime.events.pipe(
+        Stream.takeUntil((e) => {
+          if (e.type !== "provider_thread.updated") return false;
+          if (e.providerThread.pendingBackgroundTasks?.some((task) => task.taskId === "image_test"))
+            launched = true;
+          return launched && e.pendingBackgroundWork === false;
+        }),
+        Stream.runCollect,
+        Effect.forkScoped,
+      );
+      yield* runtime.startTurn(turnInput(thread));
+      const collected = yield* Fiber.join(events);
+      const items = collected.flatMap((e) =>
+        e.type === "turn_item.updated" && e.turnItem.nativeItemRef?.nativeId === "call-image"
+          ? [e.turnItem]
+          : [],
+      );
+      assert.deepEqual(
+        items.map((item) => item.status),
+        [
+          "running",
+          "running",
+          "running",
+          outcome === "error" ? "failed" : outcome === "cancelled" ? "interrupted" : "completed",
+        ],
+      );
+      assert.include(JSON.stringify(items.at(-1)), "Image outcome retained");
+      if (outcome === "completed") {
+        const item = items.at(-1);
         assert.deepEqual(
-          items.map((item) => item.status),
-          [
-            "running",
-            "running",
-            "running",
-            outcome === "error" ? "failed" : outcome === "cancelled" ? "interrupted" : "completed",
-          ],
+          item?.type === "dynamic_tool" ? toolOutputImages(item.output) : [],
+          video ? [] : [{ mimeType: "image/png", data: "iVBORw0KGgo=" }],
         );
-        assert.include(JSON.stringify(items.at(-1)), "Image outcome retained");
-        if (outcome === "completed") {
-          const item = items.at(-1);
-          assert.deepEqual(item?.type === "dynamic_tool" ? toolOutputImages(item.output) : [], [
-            { mimeType: "image/png", data: "iVBORw0KGgo=" },
-          ]);
-        }
-        const rosters = collected.flatMap((e) =>
-          e.type === "provider_thread.updated"
-            ? [e.providerThread.pendingBackgroundTasks ?? []]
-            : [],
-        );
-        assert.isTrue(rosters.some((tasks) => tasks.some((task) => task.taskId === "image_test")));
-        assert.deepEqual(rosters.at(-1), []);
-      }),
+      }
+      const rosters = collected.flatMap((e) =>
+        e.type === "provider_thread.updated" ? [e.providerThread.pendingBackgroundTasks ?? []] : [],
+      );
+      assert.isTrue(
+        rosters.some((tasks) =>
+          tasks.some(
+            (task) =>
+              task.taskId === "image_test" &&
+              task.description?.startsWith(video ? "Video generation" : "Image generation") ===
+                true,
+          ),
+        ),
+      );
+      assert.deepEqual(rosters.at(-1), []);
+    }),
   );
 
   it.effect.each(["history", "list", "late-preview"] as const)(
@@ -5868,6 +5936,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           url: "http://127.0.0.1:3773/mcp",
           headers: { Authorization: "Bearer thread-credential" },
           oauth: false,
+          protocol: "legacy",
         },
       });
       const turn = [
@@ -5944,6 +6013,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
             url: "http://127.0.0.1:3773/mcp",
             headers: { Authorization: "Bearer thread-credential" },
             oauth: false,
+            protocol: "legacy",
           },
         });
         const addComputer = (socket: string) =>
@@ -6047,6 +6117,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
             url: "http://127.0.0.1:3773/mcp",
             headers: { Authorization: "Bearer thread-credential" },
             oauth: false,
+            protocol: "legacy",
           },
         }),
         reply("mcp.add", null),
@@ -8452,6 +8523,66 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       }),
   );
 
+  it.effect("does not start a wake's history at a prompt another client steered into it", () =>
+    Effect.gen(function* () {
+      const offers: Array<ProviderContinuationRequests.ProviderContinuationRequest> = [];
+      // Onicode's own prompt can be admitted after a failed submit ended its turn.
+      const late = `msg_oni_turn_${SESSION}:attempt:late`;
+      const { runtime, thread } = yield* resumed([
+        event("session.inbox.enqueued", {
+          inboxID: late,
+          sessionID: SESSION,
+          item: { type: "user", payload: { text: "mine" }, delivery: "steer" },
+        }),
+        event("session.execution.started", { sessionID: SESSION }),
+        event("session.inbox.delivered", { sessionID: SESSION, inboxID: late }),
+        event("session.inbox.enqueued", {
+          inboxID: "msg_external",
+          sessionID: SESSION,
+          item: { type: "user", payload: { text: "And this?" }, delivery: "steer" },
+        }),
+        event("session.inbox.delivered", { sessionID: SESSION, inboxID: "msg_external" }),
+        event("session.execution.succeeded", { sessionID: SESSION }),
+        // Handled only after the wake above has buffered everything before it.
+        event("session.model.selected", {
+          sessionID: SESSION,
+          model: { id: "buffered", providerID: "opencode" },
+        }),
+      ]).pipe(
+        Effect.provideService(ProviderContinuationRequests.ProviderContinuationRequests, {
+          offer: (request) => Effect.sync(() => void offers.push(request)),
+          take: Effect.never,
+        }),
+      );
+      const refs: Array<string | null | undefined> = [];
+      const buffered = yield* Deferred.make<void>();
+      const ended = yield* Deferred.make<void>();
+      yield* runtime.events.pipe(
+        Stream.tap((event) =>
+          Effect.gen(function* () {
+            if (event.type === "provider_turn.updated") {
+              refs.push(event.providerTurn.nativeTurnRef?.nativeId);
+            }
+            if (
+              event.type === "provider_thread.updated" &&
+              event.providerThread.nativeMetadata?.modelSelection?.model === "opencode/buffered"
+            ) {
+              yield* Deferred.succeed(buffered, undefined);
+            }
+            if (event.type === "turn.terminal") yield* Deferred.succeed(ended, undefined);
+          }),
+        ),
+        Stream.runDrain,
+        Effect.forkScoped,
+      );
+      yield* Deferred.await(buffered);
+      yield* runtime.startTurn(continuationTurn(thread, offers[0]!));
+      yield* Deferred.await(ended);
+      assert.isNotEmpty(refs);
+      assert.notInclude(refs, "msg_external");
+    }),
+  );
+
   it.effect("shows a second prompt another client sent while its continuation was pending", () =>
     Effect.gen(function* () {
       const offers: Array<ProviderContinuationRequests.ProviderContinuationRequest> = [];
@@ -8515,10 +8646,16 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         collected.flatMap((event) =>
           event.type === "turn_item.updated" &&
           (event.turnItem.type === "user_message" || event.turnItem.type === "assistant_message")
-            ? [`${event.turnItem.type}: ${event.turnItem.text}`]
+            ? [
+                `${event.turnItem.type}${event.turnItem.type === "user_message" ? ` ${event.turnItem.inputIntent}` : ""}: ${event.turnItem.text}`,
+              ]
             : [],
         ),
-        ["user_message: first?", "user_message: second?", "assistant_message: Both!"],
+        [
+          "user_message turn_start: first?",
+          "user_message steer: second?",
+          "assistant_message: Both!",
+        ],
       );
       assert.deepEqual(
         [
@@ -8531,6 +8668,230 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           ),
         ],
         ["user: first?", "user: second?", "assistant: Both!"],
+      );
+    }),
+  );
+
+  // OpenCode 2.4 automations steer their prompts into the running session like another client.
+  it.effect("shows a prompt another client steers into a running turn", () =>
+    Effect.gen(function* () {
+      const { runtime, thread } = yield* resumed([
+        out("session.prompt", { sessionID: SESSION, text: "<any>" }),
+        promptAccepted,
+        event("session.execution.started", { sessionID: SESSION }),
+        event("session.inbox.enqueued", {
+          inboxID: "msg_automation",
+          sessionID: SESSION,
+          item: {
+            type: "user",
+            payload: { text: "Check the build", metadata: { automation: { id: "aut_1" } } },
+            delivery: "steer",
+          },
+        }),
+        event("session.inbox.delivered", { sessionID: SESSION, inboxID: "msg_automation" }),
+        event("session.text.ended", {
+          sessionID: SESSION,
+          assistantMessageID: "msg_reply",
+          ordinal: 0,
+          text: "Build is green",
+        }),
+        event("session.execution.succeeded", { sessionID: SESSION }),
+      ]);
+      const events = yield* runtime.events.pipe(
+        Stream.takeUntil((e) => e.type === "turn.terminal"),
+        Stream.runCollect,
+        Effect.forkScoped,
+      );
+      yield* runtime.startTurn(turnInput(thread));
+      const collected = yield* Fiber.join(events);
+      assert.deepEqual(
+        collected.flatMap((e) =>
+          e.type === "turn_item.updated" && e.turnItem.type === "user_message"
+            ? [`${e.turnItem.inputIntent}: ${e.turnItem.text}`]
+            : [],
+        ),
+        ["steer: Check the build"],
+      );
+    }),
+  );
+
+  it.effect("starts the next turn with a steer the running turn ended before taking", () =>
+    Effect.gen(function* () {
+      const offers: Array<ProviderContinuationRequests.ProviderContinuationRequest> = [];
+      const { runtime, thread } = yield* resumed([
+        out("session.prompt", { sessionID: SESSION, text: "<any>" }),
+        promptAccepted,
+        event("session.execution.started", { sessionID: SESSION }),
+        event("session.inbox.enqueued", {
+          inboxID: "msg_automation",
+          sessionID: SESSION,
+          item: { type: "user", payload: { text: "Check the build" }, delivery: "steer" },
+        }),
+        event("session.execution.succeeded", { sessionID: SESSION }),
+        event("session.execution.started", { sessionID: SESSION }),
+        event("session.inbox.delivered", { sessionID: SESSION, inboxID: "msg_automation" }),
+        event("session.text.ended", {
+          sessionID: SESSION,
+          assistantMessageID: "msg_reply",
+          ordinal: 0,
+          text: "Build is green",
+        }),
+        event("session.execution.succeeded", { sessionID: SESSION }),
+        // Handled only after the wake above has buffered everything before it.
+        event("session.model.selected", {
+          sessionID: SESSION,
+          model: { id: "buffered", providerID: "opencode" },
+        }),
+      ]).pipe(
+        Effect.provideService(ProviderContinuationRequests.ProviderContinuationRequests, {
+          offer: (request) => Effect.sync(() => void offers.push(request)),
+          take: Effect.never,
+        }),
+      );
+      const collected: Array<ProviderAdapter.ProviderAdapterV2Event> = [];
+      const buffered = yield* Deferred.make<void>();
+      const ended = yield* Deferred.make<void>();
+      let terminals = 0;
+      yield* runtime.events.pipe(
+        Stream.tap((event) =>
+          Effect.gen(function* () {
+            collected.push(event);
+            if (
+              event.type === "provider_thread.updated" &&
+              event.providerThread.nativeMetadata?.modelSelection?.model === "opencode/buffered"
+            ) {
+              yield* Deferred.succeed(buffered, undefined);
+            }
+            if (event.type === "turn.terminal" && ++terminals === 2) {
+              yield* Deferred.succeed(ended, undefined);
+            }
+          }),
+        ),
+        Stream.runDrain,
+        Effect.forkScoped,
+      );
+      yield* runtime.startTurn(turnInput(thread));
+      yield* Deferred.await(buffered);
+      yield* runtime.startTurn(continuationTurn(thread, offers[0]!));
+      yield* Deferred.await(ended);
+      assert.deepEqual(
+        collected.flatMap((event) =>
+          event.type === "turn_item.updated" && event.turnItem.type === "user_message"
+            ? [`${event.turnItem.inputIntent}: ${event.turnItem.text}`]
+            : [],
+        ),
+        ["turn_start: Check the build"],
+      );
+    }),
+  );
+
+  it.effect("starts history at a prompt queued between reports the running turn took one of", () =>
+    Effect.gen(function* () {
+      const offers: Array<ProviderContinuationRequests.ProviderContinuationRequest> = [];
+      const { runtime, thread } = yield* resumed([
+        ...backgroundLaunch(CHILD),
+        event("session.execution.succeeded", { sessionID: CHILD }),
+        childReport("msg_report", "CHILD_OK"),
+        event("session.inbox.enqueued", {
+          inboxID: "msg_external",
+          sessionID: SESSION,
+          item: { type: "user", payload: { text: "Check the build" }, delivery: "queue" },
+        }),
+        event("session.inbox.delivered", { sessionID: SESSION, inboxID: "msg_report" }),
+        childReport("msg_report_late", "CHILD_AGAIN"),
+        event("session.execution.succeeded", { sessionID: SESSION }),
+        event("session.execution.started", { sessionID: SESSION }),
+        event("session.inbox.delivered", { sessionID: SESSION, inboxID: "msg_external" }),
+        event("session.inbox.delivered", { sessionID: SESSION, inboxID: "msg_report_late" }),
+        event("session.execution.succeeded", { sessionID: SESSION }),
+        // Handled only after the wake above has buffered everything before it.
+        event("session.model.selected", {
+          sessionID: SESSION,
+          model: { id: "buffered", providerID: "opencode" },
+        }),
+      ]).pipe(
+        Effect.provideService(ProviderContinuationRequests.ProviderContinuationRequests, {
+          offer: (request) => Effect.sync(() => void offers.push(request)),
+          take: Effect.never,
+        }),
+      );
+      const refs: Array<string | null | undefined> = [];
+      const buffered = yield* Deferred.make<void>();
+      const ended = yield* Deferred.make<void>();
+      let terminalCount = 0;
+      yield* runtime.events.pipe(
+        Stream.tap((event) =>
+          Effect.gen(function* () {
+            if (event.type === "provider_turn.updated") {
+              refs.push(event.providerTurn.nativeTurnRef?.nativeId);
+            }
+            if (
+              event.type === "provider_thread.updated" &&
+              event.providerThread.nativeMetadata?.modelSelection?.model === "opencode/buffered"
+            ) {
+              yield* Deferred.succeed(buffered, undefined);
+            }
+            if (event.type === "turn.terminal" && ++terminalCount === 2) {
+              yield* Deferred.succeed(ended, undefined);
+            }
+          }),
+        ),
+        Stream.runDrain,
+        Effect.forkScoped,
+      );
+      yield* runtime.startTurn(withLineage(thread));
+      yield* Deferred.await(buffered);
+      yield* runtime.startTurn(continuationTurn(thread, offers[0]!));
+      yield* Deferred.await(ended);
+      assert.include(refs, "msg_external");
+      assert.notInclude(refs, "msg_report_late");
+    }),
+  );
+
+  it.effect("does not show a command's own prompt as another client's steer", () =>
+    Effect.gen(function* () {
+      const { runtime, thread } = yield* resumed([
+        out("command.list", "<any>"),
+        reply("command.list", { location: { directory: WORK }, data: [{ name: "review" }] }),
+        out("message.list", { sessionID: SESSION, order: "desc", limit: "1" }),
+        reply("message.list", { data: [], cursor: {} }),
+        out("session.command", { sessionID: SESSION, name: "review", text: "" }),
+        reply("session.command", null),
+        out("session.active"),
+        replyData("session.active", { [SESSION]: { type: "running" } }),
+        // session.command queues the expanded template with steer delivery and no Onicode ID.
+        event("session.inbox.enqueued", {
+          inboxID: "msg_command",
+          sessionID: SESSION,
+          item: { type: "user", payload: { text: "Review the working tree" }, delivery: "steer" },
+        }),
+        event("session.execution.started", { sessionID: SESSION }),
+        event("session.inbox.delivered", { sessionID: SESSION, inboxID: "msg_command" }),
+        event("session.text.ended", {
+          sessionID: SESSION,
+          assistantMessageID: "msg_reply",
+          ordinal: 0,
+          text: "Looks fine",
+        }),
+        event("session.execution.succeeded", { sessionID: SESSION }),
+      ]);
+      const events = yield* runtime.events.pipe(
+        Stream.takeUntil((e) => e.type === "turn.terminal"),
+        Stream.runCollect,
+        Effect.forkScoped,
+      );
+      yield* runtime.startTurn({
+        ...turnInput(thread),
+        message: { ...turnInput(thread).message, text: "/review" },
+      });
+      const collected = yield* Fiber.join(events);
+      assert.deepEqual(
+        collected.flatMap((e) =>
+          e.type === "turn_item.updated" && e.turnItem.type === "user_message"
+            ? [`${e.turnItem.inputIntent}: ${e.turnItem.text}`]
+            : [],
+        ),
+        [],
       );
     }),
   );

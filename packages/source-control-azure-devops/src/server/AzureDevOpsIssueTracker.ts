@@ -833,9 +833,7 @@ export const make: Effect.Effect<
 
     update: (input) =>
       target("update", input).pipe(
-        Effect.flatMap((scope) =>
-          fieldArgs("update", input).pipe(Effect.map((fields) => ({ scope, fields }))),
-        ),
+        Effect.zipWith(fieldArgs("update", input), (scope, fields) => ({ scope, fields })),
         // `az` names a work item by id alone, so the read proves the item is the scope's own; it
         // also names the field the item keeps its text in.
         Effect.flatMap(({ scope, fields }) =>

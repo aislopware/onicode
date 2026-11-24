@@ -17,6 +17,7 @@ import { Platform, Share, StyleSheet, useWindowDimensions, View } from "react-na
 import {
   EnrichedMarkdownText,
   type AccessibilityLabels,
+  type AdmonitionTitles,
   type MarkdownCodeBlock,
   type MarkdownImageBlock,
   type MarkdownLinkOccurrence,
@@ -259,6 +260,16 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
         links: gt("Links", { $context: "screen reader rotor category" }),
         images: gt("Images", { $context: "screen reader rotor category" }),
       },
+    }),
+    [gt],
+  );
+  const admonitionTitles = useMemo<AdmonitionTitles>(
+    () => ({
+      note: gt("Note"),
+      tip: gt("Tip"),
+      important: gt("Important"),
+      warning: gt("Warning"),
+      caution: gt("Caution"),
     }),
     [gt],
   );
@@ -512,6 +523,7 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
           linkContextMenuItems={linkContextMenuItems}
           linkPillContent={linkPillContent}
           accessibilityLabels={accessibilityLabels}
+          admonitionTitles={admonitionTitles}
         />
       </View>
     );

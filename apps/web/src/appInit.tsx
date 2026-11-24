@@ -62,6 +62,7 @@ import { startWorkspaceFocus } from "./lib/workspaceFocus";
 import { m } from "./i18n/messages";
 import { onUnrestoredQuestionAttachments } from "./questionAttachments";
 import { toastManager } from "./components/ui/toast";
+import { applyDiffsMessages } from "./i18n/diffsMessages";
 import { startI18n, subscribeI18n } from "./i18n/runtime";
 import { installCommandPaletteCommands } from "./shortcuts/commandPaletteCommands";
 import { registerOpenFavoriteEditorCommand } from "./components/chat/OpenInPickerShortcut";
@@ -273,6 +274,8 @@ export function startAppServices(): AppRouter {
 
   startClientAppearance();
   startI18n();
+  applyDiffsMessages();
+  subscribeI18n(applyDiffsMessages);
   startDocumentTitle(router);
   startHostEnvironmentLookup();
   startDesktopAppActivationReceiver();

@@ -243,7 +243,7 @@ describe("OpenCode2Client native image jobs", () => {
     }),
   );
 
-  it.effect("reads scoped image jobs without accepting other sessions or job kinds", () =>
+  it.effect("reads scoped media jobs without accepting other sessions or job kinds", () =>
     Effect.gen(function* () {
       const job = {
         kind: "image",
@@ -252,6 +252,14 @@ describe("OpenCode2Client native image jobs", () => {
         status: "running",
         path: "/work/image",
         model: "test/image",
+      } as const;
+      // OpenCode 2.4 video jobs carry no model.
+      const video = {
+        kind: "video",
+        id: "video_test",
+        sessionID: "ses_owner",
+        status: "completed",
+        path: "/work/clip.mp4",
       } as const;
       const transport = HttpClient.make((request) =>
         Effect.sync(() => {
@@ -264,6 +272,7 @@ describe("OpenCode2Client native image jobs", () => {
                 { ...job, sessionID: "ses_other" },
                 { ...job, kind: "shell" },
                 { ...job, status: "future" },
+                video,
               ],
             }),
           );
@@ -273,7 +282,8 @@ describe("OpenCode2Client native image jobs", () => {
         Effect.provideService(HttpClient.HttpClient, transport),
       );
       const api = yield* service.connect({ baseUrl: "http://remote.test", password: "secret" });
-      assert.deepEqual(yield* api.imageJobs("ses_owner"), [job]);
+      assert.deepEqual(yield* api.mediaJobs("ses_owner", "image"), [job]);
+      assert.deepEqual(yield* api.mediaJobs("ses_owner", "video"), [video]);
     }),
   );
 });

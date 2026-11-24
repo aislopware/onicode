@@ -1,0 +1,44 @@
+{
+  "cua-driver": {
+    "version": "0.61.3",
+    "assets": {
+      "darwin-universal": {
+        "bytes": 44309329,
+        "sha256": "c8e6e186b8e4d81605fcc2873e11575bbb08f3854fca50cc9d1205f98d126409"
+      },
+      "linux-x86_64": {
+        "bytes": 30467545,
+        "sha256": "7fa0251d160587ad22153d0bf161b196ca799cbd9211159d1429ccd02303a6c5"
+      },
+      "linux-arm64": {
+        "bytes": 28366468,
+        "sha256": "5431c6b05ac5373ac5100147114340885ced962968ca075dff8d2b2f73a26d55"
+      },
+      "windows-x86_64": {
+        "bytes": 32735527,
+        "sha256": "4dd46c5a3ab0e46644feeb86b28f8c61b655539337a9ef72702867879763ff82"
+      },
+      "windows-arm64": {
+        "bytes": 30425702,
+        "sha256": "3a926d3a96da29d9f081d1b927e59c7c38b83b77e6d8e7e10f81b94882d47c7b"
+      }
+    }
+  },
+  "obu": {
+    "version": "4.11.0",
+    "assets": {
+      "darwin-arm64": {
+        "bytes": 7720672,
+        "sha256": "3c7516123d599a7e69fede01b7db44f2ddc7b87787d13d573368f535ac6f6a61"
+      },
+      "linux-x64": {
+        "bytes": 9115320,
+        "sha256": "f898db1941fe0f3e981f158e3f32644af22b6e9dda00e0788f337f0304d7e213"
+      },
+      "windows-x64": {
+        "bytes": 8544768,
+        "sha256": "9708da3d57ca9a0b0653e0fc9830f81572977be020e749642d745b10e2cf4b06"
+      }
+    }
+  }
+}

@@ -1,5 +1,5 @@
 diff --git a/android/src/main/java/org/wonday/pdf/viewer/PdfViewerView.kt b/android/src/main/java/org/wonday/pdf/viewer/PdfViewerView.kt
-index e1f9635aa52606725888ecd2d2a4d12ba314b2c4..aec33203b76b981340ef0fdf0cde2d70249e2ee6 100644
+index e1f9635..aec3320 100644
 --- a/android/src/main/java/org/wonday/pdf/viewer/PdfViewerView.kt
 +++ b/android/src/main/java/org/wonday/pdf/viewer/PdfViewerView.kt
 @@ -21,6 +21,7 @@ import org.json.JSONArray

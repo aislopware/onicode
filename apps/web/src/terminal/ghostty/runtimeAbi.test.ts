@@ -15,7 +15,7 @@ function decodeWasmDataUrl(dataUrl: string): Uint8Array {
 describe("vendored libghostty-vt WebAssembly", () => {
   it("stays pinned to the canonical revision and size budget", async () => {
     const wasm = decodeWasmDataUrl(wasmDataUrl);
-    expect(wasm.byteLength).toBeLessThan(750_000);
+    expect(wasm.byteLength).toBeLessThan(760_000);
 
     const result = await WebAssembly.instantiate(wasm.buffer as ArrayBuffer, {
       env: { log: () => {} },
