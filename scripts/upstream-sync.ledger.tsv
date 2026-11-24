@@ -3629,3 +3629,4 @@ cc2e4c1704	take	fix(server): revoking all other sessions also ends sign-ins stil
 f133ec7cac	take	perf(scripts): the soak drives forge polling and thread churn, and names what grew
 8d9b39edc5	take	fix(mobile): long branch names in the Git menu no longer show a broken character (#41861)
 3d9a14d4da	take	fix(web): IME keys no longer trigger or close the prompt stash menu (#41875)
+8a9e8d12a8	take	fix(acp-registry): models show their own reasoning levels before their first session (#41850)
