@@ -753,7 +753,9 @@ const make = Effect.gen(function* () {
     });
     const index = yield* read(["rev-parse", "--git-path", "index"]);
     if (index === null) return true;
-    if (yield* fs.exists(`${path.resolve(cwd, index.stdout.trim())}.lock`))
+    const locked = fs.exists(`${path.resolve(cwd, index.stdout.trim())}.lock`);
+    // A worktree made just now holds its lock for a moment while its refreshed index is swapped in.
+    if ((yield* locked) && (yield* git.settleIndexRefresh(cwd).pipe(Effect.andThen(locked))))
       return yield* failure(
         "Git index is locked. Status will resume when the index lock is removed.",
       );
@@ -1234,8 +1236,6 @@ const make = Effect.gen(function* () {
   ) {
     if (!anyWorktreePolicy(serverSettings, worktreeCleanupEnabled))
       return { waiting: false, kept: [] };
-    // Otherwise a worktree made just now reads as locked and is kept until the next pass.
-    yield* git.settleIndexRefreshes;
     let waiting = false;
     const kept: string[] = [];
     const roots: Array<string> = [];

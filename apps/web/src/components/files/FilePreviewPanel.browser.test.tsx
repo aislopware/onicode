@@ -1,4 +1,4 @@
-import { Virtualizer } from "@pierre/diffs";
+import { disposeHighlighter, Virtualizer } from "@pierre/diffs";
 import {
   EnvironmentId,
   ThreadId,
@@ -195,6 +195,8 @@ function setup() {
   state.writeFile.mockReset().mockResolvedValue(AsyncResult.success(undefined));
   return {
     [Symbol.dispose]() {
+      // Source previews load the shared highlighter; the next test starts without one.
+      void disposeHighlighter();
       for (const [index, key] of keys.entries()) {
         const value = previous[index];
         if (value == null) localStorage.removeItem(key);

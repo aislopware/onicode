@@ -1,4 +1,4 @@
-import { getFiletypeFromFileName } from "@pierre/diffs";
+import { disposeHighlighter, getFiletypeFromFileName } from "@pierre/diffs";
 import { describe, expect, it } from "vite-plus/test";
 
 import { getSyntaxHighlighterPromise } from "./syntaxHighlighting";
@@ -50,4 +50,10 @@ it.each(SAMPLES)("highlights $name in $hint", async ({ code, hint }) => {
     expect(tokens.map((line) => line.map((token) => token.content).join("")).join("\n")).toBe(code);
     expect(new Set(tokens.flat().map((token) => token.color)).size).toBeGreaterThan(1);
   }
+});
+
+it("loads a new highlighter once the shared one is disposed", async () => {
+  expect((await getSyntaxHighlighterPromise("text")).isDisposed).toBe(false);
+  await disposeHighlighter();
+  expect((await getSyntaxHighlighterPromise("text")).isDisposed).toBe(false);
 });

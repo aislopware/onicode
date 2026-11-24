@@ -7,6 +7,11 @@ import {
 
 // The shared highlighter is module state; one left loaded changes how later tests in the file render.
 export async function loadSharedHighlighter(langs: SupportedLanguages[]): Promise<AsyncDisposable> {
-  await preloadHighlighter({ themes: Object.values(DEFAULT_THEMES), langs });
+  try {
+    await preloadHighlighter({ themes: Object.values(DEFAULT_THEMES), langs });
+  } catch (error) {
+    await disposeHighlighter();
+    throw error;
+  }
   return { [Symbol.asyncDispose]: disposeHighlighter };
 }
