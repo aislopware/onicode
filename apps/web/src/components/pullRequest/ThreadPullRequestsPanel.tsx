@@ -543,13 +543,16 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
         watching,
       },
     });
-    if (watching) {
-      void trackPullRequestWatchStart(
-        registry,
-        { environmentId: threadRef.environmentId, threadId: threadRef.threadId, url: link.url },
-        pending,
-      );
-    }
+    void trackPullRequestWatchStart(
+      registry,
+      {
+        environmentId: threadRef.environmentId,
+        threadId: threadRef.threadId,
+        url: link.url,
+        watching,
+      },
+      pending,
+    );
   };
 
   // Legend rows update only for data/extraData changes; include all external inputs.

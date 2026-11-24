@@ -1,3 +1,4 @@
+import { RegistryContext } from "@effect/atom-react";
 import { pipe } from "effect/Function";
 import { ThreadDetailsControl } from "./ThreadDetailsControl";
 import type {
@@ -7,6 +8,7 @@ import type {
   VcsStatusResult,
 } from "@onicode/contracts";
 import type { EnvironmentProject } from "@onicode/client-runtime/state/shell";
+import { trackPullRequestWatchStart } from "@onicode/client-runtime/state/pull-requests";
 import {
   pullRequestListLines,
   resolveThreadPullRequestChains,
@@ -15,7 +17,7 @@ import {
 } from "@onicode/client-runtime/thread-pull-requests";
 import { T, useMessages, Var } from "gt-react";
 import { ChevronDownIcon, ChevronUpIcon } from "lucide-react";
-import { useState, type ComponentProps, type MouseEvent as ReactMouseEvent } from "react";
+import { useContext, useState, type ComponentProps, type MouseEvent as ReactMouseEvent } from "react";
 
 import { sourceControlClients } from "@onicode/client-runtime/source-control-clients";
 import {
@@ -100,20 +102,30 @@ function ThreadDetailsPrRows({
 }) {
   const [expanded, setExpanded] = useState(false);
   const watch = useAtomCommand(threadEnvironment.watchPullRequest, { reportFailure: true });
+  const registry = useContext(RegistryContext);
   const stopWatching = (link: ThreadPullRequestLink | null) =>
     link?.watch === undefined
       ? undefined
       : () =>
-          void watch({
-            environmentId: threadRef.environmentId,
-            input: {
+          void trackPullRequestWatchStart(
+            registry,
+            {
+              environmentId: threadRef.environmentId,
               threadId: threadRef.threadId,
-              host: link.host,
-              repository: link.repository,
-              number: link.number,
+              url: link.url,
               watching: false,
             },
-          });
+            watch({
+              environmentId: threadRef.environmentId,
+              input: {
+                threadId: threadRef.threadId,
+                host: link.host,
+                repository: link.repository,
+                number: link.number,
+                watching: false,
+              },
+            }),
+          );
   const currentRow = <ThreadDetailsPrRow {...row} onStopWatching={stopWatching(currentLink)} />;
   const rest =
     currentLink === null
