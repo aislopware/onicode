@@ -3631,3 +3631,4 @@ f133ec7cac	take	perf(scripts): the soak drives forge polling and thread churn, a
 3d9a14d4da	take	fix(web): IME keys no longer trigger or close the prompt stash menu (#41875)
 8a9e8d12a8	take	fix(acp-registry): models show their own reasoning levels before their first session (#41850)
 e9c952495c	take	fix(server): keep short RGB terminal colors on reattach (#41882)
+0aeb7921c2	skip	T3's trademark policy and branding wording for its own name and forks; Onicode has its own name, icon and docs, and ships no T3 Code branding
