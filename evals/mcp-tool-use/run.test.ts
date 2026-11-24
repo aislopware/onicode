@@ -1603,13 +1603,27 @@ it.effect(
       assert.isNotTrue(short.is_error);
       const full = yield* call("d", "pull_request_merge", { number: 7, expectedHeadSha: head });
       assert.isNotTrue(full.is_error);
+      // As the tool schemas: merge needs a SHA, and a blank one is refused wherever it is given.
+      const unpinnedMerge = yield* call("d2", "pull_request_merge", { number: 7 });
+      assert.isTrue(unpinnedMerge.is_error);
+      assert.include(String(unpinnedMerge.content), "expectedHeadSha");
+      const blankMerge = yield* call("d3", "pull_request_merge", {
+        number: 7,
+        expectedHeadSha: " ",
+      });
+      assert.isTrue(blankMerge.is_error);
+      assert.include(String(blankMerge.content), "non-blank");
+      const blankComment = { number: 7, verdict: "comment", body: "Hi.", expectedHeadSha: " " };
+      const blankCommentResult = yield* call("d4", "pull_request_review", blankComment);
+      assert.isTrue(blankCommentResult.is_error);
+      assert.include(String(blankCommentResult.content), "non-blank");
 
       const unpinned = yield* call("e", "pull_request_review", { number: 7, verdict: "approve" });
       assert.include(String(unpinned.content), "Approving needs expectedHeadSha");
       const blank = { number: 7, verdict: "approve", expectedHeadSha: " " };
       assert.include(
         String((yield* call("e2", "pull_request_review", blank)).content),
-        "Approving needs expectedHeadSha",
+        "non-blank",
       );
       const stale = { number: 7, verdict: "approve", expectedHeadSha: "c3a91f3" };
       assert.isTrue((yield* call("f", "pull_request_review", stale)).is_error);

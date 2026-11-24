@@ -937,7 +937,8 @@ export const interruptThreadTurn = Effect.fn("EnvironmentCommands.interruptThrea
         run.status === "waiting",
     )?.id;
     if (runId === undefined) {
-      const latestRun = projection.runs.at(-1);
+      // Servers without thread.stop stop background work only through this run.
+      const latestRun = projection.runs.findLast((run) => run.status !== "queued");
       if (
         derivePendingBackgroundWork({
           latestRun,

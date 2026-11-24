@@ -220,12 +220,21 @@ function isXAiSpawnOrTaskTool(
   return false;
 }
 
+// Display titles such as "Get task output: <id>" leave the canonical name in metadata.
+function xAiCanonicalToolName(toolCall: AcpToolCallState): string {
+  const name = unknownRecord(unknownRecord(toolCall.data.meta)?.["x.ai/tool"])?.name;
+  return typeof name === "string" ? name : titleKey(toolCall);
+}
+
 function isXAiGetSubagentOutputTool(
   toolCall: AcpToolCallState,
   rawInput: Record<string, unknown> | undefined,
 ): boolean {
   const title = titleKey(toolCall);
+  const name = xAiCanonicalToolName(toolCall);
   if (
+    name === "get_command_or_subagent_output" ||
+    name === "wait_commands_or_subagents" ||
     title === "get_command_or_subagent_output" ||
     title.includes("get_command_or_subagent_output") ||
     title === "wait_commands_or_subagents"
@@ -838,7 +847,7 @@ function statusFromGetOutputTool(
 
 /**
  * The subagents an output call waits for: a positive `timeout_ms` blocks until they finish, while
- * none or 0 only reads their status. `wait_commands_or_subagents` waits 30 s by default.
+ * none (absent or null) or 0 only reads their status. `wait_commands_or_subagents` waits 30 s by default.
  */
 export function extractXAiAwaitedSubagentIds(toolCall: AcpToolCallState): ReadonlyArray<string> {
   const rawInput = unknownRecord(toolCall.data.rawInput);
@@ -847,7 +856,7 @@ export function extractXAiAwaitedSubagentIds(toolCall: AcpToolCallState): Readon
   const waits =
     typeof timeout === "number"
       ? timeout > 0
-      : timeout === undefined && titleKey(toolCall) === "wait_commands_or_subagents";
+      : timeout == null && xAiCanonicalToolName(toolCall) === "wait_commands_or_subagents";
   return waits ? taskIdsFromGetOutputTool(toolCall, rawInput) : [];
 }
 

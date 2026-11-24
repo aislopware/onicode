@@ -202,6 +202,34 @@ describe("idleCompactionWindow", () => {
     // A turn Claude itself reported as cancelled did run, so it stays the latest.
     steered.runs = steered.runs.map((run) => ({ ...run, startedAt: at(-MINUTE_MS) }));
     expect(idleCompactionWindow(steered, NOW_MS)).toBeNull();
+    // A held message resumed after a later run ended: the run that ended last is the latest.
+    const resumed = records(cache);
+    resumed.runs = [
+      ...resumed.runs,
+      {
+        ...resumed.runs[0]!,
+        id: RunId.make("run-2"),
+        ordinal: 2,
+        userMessageId: MessageId.make("message-2"),
+        status: "interrupted",
+        startedAt: at(-2 * MINUTE_MS),
+        completedAt: at(-MINUTE_MS),
+      },
+    ];
+    expect(idleCompactionWindow(resumed, NOW_MS)?.runId).toBe(runId);
+    resumed.runs = [
+      ...resumed.runs,
+      {
+        ...resumed.runs[0]!,
+        id: RunId.make("run-3"),
+        ordinal: 3,
+        userMessageId: MessageId.make("message-3"),
+        status: "queued",
+        startedAt: null,
+        completedAt: null,
+      },
+    ];
+    expect(idleCompactionWindow(resumed, NOW_MS)).toBeNull();
     const archived = records(cache);
     archived.thread = { ...archived.thread, archivedAt: at() };
     expect(idleCompactionWindow(archived, NOW_MS)).toBeNull();

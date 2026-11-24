@@ -3409,7 +3409,9 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               input.subagent.awaitedBy = null;
             }
             const { awaitedByRunId: _awaitedByRunId, ...unawaited } = prior;
-            const awaitedByRunId = input.subagent.awaitedBy?.projectionRunId ?? null;
+            const awaitedByRunId = isOrchestrationV2WorkActive(status)
+              ? (input.subagent.awaitedBy?.projectionRunId ?? null)
+              : null;
             const task = {
               ...unawaited,
               ...(awaitedByRunId === null ? {} : { awaitedByRunId }),

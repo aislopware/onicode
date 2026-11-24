@@ -211,22 +211,38 @@ describe("XAiAcpExtension", () => {
     });
   });
 
+  const XAI_POLLED_CHILD_ID = "019f44a6-4820-7402-925d-bc862ee711dd";
+  // Recorded frames (grok_background_* fixtures) carry a display title, the canonical name in
+  // `_meta["x.ai/tool"]`, and an omitted timeout as null.
+  const recordedPoll = (name: string, rawInput: Record<string, unknown>) => ({
+    title: `Get task output: ${XAI_POLLED_CHILD_ID}`,
+    meta: { "x.ai/tool": { version: 1, name, kind: "background_task_action" } },
+    rawInput: { variant: "TaskOutput", ...rawInput },
+  });
   it.each([
     { title: "get_command_or_subagent_output", rawInput: { timeout_ms: 15_000 }, awaited: true },
     { title: "get_command_or_subagent_output", rawInput: {}, awaited: false },
     { title: "get_command_or_subagent_output", rawInput: { timeout_ms: 0 }, awaited: false },
     { title: "wait_commands_or_subagents", rawInput: { mode: "wait_all" }, awaited: true },
     { title: "Read", rawInput: { timeout_ms: 15_000 }, awaited: false },
+    {
+      ...recordedPoll("get_command_or_subagent_output", { timeout_ms: 15_000 }),
+      awaited: true,
+    },
+    { ...recordedPoll("get_command_or_subagent_output", { timeout_ms: null }), awaited: false },
+    { ...recordedPoll("wait_commands_or_subagents", { timeout_ms: null }), awaited: true },
   ])("holds the parent on the polled children only for a blocking poll: %j", (row) => {
-    const childId = "019f44a6-4820-7402-925d-bc862ee711dd";
     expect(
       extractXAiAwaitedSubagentIds({
         toolCallId: "call-poll",
         title: row.title,
         status: "inProgress",
-        data: { rawInput: { task_ids: [childId, "call-bg-1-0"], ...row.rawInput } },
+        data: {
+          ...("meta" in row ? { meta: row.meta } : {}),
+          rawInput: { task_ids: [XAI_POLLED_CHILD_ID, "call-bg-1-0"], ...row.rawInput },
+        },
       }),
-    ).toEqual(row.awaited ? [childId] : []);
+    ).toEqual(row.awaited ? [XAI_POLLED_CHILD_ID] : []);
   });
 
   it("attributes multi-task get_output envelopes to the result task_id", () => {

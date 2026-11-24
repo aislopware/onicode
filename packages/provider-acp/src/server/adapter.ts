@@ -4272,7 +4272,9 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           }
           const result = update.result ?? subagent.task.result ?? (subagent.assistantText || null);
           const { awaitedByRunId: _awaitedByRunId, ...unawaited } = subagent.task;
-          const awaitedByRunId = subagent.waitCalls.values().next().value;
+          const awaitedByRunId = acpSubagentStatusIsTerminal(taskStatus)
+            ? undefined
+            : subagent.waitCalls.values().next().value;
           subagent.task = {
             ...unawaited,
             ...(awaitedByRunId === undefined ? {} : { awaitedByRunId }),
@@ -4359,7 +4361,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           }
         });
 
-        // `waits` names the children a running call holds; null ends the call, undefined ends all.
+        // `waits` names every child a running call holds now; null ends the call, undefined ends all.
         const updateSubagentWaits = Effect.fnUntraced(function* (
           context: ActiveAcpTurn,
           toolCallId: string | undefined,
@@ -4367,12 +4369,14 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
         ) {
           for (const subagent of context.subagents.values()) {
             const wasAwaited = subagent.waitCalls.size > 0;
-            if (waits !== null && toolCallId !== undefined) {
-              if (subagent.childSessionId !== null && waits.includes(subagent.childSessionId)) {
-                subagent.waitCalls.set(toolCallId, context.input.runId);
-              }
-            } else if (toolCallId === undefined) {
+            if (toolCallId === undefined) {
               subagent.waitCalls.clear();
+            } else if (
+              waits !== null &&
+              subagent.childSessionId !== null &&
+              waits.includes(subagent.childSessionId)
+            ) {
+              subagent.waitCalls.set(toolCallId, context.input.runId);
             } else {
               subagent.waitCalls.delete(toolCallId);
             }
@@ -4392,6 +4396,16 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               suppressNormalTool: true,
             });
           }
+        });
+
+        // Finalize waits for background work; no call of the ended prompt holds the parent.
+        const settlePrompt = Effect.fnUntraced(function* (
+          context: ActiveAcpTurn,
+          status: NonNullable<ActiveAcpTurn["promptSettledStatus"]>,
+        ) {
+          context.promptSettled = true;
+          context.promptSettledStatus = status;
+          yield* updateSubagentWaits(context, undefined, null);
         });
 
         const nativeChild = (sessionId: string) => {
@@ -10214,10 +10228,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                           : "cancelled"
                         : "completed";
                   if (defersFinalizeForBackgroundWork && !context.interrupted) {
-                    context.promptSettled = true;
-                    context.promptSettledStatus = status;
-                    // The prompt ended, so no call of it holds the parent any more.
-                    yield* updateSubagentWaits(context, undefined, null);
+                    yield* settlePrompt(context, status);
                     for (const [taskId, completion] of context.backgroundCommands) {
                       if (completion === null) continue;
                       yield* finishRegisteredBackgroundTool({ taskId, ...completion });
@@ -10673,8 +10684,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                 );
                 return;
               }
-              context.promptSettled = true;
-              context.promptSettledStatus = "completed";
+              yield* settlePrompt(context, "completed");
               // The replayed reply ended before the prompt counted as settled.
               yield* idleReportedSubagents(context);
               if (drainedWakeCount === 0) {

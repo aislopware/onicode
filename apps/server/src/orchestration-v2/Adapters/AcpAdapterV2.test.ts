@@ -11061,11 +11061,20 @@ describe("AcpAdapterV2", () => {
   );
 
   it.effect.each([
-    { ends: "the poll returns", pollReturns: true },
-    { ends: "the prompt ends inside the poll", pollReturns: false },
-  ])(
+    { ends: "the poll returns", end: "returns", untilMarker: [true, false, true, "marker"] },
+    {
+      ends: "the prompt ends inside the poll",
+      end: "inside",
+      untilMarker: [true, false, "marker"],
+    },
+    {
+      ends: "the poll drops its timeout",
+      end: "untimed",
+      untilMarker: [true, false, true, "marker"],
+    },
+  ] as const)(
     "marks a Grok child awaited only while a blocking poll names it, until $ends",
-    ({ pollReturns }) =>
+    ({ end, untilMarker }) =>
       Effect.gen(function* () {
         const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
         const selfInvocation = yield* resolveSelfInvocation();
@@ -11136,7 +11145,29 @@ describe("AcpAdapterV2", () => {
                     yield* poll("tool-call-peek", {});
                     yield* pollReturned("tool-call-peek");
                     yield* poll("tool-call-wait", { timeout_ms: 15_000 });
-                    if (pollReturns) yield* pollReturned("tool-call-wait");
+                    if (end === "untimed") {
+                      yield* sessionUpdateHandler!({
+                        sessionId: "mock-session-1",
+                        update: {
+                          sessionUpdate: "tool_call_update",
+                          toolCallId: "tool-call-wait",
+                          status: "in_progress",
+                          rawInput: { task_ids: [childSessionId], timeout_ms: 0 },
+                        },
+                      });
+                    }
+                    if (end === "returns") yield* pollReturned("tool-call-wait");
+                    yield* sessionUpdateHandler!({
+                      sessionId: "mock-session-1",
+                      update: {
+                        sessionUpdate: "tool_call",
+                        toolCallId: "tool-call-marker",
+                        title: "Read",
+                        kind: "read",
+                        status: "completed",
+                        rawInput: { path: "README.md" },
+                      },
+                    });
                     return { stopReason: "end_turn" as const };
                   }),
               }),
@@ -11196,6 +11227,15 @@ describe("AcpAdapterV2", () => {
           ),
           [undefined, turnInput.runId, undefined],
         );
+        // The marker tool comes after the poll section, before the turn ends.
+        const trace = changes(
+          seen.flatMap((event): Array<boolean | "marker"> => {
+            if (event.type !== "turn_item.updated") return [];
+            if (event.turnItem.type === "subagent") return [event.turnItem.background ?? false];
+            return event.turnItem.nativeItemRef?.nativeId === "tool-call-marker" ? ["marker"] : [];
+          }),
+        );
+        assert.deepEqual(trace.slice(0, trace.indexOf("marker") + 1), [...untilMarker]);
       }).pipe(Effect.provide(layerTest), Effect.scoped),
   );
 
