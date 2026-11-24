@@ -3716,28 +3716,31 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
   it.effect("finishes a workspace command that never starts an execution", () =>
     Effect.gen(function* () {
       // A plugin command whose handler skips the model returns 204 and emits no execution events.
-      const { runtime, thread } = yield* resumed([
-        out("command.list", "<any>"),
-        reply("command.list", { location: { directory: WORK }, data: [{ name: "noop" }] }),
-        out("message.list", { sessionID: SESSION, order: "desc", limit: "1" }),
-        reply("message.list", {
-          data: [
-            { id: "msg_idle_before", time: { created: 1 }, type: "idle", outcome: "succeeded" },
-          ],
-          cursor: {},
-        }),
-        out("session.command", { sessionID: SESSION, name: "noop", text: "" }),
-        reply("session.command", null),
-        out("session.active"),
-        replyData("session.active", {}),
-        out("message.list", { sessionID: SESSION, order: "desc", limit: "1" }),
-        reply("message.list", {
-          data: [
-            { id: "msg_idle_before", time: { created: 1 }, type: "idle", outcome: "succeeded" },
-          ],
-          cursor: {},
-        }),
-      ]);
+      const { runtime, thread } = yield* resumed(
+        [
+          out("command.list", "<any>"),
+          reply("command.list", { location: { directory: WORK }, data: [{ name: "noop" }] }),
+          out("message.list", { sessionID: SESSION, order: "desc", limit: "1" }),
+          reply("message.list", {
+            data: [
+              { id: "msg_idle_before", time: { created: 1 }, type: "idle", outcome: "succeeded" },
+            ],
+            cursor: {},
+          }),
+          out("session.command", { sessionID: SESSION, name: "noop", text: "" }),
+          reply("session.command", null),
+          out("session.active"),
+          replyData("session.active", {}),
+          out("message.list", { sessionID: SESSION, order: "desc", limit: "1" }),
+          reply("message.list", {
+            data: [
+              { id: "msg_idle_before", time: { created: 1 }, type: "idle", outcome: "succeeded" },
+            ],
+            cursor: {},
+          }),
+        ],
+        { version: "2.2.6" },
+      );
       const runsAsCommand = (text: string, cwd: string | null = WORK) =>
         runtime.runsAsNativeCommand!({ text, attachments: [] }, { cwd });
       // Before a turn reads the directory's command list, any `/name` may be listed.
@@ -3750,6 +3753,11 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       assert.equal((yield* Fiber.join(terminal))?.status, "completed");
       assert.isTrue(runsAsCommand("/noop"));
       assert.isFalse(runsAsCommand("/unlisted"));
+      // The adapter handles these itself; a `/goal` it passes on still needs a listed command.
+      assert.isTrue(runsAsCommand("/compact"));
+      assert.isFalse(runsAsCommand("/compact now"));
+      assert.isTrue(runsAsCommand("/goal"));
+      assert.isFalse(runsAsCommand("/goal ship it"));
       assert.isTrue(runsAsCommand("/unlisted", "/work/other"));
     }).pipe(Effect.scoped),
   );
