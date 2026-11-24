@@ -752,6 +752,7 @@ describe("ProcessRunner.layer", () => {
         expect(error._tag).toBe("ProcessSpawnError");
         expect(replacement).not.toBe(helper);
         expect(replacement).not.toBe(process.pid);
+        expect(ProcessLauncher.isServerChild(replacement)).toBe(true);
       }).pipe(
         Effect.provide(
           ProcessRunner.layer.pipe(

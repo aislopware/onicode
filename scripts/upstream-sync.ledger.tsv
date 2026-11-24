@@ -3740,3 +3740,4 @@ fc92aefd26	take	adopted upstream's acquireUseRelease over Onicode's onError + ti
 a7a6126a7d	take	taken as is
 e5dfa6ee0c	take	taken as is
 7c42bb1c5c	take	taken as is
+4c31da157b	take	kept Onicode's ProcessLauncher.isServerChild over upstream's ProcessLauncher.currentPid Reference: it counts every live launcher (an old one still exiting after a restart too), is already shared by PortScanner, ProcessGroupMetrics and providerProcesses, and needs no layer change; took upstream's launcher rows in the stoppable-group test and a restart assertion in processRunner.test; upstream's scan test needs the injectable Reference, so it was not taken
