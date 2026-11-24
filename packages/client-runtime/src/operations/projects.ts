@@ -12,7 +12,12 @@ import type {
 } from "@onicode/contracts";
 import { SourceControlProviderKind } from "@onicode/contracts";
 import { cloneUrlRepositoryPath } from "@onicode/shared/cloneUrl";
-import { isAbsolutePath, isExplicitRelativePath, newProjectFolderName } from "@onicode/shared/path";
+import {
+  isAbsolutePath,
+  isExplicitRelativePath,
+  isHostPath,
+  newProjectFolderName,
+} from "@onicode/shared/path";
 import * as Arr from "effect/Array";
 import * as Option from "effect/Option";
 import * as Order from "effect/Order";
@@ -234,7 +239,11 @@ export function getAddProjectInitialQuery(baseDirectory: string | null | undefin
 }
 
 export function getCloneDirectoryName(repositoryOrRemoteUrl: string | null | undefined): string {
-  const withoutQuery = (repositoryOrRemoteUrl ?? "").split(/[?#]/)[0]?.trim() ?? "";
+  const trimmed = (repositoryOrRemoteUrl ?? "").trim();
+  // A local path keeps `#` and `?` in its name; in a URL they start a query or fragment.
+  const isLocalPath =
+    !trimmed.includes("://") && (isHostPath(trimmed) || isExplicitRelativePath(trimmed));
+  const withoutQuery = isLocalPath ? trimmed : (trimmed.split(/[?#]/)[0] ?? "");
   const schemeIndex = withoutQuery.indexOf("://");
   const hasHost = schemeIndex >= 0 || /^[^/\\:]+@[^/\\:]+:/.test(withoutQuery);
   const pathPart = schemeIndex >= 0 ? withoutQuery.slice(schemeIndex + "://".length) : withoutQuery;
