@@ -3668,3 +3668,4 @@ a6c69be8df	take	fix(web,mobile): a parent parked on subagents no longer reads as
 3fb76f1be8	take	fix(web): issue links in HTML renders open in the issue panel
 2b2da5e7f9	take	docs(security): clarify intended behaviour and triage steps; relay, guest, webhook, outside-agent and dev-token entries left out, kept Onicode's Principals table and finding numbers: it describes the surfaces Onicode has
 bc138a77d1	take	fix(mobile): a local preview link opens only http and https addresses; test mocks Onicode's useLocalPreviewBlocker
+97b8c9c7c2	take	fix(mobile): a typed pairing code goes to the address shown in the form
