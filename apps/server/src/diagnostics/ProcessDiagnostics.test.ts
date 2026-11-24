@@ -82,10 +82,10 @@ describe("ProcessDiagnostics", () => {
         const processDiagnostics = yield* ProcessDiagnostics.ProcessDiagnostics;
 
         expect(
-          yield* processDiagnostics.signal({ pid: launcher, startTimeMs: 1, signal: "SIGCONT" }),
+          yield* processDiagnostics.signal({ pid: launcher, startTimeMs: 1, signal: "SIGINT" }),
         ).toEqual({
           pid: launcher,
-          signal: "SIGCONT",
+          signal: "SIGINT",
           signaled: false,
           message: Option.some("Refusing to signal the Onicode process launcher."),
         });
