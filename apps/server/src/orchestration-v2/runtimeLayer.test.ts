@@ -5548,6 +5548,17 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       reads: [{ lint: "success", test: "failure" }],
       told: [["test"]],
     },
+    // A watch that never read a head left no baseline, so the next one starts its own.
+    {
+      label: "passing and conflicting, last watch read no head",
+      atStart: "passing",
+      lastHeadSha: null,
+      lastUnread: true,
+      readConflicting: true,
+      start: { checksPending: false, checksPassed: true, headSha: "ad70160aaa" },
+      reads: [{ lint: "success", test: "success" }],
+      told: [[]],
+    },
     // A push that left the conflict in place is told again, though its CI had passed.
     {
       label: "rewatched passing but conflicting",
@@ -5669,7 +5680,9 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
                 at: "2026-10-02T12:00:00.000Z",
               }),
               headSha: "ad70160aaa",
-              ...("lastConflicting" in row && { mergeability: "conflicting" as const }),
+              ...(("lastConflicting" in row || "readConflicting" in row) && {
+                mergeability: "conflicting" as const,
+              }),
               checks: Object.entries(reads[read]!).map(([name, status]) => ({
                 name,
                 status,

@@ -5651,7 +5651,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             command.type === "thread.pull-request.watch" &&
             command.checksPassed === true &&
             command.headSha !== undefined &&
-            ended !== undefined &&
+            ended?.headSha != null &&
             command.headSha !== ended.headSha
               ? command.headSha
               : undefined;
