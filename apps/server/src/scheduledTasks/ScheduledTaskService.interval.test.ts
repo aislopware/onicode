@@ -175,6 +175,21 @@ it.effect("runs a one-time schedule once and rejects past times", () =>
         .upsert({ ...decoded, commandId: undefined, title: "Late" })
         .pipe(Effect.flip);
       expect(past.message).toBe("The run time has passed. Pick a time in the future.");
+
+      // An editor that loaded the task running hears that it was paused, with what is stored now.
+      const { title, prompt, enabled, schedule } = created.task;
+      const save = {
+        ...decoded,
+        id: created.task.id,
+        requireExisting: true,
+        expected: { title, prompt, enabled, schedule },
+      };
+      const conflict = yield* service.upsert(save).pipe(Effect.flip);
+      expect(conflict.message).toBe("The task changed while saving. Read the task again.");
+      expect(conflict.current).toEqual((yield* service.list()).tasks[0]);
+      yield* service.delete({ id: created.task.id });
+      const gone = yield* service.upsert(save).pipe(Effect.flip);
+      expect(gone.message).toBe("Schedule task not found.");
     }).pipe(Effect.provide(slowLaunchLayer));
   }).pipe(
     Effect.provideService(ServerActivation, Effect.never),

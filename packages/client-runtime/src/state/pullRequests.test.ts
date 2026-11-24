@@ -3164,7 +3164,7 @@ it.effect("loads the diff again for a new guide head without sending the head", 
   }),
 );
 
-it("shows a pressed Watch as starting until the link carries it, and drops a failed start", async () => {
+it("shows a pressed Watch as starting until the link carries it, and drops a failed or stopped start", async () => {
   vi.useFakeTimers();
   try {
     const registry = AtomRegistry.make();
@@ -3179,7 +3179,7 @@ it("shows a pressed Watch as starting until the link carries it, and drops a fai
     const start = () =>
       trackPullRequestWatchStart(
         registry,
-        { environmentId, threadId: "thread-1", ...link },
+        { environmentId, threadId: "thread-1", ...link, watching: true },
         new Promise<{ readonly _tag: string }>((settle) => resolve.push(settle)),
       );
 
@@ -3195,6 +3195,32 @@ it("shows a pressed Watch as starting until the link carries it, and drops a fai
     const failed = start();
     resolve[1]?.({ _tag: "Failure" });
     await failed;
+    expect(starting("thread-1")).toBe(false);
+
+    const target = { environmentId, threadId: "thread-1", ...link, watching: true };
+    const rejected = trackPullRequestWatchStart(
+      registry,
+      target,
+      Promise.reject(new Error("offline")),
+    );
+    await expect(rejected).rejects.toThrow("offline");
+    expect(starting("thread-1")).toBe(false);
+
+    const stopped = start();
+    resolve[2]?.({ _tag: "Success" });
+    await stopped;
+    const stop = { ...target, watching: false };
+    await trackPullRequestWatchStart(registry, stop, Promise.resolve({ _tag: "Success" }));
+    expect(starting("thread-1")).toBe(false);
+
+    // A press after the stop outlasts the stopped start's own wait.
+    vi.advanceTimersByTime(2_000);
+    const again = start();
+    resolve[3]?.({ _tag: "Success" });
+    await again;
+    vi.advanceTimersByTime(2_000);
+    expect(starting("thread-1")).toBe(true);
+    vi.runAllTimers();
     expect(starting("thread-1")).toBe(false);
   } finally {
     vi.useRealTimers();

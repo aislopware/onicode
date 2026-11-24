@@ -6,7 +6,6 @@ import {
   type ScheduledTask,
   type ScheduledTaskSchedule,
   type ScheduledTaskThreadMode,
-  type ScheduledTaskUpsertInput,
   type ScheduledTaskUpsertSchedule,
   scheduledTaskThreadMode,
   type ModelSelection,
@@ -16,6 +15,7 @@ import {
   type ThreadId,
 } from "@onicode/contracts";
 import type { EnvironmentThreadShell } from "@onicode/client-runtime/state/models";
+import { rebaseScheduledTaskDestination } from "@onicode/client-runtime/scheduled-task-draft";
 import { scheduleTimeZoneLabel } from "@onicode/client-runtime/scheduled-task-time-zone";
 import type { TimestampFormat } from "@onicode/contracts/settings";
 import { msg } from "gt-react";
@@ -133,18 +133,9 @@ export interface DraftState {
   readonly interactionMode: ProviderInteractionMode;
   /** Retain the source selection's provider options when the picker leaves instanceId:model unchanged. */
   readonly baseModelSelection: ModelSelection | null;
-  /** What the form loaded, so a save is refused once another client changed it. */
-  readonly saved: ScheduledTaskSavedFields | null;
+  /** The task as the form loaded it, so a save is refused once another client changed it. */
+  readonly saved: ScheduledTask | null;
 }
-
-type ScheduledTaskSavedFields = NonNullable<ScheduledTaskUpsertInput["expected"]>;
-
-const savedFields = (task: ScheduledTask): ScheduledTaskSavedFields => ({
-  title: task.title,
-  prompt: task.prompt,
-  enabled: task.enabled,
-  schedule: task.schedule,
-});
 
 /** Formats a date as a `datetime-local` input value in the browser's time zone. */
 export function toDateTimeLocalValue(date: Date): string {
@@ -236,7 +227,7 @@ export function taskToDraft(task: ScheduledTask): DraftState {
     runtimeMode: task.runtimeMode,
     interactionMode: task.interactionMode,
     baseModelSelection: task.modelSelection,
-    saved: savedFields(task),
+    saved: task,
   };
 }
 
@@ -247,6 +238,13 @@ const SCHEDULE_FIELDS = [
   "runAt",
   "savedRunAt",
   "weekdays",
+] as const;
+
+const WORKSPACE_FIELDS = [
+  "workspaceMode",
+  "baseRef",
+  "startFromOrigin",
+  "existingWorktreePath",
 ] as const;
 
 const sameValue = (left: unknown, right: unknown) =>
@@ -260,8 +258,13 @@ const sameValue = (left: unknown, right: unknown) =>
  */
 export function rebaseDraft(draft: DraftState, current: ScheduledTask): DraftState {
   if (draft.saved === null) return draft;
-  const loaded = taskToDraft({ ...current, ...draft.saved });
+  const loaded = taskToDraft(draft.saved);
   const now = taskToDraft(current);
+  const destination = rebaseScheduledTaskDestination(
+    { ...draft, threadId: draft.threadId || null },
+    draft.saved,
+    current,
+  );
   const untouched = (key: keyof DraftState) => sameValue(draft[key], loaded[key]);
   return {
     ...draft,
@@ -278,6 +281,22 @@ export function rebaseDraft(draft: DraftState, current: ScheduledTask): DraftSta
           weekdays: now.weekdays,
         }
       : {}),
+    projectId: destination.projectId,
+    threadId: destination.threadId ?? "",
+    threadMode: destination.threadMode,
+    savedThreadId: now.savedThreadId,
+    ...(WORKSPACE_FIELDS.every(untouched)
+      ? {
+          workspaceMode: now.workspaceMode,
+          baseRef: now.baseRef,
+          startFromOrigin: now.startFromOrigin,
+          existingWorktreePath: now.existingWorktreePath,
+        }
+      : {}),
+    ...(untouched("modelKey") ? { modelKey: now.modelKey } : {}),
+    baseModelSelection: now.baseModelSelection,
+    ...(untouched("runtimeMode") ? { runtimeMode: now.runtimeMode } : {}),
+    ...(untouched("interactionMode") ? { interactionMode: now.interactionMode } : {}),
     saved: now.saved,
   };
 }

@@ -1508,6 +1508,11 @@ Review triggered.
       anHourLater(watch({ awaitingBaseline: "all" }), detail({ checks: [] })).flat(),
       ["no-checks"],
     );
+    // A watch that started from a read of passing checks knows this head has them.
+    assert.deepEqual(
+      anHourLater(watch({ awaitingBaseline: "all", passed: true }), detail({ checks: [] })).flat(),
+      [],
+    );
   });
 
   it("never reports missing checks on a host where an empty list says nothing", () => {

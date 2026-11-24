@@ -3,6 +3,7 @@ import {
   ComposerContextId,
   EnvironmentId,
   MessageId,
+  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   ThreadId,
   TurnItemId,
 } from "@onicode/contracts";
@@ -22,6 +23,7 @@ import {
   matchRestorableQueuedAttachment,
   prepareQueuedEditAttachments,
   recoverQueuedMessageEdit,
+  trackPastedRestores,
 } from "./queuedMessageEdit";
 
 const environmentId = EnvironmentId.make("remote-environment");
@@ -319,6 +321,19 @@ describe("queued message file edits", () => {
         removedQueuedAttachments: [{ attachment: removedAttachment, contextIds: [contextId] }],
       }),
     ).toEqual({ attachment: removedAttachment, contextId });
+  });
+
+  it("counts an attachment one paste restores once, against its later restores and imports", () => {
+    const restores = trackPastedRestores();
+    const reserved = PROVIDER_SEND_TURN_MAX_ATTACHMENTS - 1;
+    const notes = { id: ChatAttachmentId.make("notes") };
+
+    expect(restores.hasRoom(reserved)).toBe(true);
+    expect(restores.restore(notes, reserved)).toBe(true);
+    // A second chip of the same attachment takes no slot of its own.
+    expect(restores.restore(notes, reserved)).toBe(true);
+    expect(restores.restore({ id: ChatAttachmentId.make("other") }, reserved)).toBe(false);
+    expect(restores.hasRoom(reserved)).toBe(false);
   });
 
   it("does not overwrite a separate draft when the queued run leaves", () => {

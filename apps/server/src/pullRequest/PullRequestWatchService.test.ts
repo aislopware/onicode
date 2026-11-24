@@ -300,7 +300,7 @@ describe("PullRequestWatchService", () => {
       expect(result).toMatchObject({ wasWatching: false, checksState: "passing" });
       // The verdict is the confirming read's head, so a push before the first watch read is news.
       expect(yield* Ref.get(harness.commands)).toMatchObject([
-        { checksPending: false, headSha: "bbbb222" },
+        { checksPending: false, checksPassed: true, headSha: "bbbb222" },
       ]);
 
       const childFailing = yield* makeHarness({
@@ -312,6 +312,7 @@ describe("PullRequestWatchService", () => {
           url: "https://github.com/onicode/onicode/pull/9",
         })).checksState,
       ).toBe("failing");
+      expect((yield* Ref.get(childFailing.commands))[0]).not.toHaveProperty("checksPassed");
 
       const replaced = yield* makeHarness({
         readChecksState: "failing",
@@ -355,6 +356,18 @@ describe("PullRequestWatchService", () => {
         headSha: "aaaa111",
       });
       expect(yield* Ref.get(replaced.reads)).toEqual(["invalidate", "detail"]);
+      const passing = yield* makeHarness({
+        readChecksState: "passing",
+        readHeadSha: "aaaa111",
+        detailChecks: [check("test", "success")],
+        detailHeadSha: "aaaa111",
+      });
+      expect(yield* passing.seedClientWatch(start)).toEqual({
+        ...start,
+        checksPending: false,
+        checksPassed: true,
+        headSha: "aaaa111",
+      });
 
       const watch = {
         startedAt: "2026-08-20T00:00:00.000Z",

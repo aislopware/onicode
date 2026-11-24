@@ -593,7 +593,8 @@ export function pendingRestartCancelledBackgroundWork(input: {
     (attempt) =>
       attempt.runId === input.run.id &&
       attempt.id !== input.run.activeAttemptId &&
-      deliveredAttemptIds.has(attempt.id),
+      deliveredAttemptIds.has(attempt.id) &&
+      !compactionMessageIds.has(orchestrationV2AttemptMessageId(attempt, input.run)),
   );
   if (alreadyDelivered) return [];
   const deliveredPromptRunIds = promptedRunIds(

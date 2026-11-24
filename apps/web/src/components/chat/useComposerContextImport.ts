@@ -66,7 +66,7 @@ import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import { countHeldComposerSlots, countReservedComposerSlots } from "./composerThreadImport";
 import type { QueuedAttachmentContextBinding } from "./composerContextUndo";
-import { matchRestorableQueuedAttachment } from "./queuedMessageEdit";
+import { matchRestorableQueuedAttachment, trackPastedRestores } from "./queuedMessageEdit";
 
 const isUnreachable = Schema.is(
   Schema.Union([ConnectionTransientError, ConnectionBlockedError, EnvironmentRpcUnavailableError]),
@@ -185,6 +185,7 @@ export function useComposerContextImport(input: {
     sourceEnvironmentId: EnvironmentId,
     importTargetKey: string,
     questionWork: ReturnType<typeof startQuestionDraftWork> | null,
+    pastedRestores: ReturnType<typeof trackPastedRestores>,
   ) => {
     const fail = (reason: string) => {
       // The question was answered elsewhere, so nothing waits for this attachment.
@@ -259,8 +260,9 @@ export function useComposerContextImport(input: {
     if (
       !replacesFileMarker &&
       // A moved import already holds one of the thread draft's reserved slots.
-      (thread ? countHeldComposerSlots(thread) - 1 : countReservedAttachments()) >=
-        PROVIDER_SEND_TURN_MAX_ATTACHMENTS
+      !(thread
+        ? countHeldComposerSlots(thread) - 1 < PROVIDER_SEND_TURN_MAX_ATTACHMENTS
+        : pastedRestores.hasRoom(countReservedAttachments()))
     ) {
       fail(m(msg("The attachment limit has been reached.")));
       return;
@@ -323,6 +325,7 @@ export function useComposerContextImport(input: {
     record: Extract<ComposerContextRecord, { kind: "image" | "file" }>,
     localId: string,
     sourceEnvironmentId: EnvironmentId,
+    pastedRestores: ReturnType<typeof trackPastedRestores>,
   ) => {
     // The chip lands in the draft immediately while these bytes are still downloading. Count
     // the transfer against its own draft so a send cannot snapshot a message whose chip has no
@@ -338,6 +341,7 @@ export function useComposerContextImport(input: {
       sourceEnvironmentId,
       importTargetKey,
       questionWork,
+      pastedRestores,
     ).finally(() => (questionWork ? questionWork.finish() : pendingDraftWork.end(importTargetKey)));
   };
   const importContextRecords = (
@@ -346,8 +350,7 @@ export function useComposerContextImport(input: {
     threadDraftTarget = attachmentDraftTarget,
   ): ReadonlyMap<string, string> => {
     const rewritten = new Map<string, string>();
-    // Restores in this paste are not in the queued message's attachments until it re-renders.
-    let restoredAttachments = 0;
+    const pastedRestores = trackPastedRestores();
     const dependentAttachmentLocalIds = new Map<string, string>();
     const skippedDependentAttachmentIds = new Set<string>();
     // Resolve annotations before their dependent screenshot records even if a foreign
@@ -494,10 +497,7 @@ export function useComposerContextImport(input: {
               removedQueuedAttachments: removedQueuedAttachments ?? [],
             });
             if (restored) {
-              if (
-                countReservedAttachments() + restoredAttachments >=
-                PROVIDER_SEND_TURN_MAX_ATTACHMENTS
-              ) {
+              if (!pastedRestores.restore(restored.attachment, countReservedAttachments())) {
                 reportAttachmentImportFailure(
                   record.name,
                   m(msg("The attachment limit has been reached.")),
@@ -505,7 +505,6 @@ export function useComposerContextImport(input: {
                 );
                 break;
               }
-              restoredAttachments += 1;
               onRestoreQueuedAttachment?.(restored.attachment);
               rewritten.set(record.contextId, restored.contextId);
               break;
@@ -518,7 +517,7 @@ export function useComposerContextImport(input: {
           if (sourceEnvironmentId === null) break;
           const localId = dependentAttachmentLocalIds.get(record.contextId) ?? randomUUID();
           rewritten.set(record.contextId, toKindScopedComposerContextId(record.kind, localId));
-          void importAttachmentRecord(record, localId, sourceEnvironmentId);
+          void importAttachmentRecord(record, localId, sourceEnvironmentId, pastedRestores);
           break;
         }
         default:

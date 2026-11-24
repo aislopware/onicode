@@ -186,45 +186,59 @@ export const pullRequestPendingEditsAtom = Atom.family((_environmentId: Environm
 // shows it watching from the press until the link carries the watch or the start fails.
 const WATCH_START_SETTLE = "3 seconds";
 const pullRequestWatchStartsAtom = Atom.family((_thread: string) =>
-  Atom.make<ReadonlyArray<string>>([]).pipe(Atom.keepAlive),
+  Atom.make<ReadonlyArray<{ readonly url: string }>>([]).pipe(Atom.keepAlive),
 );
 
-/** The change request URLs a thread's Watch was pressed on and is still starting. */
+/** The change requests a thread's Watch was pressed on and is still starting. */
 export const pullRequestWatchStartsFor = (environmentId: string, threadId: string) =>
   pullRequestWatchStartsAtom(`${environmentId}\u0000${threadId}`);
 
 export function pullRequestWatchStarting(
-  starts: ReadonlyArray<string>,
+  starts: ReadonlyArray<{ readonly url: string }>,
   link: { readonly url: string; readonly watch?: unknown },
 ): boolean {
-  return link.watch === undefined && starts.includes(link.url);
+  return link.watch === undefined && starts.some(({ url }) => url === link.url);
 }
 
+/** Tracks a pressed Watch until it starts; a pressed Stop ends that at once. */
 export async function trackPullRequestWatchStart<Result extends { readonly _tag: string }>(
   registry: AtomRegistry.AtomRegistry,
   target: {
     readonly environmentId: EnvironmentId;
     readonly threadId: string;
     readonly url: string;
+    readonly watching: boolean;
   },
-  start: Promise<Result>,
+  pending: Promise<Result>,
 ): Promise<Result> {
   const atom = pullRequestWatchStartsFor(target.environmentId, target.threadId);
-  registry.set(atom, [...registry.get(atom), target.url]);
-  const result = await start;
-  const settle = Effect.sync(() => {
-    const starts = [...registry.get(atom)];
-    const index = starts.indexOf(target.url);
-    if (index < 0) return;
-    starts.splice(index, 1);
-    registry.set(atom, starts);
-  });
-  Effect.runFork(
-    result._tag === "Success"
-      ? Effect.sleep(WATCH_START_SETTLE).pipe(Effect.andThen(settle))
-      : settle,
+  if (!target.watching) {
+    registry.set(
+      atom,
+      registry.get(atom).filter(({ url }) => url !== target.url),
+    );
+    return pending;
+  }
+  const start = { url: target.url };
+  registry.set(atom, [...registry.get(atom), start]);
+  const settle = Effect.sync(() =>
+    registry.set(
+      atom,
+      registry.get(atom).filter((held) => held !== start),
+    ),
   );
-  return result;
+  const settleAfter = (succeeded: boolean) =>
+    Effect.runFork(
+      succeeded ? Effect.sleep(WATCH_START_SETTLE).pipe(Effect.andThen(settle)) : settle,
+    );
+  try {
+    const result = await pending;
+    settleAfter(result._tag === "Success");
+    return result;
+  } catch (error) {
+    settleAfter(false);
+    throw error;
+  }
 }
 const editableReaders = new WeakMap<object, EditableReader>();
 const editedReaders = new WeakMap<object, object>();

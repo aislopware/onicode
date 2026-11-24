@@ -14,7 +14,12 @@ import type {
   ThreadId,
 } from "@onicode/contracts";
 import { create } from "zustand";
-import { DraftId, composerTargetKey, useComposerDraftStore } from "./composerDraftStore";
+import {
+  DraftId,
+  composerFileNeedsReattach,
+  composerTargetKey,
+  useComposerDraftStore,
+} from "./composerDraftStore";
 import { pendingDraftWork } from "./components/chat/pendingDraftWork";
 import { pendingThreadImports } from "./components/chat/pendingThreadImports";
 import {
@@ -22,7 +27,11 @@ import {
   countPreparingComposerImages,
   movePreparingComposerImagesToThread,
 } from "./components/chat/preparingComposerImages";
-import { releaseDraftAttachments } from "./lib/attachmentUploadQueue";
+import {
+  awaitAttachmentUploads,
+  releaseDraftAttachments,
+  startAttachmentUpload,
+} from "./lib/attachmentUploadQueue";
 import {
   carryDisplacedCustomAnswerIntoPrompt,
   threadContextsReferencedByAnswer,
@@ -295,6 +304,41 @@ export function isUserInputRequestSettled(
 ): boolean {
   const key = scopedThreadKey(scopeThreadRef(environmentId, threadId));
   return settledRequestsByThread.get(key)?.has(requestId) ?? false;
+}
+
+/** An answer pressed now, which sends once its attachments upload, even after its composer left. */
+export function captureQuestionAnswerSend(input: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly requestId: RuntimeRequestId;
+  readonly questionKeys: ReadonlyArray<DraftId>;
+  readonly questionIndex: () => number | undefined;
+  readonly advance: () => void;
+}): () => void {
+  const { environmentId, threadId, requestId, questionKeys, questionIndex, advance } = input;
+  const indexAtPress = questionIndex();
+  // Settling prunes the stored position, so a closed question's index alone can still match.
+  const settled = () => isUserInputRequestSettled(environmentId, threadId, requestId);
+  return () => {
+    if (settled()) return;
+    const drafts = useComposerDraftStore.getState();
+    const attachmentIds = questionKeys.flatMap((key) => {
+      const draft = drafts.getComposerDraft(key);
+      const attachments = draft ? [...draft.images, ...draft.files] : [];
+      // The composer that uploads attachments may show another thread by now, so those that
+      // landed after it left start uploading here.
+      for (const image of attachments) {
+        if (image.type === "file" && composerFileNeedsReattach(image)) continue;
+        startAttachmentUpload({ environmentId, image, draftTarget: key });
+      }
+      return attachments.map((attachment) => attachment.id);
+    });
+    // An answer goes only with its attachments uploaded; a live composer waits on that too.
+    // A move to another question since the press, or a live press that advanced first, wins.
+    void awaitAttachmentUploads(attachmentIds).then(() => {
+      if (!settled() && questionIndex() === indexAtPress) advance();
+    });
+  };
 }
 
 /** Text meant for a question that has since closed goes to the thread's draft, as a stopped answer does. */

@@ -210,6 +210,27 @@ it("does not repeat the note when a steer restarts the run on a new attempt", ()
 
   assert.deepEqual(pending([firstAttempt, RunAttemptId.make("attempt:2b")], true), []);
   assert.deepEqual(pending([firstAttempt, RunAttemptId.make("attempt:2b")], false), lost);
+  // A steer that turned a /compact into a prompt still owes the note: the compaction carried none.
+  assert.deepEqual(
+    pendingRestartCancelledBackgroundWork({
+      runs: [root, steered],
+      providerTurns: [
+        turnFor(root),
+        {
+          runAttemptId: firstAttempt,
+          providerThreadId: claudeThread,
+          status: "completed" as const,
+        },
+      ],
+      compactionMessageIds: () => new Set([MessageId.make("message:compact")]),
+      run: steered,
+      attempts: [
+        { id: firstAttempt, runId: steered.id, userMessageId: MessageId.make("message:compact") },
+        { id: steered.activeAttemptId!, runId: steered.id },
+      ],
+    }),
+    lost,
+  );
 
   // A forced restart into /compact replaced the run's message after its first attempt told the note.
   const later = run(3, claudeThread);

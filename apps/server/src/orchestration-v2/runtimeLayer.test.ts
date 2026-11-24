@@ -5504,6 +5504,171 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       reads: [{ lint: "success", test: "failure" }],
       told: [["test"]],
     },
+    // Watching again on a head the last watch never read, whose pass the start already read.
+    {
+      label: "rewatched passing",
+      atStart: "passing",
+      lastHeadSha: "0ld0000000",
+      start: { checksPending: false, checksPassed: true, headSha: "ad70160aaa" },
+      reads: [
+        { lint: "success", test: "success" },
+        { lint: "success", test: "failure" },
+      ],
+      told: [[], ["test"]],
+    },
+    // A finished read that failed says nothing of a pass, so a rerun's pass is news.
+    {
+      label: "rewatched failing",
+      atStart: "failing",
+      lastHeadSha: "0ld0000000",
+      start: { checksPending: false, headSha: "ad70160aaa" },
+      reads: [{ lint: "success", test: "success" }],
+      told: [[]],
+      tellsMore: true,
+    },
+    // The last watch stopped before its first read, so this head's failure is after its baseline.
+    {
+      label: "passing, last watch unread",
+      atStart: "passing",
+      lastHeadSha: "0ld0000000",
+      lastUnread: true,
+      start: { checksPending: false, checksPassed: true, headSha: "ad70160aaa" },
+      reads: [
+        { lint: "success", test: "success" },
+        { lint: "success", test: "failure" },
+      ],
+      told: [[], ["test"]],
+    },
+    {
+      label: "passing then failed, last watch unread",
+      atStart: "passing",
+      lastHeadSha: "0ld0000000",
+      lastUnread: true,
+      start: { checksPending: false, checksPassed: true, headSha: "ad70160aaa" },
+      reads: [{ lint: "success", test: "failure" }],
+      told: [["test"]],
+    },
+    // A watch that never read a head left no baseline, so the next one starts its own.
+    {
+      label: "passing and conflicting, last watch read no head",
+      atStart: "passing",
+      lastHeadSha: null,
+      lastUnread: true,
+      readConflicting: true,
+      start: { checksPending: false, checksPassed: true, headSha: "ad70160aaa" },
+      reads: [{ lint: "success", test: "success" }],
+      told: [[]],
+    },
+    // That watch's start read a head, so a push before the first read is still news.
+    {
+      label: "passing, then pushed and failed, last watch read no head",
+      atStart: "passing",
+      lastHeadSha: null,
+      lastUnread: true,
+      start: { checksPending: false, checksPassed: true, headSha: "0ld0000000" },
+      reads: [{ lint: "success", test: "failure" }],
+      told: [["test"]],
+    },
+    // CI the last watch saw failing passed before this start read it, so the pass is not news.
+    {
+      label: "passing after the last watch failed without a head",
+      atStart: "passing",
+      lastHeadSha: null,
+      start: { checksPending: false, checksPassed: true, headSha: "ad70160aaa" },
+      reads: [{ lint: "success", test: "success" }],
+      told: [[]],
+    },
+    {
+      label: "passing after a rerun on the head the last watch failed",
+      atStart: "passing",
+      lastHeadSha: "ad70160aaa",
+      start: { checksPending: false, checksPassed: true, headSha: "ad70160aaa" },
+      reads: [{ lint: "success", test: "success" }],
+      told: [[]],
+    },
+    // A rerun failing after the start's passing read is news, though the last watch never read.
+    {
+      label: "passing, then a rerun failed, last watch unread",
+      atStart: "passing",
+      lastHeadSha: "ad70160aaa",
+      lastUnread: true,
+      start: { checksPending: false, checksPassed: true, headSha: "ad70160aaa" },
+      reads: [{ lint: "success", test: "failure" }],
+      told: [["test"]],
+    },
+    // A push onto a conflict before the first read is news for the new head.
+    {
+      label: "passing, then pushed onto a conflict, last watch read no head",
+      atStart: "passing",
+      lastHeadSha: null,
+      lastUnread: true,
+      readConflicting: true,
+      start: { checksPending: false, checksPassed: true, headSha: "0ld0000000" },
+      // Its CI still runs, so the conflict is the only news.
+      reads: [{ lint: "success", test: "pending" }],
+      told: [[]],
+      tellsMore: true,
+    },
+    // The gate passed with an advisory check failing, which passed again before this start.
+    {
+      label: "passing after an advisory failure the last watch told",
+      atStart: "passing",
+      lastHeadSha: "ad70160aaa",
+      lastPassed: true,
+      start: { checksPending: false, checksPassed: true, headSha: "ad70160aaa" },
+      reads: [{ lint: "success", test: "success" }],
+      told: [[]],
+    },
+    // A start read can leave out a run awaiting approval, so the last watch's notice stands.
+    {
+      label: "passing beside a run the last watch told awaits approval",
+      atStart: "passing",
+      lastHeadSha: "ad70160aaa",
+      lastAwaitingApproval: true,
+      start: { checksPending: false, checksPassed: true, headSha: "ad70160aaa" },
+      reads: [{ lint: "success", test: "action-required" }],
+      told: [[]],
+    },
+    // A first watch's passing start read is its baseline too.
+    {
+      label: "passing, then a rerun failed, first watch",
+      atStart: "passing",
+      start: { checksPending: false, checksPassed: true, headSha: "ad70160aaa" },
+      reads: [{ lint: "success", test: "failure" }],
+      told: [["test"]],
+    },
+    // A run awaiting approval holds its notice, but the failure the last watch told passed since.
+    {
+      label: "passing, then a rerun failed again beside a run awaiting approval",
+      atStart: "passing",
+      lastHeadSha: "ad70160aaa",
+      lastAwaitingApproval: true,
+      start: { checksPending: false, checksPassed: true, headSha: "ad70160aaa" },
+      reads: [{ lint: "success", test: "failure" }],
+      told: [["test"]],
+    },
+    // The last watch's unfinished check baseline is complete with the start's passing read.
+    {
+      label: "passing beside a run awaiting approval, last check baseline unfinished",
+      atStart: "passing",
+      lastHeadSha: "ad70160aaa",
+      lastAwaitingApproval: true,
+      lastChecksBaseline: true,
+      start: { checksPending: false, checksPassed: true, headSha: "ad70160aaa" },
+      reads: [{ lint: "success", test: "failure" }],
+      told: [["test"]],
+    },
+    // A push that left the conflict in place is told again, though its CI had passed.
+    {
+      label: "rewatched passing but conflicting",
+      atStart: "passing",
+      lastHeadSha: "0ld0000000",
+      lastConflicting: true,
+      start: { checksPending: false, checksPassed: true, headSha: "ad70160aaa" },
+      reads: [{ lint: "success", test: "success" }],
+      told: [[]],
+      tellsMore: true,
+    },
   ] as const)("reports only failures after a watch that starts on $label CI", (row) =>
     Effect.gen(function* () {
       const { label, atStart, reads, told } = row;
@@ -5558,6 +5723,45 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         },
         stack: null,
       });
+      if ("lastHeadSha" in row) {
+        yield* orchestrator.dispatch({
+          type: "thread.pull-request.watch",
+          commandId: CommandId.make(`pr-watch-start-last-${label}`),
+          threadId,
+          ...key,
+          watching: true,
+        });
+        const last = (yield* orchestrator.getThreadShell(threadId))?.pullRequests?.[0]?.watch;
+        assert.isDefined(last);
+        if (last === undefined) return;
+        const { awaitingBaseline: _baseline, ...told } = last;
+        yield* orchestrator.dispatch({
+          type: "thread.pull-request-watch.sync",
+          commandId: CommandId.make(`pr-watch-start-last-read-${label}`),
+          threadId,
+          ...key,
+          startedAt: last.startedAt,
+          watch: {
+            ...("lastUnread" in row ? last : told),
+            headSha: row.lastHeadSha,
+            conflicting: "lastConflicting" in row,
+            failedChecks: "lastUnread" in row ? [] : ["test"],
+            ...("lastPassed" in row && { passed: true }),
+            ...("lastChecksBaseline" in row && { awaitingBaseline: "checks" as const }),
+            ...("lastAwaitingApproval" in row && {
+              awaitingApproval: ["https://ci.example/runs/1"],
+              approvalAnnounced: true,
+            }),
+          },
+        });
+        yield* orchestrator.dispatch({
+          type: "thread.pull-request.watch",
+          commandId: CommandId.make(`pr-watch-start-last-end-${label}`),
+          threadId,
+          ...key,
+          watching: false,
+        });
+      }
       // Without `start`, a client start, which carries no CI state of its own.
       yield* orchestrator.dispatch({
         type: "thread.pull-request.watch",
@@ -5581,6 +5785,9 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
                 at: "2026-10-02T12:00:00.000Z",
               }),
               headSha: "ad70160aaa",
+              ...(("lastConflicting" in row || "readConflicting" in row) && {
+                mergeability: "conflicting" as const,
+              }),
               checks: Object.entries(reads[read]!).map(([name, status]) => ({
                 name,
                 status,
@@ -5610,7 +5817,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         yield* reactor.sweep;
         yield* worker.drain();
         const wakes = (yield* texts).slice(before);
-        assert.equal(wakes.length, names.length === 0 ? 0 : 1);
+        assert.equal(wakes.length, names.length === 0 && !("tellsMore" in row) ? 0 : 1);
         // The finished section lists every failing check, so only the failed one counts here.
         const failedSections = wakes.map((text) => text.split("- Every check has finished")[0]!);
         for (const name of ["lint", "test"]) {

@@ -46,21 +46,42 @@ it.each([
   assert.equal(leavesNotesForNextPrompt(session, user(text)), wait);
 });
 
+// A steer gives the resume its own message; the attempt it superseded keeps the one that replayed.
 it.each([
-  { name: "an unsent command", accepted: false, steered: false, held: true },
-  { name: "a command its provider already took", accepted: true, steered: false, held: false },
-  { name: "an unsent command it steered away from", accepted: false, steered: true, held: false },
-])("classifies a resume of $name by what it replays", ({ accepted, steered, held }) => {
+  { name: "an unsent command", accepted: false, steered: false, held: true, replayHeld: true },
+  {
+    name: "a command its provider already took",
+    accepted: true,
+    steered: false,
+    held: false,
+    replayHeld: false,
+  },
+  {
+    name: "an unsent command it steered away from",
+    accepted: false,
+    steered: true,
+    held: false,
+    replayHeld: true,
+  },
+])("classifies a resume of $name by what it replays", ({ accepted, steered, held, replayHeld }) => {
   const source = { id: "run:source", userMessageId: "message:source" };
   const resume = {
     id: "run:resume",
     userMessageId: "message:resume",
     manualContinuationOfRunId: source.id,
   };
+  const replay = {
+    id: "attempt:resume",
+    runId: resume.id,
+    attemptOrdinal: 1,
+    reason: "initial",
+    ...(steered ? { userMessageId: "message:replayed" } : {}),
+  };
   const projection = {
     runs: [source, resume],
     attempts: [
       { id: "attempt:source", runId: source.id, attemptOrdinal: 1, reason: "initial" },
+      replay,
       ...(steered
         ? [{ id: "attempt:steer", runId: resume.id, attemptOrdinal: 2, reason: "steering_restart" }]
         : []),
@@ -68,7 +89,9 @@ it.each([
     providerTurns: accepted ? [{ runAttemptId: "attempt:source" }] : [],
     messages: [{ id: source.userMessageId, ...user("/review") }],
   } as unknown as Parameters<typeof notesWaitingMessageIds>[1];
-  assert.equal(notesWaitingMessageIds(runsNothing, projection).has(resume.userMessageId), held);
+  const ids = notesWaitingMessageIds(runsNothing, projection);
+  assert.equal(ids.has(resume.userMessageId), held);
+  assert.equal(ids.has(replay.userMessageId ?? resume.userMessageId), replayHeld);
 });
 
 // A forced restart into /compact gives the run the compaction's message; the prompt its earlier

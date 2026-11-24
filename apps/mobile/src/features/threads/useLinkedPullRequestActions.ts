@@ -225,13 +225,16 @@ export function useLinkedPullRequestActions(input: {
       });
       void run(
         gt("Couldn't change watching"),
-        starting
-          ? trackPullRequestWatchStart(
-              registry,
-              { environmentId: thread.environmentId, threadId: thread.id, url: link.url },
-              pending,
-            )
-          : pending,
+        trackPullRequestWatchStart(
+          registry,
+          {
+            environmentId: thread.environmentId,
+            threadId: thread.id,
+            url: link.url,
+            watching: starting,
+          },
+          pending,
+        ),
       );
     } else if (action === "unlink") setLinked(link, false);
   };

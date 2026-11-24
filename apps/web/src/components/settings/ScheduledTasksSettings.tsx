@@ -25,6 +25,10 @@ import type {
   ThreadId,
 } from "@onicode/contracts";
 import { scheduleTimeZoneLabel } from "@onicode/client-runtime/scheduled-task-time-zone";
+import {
+  refusedScheduledTask,
+  scheduledTaskExpected,
+} from "@onicode/client-runtime/scheduled-task-draft";
 import { scheduledTaskWorktreeBaseRef } from "@onicode/client-runtime/scheduled-task-worktree";
 import {
   MIN_SCHEDULED_TASK_INTERVAL_MS,
@@ -1277,7 +1281,7 @@ function ScheduledTaskEditorForm({
         draft.runtimeMode,
       interactionMode: draft.interactionMode,
       creationSource: "web",
-      ...(draft.saved === null ? {} : { expected: draft.saved }),
+      ...(draft.saved === null ? {} : { expected: scheduledTaskExpected(draft.saved) }),
     };
     // Lock before React renders, and keep successful creates locked until the form closes.
     submissionPending.current = true;
@@ -1288,10 +1292,12 @@ function ScheduledTaskEditorForm({
       submissionPending.current = false;
       // Another client's change refuses the save; keep the user's edits over what is stored now.
       const latest = tasksAtom && AsyncResult.getOrElse(registry.get(tasksAtom), () => null);
-      const current = latest?.tasks.find((task) => task.id === draft.editingId);
+      const error = squashAtomCommandFailure(result);
+      const current =
+        refusedScheduledTask(error) ?? latest?.tasks.find((task) => task.id === draft.editingId);
       if (current !== undefined) setDraft((latest) => rebaseDraft(latest, current));
       if (!isAtomCommandInterrupted(result)) {
-        reportFailure(gt("Could not save scheduled task"), squashAtomCommandFailure(result));
+        reportFailure(gt("Could not save scheduled task"), error);
       }
       return;
     }

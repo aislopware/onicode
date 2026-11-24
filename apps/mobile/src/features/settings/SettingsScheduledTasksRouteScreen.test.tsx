@@ -5,6 +5,7 @@ import {
   ProviderInstanceId,
   ScheduledTaskId,
   type ScheduledTask,
+  ScheduledTaskError,
 } from "@onicode/contracts";
 import * as Cause from "effect/Cause";
 import { Atom, AsyncResult } from "effect/reactivity";
@@ -296,6 +297,24 @@ describe("scheduled task batched edits", () => {
     });
     expect(mocks.alert).toHaveBeenCalledExactlyOnceWith("Could not save task", expect.any(String));
     expect(mocks.dispatch).toHaveBeenCalledExactlyOnceWith({ type: "RESET" });
+  });
+  it("rebases on the task a refused Save carries, not the older listed one", async () => {
+    const current = { ...mocks.tasks[0]!, enabled: false };
+    mocks.upsert.mockResolvedValueOnce({
+      _tag: "Failure",
+      cause: Cause.fail(
+        new ScheduledTaskError({ message: "Changed", taskId: current.id, current }),
+      ),
+    });
+    await act(async () => button("Save changes").click());
+    await act(async () => button("Save changes").click());
+    expect(mocks.upsert).toHaveBeenLastCalledWith({
+      environmentId: "environment",
+      input: expect.objectContaining({
+        enabled: false,
+        expected: expect.objectContaining({ enabled: false }),
+      }),
+    });
   });
   it("keeps an edit made while Save ran as unsaved instead of taking it as saved", async () => {
     const held = Promise.withResolvers<{ _tag: "Success" }>();

@@ -1440,12 +1440,23 @@ it.effect("a run interrupted right after it reserves the task does not block the
 
 it.effect("an editor's save is refused once the fields it loaded changed elsewhere", () =>
   Effect.gen(function* () {
+    // Runs between a worktree save's read of the task and its commit.
+    let beforeCommit: Effect.Effect<unknown> = Effect.void;
     const layer = ScheduledTaskService.layer.pipe(
       Layer.provide(
         Layer.mergeAll(
           ManagedPolicy.layerTest(),
-          Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
-          Layer.mock(ThreadManagementService.ThreadManagementService)({}),
+          Layer.mock(ThreadLaunchService.ThreadLaunchService)({
+            isNonGitProject: () =>
+              Effect.suspend(() => {
+                const run = beforeCommit;
+                beforeCommit = Effect.void;
+                return run;
+              }).pipe(Effect.as(false)),
+          }),
+          Layer.mock(ThreadManagementService.ThreadManagementService)({
+            getThreadShell: () => Effect.succeed(threadShell(ProjectId.make("project:test"))),
+          }),
           Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
             namedProjectsRoot: "/projects",
             isScratchProject: () => Effect.succeed(false),
@@ -1487,6 +1498,85 @@ it.effect("an editor's save is refused once the fields it loaded changed elsewhe
       yield* service.upsert({ ...save, enabled: false, expected: { ...loaded, enabled: false } });
       const saved = (yield* service.list()).tasks.find((entry) => entry.id === task.id)!;
       assert.deepInclude(saved, { enabled: false, prompt: "Triage and label" });
+
+      // Where and how it runs is checked too.
+      const bound = {
+        ...task,
+        threadId: ThreadId.make("thread:a"),
+        threadMode: "continue",
+      } as const;
+      const { title, prompt, enabled, schedule, projectId, threadId, threadMode } = bound;
+      const { workspaceStrategy, modelSelection } = bound;
+      const edit = {
+        ...bound,
+        prompt: "Triage and close",
+        expected: {
+          title,
+          prompt,
+          enabled,
+          schedule,
+          projectId,
+          threadId,
+          threadMode,
+          workspaceStrategy,
+          modelSelection,
+        },
+      } as const;
+      for (const change of [
+        { threadId: ThreadId.make("thread:b") },
+        { threadMode: "fresh_session" },
+        { projectId: ProjectId.make("project:moved") },
+        { workspaceStrategy: { type: "existing_worktree", worktreePath: "/checkout" } },
+        { modelSelection: { ...modelSelection, model: "gpt-5.5" } },
+      ] as const) {
+        yield* service.upsert(bound);
+        const { task: changed } = yield* service.upsert({ ...bound, ...change });
+        const stale = yield* service.upsert(edit).pipe(Effect.flip);
+        assert.include(stale.message, "changed while saving", JSON.stringify(change));
+        assert.deepEqual((yield* service.list()).tasks, [changed]);
+      }
+      // Rebound after the save read the task, it is refused at commit.
+      const worktree = { type: "worktree", baseRef: "main" } as const;
+      yield* service.upsert({ ...bound, workspaceStrategy: worktree });
+      beforeCommit = service
+        .upsert({ ...bound, workspaceStrategy: worktree, threadId: ThreadId.make("thread:b") })
+        .pipe(Effect.orDie);
+      const raced = yield* service
+        .upsert({
+          ...edit,
+          workspaceStrategy: worktree,
+          expected: { ...edit.expected, workspaceStrategy: worktree },
+        })
+        .pipe(Effect.flip);
+      assert.include(raced.message, "The task's thread changed while saving");
+      // A move drops the thread, so one the first run binds meanwhile refuses it.
+      const { task: unmoved } = yield* service.upsert({
+        ...bound,
+        threadId: null,
+        unbindThread: true,
+        workspaceStrategy: worktree,
+      });
+      beforeCommit = service.upsert({ ...bound, workspaceStrategy: worktree }).pipe(Effect.orDie);
+      const moved = yield* service
+        .upsert({
+          ...edit,
+          threadId: null,
+          projectId: ProjectId.make("project:moved"),
+          workspaceStrategy: worktree,
+          expected: {
+            ...edit.expected,
+            threadId: unmoved.threadId,
+            workspaceStrategy: worktree,
+          },
+        })
+        .pipe(Effect.flip);
+      assert.include(moved.message, "The task's thread changed while saving");
+      // A thread the first run bound meanwhile is kept, so it refuses nothing.
+      yield* service.upsert(bound);
+      const unbound = { ...edit, threadId: null, expected: { ...edit.expected, threadId: null } };
+      const { task: kept } = yield* service.upsert(unbound);
+      assert.deepInclude(kept, { prompt: "Triage and close", threadId: bound.threadId });
+      yield* service.upsert({ ...task, unbindThread: true, enabled: false });
 
       // A checked save cannot bring back a task deleted meanwhile, even without requireExisting.
       yield* service.delete({ id: task.id });

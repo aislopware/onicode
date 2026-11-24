@@ -198,6 +198,33 @@ describe("a scheduled task save refused by another client's change", () => {
     // A field the user changed keeps their value even when it also changed elsewhere.
     const retimed = rebaseDraft({ ...taskToDraft(loaded), timeOfDay: "08:00" }, current);
     expect(retimed.timeOfDay).toBe("08:00");
+
+    // Another client bound a thread and changed the mode; the next save must not undo either.
+    const bound = {
+      ...current,
+      threadId: ThreadId.make("thread:bound"),
+      threadMode: "fresh_session",
+    } as const;
+    expect(rebaseDraft(edited, bound)).toMatchObject({
+      threadId: "thread:bound",
+      savedThreadId: "thread:bound",
+      threadMode: "fresh_session",
+    });
+
+    // Nor may it undo a move, a workspace change or a model change.
+    const moved = {
+      ...current,
+      projectId: ProjectId.make("moved"),
+      workspaceStrategy: { type: "existing_worktree", worktreePath: "/checkout" },
+      modelSelection: { instanceId: ProviderInstanceId.make("claude"), model: "opus" },
+    } as const;
+    expect(rebaseDraft(edited, moved)).toMatchObject({
+      projectId: "moved",
+      workspaceMode: "existing_worktree",
+      existingWorktreePath: "/checkout",
+      modelKey: "claude:opus",
+      baseModelSelection: moved.modelSelection,
+    });
   });
 });
 

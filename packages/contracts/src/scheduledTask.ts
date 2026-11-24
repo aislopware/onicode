@@ -146,6 +146,23 @@ export const ScheduledTaskListResult = Schema.Struct({
 });
 export type ScheduledTaskListResult = typeof ScheduledTaskListResult.Type;
 
+const ScheduledTaskExpected = Schema.Struct({
+  title: Schema.String,
+  prompt: Schema.String,
+  enabled: Schema.Boolean,
+  schedule: ScheduledTaskSchedule,
+  // Older clients send only the fields above; an omitted field is not checked.
+  projectId: Schema.optional(ProjectId),
+  /** Null is checked only when the save changes the stored thread, so a first run's binding refuses nothing. */
+  threadId: Schema.optional(Schema.NullOr(ThreadId)),
+  threadMode: Schema.optional(ScheduledTaskThreadMode),
+  workspaceStrategy: Schema.optional(OrchestrationV2ThreadLaunchWorkspaceStrategy),
+  modelSelection: Schema.optional(ModelSelection),
+  runtimeMode: Schema.optional(RuntimeMode),
+  interactionMode: Schema.optional(ProviderInteractionMode),
+});
+export type ScheduledTaskExpected = typeof ScheduledTaskExpected.Type;
+
 export const ScheduledTaskUpsertInput = Schema.Struct({
   id: Schema.optional(ScheduledTaskId),
   requireExisting: Schema.optional(Schema.Boolean).annotate({
@@ -171,14 +188,7 @@ export const ScheduledTaskUpsertInput = Schema.Struct({
   createdBy: Schema.optional(OrchestrationV2Actor),
   creationSource: Schema.optional(OrchestrationV2CreationSource),
   /** What an editor loaded. The save is refused when another client changed any of it since. */
-  expected: Schema.optional(
-    Schema.Struct({
-      title: Schema.String,
-      prompt: Schema.String,
-      enabled: Schema.Boolean,
-      schedule: ScheduledTaskSchedule,
-    }),
-  ),
+  expected: Schema.optional(ScheduledTaskExpected),
 });
 export type ScheduledTaskUpsertInput = typeof ScheduledTaskUpsertInput.Type;
 
@@ -218,6 +228,8 @@ export class ScheduledTaskError extends Schema.TaggedError<ScheduledTaskError>()
   {
     message: Schema.String,
     taskId: Schema.optional(ScheduledTaskId),
+    /** The stored task, on a save refused because it changed. Absent from older servers. */
+    current: Schema.optional(ScheduledTask),
     cause: Schema.optional(Schema.Defect()),
   },
 ) {}
