@@ -3627,3 +3627,4 @@ f981b42dc4	take	CONFLICT: GitConfirmSheet keeps Onicode's returnToThreadAction n
 cc2e4c1704	take	fix(server): revoking all other sessions also ends sign-ins still in progress; adopted upstream over Onicode's otherClientsRevocation: upstream also refuses a pairing code exchange in progress (Onicode covered only MCP sign-ins) and issues under one lock instead of revoking a session after it was handed out; no browser sessions, DPoP or T3 Connect here
 8dc01892ad	take	fix(server): answering a secret request with a reference needs provider management
 f133ec7cac	take	perf(scripts): the soak drives forge polling and thread churn, and names what grew
+8d9b39edc5	take	fix(mobile): long branch names in the Git menu no longer show a broken character (#41861)
