@@ -360,6 +360,7 @@ export function rebaseScheduledTaskDraft(
   const modelUntouched =
     JSON.stringify(draft.modelSelection) === JSON.stringify(loaded.modelSelection);
   // By signature: filter rows get fresh ids each time a task is read.
+  const nextSchedule = scheduleDraftForTask(current);
   const scheduleUntouched =
     JSON.stringify(scheduleSignature(draft.schedule)) ===
     JSON.stringify(scheduleSignature(scheduleDraftForTask(loaded)));
@@ -368,7 +369,16 @@ export function rebaseScheduledTaskDraft(
     ...(draft.title === loaded.title ? { title: current.title } : {}),
     ...(draft.prompt === loaded.prompt ? { prompt: current.prompt } : {}),
     ...(draft.enabled === loaded.enabled ? { enabled: current.enabled } : {}),
-    ...(scheduleUntouched ? { schedule: scheduleDraftForTask(current) } : {}),
+    schedule: scheduleUntouched
+      ? nextSchedule
+      : {
+          ...draft.schedule,
+          // Edited filter rows stay; untouched ones take what is stored now.
+          ...(webhookFilterDraftsChanged(draft.schedule.savedFilters, draft.schedule.filters)
+            ? {}
+            : { filters: nextSchedule.filters }),
+          savedFilters: nextSchedule.savedFilters,
+        },
     ...rebaseScheduledTaskDestination(draft, loaded, current),
     ...(workspaceUntouched
       ? {

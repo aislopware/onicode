@@ -302,6 +302,22 @@ describe("scheduled task worktree base", () => {
     expect(
       rebaseScheduledTaskDraft({ ...editDraft(webhookTask), prompt: "Review twice" }, signed),
     ).toMatchObject({ schedule: { signatureEnabled: true, signatureHeader: "x-signature" } });
+    // Filters left alone take the stored ones even when another webhook setting was edited.
+    const refiltered = {
+      ...webhookTask,
+      schedule: {
+        ...webhookTask.schedule,
+        filters: [{ path: "body.action", op: "equals", value: "closed" }],
+      },
+    } satisfies ScheduledTask;
+    const replayEdited = editDraft(webhookTask);
+    const rebasedFilters = rebaseScheduledTaskDraft(
+      { ...replayEdited, schedule: { ...replayEdited.schedule, replayKey: "{{body.id}}" } },
+      refiltered,
+    ).schedule;
+    expect(rebasedFilters).toMatchObject({ replayKey: "{{body.id}}" });
+    expect(rebasedFilters.filters.map((filter) => filter.value)).toEqual(["closed"]);
+    expect(rebasedFilters.savedFilters.map((filter) => filter.value)).toEqual(["closed"]);
   });
 
   it("counts only edits the saved task would carry", () => {

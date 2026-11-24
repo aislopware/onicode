@@ -392,12 +392,14 @@ export function rebaseDraft(draft: DraftState, current: ScheduledTask): DraftSta
     current,
   );
   const untouched = (key: keyof DraftState) => sameValue(draft[key], loaded[key]);
+  const filtersEdited = webhookFilterDraftsChanged(draft.savedFilters, draft.filters);
   return {
     ...draft,
     ...(untouched("title") ? { title: now.title } : {}),
     ...(untouched("prompt") ? { prompt: now.prompt } : {}),
     ...(untouched("enabled") ? { enabled: now.enabled } : {}),
-    ...(SCHEDULE_FIELDS.every(untouched)
+    // Edited filters belong to a webhook trigger, so they keep the task one.
+    ...(SCHEDULE_FIELDS.every(untouched) && !(filtersEdited && now.scheduleMode !== "webhook")
       ? {
           scheduleMode: now.scheduleMode,
           intervalMinutes: now.intervalMinutes,
@@ -434,9 +436,7 @@ export function rebaseDraft(draft: DraftState, current: ScheduledTask): DraftSta
     ...(untouched("runtimeMode") ? { runtimeMode: now.runtimeMode } : {}),
     ...(untouched("interactionMode") ? { interactionMode: now.interactionMode } : {}),
     // Edited filter rows stay; untouched ones take what is stored now.
-    ...(webhookFilterDraftsChanged(draft.savedFilters, draft.filters)
-      ? {}
-      : { filters: now.filters }),
+    ...(filtersEdited ? {} : { filters: now.filters }),
     savedFilters: now.savedFilters,
     saved: now.saved,
   };

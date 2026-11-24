@@ -1601,13 +1601,6 @@ export const layer = Layer.effect(
     const upsert: ScheduledTaskService["Service"]["upsert"] = Effect.fn(
       "ScheduledTaskService.upsert",
     )(function* (input, options) {
-      // A webhook task the policy blocks can still be edited while it is off.
-      if (input.enabled && input.schedule.type === "webhook" && webhookPolicyBlock !== undefined) {
-        return yield* taskError(
-          webhookPolicyBlock,
-          input.id === undefined ? {} : { taskId: input.id },
-        );
-      }
       const now = yield* localNow;
       const uuid =
         input.commandId === undefined
@@ -1691,6 +1684,10 @@ export const layer = Layer.effect(
       // Before the checks below, which a stale edit can fail for reasons that are not its own.
       if (existingTask === null && requireExisting) {
         return yield* taskError("Schedule task not found.", { taskId: id });
+      }
+      // A webhook task the policy blocks can still be edited while it is off.
+      if (input.enabled && input.schedule.type === "webhook" && webhookPolicyBlock !== undefined) {
+        return yield* taskError(webhookPolicyBlock, { taskId: id });
       }
       // An unchanged destination is not rechecked, so a task on an archived thread stays editable.
       if (threadId !== null && threadId !== existingTask?.threadId) {

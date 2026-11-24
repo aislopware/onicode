@@ -890,7 +890,8 @@ function TaskForm({
         Dialog.alert(gt("Invalid webhook settings"), problem);
         return;
       }
-      const stored = tasks.data?.tasks.find((task) => task.id === draft.task?.id);
+      // The task the save is checked against; a refused save brings the stored one.
+      const stored = draft.task;
       if (
         draft.schedule.signatureEnabled &&
         (problems.signatureHeader ||
@@ -1470,7 +1471,7 @@ function TaskForm({
         {draft.schedule.mode === "webhook" && !webhookBlocked ? (
           <WebhookSettingsSections
             draft={draft}
-            hasStoredSecret={liveTask?.webhook?.hasSecret === true}
+            hasStoredSecret={draft.task?.webhook?.hasSecret === true}
             disabled={saving}
             setDraft={setDraft}
           />

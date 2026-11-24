@@ -201,6 +201,23 @@ describe("a scheduled task save refused by another client's change", () => {
     const retimed = rebaseDraft({ ...taskToDraft(loaded), timeOfDay: "08:00" }, current);
     expect(retimed.timeOfDay).toBe("08:00");
 
+    // Edited filters keep a webhook task a webhook task when another client made it a timer.
+    const hook = {
+      ...loaded,
+      schedule: {
+        type: "webhook",
+        signature: null,
+        filters: [{ path: "body.action", op: "equals", value: "opened" }],
+      },
+    } as const;
+    const hookDraft = taskToDraft(hook);
+    const refiltered = rebaseDraft(
+      { ...hookDraft, filters: hookDraft.filters.map((row) => ({ ...row, value: "closed" })) },
+      { ...hook, schedule: { type: "interval", everyMs: 3_600_000 } },
+    );
+    expect(refiltered.scheduleMode).toBe("webhook");
+    expect(refiltered.filters.map((row) => row.value)).toEqual(["closed"]);
+
     // Another client bound a thread and changed the mode; the next save must not undo either.
     const bound = {
       ...current,

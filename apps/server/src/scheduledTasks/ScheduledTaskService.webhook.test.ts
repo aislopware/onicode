@@ -474,6 +474,19 @@ it.effect("a policy without webhook tasks keeps existing ones but refuses saves 
 
             // Turned off, it can still be edited, but not turned back on.
             yield* service.setEnabled({ id: task.id, enabled: false });
+            // An edit from before that reports the change it missed, not the policy.
+            const stale = yield* service
+              .upsert({
+                ...(yield* webhookTaskInput()),
+                expected: {
+                  title: task.title,
+                  prompt: task.prompt,
+                  enabled: true,
+                  schedule: task.schedule,
+                },
+              })
+              .pipe(Effect.flip);
+            assert.isFalse(stale.current?.enabled);
             yield* service.upsert(yield* webhookTaskInput({ enabled: false }));
             const reenabled = yield* service
               .setEnabled({ id: task.id, enabled: true })

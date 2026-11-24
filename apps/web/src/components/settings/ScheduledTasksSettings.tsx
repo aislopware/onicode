@@ -1688,8 +1688,7 @@ function ScheduledTaskEditorForm({
       schedule.type === "webhook" &&
       schedule.signature &&
       (!schedule.signature.header ||
-        (!schedule.signature.secret &&
-          !(liveTask?.schedule.type === "webhook" && liveTask.webhook?.hasSecret)))
+        (!schedule.signature.secret && draft.saved?.webhook?.hasSecret !== true))
     ) {
       reportFailure(gt("Signing secret is required"), gt("Enter the signature header and secret."));
       return;
@@ -2277,7 +2276,7 @@ function ScheduledTaskEditorForm({
                         autoComplete="off"
                         value={draft.signatureSecret}
                         placeholder={
-                          liveTask?.schedule.type === "webhook" && liveTask.webhook?.hasSecret
+                          draft.saved?.webhook?.hasSecret === true
                             ? gt("Unchanged")
                             : gt("Shared secret")
                         }
