@@ -104,8 +104,26 @@ it("records no visit while nobody is at the window", async () => {
       <ThreadVisitWatermark threadRef={threadC} />
     </AppAtomRegistryProvider>,
   );
+  using _timers = fakeTimers();
+  vi.setSystemTime(NOW);
   expect(visitedThreadIds()).toEqual([]);
 
   appAtomRegistry.set(presentAtom, true);
   expect(visitedThreadIds()).toEqual(["c"]);
+
+  // A run that finishes after the user walked away stays unread until they are back.
+  appAtomRegistry.set(presentAtom, false);
+  const completedAt = "2026-01-03T00:00:00.000Z";
+  appAtomRegistry.set(shellAtom(shellKey(threadC)), {
+    environmentId: threadC.environmentId,
+    id: threadC.threadId,
+    updatedAt: completedAt,
+    lastVisitedAt: "2026-01-02T00:00:00.000Z",
+    latestRun: { completedAt },
+  });
+  vi.advanceTimersByTime(60_000);
+  expect(visitedThreadIds()).toEqual(["c"]);
+
+  appAtomRegistry.set(presentAtom, true);
+  expect(visitedThreadIds()).toEqual(["c", "c"]);
 });
