@@ -1980,9 +1980,14 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
   // the capture keeps the thread's effect lane, and steers and queued turns must line up behind it.
   const holdRunAwaitingCapture = Effect.fn("Orchestrator.holdRunAwaitingCapture")(function* <
     P extends { readonly runs: ReadonlyArray<OrchestrationV2Run> },
-  >(projection: P) {
+  >(projection: P, settledRunIds: ReadonlyArray<RunId> = []) {
     const latest = latestStartedRun(projection.runs);
-    if (latest === undefined || !(yield* awaitsCheckpointCapture(latest))) return projection;
+    if (
+      latest === undefined ||
+      settledRunIds.includes(latest.id) ||
+      !(yield* awaitsCheckpointCapture(latest))
+    )
+      return projection;
     const held: P = {
       ...projection,
       runs: projection.runs.map((run) =>
@@ -15981,9 +15986,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       yield* threadDispatch.withLock(
         childThreadId,
         Effect.gen(function* () {
-          const { controls: child, progress } = yield* readDelegatedChildControls(childThreadId, [
-            taskId,
-          ]);
+          const { controls: child, progress } = yield* readDelegatedChildControls(
+            childThreadId,
+            [taskId],
+            [resultRunId],
+          );
           // Unawaited background tasks still allow a result but die with the process; the idle
           // timer keeps their process pinned.
           if (
@@ -16028,7 +16035,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     );
 
   const readDelegatedChildControls = Effect.fn("Orchestrator.readDelegatedChildControls")(
-    function* (childThreadId: ThreadId, taskIds: ReadonlyArray<NodeId>) {
+    function* (
+      childThreadId: ThreadId,
+      taskIds: ReadonlyArray<NodeId>,
+      // Runs whose task outcome no capture can change, such as a cancelled task's.
+      settledRunIds: ReadonlyArray<RunId>,
+    ) {
       // Progress tells a held wake from a held message the user wrote by the run's message.
       const withHeldMessages = Effect.fn("Orchestrator.readHeldRunMessages")(function* <
         A extends Omit<DelegatedChildControls, "runsFloor">,
@@ -16052,6 +16064,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             windowSize: DELEGATED_CHILD_RUN_WINDOW,
           }),
         ),
+        settledRunIds,
       );
       const progress = delegatedTaskProgress(controls);
       // The latest result may have ended before the runs read above; then read them all.
@@ -16061,6 +16074,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       ) {
         const all = yield* holdRunAwaitingCapture(
           yield* withHeldMessages(yield* readAllDelegatedChildControls(childThreadId)),
+          settledRunIds,
         );
         return { controls: all, progress: delegatedTaskProgress(all) };
       }
@@ -16442,6 +16456,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const { controls: childControls, progress } = yield* readDelegatedChildControls(
       childThreadId,
       openTasks.map((task) => task.id),
+      openTasks.flatMap((task) => task.cancelledRunId ?? []),
     );
     const cancelAwaitsWork = progress.state === "working" && !progress.onlyAwaitsUserRun;
     for (const task of openTasks) {
