@@ -3708,3 +3708,4 @@ dc326236ea	take	taken as is
 74d73ac23f	take	taken as is; peer-linked threads open through LinkedThreadPage, so the unreachable state only covers catalog environments; mobile counterpart noted as follow-up
 8fcd0a8f76	take	taken as is; Windows x64 is a supported platform
 26f4c7550e	take	kept Onicode's clearSearchOnEscape helper (shared by every Settings search field, unit-tested) instead of upstream's inline handler; same behavior, also prevents the default; took upstream's browser test
+fa9f154e1b	skip	Firefox-only CSS (@supports -moz-appearance); Onicode renders only in Electron (Chromium) and mobile, with no browser-served UI
