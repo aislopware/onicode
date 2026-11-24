@@ -9,6 +9,7 @@ import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as Queue from "effect/Queue";
 import * as TestClock from "effect/testing/TestClock";
 import { vi } from "vite-plus/test";
 
@@ -572,16 +573,26 @@ it.layer(NodeServices.layer)("WorkspaceFolders", (it) => {
       yield* Effect.gen(function* () {
         const workspaceFolders = yield* WorkspaceFolders.WorkspaceFolders;
         // The pool queues a caller with a fresh `Promise.withResolvers`; nothing else here makes one.
-        const queued = yield* Deferred.make<void>();
+        const queued = yield* Queue.unbounded<void>();
         const withResolvers = Promise.withResolvers;
         const queueSpy = vi.spyOn(Promise, "withResolvers").mockImplementation((() => {
-          Deferred.doneUnsafe(queued, Effect.void);
+          Queue.offerUnsafe(queued, undefined);
           return withResolvers.call(Promise);
         }) as typeof Promise.withResolvers);
         yield* Effect.addFinalizer(() => Effect.sync(() => queueSpy.mockRestore()));
 
+        // A pool that stays busy answers after three tries.
+        const crowded = yield* Effect.forkChild(workspaceFolders.list({ projectId }));
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          yield* Queue.take(queued);
+          yield* TestClock.adjust("1 second");
+        }
+        assert.deepEqual(yield* Fiber.join(crowded), {
+          folders: [{ ...healthy, state: "missing" }],
+        });
+
         const listing = yield* Effect.forkChild(workspaceFolders.list({ projectId }));
-        yield* Deferred.await(queued);
+        yield* Queue.take(queued);
         yield* TestClock.adjust("1 second");
         releaseAll();
         assert.deepEqual(yield* Fiber.join(listing), {

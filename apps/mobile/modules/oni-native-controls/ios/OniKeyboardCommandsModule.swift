@@ -12,7 +12,7 @@ public final class OniKeyboardCommandsModule: Module {
       // JS supplies translated titles keyed by command id; "find" names Command-F and
       // "threadJump" is a pattern with an {index} placeholder.
       Prop("titles") { (view: OniKeyboardCommandsView, titles: [String: String]) in
-        view.titles = titles
+        view.setTitles(titles)
       }
       Events("onCommand")
     }
@@ -22,7 +22,7 @@ public final class OniKeyboardCommandsModule: Module {
 public final class OniKeyboardCommandsView: ExpoView {
   let onCommand = EventDispatcher()
   private var enabledCommands = Set<String>()
-  var titles: [String: String] = [:]
+  private var titles: [String: String] = [:]
   private let shortcutInputView = UIView(frame: .zero)
 
   public override var canBecomeFirstResponder: Bool { true }
@@ -80,6 +80,17 @@ public final class OniKeyboardCommandsView: ExpoView {
 
   func setEnabledCommands(_ commands: [String]) {
     enabledCommands = Set(commands)
+    reloadKeyCommands()
+  }
+
+  func setTitles(_ titles: [String: String]) {
+    guard titles != self.titles else { return }
+    self.titles = titles
+    reloadKeyCommands()
+  }
+
+  // UIKit asks for the key commands again when the first responder changes.
+  private func reloadKeyCommands() {
     if isFirstResponder {
       resignFirstResponder()
     }

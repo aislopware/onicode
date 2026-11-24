@@ -146,6 +146,11 @@ do {
   check(view.editor.accessibilityLabel == "Ask anything", "VoiceOver label: \(String(describing: view.editor.accessibilityLabel))")
 }
 
+// The text view must stay on TextKit 1; a switch from TextKit 2 mid-edit loses its layout.
+do {
+  check(makeEditor("").editor.textLayoutManager == nil, "The editor uses TextKit 2")
+}
+
 // Every key command keeps its English title until JS sends translated ones.
 do {
   let view = makeEditor("")
