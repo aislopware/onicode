@@ -735,6 +735,121 @@ describe("DesktopUpdates", () => {
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });
 
+  it.effect("an install waiting on a failing check still downloads a lost file again", () => {
+    const downloadedFile = "/cache/pending/Onicode-1.2.4-arm64.zip";
+    const checkStarted = Deferred.makeUnsafe<void>();
+    const releaseCheck = Deferred.makeUnsafe<void>();
+    let failNextCheck = false;
+    const harness = makeHarness({
+      checkForUpdates: Effect.suspend(() => {
+        if (!failNextCheck) {
+          harness.emit("update-available", { version: "1.2.4" });
+          return Effect.void;
+        }
+        failNextCheck = false;
+        return Deferred.succeed(checkStarted, undefined).pipe(
+          Effect.andThen(Deferred.await(releaseCheck)),
+          Effect.andThen(
+            Effect.fail(
+              new ElectronUpdater.ElectronUpdaterCheckForUpdatesError({
+                channel: null,
+                cause: new Error("offline"),
+              }),
+            ),
+          ),
+        );
+      }),
+      downloadUpdate: Effect.sync(() => {
+        harness.deletedFiles.delete(downloadedFile);
+        harness.emit("update-downloaded", { version: "1.2.4", downloadedFile });
+      }),
+    });
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+        yield* updates.check("poll");
+        yield* updates.download;
+        yield* flushCallbacks;
+
+        harness.deletedFiles.add(downloadedFile);
+        failNextCheck = true;
+        const polling = yield* updates.check("poll").pipe(Effect.forkChild);
+        yield* Deferred.await(checkStarted);
+        const installing = yield* updates.install.pipe(
+          Effect.forkChild({ startImmediately: true }),
+        );
+        yield* Deferred.succeed(releaseCheck, undefined);
+        yield* Fiber.join(polling);
+
+        const result = yield* Fiber.join(installing);
+        assert.isTrue(result.accepted);
+        assert.equal(harness.downloadCount(), 2);
+        assert.equal(harness.quitAndInstalls(), 1);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
+  it.effect(
+    "an install refused during install recovery keeps the lost download to fetch again",
+    () => {
+      const downloadedFile = "/cache/pending/Onicode-1.2.4-arm64.zip";
+      const recoveryStarted = Deferred.makeUnsafe<void>();
+      const releaseRecovery = Deferred.makeUnsafe<void>();
+      let failInstall = true;
+      const harness = makeHarness({
+        checkForUpdates: Effect.sync(() => harness.emit("update-available", { version: "1.2.4" })),
+        downloadUpdate: Effect.sync(() => {
+          harness.deletedFiles.delete(downloadedFile);
+          harness.emit("update-downloaded", { version: "1.2.4", downloadedFile });
+        }),
+        quitAndInstall: Effect.suspend(() =>
+          failInstall
+            ? Effect.fail(
+                new ElectronUpdater.ElectronUpdaterQuitAndInstallError({
+                  channel: "latest",
+                  isSilent: true,
+                  isForceRunAfter: true,
+                  cause: new Error("installer refused"),
+                }),
+              )
+            : Effect.void,
+        ),
+        startBackend: Deferred.succeed(recoveryStarted, undefined).pipe(
+          Effect.andThen(Deferred.await(releaseRecovery)),
+        ),
+      });
+
+      return Effect.scoped(
+        Effect.gen(function* () {
+          const updates = yield* DesktopUpdates.DesktopUpdates;
+          yield* updates.configure;
+          yield* updates.check("poll");
+          yield* updates.download;
+          yield* flushCallbacks;
+
+          const failedInstall = yield* updates.install.pipe(Effect.forkChild);
+          yield* Deferred.await(recoveryStarted);
+          harness.deletedFiles.add(downloadedFile);
+          const overlapping = yield* updates.install;
+          assert.isFalse(overlapping.accepted);
+          assert.equal(harness.downloadCount(), 1);
+
+          yield* Deferred.succeed(releaseRecovery, undefined);
+          const failed = yield* Fiber.join(failedInstall);
+          assert.equal(failed.state.downloadedVersion, "1.2.4");
+
+          failInstall = false;
+          const retry = yield* updates.install;
+          assert.isTrue(retry.accepted);
+          assert.equal(harness.downloadCount(), 2);
+          assert.equal(harness.quitAndInstalls(), 2);
+        }),
+      ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+    },
+  );
+
   it.effect("restores download state and permits retry after interruption", () =>
     Effect.gen(function* () {
       const actionStarted = yield* Deferred.make<void>();

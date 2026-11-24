@@ -1,6 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as HostProcess from "@onicode/shared/HostProcess";
+import { symlinksSupported } from "@onicode/shared/testing/symlinks";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -13,6 +14,8 @@ import { posixLauncherScript } from "../service/pinnedRuntime.ts";
 import { installCli, isForegroundProcStat, isForegroundPs, offerCliInstall } from "./install.ts";
 
 const VERSION = packageJson.version;
+// These run as Linux, whose PATH splits on ":" and needs exec bits that a Windows host's files lack.
+const windowsHost = HostProcess.Platform.defaultValue() === "win32";
 
 /** A standalone runtime in a temp Onicode home, started by the npm launcher from an npx cache. */
 const setup = Effect.gen(function* () {
@@ -48,134 +51,149 @@ const setup = Effect.gen(function* () {
 });
 
 it.layer(NodeServices.layer)("onicode install", (it) => {
-  it.effect("installs the running runtime, records it, and never replaces another onicode", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const { root, runtimeDir, executable, link, provide } = yield* setup;
+  it.effect.skipIf(windowsHost)(
+    "installs the running runtime, records it, and never replaces another onicode",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const { root, runtimeDir, executable, link, provide } = yield* setup;
 
-      const older = path.join(runtimeDir, "versions/0.0.1/onicode");
-      yield* fs.makeDirectory(path.dirname(link), { recursive: true });
-      yield* fs.symlink(older, link);
-      const installed = yield* provide(installCli());
-      assert.equal(yield* fs.readFileString(link), posixLauncherScript(executable));
-      assert.isFalse(installed.onPath);
-      assert.include(installed.pathCommand, "$HOME/bin");
+        const older = path.join(runtimeDir, "versions/0.0.1/onicode");
+        yield* fs.makeDirectory(path.dirname(link), { recursive: true });
+        yield* fs.symlink(older, link);
+        const installed = yield* provide(installCli());
+        assert.equal(yield* fs.readFileString(link), posixLauncherScript(executable));
+        assert.isFalse(installed.onPath);
+        assert.include(installed.pathCommand, "$HOME/bin");
 
-      // A link written through a symlinked Onicode home is still ours.
-      const alias = path.join(root, "alias");
-      yield* fs.symlink(path.join(root, ".onicode"), alias);
-      yield* fs.remove(link);
-      yield* fs.symlink(path.join(alias, "runtime/versions", VERSION, "onicode"), link);
-      const onPath = yield* provide(installCli(), { PATH: `/usr/bin:${path.join(root, "bin")}/` });
-      assert.isTrue(onPath.onPath);
-      // Another onicode earlier on PATH still runs first, so `onicode` would not run this one.
-      const otherBin = path.join(root, "other-bin");
-      yield* fs.makeDirectory(otherBin);
-      yield* fs.writeFileString(path.join(otherBin, "onicode"), "", { mode: 0o755 });
-      const shadowed = yield* provide(installCli(), {
-        PATH: `${otherBin}:${path.join(root, "bin")}`,
-      });
-      assert.isFalse(shadowed.onPath);
-      assert.equal(shadowed.shadowedBy, path.join(otherBin, "onicode"));
-      assert.isUndefined(shadowed.pathCommand);
-      yield* fs.remove(path.join(otherBin, "onicode"));
-      yield* fs.makeDirectory(path.join(otherBin, "onicode"));
-      const directory = yield* provide(installCli(), {
-        PATH: `${otherBin}:${path.join(root, "bin")}`,
-      });
-      assert.isTrue(directory.onPath);
-      assert.isUndefined(directory.shadowedBy);
-      const recorded = yield* fs.readFileString(path.join(runtimeDir, "launchers"));
-      assert.equal(recorded, `\n${yield* fs.realPath(path.join(root, "bin"))}/onicode\n`);
+        // A link written through a symlinked Onicode home is still ours.
+        const alias = path.join(root, "alias");
+        yield* fs.symlink(path.join(root, ".onicode"), alias);
+        yield* fs.remove(link);
+        yield* fs.symlink(path.join(alias, "runtime/versions", VERSION, "onicode"), link);
+        const onPath = yield* provide(installCli(), {
+          PATH: `/usr/bin:${path.join(root, "bin")}/`,
+        });
+        assert.isTrue(onPath.onPath);
+        // Another onicode earlier on PATH still runs first, so `onicode` would not run this one.
+        const otherBin = path.join(root, "other-bin");
+        yield* fs.makeDirectory(otherBin);
+        yield* fs.writeFileString(path.join(otherBin, "onicode"), "", { mode: 0o755 });
+        const shadowed = yield* provide(installCli(), {
+          PATH: `${otherBin}:${path.join(root, "bin")}`,
+        });
+        assert.isFalse(shadowed.onPath);
+        assert.equal(shadowed.shadowedBy, path.join(otherBin, "onicode"));
+        assert.isUndefined(shadowed.pathCommand);
+        yield* fs.remove(path.join(otherBin, "onicode"));
+        yield* fs.makeDirectory(path.join(otherBin, "onicode"));
+        const directory = yield* provide(installCli(), {
+          PATH: `${otherBin}:${path.join(root, "bin")}`,
+        });
+        assert.isTrue(directory.onPath);
+        assert.isUndefined(directory.shadowedBy);
+        const recorded = yield* fs.readFileString(path.join(runtimeDir, "launchers"));
+        assert.equal(recorded, `\n${yield* fs.realPath(path.join(root, "bin"))}/onicode\n`);
 
-      yield* fs.remove(link);
-      yield* fs.writeFileString(link, "#!/bin/sh\n");
-      const error = yield* provide(installCli()).pipe(Effect.flip);
-      assert.include(error.message, "Another onicode is already at");
-      assert.equal(yield* fs.readFileString(link), "#!/bin/sh\n");
+        yield* fs.remove(link);
+        yield* fs.writeFileString(link, "#!/bin/sh\n");
+        const error = yield* provide(installCli()).pipe(Effect.flip);
+        assert.include(error.message, "Another onicode is already at");
+        assert.equal(yield* fs.readFileString(link), "#!/bin/sh\n");
 
-      // Only `<version>/onicode` is ours, not another program inside a version.
-      yield* fs.remove(link);
-      yield* fs.symlink(path.join(runtimeDir, "versions/0.0.1/node"), link);
-      const sibling = yield* provide(installCli()).pipe(Effect.flip);
-      assert.include(sibling.message, "Another onicode is already at");
-      // This home's desktop launcher is replaced, as install.sh does.
-      yield* fs.remove(link);
-      yield* fs.symlink(path.join(root, ".onicode/bin/onicode"), link);
-      yield* provide(installCli());
-      assert.equal(yield* fs.readFileString(link), posixLauncherScript(executable));
+        // Only `<version>/onicode` is ours, not another program inside a version.
+        yield* fs.remove(link);
+        yield* fs.symlink(path.join(runtimeDir, "versions/0.0.1/node"), link);
+        const sibling = yield* provide(installCli()).pipe(Effect.flip);
+        assert.include(sibling.message, "Another onicode is already at");
+        // This home's desktop launcher is replaced, as install.sh does.
+        yield* fs.remove(link);
+        yield* fs.symlink(path.join(root, ".onicode/bin/onicode"), link);
+        yield* provide(installCli());
+        assert.equal(yield* fs.readFileString(link), posixLauncherScript(executable));
 
-      // A script an earlier install wrote is ours too, even through a symlinked Onicode home.
-      yield* fs.writeFileString(link, posixLauncherScript(older));
-      yield* provide(installCli());
-      assert.equal(yield* fs.readFileString(link), posixLauncherScript(executable));
-      yield* fs.symlink(path.join(root, ".onicode"), path.join(root, "home-alias"));
-      yield* fs.writeFileString(
-        link,
-        posixLauncherScript(path.join(root, "home-alias/runtime/versions", VERSION, "onicode")),
-      );
-      yield* provide(installCli());
-      assert.equal(yield* fs.readFileString(link), posixLauncherScript(executable));
+        // A script an earlier install wrote is ours too, even through a symlinked Onicode home.
+        yield* fs.writeFileString(link, posixLauncherScript(older));
+        yield* provide(installCli());
+        assert.equal(yield* fs.readFileString(link), posixLauncherScript(executable));
+        yield* fs.symlink(path.join(root, ".onicode"), path.join(root, "home-alias"));
+        yield* fs.writeFileString(
+          link,
+          posixLauncherScript(path.join(root, "home-alias/runtime/versions", VERSION, "onicode")),
+        );
+        yield* provide(installCli());
+        assert.equal(yield* fs.readFileString(link), posixLauncherScript(executable));
 
-      // An empty spot is created exclusively: a file that appears first is kept.
-      yield* fs.remove(link);
-      const racing = installCli().pipe(
-        Effect.provideService(FileSystem.FileSystem, {
-          ...fs,
-          link: (from, to) =>
-            fs
-              .writeFileString(to, "#!/bin/sh\necho raced\n")
-              .pipe(Effect.andThen(fs.link(from, to))),
-        }),
-      );
-      assert.include((yield* provide(racing).pipe(Effect.flip)).message, "Could not write");
-      assert.equal(yield* fs.readFileString(link), "#!/bin/sh\necho raced\n");
-      yield* fs.remove(link);
-
-      // Windows writes a onicode.cmd: only over its own, and only for paths cmd can run.
-      const shim = path.join(root, "bin", "onicode.cmd");
-      const windows = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-        provide(effect.pipe(Effect.provideService(HostProcess.Platform, "win32")));
-      const desktopShim =
-        '@echo off\r\nrem Written by Onicode\r\n"C:\\Onicode\\Onicode.exe" "x" %*\r\n';
-      yield* fs.writeFileString(shim, desktopShim);
-      const foreignShim = yield* windows(installCli()).pipe(Effect.flip);
-      assert.include(foreignShim.message, "Another onicode is already at");
-      assert.equal(yield* fs.readFileString(shim), desktopShim);
-      // A user's wrapper that also runs a managed onicode.exe is still theirs.
-      const wrapper = `@echo off\r\nset FOO=1\r\n"${path.join(runtimeDir, "versions/0.0.1/onicode.exe")}" %*`;
-      yield* fs.writeFileString(shim, wrapper);
-      yield* windows(installCli()).pipe(Effect.flip);
-      assert.equal(yield* fs.readFileString(shim), wrapper);
-      // A dangling symlink is not free; writing through it would land outside the bin folder.
-      const elsewhere = path.join(root, "elsewhere.cmd");
-      yield* fs.remove(shim);
-      yield* fs.symlink(elsewhere, shim);
-      yield* windows(installCli()).pipe(Effect.flip);
-      assert.isFalse(yield* fs.exists(elsewhere));
-      yield* fs.remove(shim);
-      yield* fs.writeFileString(
-        shim,
-        `@echo off\r\n"${path.join(runtimeDir, "versions/0.0.1/onicode.exe")}" %*`,
-      );
-      const windowsInstalled = yield* windows(installCli());
-      assert.equal(yield* fs.readFileString(shim), `@echo off\r\n"${executable}" %*`);
-      // A PowerShell command for this window; the saved PATH is left to the user.
-      assert.equal(windowsInstalled.pathCommand, `$env:Path += ';${path.join(root, "bin")}'`);
-      const unrunnable = yield* windows(
-        installCli().pipe(
-          Effect.provideService(
-            HostProcess.ExecutablePath,
-            path.join(runtimeDir, "versions/100%/onicode"),
-          ),
-        ),
-      ).pipe(Effect.flip);
-      assert.include(unrunnable.message, "has % or non-ASCII characters");
-    }),
+        // An empty spot is created exclusively: a file that appears first is kept.
+        yield* fs.remove(link);
+        const racing = installCli().pipe(
+          Effect.provideService(FileSystem.FileSystem, {
+            ...fs,
+            link: (from, to) =>
+              fs
+                .writeFileString(to, "#!/bin/sh\necho raced\n")
+                .pipe(Effect.andThen(fs.link(from, to))),
+          }),
+        );
+        assert.include((yield* provide(racing).pipe(Effect.flip)).message, "Could not write");
+        assert.equal(yield* fs.readFileString(link), "#!/bin/sh\necho raced\n");
+        yield* fs.remove(link);
+      }),
   );
 
   it.effect(
+    "on Windows writes a onicode.cmd only over its own, and only for paths cmd can run",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const { root, runtimeDir, executable, link, provide } = yield* setup;
+        yield* fs.makeDirectory(path.dirname(link), { recursive: true });
+        const shim = path.join(root, "bin", "onicode.cmd");
+        const windows = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+          provide(effect.pipe(Effect.provideService(HostProcess.Platform, "win32")), { PATH: "" });
+        const desktopShim =
+          '@echo off\r\nrem Written by Onicode\r\n"C:\\Onicode\\Onicode.exe" "x" %*\r\n';
+        yield* fs.writeFileString(shim, desktopShim);
+        const foreignShim = yield* windows(installCli()).pipe(Effect.flip);
+        assert.include(foreignShim.message, "Another onicode is already at");
+        assert.equal(yield* fs.readFileString(shim), desktopShim);
+        // A user's wrapper that also runs a managed onicode.exe is still theirs.
+        const wrapper = `@echo off\r\nset FOO=1\r\n"${path.join(runtimeDir, "versions/0.0.1/onicode.exe")}" %*`;
+        yield* fs.writeFileString(shim, wrapper);
+        yield* windows(installCli()).pipe(Effect.flip);
+        assert.equal(yield* fs.readFileString(shim), wrapper);
+        // A dangling symlink is not free; writing through it would land outside the bin folder.
+        if (symlinksSupported) {
+          const elsewhere = path.join(root, "elsewhere.cmd");
+          yield* fs.remove(shim);
+          yield* fs.symlink(elsewhere, shim);
+          yield* windows(installCli()).pipe(Effect.flip);
+          assert.isFalse(yield* fs.exists(elsewhere));
+        }
+        yield* fs.remove(shim);
+        yield* fs.writeFileString(
+          shim,
+          `@echo off\r\n"${path.join(runtimeDir, "versions/0.0.1/onicode.exe")}" %*`,
+        );
+        const windowsInstalled = yield* windows(installCli());
+        assert.equal(yield* fs.readFileString(shim), `@echo off\r\n"${executable}" %*`);
+        // A PowerShell command for this window; the saved PATH is left to the user.
+        assert.equal(windowsInstalled.pathCommand, `$env:Path += ';${path.join(root, "bin")}'`);
+        const unrunnable = yield* windows(
+          installCli().pipe(
+            Effect.provideService(
+              HostProcess.ExecutablePath,
+              path.join(runtimeDir, "versions/100%/onicode"),
+            ),
+          ),
+        ).pipe(Effect.flip);
+        assert.include(unrunnable.message, "has % or non-ASCII characters");
+      }),
+  );
+
+  it.effect.skipIf(windowsHost)(
     "asks npx users without a onicode command once per minor release and installs on yes",
     () =>
       Effect.gen(function* () {

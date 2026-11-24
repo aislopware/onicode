@@ -12,7 +12,7 @@ import type {
 } from "@onicode/contracts";
 import * as HostProcess from "@onicode/shared/HostProcess";
 import * as NetService from "@onicode/shared/Net";
-import type { NonEmptyReadonlyArray } from "effect/Array";
+import * as Arr from "effect/Array";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Deferred from "effect/Deferred";
@@ -106,7 +106,7 @@ const keepInTunnel = (
  * head is too long; `rest` then holds everything read.
  */
 const readHead = Effect.fn("LoopbackTunnel.readHead")(function* (
-  pull: Effect.Effect<NonEmptyReadonlyArray<Uint8Array>, Socket.SocketError>,
+  pull: Effect.Effect<Arr.NonEmptyReadonlyArray<Uint8Array>, Socket.SocketError>,
   initial: Buffer = Buffer.alloc(0),
 ) {
   let received = initial;
@@ -274,7 +274,7 @@ const dialTunnel = Effect.fn("LoopbackTunnel.dialTunnel")(function* (
     openTimeout: CONNECT_TIMEOUT,
   });
   // Effect's WebSocket writer never waits for the send buffer; `ws` calls back once it is written.
-  const sendAll = (chunks: NonEmptyReadonlyArray<Uint8Array>) =>
+  const sendAll = (chunks: Arr.NonEmptyReadonlyArray<Uint8Array>) =>
     Effect.callback<void>((resume) => {
       const last = chunks.length - 1;
       chunks.forEach((chunk, index) =>
@@ -366,12 +366,52 @@ const lsofConnectionOwner = (output: string, client: ConnectionEnd, listener: Co
   return undefined;
 };
 
+/**
+ * The `lsof -F un` rows of client ends. Each lsof walks every process (about 50 ms), so one runs at
+ * a time and ends that arrive meanwhile share the next, which starts after they arrived.
+ */
+export const makeLsofSockets = Effect.fn("LoopbackTunnel.makeLsofSockets")(function* (
+  lsof: (args: ReadonlyArray<string>) => Effect.Effect<string>,
+) {
+  const scope = yield* Effect.scope;
+  const runs = yield* Semaphore.make(1);
+  let next: { readonly ends: Set<string>; readonly output: Deferred.Deferred<string> } | null =
+    null;
+  return Effect.fn("LoopbackTunnel.lsofSockets")(function* (end: string) {
+    // Uninterruptible, so a client that goes away can't leave a batch that never runs.
+    const output = yield* Effect.uninterruptible(
+      Effect.suspend(() => {
+        const joined = next;
+        if (joined !== null) {
+          joined.ends.add(end);
+          return Effect.succeed(joined.output);
+        }
+        const batch = { ends: new Set([end]), output: Deferred.makeUnsafe<string>() };
+        next = batch;
+        const run = Effect.suspend(() => {
+          if (next === batch) next = null;
+          // lsof takes at most 100 -i addresses.
+          return Effect.forEach(Arr.chunksOf([...batch.ends], 100), (ends) =>
+            lsof(["-nP", ...ends.map((end) => `-iTCP@${end}`), "-F", "un"]),
+          ).pipe(Effect.map((outputs) => outputs.join("\n")));
+        });
+        // Forked, so a client that goes away does not end the scan others wait on.
+        return Deferred.into(runs.withPermits(1)(run), batch.output).pipe(
+          Effect.forkIn(scope),
+          Effect.as(batch.output),
+        );
+      }),
+    );
+    return yield* Deferred.await(output);
+  });
+});
+
 const pump =
   /* Runs for the life of the connection; a span per direction adds no diagnostic value. */
   Effect.fnUntraced(function* (
-    pull: Effect.Effect<NonEmptyReadonlyArray<Uint8Array>, Socket.SocketError>,
+    pull: Effect.Effect<Arr.NonEmptyReadonlyArray<Uint8Array>, Socket.SocketError>,
     writeAll: (
-      chunks: NonEmptyReadonlyArray<Uint8Array>,
+      chunks: Arr.NonEmptyReadonlyArray<Uint8Array>,
     ) => Effect.Effect<void, Socket.SocketError>,
   ) {
     while (true) yield* writeAll(yield* pull);
@@ -561,16 +601,18 @@ const make = Effect.gen(function* () {
             let remaining = next.bodyLength;
             const take = (chunk: Buffer) => {
               const part = chunk.subarray(0, remaining);
-              remaining -= part.length;
               buffered = chunk.subarray(part.length);
               return part;
             };
             sent++;
+            const first = take(buffered);
+            remaining -= first.length;
             yield* target.writer.write(
-              Buffer.concat([Buffer.from(next.forwardHead, "latin1"), take(buffered)]),
+              Buffer.concat([Buffer.from(next.forwardHead, "latin1"), first]),
             );
             while (remaining > 0) {
               const part = take(Buffer.concat(yield* pull));
+              remaining -= part.length;
               if (part.length > 0) yield* target.writer.write(part);
             }
             // Chromium sends the next request only once it has read the whole response.
@@ -639,16 +681,13 @@ const make = Effect.gen(function* () {
     return owner !== undefined && owner === userId;
   });
 
+  const lsofSockets = yield* makeLsofSockets((args) => commandOutput("/usr/sbin/lsof", args));
+
   const isOwnMacConnection = Effect.fn("LoopbackTunnel.isOwnMacConnection")(function* (
     client: ConnectionEnd,
     listener: ConnectionEnd,
   ) {
-    const sockets = yield* commandOutput("/usr/sbin/lsof", [
-      "-nP",
-      `-iTCP@${lsofEnd(client)}`,
-      "-F",
-      "un",
-    ]);
+    const sockets = yield* lsofSockets(lsofEnd(client));
     const owner = lsofConnectionOwner(sockets, client, listener);
     return owner !== undefined && owner === userId;
   });

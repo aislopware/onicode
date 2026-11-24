@@ -60,6 +60,12 @@ const UPDATE_CHECK_WAIT = Duration.seconds(90);
 
 type UpdateAction = "check" | "download" | "install" | "install-recovery";
 
+/** A retained download whose file is gone. */
+interface LostDownload {
+  readonly version: string;
+  readonly file: string;
+}
+
 interface DesktopPreparedUpdateInstallResult extends DesktopUpdateActionResult {
   readonly failed: boolean;
 }
@@ -500,15 +506,54 @@ export const make = Effect.gen(function* () {
     );
   });
 
+  // Holds stateMutex. Forgets the download `lost` names, if it is still the retained one.
+  const dropLostDownload = Effect.fn("desktop.updates.dropLostDownload")(function* (
+    lost: LostDownload,
+  ) {
+    const current = yield* Ref.get(updateStateRef);
+    if (
+      current.downloadedVersion !== lost.version ||
+      Option.getOrNull(yield* Ref.get(downloadedFileRef)) !== lost.file
+    ) {
+      return false;
+    }
+    const next = reduceDesktopUpdateStateOnDownloadLost(current);
+    yield* Ref.set(downloadedFileRef, Option.none());
+    yield* Ref.set(updateStateRef, next);
+    yield* PubSub.publish(stateChanges, next);
+    return true;
+  });
+
+  const announceLostDownload = (version: string) =>
+    emitState.pipe(
+      Effect.andThen(
+        logUpdaterWarning("the downloaded update file is gone; it will be downloaded again", {
+          version,
+        }),
+      ),
+    );
+
   // Install refreshes before downloading, and a second check could pick a stale, older release.
+  // With `lost`, the download it names is forgotten only once this download holds the action.
   const downloadAvailableUpdate = Effect.fn("desktop.updates.downloadAvailableUpdate")(function* (
     refresh: boolean,
+    lost?: LostDownload,
   ) {
+    let forgot = false;
     const admission = yield* Effect.scoped(
       admitAfterCheck(
         Effect.gen(function* () {
           const state = yield* Ref.get(updateStateRef);
-          if (!(yield* Ref.get(updaterConfiguredRef)) || state.status !== "available") {
+          const retainedLost =
+            lost !== undefined &&
+            state.downloadedVersion === lost.version &&
+            Option.getOrNull(yield* Ref.get(downloadedFileRef)) === lost.file
+              ? lost
+              : undefined;
+          if (
+            !(yield* Ref.get(updaterConfiguredRef)) ||
+            (state.status !== "available" && retainedLost === undefined)
+          ) {
             return "refused" as const;
           }
           const activeAction = yield* Ref.get(activeUpdateActionRef);
@@ -517,9 +562,9 @@ export const make = Effect.gen(function* () {
               ? ("wait-for-check" as const)
               : ("refused" as const);
           }
-          return (yield* tryStartUpdateAction("download"))
-            ? ("admitted" as const)
-            : ("refused" as const);
+          if (!(yield* tryStartUpdateAction("download"))) return "refused" as const;
+          if (retainedLost !== undefined) forgot = yield* dropLostDownload(retainedLost);
+          return "admitted" as const;
         }),
       ),
     );
@@ -530,6 +575,7 @@ export const make = Effect.gen(function* () {
     const offered = yield* Ref.get(updateStateRef);
     let state = offered;
     return yield* Effect.gen(function* () {
+      if (forgot && lost !== undefined) yield* announceLostDownload(lost.version);
       if (refresh) {
         // electron-updater downloads what its last check found, which can be hours old.
         yield* logUpdaterInfo("checking for updates", { reason: "download" });
@@ -829,34 +875,26 @@ export const make = Effect.gen(function* () {
     ),
   );
 
-  const forgetLostDownload = Effect.gen(function* () {
-    if (Option.isSome(yield* activeUpdateAction)) return false;
+  const lostDownload = Effect.gen(function* () {
     const file = Option.getOrNull(yield* Ref.get(downloadedFileRef));
     const version = (yield* Ref.get(updateStateRef)).downloadedVersion;
-    if (file === null || version === null || !(yield* downloadedFileMissing)) return false;
+    if (file === null || version === null || !(yield* downloadedFileMissing)) return undefined;
+    return { version, file } satisfies LostDownload;
+  });
+
+  const forgetLostDownload = Effect.gen(function* () {
+    if (Option.isSome(yield* activeUpdateAction)) return false;
+    const lost = yield* lostDownload;
+    if (lost === undefined) return false;
     // The existence check is async: a download, check or install may have started meanwhile.
     const forgotten = yield* stateMutex.withPermits(1)(
       Effect.gen(function* () {
-        const current = yield* Ref.get(updateStateRef);
-        if (
-          Option.isSome(yield* activeUpdateAction) ||
-          current.downloadedVersion !== version ||
-          Option.getOrNull(yield* Ref.get(downloadedFileRef)) !== file
-        ) {
-          return false;
-        }
-        const next = reduceDesktopUpdateStateOnDownloadLost(current);
-        yield* Ref.set(downloadedFileRef, Option.none());
-        yield* Ref.set(updateStateRef, next);
-        yield* PubSub.publish(stateChanges, next);
-        return true;
+        if (Option.isSome(yield* activeUpdateAction)) return false;
+        return yield* dropLostDownload(lost);
       }),
     );
     if (!forgotten) return false;
-    yield* emitState;
-    yield* logUpdaterWarning("the downloaded update file is gone; it will be downloaded again", {
-      version,
-    });
+    yield* announceLostDownload(lost.version);
     return true;
   }).pipe(Effect.withSpan("desktop.updates.forgetLostDownload"));
 
@@ -879,7 +917,8 @@ export const make = Effect.gen(function* () {
       retainedVersion !== null &&
       (expectedVersion === undefined || retainedVersion === expectedVersion);
     // A cache cleaner can delete the archive; Squirrel.Mac would then fail every install attempt.
-    if (retainsExpectedDownload && (yield* downloadedFileMissing)) {
+    const lost = retainsExpectedDownload ? yield* lostDownload : undefined;
+    if (lost !== undefined) {
       // A pinned install is a remote commit with a short deadline; its prepare step downloads.
       if (pinned) {
         yield* forgetLostDownload;
@@ -893,11 +932,7 @@ export const make = Effect.gen(function* () {
           },
         };
       }
-      yield* logUpdaterWarning("the downloaded update file is gone; downloading it again", {
-        version: retainedVersion,
-      });
-      yield* updateState(reduceDesktopUpdateStateOnDownloadLost);
-      const download = yield* downloadAvailableUpdate(true);
+      const download = yield* downloadAvailableUpdate(true, lost);
       if (!download.completed) {
         return {
           accepted: download.accepted,

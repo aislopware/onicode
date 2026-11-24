@@ -181,6 +181,8 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
   const installRecords = new Map<string, string>();
   const deletedFiles = new Set<string>();
   let previousInstallRecord = options.installRecord;
+  // The app joins paths with the host's separator, so a Windows host hands these backslashes.
+  const posix = (path: string) => path.replaceAll("\\", "/");
   const isInstallRecord = (path: string) =>
     path.endsWith(DesktopUpdates.DESKTOP_UPDATE_INSTALL_RECORD_FILE);
   const layerFileSystem = FileSystem.layerNoop({
@@ -189,7 +191,8 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
         ? (installRecords.get(path) ?? previousInstallRecord)
         : undefined;
       if (installRecord !== undefined) return Effect.succeed(installRecord);
-      return path === "/missing/resources/package-type" && options.packageType !== undefined
+      return posix(path).endsWith("/missing/resources/package-type") &&
+        options.packageType !== undefined
         ? Effect.succeed(options.packageType)
         : Effect.fail(
             PlatformError.systemError({
@@ -247,7 +250,9 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
     quitAndInstalls: () => quitAndInstallCount,
     installSteps,
     updateInProgressMarker: () =>
-      [...updateMarkerContents].find(([path]) => path.endsWith("/desktop-update-in-progress"))?.[1],
+      [...updateMarkerContents].find(([path]) =>
+        posix(path).endsWith("/desktop-update-in-progress"),
+      )?.[1],
     installRecords,
     /** Paths removed behind the app's back, as by a cache cleaner. */
     deletedFiles,
