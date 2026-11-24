@@ -1631,6 +1631,11 @@ it.effect("does not choose a default Forgejo login across ambiguous SSH server p
       ForgejoCli.parseForgejoRemote("forgejo.local:maria/project.git"),
       remote,
     );
+    // ssh ends the login at the last `@`.
+    assert.deepStrictEqual(
+      ForgejoCli.parseForgejoRemote("alice@corp.com@forgejo.local:maria/project.git"),
+      remote,
+    );
     assert.isUndefined(ForgejoCli.matchForgejoLogin(logins, remote!));
     assert.strictEqual(
       ForgejoCli.matchForgejoLogin(logins, remote!, "forgejo.local:4000")?.name,

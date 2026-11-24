@@ -36,7 +36,11 @@ import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as SourceControlProvider from "@onicode/source-control-core/server/SourceControlProvider";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
 import * as HostProcess from "@onicode/shared/HostProcess";
-import { cloneUrlForProtocol, cloneUrlProtocol } from "@onicode/shared/cloneUrl";
+import {
+  cloneUrlForProtocol,
+  cloneUrlProtocol,
+  withoutRemoteUrlCredentials,
+} from "@onicode/shared/cloneUrl";
 const isSourceControlRepositoryError = Schema.is(SourceControlRepositoryError);
 const isSourceControlProviderError = Schema.is(SourceControlProviderError);
 const isGitCommandError = Schema.is(GitCommandError);
@@ -129,7 +133,7 @@ function redactRemoteUrl(remoteUrl: string): string {
     url.search = "";
     return url.toString();
   } catch {
-    return remoteUrl;
+    return withoutRemoteUrlCredentials(remoteUrl);
   }
 }
 

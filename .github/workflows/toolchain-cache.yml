@@ -4,7 +4,7 @@ name: Toolchain cache
 # job restores it with cache-save off, because setup-vp saves in its post step,
 # after a job's install and project code could have changed ~/.vite-plus, and
 # release.yml's Windows build restores this cache next to release secrets. This
-# job checks out only the version files and runs nothing after setup.
+# job checks out only the version files and runs no project code.
 on:
   workflow_dispatch:
   push:

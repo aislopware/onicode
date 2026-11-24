@@ -2,10 +2,11 @@ import { isWindowsDrivePath } from "./path.ts";
 
 export type CloneProtocol = "ssh" | "https";
 
-const SCP_LIKE_URL = /^(?:[^@/\s]+@)?(\[[^\]@/\s]+\]|[^:/\s[\]]+):(?!\/)(.+)$/;
-// Userinfo may contain `@`; the last one before the first slash separates the host.
-const SSH_URL = /^ssh:\/\/(?:[^/\s]*@)?(\[[^\]@/\s]+\]|[^@:/\s]+)(:\d+)?\/(.+)$/;
-const HTTPS_URL = /^https?:\/\/(?:[^/\s]*@)?(\[[^\]@/\s]+\]|[^@:/\s]+)(:\d+)?\/(.+)$/;
+// Userinfo may contain `@`; the last one before the host separates them, as ssh and URL parsers
+// read it. A query or fragment is never userinfo.
+const SCP_LIKE_URL = /^(?:[^/:\s]*@)?(\[[^\]@/\s]+\]|[^@:/\s[\]]+):(?!\/)(.+)$/;
+const SSH_URL = /^ssh:\/\/(?:[^/?#\s]*@)?(\[[^\]@/\s]+\]|[^@:/?#\s]+)(:\d+)?\/(.+)$/;
+const HTTPS_URL = /^https?:\/\/(?:[^/?#\s]*@)?(\[[^\]@/\s]+\]|[^@:/?#\s]+)(:\d+)?\/(.+)$/;
 
 function parseCloneUrl(url: string): {
   protocol: CloneProtocol;
@@ -33,18 +34,16 @@ function parseCloneUrl(url: string): {
 }
 
 /**
- * Drops what a URL remote can carry as a login: a password, the userinfo of non-SSH URLs and an
- * HTTP(S) query. SSH URLs keep their user, which is part of the address.
+ * Drops what a URL remote can carry as a login: a password, the userinfo of non-SSH URLs and the
+ * query, which a clone URL only holds as a token. SSH URLs keep their user, part of the address.
  */
 export function withoutRemoteUrlCredentials(url: string): string {
-  const match = /^([a-z][a-z0-9+.-]*):\/\/(?:([^/?#]*)@)?/i.exec(url);
+  const match = /^([a-z][a-z0-9+.-]*):\/\/(?:([^/?#]*)@)?([^?#]*)(?:\?[^#]*)?/i.exec(url);
   if (match === null) return url;
-  const [prefix, scheme = "", userinfo] = match;
+  const [prefix, scheme = "", userinfo, rest = ""] = match;
   const user = userinfo?.split(":", 1)[0];
-  const rest = url.slice(prefix.length);
-  const kept = /^ssh$/i.test(scheme) && user ? `${user}@` : "";
-  const withoutLogin = `${scheme}://${kept}${rest}`;
-  return /^https?$/i.test(scheme) ? withoutLogin.replace(/\?[^#]*/, "") : withoutLogin;
+  const kept = /^(?:(?:git\+)?ssh|ssh\+git)$/i.test(scheme) && user ? `${user}@` : "";
+  return `${scheme}://${kept}${rest}${url.slice(prefix.length)}`;
 }
 
 export function cloneUrlProtocol(url: string): CloneProtocol | null {

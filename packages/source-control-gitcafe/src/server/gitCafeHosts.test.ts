@@ -20,6 +20,7 @@ describe("gitCafeHosts", () => {
     ["ssh://git.cafe:2222/team/project.git", "git.cafe"],
     ["git.cafe:team/project.git", "git.cafe"],
     ["https://alice@corp.com:token@git.cafe/team/project.git", "git.cafe"],
+    ["alice@corp.com@git.cafe:team/project.git", "git.cafe"],
   ])("reads the host and repository of %s", (url, host) => {
     assert.deepStrictEqual(GitCafeHosts.parseGitCafeRemote(url), {
       host,
@@ -31,6 +32,8 @@ describe("gitCafeHosts", () => {
     "https://evil.git.cafe/team/project.git",
     "https://git.cafe/team/nested/project.git",
     "team/project",
+    "https://evil.example?x=@git.cafe/team/project.git",
+    "https://u@evil.example#@git.cafe/team/project.git",
   ])("is not a GitCafe repository: %s", (url) => {
     assert.isNull(GitCafeHosts.parseGitCafeRemote(url));
   });

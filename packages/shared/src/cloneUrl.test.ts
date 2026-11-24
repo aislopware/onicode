@@ -52,6 +52,11 @@ describe("cloneUrlForProtocol", () => {
     expect(cloneUrlForProtocol("https://github.com/org/repo@branch.git", "ssh")).toBe(
       "git@github.com:org/repo@branch.git",
     );
+    // ssh ends an SCP login at the last `@`; a query or fragment is not userinfo.
+    expect(cloneUrlForProtocol("alice@corp.com@github.com:org/repo.git", "https")).toBe(
+      "https://github.com/org/repo.git",
+    );
+    expect(cloneUrlProtocol("https://evil.example?x=@github.com/org/repo.git")).toBeNull();
   });
 
   it.each(["https://user:pa@rt@/org/repo", "ssh://user:pa@rt@/org/repo"])(
@@ -244,6 +249,12 @@ describe("withoutRemoteUrlCredentials", () => {
     ["ssh://git@git.example.com/owner/repo.git", "ssh://git@git.example.com/owner/repo.git"],
     ["git@github.com:owner/repo.git", "git@github.com:owner/repo.git"],
     ["/srv/git/repo.git", "/srv/git/repo.git"],
+    [
+      "git+https://user:s3cr3t@host.example/repo.git?token=t#a?b",
+      "git+https://host.example/repo.git#a?b",
+    ],
+    ["git+ssh://git:s3cr3t@host.example/repo.git", "git+ssh://git@host.example/repo.git"],
+    ["ssh+git://git@host.example/repo.git", "ssh+git://git@host.example/repo.git"],
   ])("keeps no password or login token in %s", (url, expected) => {
     expect(withoutRemoteUrlCredentials(url)).toBe(expected);
   });
