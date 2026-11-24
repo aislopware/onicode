@@ -1,3 +1,4 @@
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import type {
   DesktopHostTelemetrySnapshot,
@@ -8,11 +9,14 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
+import { ChildProcess, ChildProcessSpawner } from "effect/process";
+import * as HostProcess from "@onicode/shared/HostProcess";
 
 import * as DesktopTelemetryReceiver from "../resourceTelemetry/DesktopTelemetryReceiver.ts";
 import * as NativeTelemetryClient from "../resourceTelemetry/NativeTelemetryClient.ts";
 import * as ResourceAttribution from "../resourceTelemetry/ResourceAttribution.ts";
 import * as ResourceTelemetry from "../resourceTelemetry/ResourceTelemetry.ts";
+import * as ProcessLauncher from "../process/ProcessLauncher.ts";
 import * as ProcessDiagnostics from "./ProcessDiagnostics.ts";
 
 // ProcessDiagnostics treats process.pid as the server, so the fixture PID is an
@@ -67,6 +71,35 @@ function layerTelemetryFor(
 }
 
 describe("ProcessDiagnostics", () => {
+  it.live.skipIf(HostProcess.Platform.defaultValue() !== "linux")(
+    "refuses to signal the process launcher that hosts the server's commands",
+    () =>
+      Effect.gen(function* () {
+        const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+        const command = yield* spawner.spawn(ChildProcess.make("sh", ["-c", "echo $PPID"]));
+        const launcher = Number(yield* command.stdout.pipe(Stream.decodeText(), Stream.mkString));
+        expect(launcher).not.toBe(process.pid);
+        const processDiagnostics = yield* ProcessDiagnostics.ProcessDiagnostics;
+
+        expect(
+          yield* processDiagnostics.signal({ pid: launcher, startTimeMs: 1, signal: "SIGCONT" }),
+        ).toEqual({
+          pid: launcher,
+          signal: "SIGCONT",
+          signaled: false,
+          message: Option.some("Refusing to signal the Onicode process launcher."),
+        });
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(
+          Layer.mergeAll(
+            ProcessDiagnostics.layer.pipe(Layer.provide(layerTelemetryFor(makeNativeSnapshot([])))),
+            ProcessLauncher.layerServer,
+          ).pipe(Layer.provideMerge(NodeServices.layer)),
+        ),
+      ),
+  );
+
   it.effect("rejects stale process identities before signaling", () =>
     Effect.gen(function* () {
       const snapshot = makeNativeSnapshot([]);

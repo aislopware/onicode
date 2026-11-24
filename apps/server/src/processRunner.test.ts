@@ -318,8 +318,10 @@ describe("ProcessRunner.layer", () => {
       Effect.gen(function* () {
         const runner = yield* ProcessRunner.ProcessRunner;
         const result = yield* runner.run({ command: "sh", args: ["-c", "echo $PPID"] });
+        const helper = expectHelperPid(result.stdout);
 
-        expectHelperPid(result.stdout);
+        expect(ProcessLauncher.isLauncher(helper)).toBe(true);
+        expect(ProcessLauncher.isServerChild(helper)).toBe(true);
       }).pipe(Effect.provide(layerLaunched.pipe(Layer.provide(NodeServices.layer)))),
   );
 
@@ -581,12 +583,16 @@ describe("ProcessRunner.layer", () => {
               NodeModule.syncBuiltinESMExports();
             }),
         );
-        const server = yield* Scope.make();
+        const server = yield* Effect.acquireRelease(Scope.make(), (scope) =>
+          Scope.close(scope, Exit.void),
+        );
         const spawner = Context.get(
           yield* Layer.buildWithScope(ProcessLauncher.layerServer, server),
           ChildProcessSpawner.ChildProcessSpawner,
         );
-        // As externalLauncher opens an editor.
+        const status = (pid: number) =>
+          fs.readFileString(`/proc/${pid}/status`).pipe(Effect.orElseSucceed(() => ""));
+        // As externalLauncher opens an editor; the server stops right after, with nothing between.
         const pid = yield* spawner
           .spawn(
             ChildProcess.make("sleep", ["1000"], {
@@ -597,9 +603,17 @@ describe("ProcessRunner.layer", () => {
             }),
           )
           .pipe(
+            Effect.tap((handle) =>
+              Effect.map(status(handle.pid), (before) =>
+                expect(before.match(/^PPid:\s*(\d+)$/m)?.[1], "the helper spawned it").not.toBe(
+                  String(process.pid),
+                ),
+              ),
+            ),
             Effect.tap((handle) => handle.unref),
             Effect.map((handle) => handle.pid),
             Effect.scoped,
+            Effect.tap(() => Scope.close(server, Exit.void)),
           );
         yield* Effect.addFinalizer(() =>
           Effect.sync(() => {
@@ -608,21 +622,15 @@ describe("ProcessRunner.layer", () => {
             } catch {}
           }),
         );
-        const status = () =>
-          fs.readFileString(`/proc/${pid}/status`).pipe(Effect.orElseSucceed(() => ""));
-        expect((yield* status()).match(/^PPid:\s*(\d+)$/m)?.[1], "the helper spawned it").not.toBe(
-          String(process.pid),
-        );
-
-        yield* Scope.close(server, Exit.void);
         yield* Deferred.await(helperExited);
 
         // A SIGKILL marks the process at once, though it may not have run since.
-        const after = yield* status();
-        expect(after.match(/^State:\s*(\S)/m)?.[1]).toBe("S");
-        expect(
-          BigInt(`0x${after.match(/^ShdPnd:\s*([0-9a-f]+)$/m)?.[1] ?? "0"}`) & (1n << 8n),
-        ).toBe(0n);
+        const after = yield* status(pid);
+        expect(["R", "S", "D"]).toContain(after.match(/^State:\s*(\S)/m)?.[1]);
+        for (const pending of ["SigPnd", "ShdPnd"]) {
+          const mask = after.match(new RegExp(`^${pending}:\\s*([0-9a-f]+)$`, "m"))?.[1] ?? "0";
+          expect(BigInt(`0x${mask}`) & (1n << 8n), pending).toBe(0n);
+        }
       }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
@@ -646,10 +654,18 @@ describe("ProcessRunner.layer", () => {
           Deferred.doneUnsafe(helperPid, Exit.succeed(Number(String(chunk).trim()))),
         );
         alive.once("end", () => Deferred.doneUnsafe(commandGone, Exit.void));
+        yield* Effect.addFinalizer(() => Effect.sync(() => alive.destroy()));
         const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-        yield* spawner.spawn(
+        const command = yield* spawner.spawn(
           ChildProcess.make("sh", ["-c", `exec 3>"$0"; echo $PPID >&3; exec sleep 1000`, fifo], {
             detached: false,
+          }),
+        );
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => {
+            try {
+              process.kill(command.pid, "SIGKILL");
+            } catch {}
           }),
         );
         process.kill(expectHelperPid(String(yield* Deferred.await(helperPid))), "SIGSTOP");

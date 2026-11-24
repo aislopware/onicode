@@ -7,6 +7,7 @@ import * as Ref from "effect/Ref";
 
 import * as ServerConfig from "../config.ts";
 import { metricAttributes } from "../observability/Metrics.ts";
+import * as ProcessLauncher from "../process/ProcessLauncher.ts";
 import * as ResourceTelemetry from "./ResourceTelemetry.ts";
 
 const SAMPLE_INTERVAL = "1 minute";
@@ -62,9 +63,11 @@ export interface ProcessGroupTotals {
 
 export function groupProcesses(
   processes: ReadonlyArray<ResourceTelemetryProcess>,
+  isServerChild?: (ppid: number) => boolean,
 ): ReadonlyMap<string, ProcessGroupTotals> {
   const byPid = new Map(processes.map((process) => [process.identity.pid, process]));
   const serverPid = processes.find((process) => process.category === "server")?.identity.pid;
+  const spawnedByServer = isServerChild ?? ((ppid: number) => ppid === serverPid);
   const groupOf = (process: ResourceTelemetryProcess): string => {
     if (process.category === "server") return "server";
     if (process.category === "resource-monitor") return "resource-monitor";
@@ -72,7 +75,7 @@ export function groupProcesses(
     let current = process;
     // Bounded by the table size, in case a reused PID makes the parent chain loop.
     for (let step = 0; step < processes.length; step++) {
-      if (current.ppid === serverPid) return childGroup(current.name, current.command);
+      if (spawnedByServer(current.ppid)) return childGroup(current.name, current.command);
       const parent = byPid.get(current.ppid);
       if (parent === undefined) break;
       current = parent;
@@ -105,7 +108,10 @@ export const layer = Layer.effectDiscard(
     // A group that empties reads zero rather than holding its last value.
     const seen = new Set<string>();
     const sample = Effect.fn("ProcessGroupMetrics.sample")(function* () {
-      const totals = groupProcesses((yield* telemetry.refresh).processes);
+      const totals = groupProcesses(
+        (yield* telemetry.refresh).processes,
+        ProcessLauncher.isServerChild,
+      );
       for (const group of totals.keys()) seen.add(group);
       for (const group of seen) {
         const total = totals.get(group) ?? { residentBytes: 0, cpuPercent: 0, count: 0 };

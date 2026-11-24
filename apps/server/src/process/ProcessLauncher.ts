@@ -78,6 +78,7 @@ class HostedChild
     if (this.referenced === referenced) return;
     this.referenced = referenced;
     syncRef(this.launcher);
+    if (this.settled) return;
     const request: LauncherRequest = { type: "ref", id: this.id, referenced };
     if (!this.launcher.closed && this.launcher.worker.connected) {
       this.launcher.worker.send(request, () => {});
@@ -139,8 +140,16 @@ const syncRef = (launcher: Launcher) => {
 
 const killChild = (child: HostedChild) => {
   if (child.pid === undefined) return;
+  if (child.groupLeader) {
+    try {
+      process.kill(-child.pid, "SIGKILL");
+      return;
+    } catch {
+      // It may have left the group it led.
+    }
+  }
   try {
-    process.kill(child.groupLeader ? -child.pid : child.pid, "SIGKILL");
+    process.kill(child.pid, "SIGKILL");
   } catch {
     // Already gone.
   }
@@ -148,6 +157,9 @@ const killChild = (child: HostedChild) => {
 
 // Pids of this server's launchers, whose children the server spawned.
 const launcherPids = new Set<number>();
+
+/** Whether this is one of the server's launchers, which hosts its commands and agents. */
+export const isLauncher = (pid: number) => launcherPids.has(pid);
 
 /** Whether a process with this parent was spawned by this server, directly or through its launcher. */
 export const isServerChild = (ppid: number) => ppid === process.pid || launcherPids.has(ppid);
@@ -387,10 +399,23 @@ export const make = Effect.fn("ProcessLauncher.make")(function* (
     );
   });
 
+  // Closing the channel drops writes still queued in it, such as a release the launcher must
+  // read before it kills what it still holds; a write's callback runs once those before it went.
+  const flush = (launcher: Launcher) =>
+    Effect.callback<void>((resume) => {
+      const request: LauncherRequest = { type: "flush" };
+      launcher.worker.send(request, () => resume(Effect.void));
+    }).pipe(Effect.timeoutOption("1 second"));
+
   yield* Effect.addFinalizer(() =>
-    Effect.sync(() => {
+    Effect.suspend(() => {
       shutDown = true;
-      if (current) close(current);
+      const launcher = current;
+      if (launcher === undefined) return Effect.void;
+      return Effect.andThen(
+        launcher.closed || !launcher.worker.connected ? Effect.void : flush(launcher),
+        Effect.sync(() => close(launcher)),
+      );
     }),
   );
   // Start while the server is still small; the launcher's own fork is the last full-size one.

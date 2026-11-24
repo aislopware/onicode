@@ -147,10 +147,11 @@ describe.runIf(HostProcess.Platform.defaultValue() === "linux")("ProviderProcess
           Stream.mkString,
         ),
       );
-      const parent = AcpSessionRuntime.makePosixProcessTreeController("linux").identity(
-        cli.pid,
-      )?.ppid;
-      expect(parent, "the launcher spawned the CLI").not.toBe(process.pid);
+      const controller = AcpSessionRuntime.makePosixProcessTreeController("linux");
+      expect(controller.identity(cli.pid)?.ppid, "the launcher spawned the CLI").not.toBe(
+        process.pid,
+      );
+      expect(controller.identity(child)?.ppid).toBe(cli.pid);
 
       register(cli.pid)();
       expect(() => register(child)).toThrow("Cannot identify spawned provider");

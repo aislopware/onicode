@@ -17,7 +17,10 @@ export interface LauncherRefRequest {
   readonly referenced: boolean;
 }
 
-export type LauncherRequest = LauncherSpawnRequest | LauncherRefRequest;
+export type LauncherRequest =
+  | LauncherSpawnRequest
+  | LauncherRefRequest
+  | { readonly type: "flush" };
 
 export interface LauncherError {
   readonly message: string;
@@ -67,28 +70,36 @@ export function runProcessLauncher(): void {
   }
   const send = (event: LauncherEvent, socket?: NodeNet.Socket) =>
     channel(event, socket, undefined, () => {});
-  const children = new Map<number, NodeChildProcess.ChildProcess>();
+  const children = new Map<
+    number,
+    { readonly child: NodeChildProcess.ChildProcess; readonly groupLeader: boolean }
+  >();
   const released = new Set<number>();
 
   // Group signals target the server; this process exits when the server's channel closes.
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(signal, () => {});
   process.on("disconnect", () => {
-    for (const [id, child] of children) {
+    for (const [id, { child, groupLeader }] of children) {
       if (released.has(id)) continue;
-      try {
-        process.kill(-child.pid!, "SIGKILL");
-      } catch {
-        child.kill("SIGKILL");
+      if (groupLeader) {
+        try {
+          process.kill(-child.pid!, "SIGKILL");
+          continue;
+        } catch {
+          // It may have left the group it led.
+        }
       }
+      child.kill("SIGKILL");
     }
     process.exit(0);
   });
 
   process.on("message", (request: LauncherRequest) => {
+    if (request.type === "flush") return;
     const { id } = request;
     if (request.type === "ref") {
       if (request.referenced) released.delete(id);
-      else released.add(id);
+      else if (children.has(id)) released.add(id);
       return;
     }
     let child: NodeChildProcess.ChildProcess;
@@ -97,6 +108,10 @@ export function runProcessLauncher(): void {
     } catch (cause) {
       send({ type: "error", id, error: toLauncherError(cause) });
       return;
+    }
+    // Held from the fork, so a disconnect before "spawn" still kills it.
+    if (child.pid !== undefined) {
+      children.set(id, { child, groupLeader: request.options.detached === true });
     }
     const stdio = child.stdio.map((socket) => socket as NodeNet.Socket | null);
     // The server reads and writes these pipes itself, so no byte may be consumed here.
@@ -107,14 +122,10 @@ export function runProcessLauncher(): void {
     child.stderr = null;
     child.stdio.fill(null);
     child.on("error", (cause) => {
-      if (child.pid === undefined) {
-        released.delete(id);
-        for (const socket of stdio) socket?.destroy();
-      }
+      if (child.pid === undefined) for (const socket of stdio) socket?.destroy();
       send({ type: "error", id, error: toLauncherError(cause) });
     });
     child.once("spawn", () => {
-      children.set(id, child);
       // First, so the server can kill the child if this process dies while handing over its pipes.
       send({ type: "pid", id, pid: child.pid! });
       stdio.forEach((socket, fd) => {
