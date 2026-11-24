@@ -541,6 +541,7 @@ const FONT_CODE_PAGES = new Map([
   [204, 1251],
   [222, 874],
   [238, 1250],
+  [255, 866],
 ]);
 const CODE_PAGES = new Map([
   [0, "windows-1252"],
@@ -550,16 +551,10 @@ const CODE_PAGES = new Map([
   [949, "euc-kr"],
   [950, "big5"],
   [10000, "macintosh"],
+  [65001, "utf-8"],
 ]);
 const codePage = (value: number) =>
   value === 874 || (value >= 1250 && value <= 1258) ? `windows-${value}` : CODE_PAGES.get(value);
-const isLeadByte = (encoding: string, value: number) =>
-  encoding === "shift_jis"
-    ? (value >= 0x81 && value <= 0x9f) || (value >= 0xe0 && value <= 0xfc)
-    : ["gbk", "euc-kr", "big5"].includes(encoding) && value >= 0x81 && value <= 0xfe;
-// Unified Hangul's ASCII trail bytes are letters; Shift_JIS, GBK and Big5 take 0x40-0x7E.
-const isAsciiTrailByte = (encoding: string, char: string) =>
-  encoding === "euc-kr" ? /[A-Za-z]/.test(char) : char >= "@" && char <= "~";
 
 function* rtf(source: string): Generator<string, void> {
   if (!source.startsWith("{\\rtf")) throw new Error("Invalid RTF document");
@@ -581,23 +576,26 @@ function* rtf(source: string): Generator<string, void> {
   let defaultFont = 0;
   const decoder = () =>
     fontCodePages.get(state.font) ?? fontCharsets.get(state.font) ?? state.decoder;
-  // A multibyte character spans consecutive bytes, so the decoder streams until the run ends.
-  let run: typeof state.decoder | undefined;
-  let lead = false;
-  const byte = (value: number) => {
-    const current = decoder();
-    lead = !(lead && run === current) && isLeadByte(current.encoding, value);
-    const rest = run && run !== current ? run.decode() : "";
-    run = current;
-    return rest + current.decode(Uint8Array.of(value), { stream: true });
-  };
-  const endRun = () => {
-    const rest = run?.decode() ?? "";
-    run = undefined;
-    lead = false;
-    return rest;
-  };
   const hidden = () => state.skip || state.deleted || state.hiddenText;
+  let encoded: Uint8Array | undefined;
+  let encodedLength = 0;
+  function* flushBytes(): Generator<string, void> {
+    if (!encodedLength) return;
+    const chunk = encoded!.subarray(0, encodedLength);
+    encodedLength = 0;
+    yield decoder().decode(chunk);
+  }
+  function* emitByte(byte: number): Generator<string, void> {
+    // No supported multibyte code page uses bytes below 0x30 as trail bytes.
+    if ((!encodedLength && byte < 128) || (encodedLength && byte < 0x30)) {
+      yield* flushBytes();
+      yield String.fromCharCode(byte);
+      return;
+    }
+    encoded ??= new Uint8Array(Math.min(source.length, MAX_OUTPUT * 3 + 4));
+    if (encodedLength === encoded.length) yield* flushBytes();
+    encoded[encodedLength++] = byte;
+  }
   const symbols = new Map([
     ["endash", "–"],
     ["emdash", characterEntities.mdash],
@@ -620,23 +618,10 @@ function* rtf(source: string): Generator<string, void> {
   let fallback = 0;
   for (let i = 0; i < source.length; i++) {
     const char = source[i]!;
-    // Windows writers emit a double-byte character's printable ASCII trail byte literally.
-    const escaped = char === "\\" && ["\\", "{", "}"].includes(source[i + 1]!);
-    const trail = escaped ? source[i + 1]! : "\\{}".includes(char) ? "" : char;
-    if (lead && run && isAsciiTrailByte(run.encoding, trail)) {
-      if (escaped) i++;
-      yield byte(source.charCodeAt(i));
-      continue;
+    if (char === "{" || char === "}") {
+      yield* flushBytes();
+      fallback = 0;
     }
-    if (
-      run &&
-      char.charCodeAt(0) < 128 &&
-      char !== "\n" &&
-      char !== "\r" &&
-      !source.startsWith("\\'", i)
-    )
-      yield endRun();
-    if (char === "{" || char === "}") fallback = 0;
     if (char === "{") {
       stack.push({ ...state });
       if (stack.length > 128) throw new Truncation("RTF depth limit");
@@ -647,7 +632,7 @@ function* rtf(source: string): Generator<string, void> {
       const word = /^([a-z]+)(-?\d+)? ?/i.exec(rest);
       if (hex) {
         if (fallback) fallback--;
-        else if (!hidden()) yield byte(Number.parseInt(hex[1]!, 16));
+        else if (!hidden()) yield* emitByte(Number.parseInt(hex[1]!, 16));
         i += 3;
       } else if (word) {
         i += word[0].length;
@@ -662,6 +647,7 @@ function* rtf(source: string): Generator<string, void> {
           fallback--;
           continue;
         }
+        yield* flushBytes();
         if (
           [
             "fonttbl",
@@ -711,7 +697,7 @@ function* rtf(source: string): Generator<string, void> {
         else if (control === "ansicpg") {
           const label = codePage(value);
           if (!label) throw new Error("Unsupported RTF code page");
-          state.decoder = new TextDecoder(label, { fatal: true });
+          state.decoder = new TextDecoder(label);
         } else if (control === "uc") {
           if (!Number.isSafeInteger(value) || value < 0)
             throw new Error("Invalid RTF fallback count");
@@ -729,18 +715,22 @@ function* rtf(source: string): Generator<string, void> {
       } else {
         i++;
         if (fallback) fallback--;
-        else if (rest[0] === "*") state.skip = true;
-        // A backslash before a line break is \par; TextEdit ends paragraphs this way.
-        else if (!hidden() && (rest[0] === "\n" || rest[0] === "\r")) yield "\n";
-        else if (!hidden() && ["\\", "{", "}"].includes(rest[0]!)) yield rest[0]!;
-        else if (!hidden() && symbols.has(rest[0]!)) yield symbols.get(rest[0]!)!;
+        else if (!hidden() && ["\\", "{", "}"].includes(rest[0]!))
+          yield* emitByte(rest[0]!.charCodeAt(0));
+        else {
+          yield* flushBytes();
+          if (rest[0] === "*") state.skip = true;
+          // A backslash before a line break is \par; TextEdit ends paragraphs this way.
+          else if (!hidden() && (rest[0] === "\n" || rest[0] === "\r")) yield "\n";
+          else if (!hidden() && symbols.has(rest[0]!)) yield symbols.get(rest[0]!)!;
+        }
       }
     } else if (char !== "\n" && char !== "\r") {
       if (fallback) fallback--;
-      else if (!hidden()) yield char.charCodeAt(0) < 128 ? char : byte(char.charCodeAt(0));
+      else if (!hidden()) yield* emitByte(char.charCodeAt(0));
     }
   }
-  yield endRun();
+  yield* flushBytes();
 }
 
 async function* document(path: string, extension: string): AsyncGenerator<TextPart, void> {
