@@ -303,7 +303,7 @@ it.effect("exports full history with size, scope, and missing-thread checks", ()
     );
     expect((yield* read(thread.id)).status).toBe(200);
     // Tool output over the limit rejects the export, here as the content array a dynamic tool
-    // stores. Its only read is the size.
+    // stores. It reads only the thread row and the size.
     yield* sql`
       UPDATE orchestration_v2_projection_turn_items SET type = 'dynamic_tool'
       WHERE turn_item_id = ${commandItemId}
@@ -322,7 +322,10 @@ it.effect("exports full history with size, scope, and missing-thread checks", ()
         }),
       ),
     ).toBeInstanceOf(ThreadManagementService.ThreadTranscriptTooLargeError);
-    expect(reads).toEqual([expect.stringContaining("octet_length(payload_json)")]);
+    expect(reads).toEqual([
+      expect.stringContaining("deleted_at IS NOT NULL"),
+      expect.stringContaining("octet_length(payload_json)"),
+    ]);
     expect((yield* read(thread.id)).status).toBe(400);
     // The export leaves a rolled back run out, so its output cannot reject it.
     yield* eventSink.write({
