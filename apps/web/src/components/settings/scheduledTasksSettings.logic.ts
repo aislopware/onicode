@@ -133,13 +133,13 @@ export interface DraftState {
   readonly interactionMode: ProviderInteractionMode;
   /** Retain the source selection's provider options when the picker leaves instanceId:model unchanged. */
   readonly baseModelSelection: ModelSelection | null;
-  /** What the form loaded, so a save is refused once another client changed it. */
-  readonly saved: ScheduledTaskSavedFields | null;
+  /** The task as the form loaded it, so a save is refused once another client changed it. */
+  readonly saved: ScheduledTask | null;
 }
 
-type ScheduledTaskSavedFields = NonNullable<ScheduledTaskUpsertInput["expected"]>;
-
-const savedFields = (task: ScheduledTask): ScheduledTaskSavedFields => ({
+export const savedTaskFields = (
+  task: ScheduledTask,
+): NonNullable<ScheduledTaskUpsertInput["expected"]> => ({
   title: task.title,
   prompt: task.prompt,
   enabled: task.enabled,
@@ -236,7 +236,7 @@ export function taskToDraft(task: ScheduledTask): DraftState {
     runtimeMode: task.runtimeMode,
     interactionMode: task.interactionMode,
     baseModelSelection: task.modelSelection,
-    saved: savedFields(task),
+    saved: task,
   };
 }
 
@@ -260,7 +260,7 @@ const sameValue = (left: unknown, right: unknown) =>
  */
 export function rebaseDraft(draft: DraftState, current: ScheduledTask): DraftState {
   if (draft.saved === null) return draft;
-  const loaded = taskToDraft({ ...current, ...draft.saved });
+  const loaded = taskToDraft(draft.saved);
   const now = taskToDraft(current);
   const untouched = (key: keyof DraftState) => sameValue(draft[key], loaded[key]);
   return {
@@ -278,6 +278,9 @@ export function rebaseDraft(draft: DraftState, current: ScheduledTask): DraftSta
           weekdays: now.weekdays,
         }
       : {}),
+    ...(untouched("threadId") ? { threadId: now.threadId } : {}),
+    ...(untouched("threadMode") ? { threadMode: now.threadMode } : {}),
+    savedThreadId: now.savedThreadId,
     saved: now.saved,
   };
 }
