@@ -52,7 +52,7 @@ import {
   useAppearancePreferences,
 } from "./features/settings/appearance/AppearancePreferencesProvider";
 import { RootStack, rootPathnameFromState } from "./Stack";
-import { I18nProvider } from "./i18n/I18nProvider";
+import { I18nProvider, useSettledLocale } from "./i18n/I18nProvider";
 import { DEFAULT_LOCALE } from "./i18n/locales";
 import { appAtomRegistry } from "./state/atom-registry";
 import { subscribeComposerDraftModelReconciliation } from "./state/use-composer-drafts";
@@ -279,10 +279,11 @@ function QuickActionsLanguage() {
 }
 
 function AndroidNotificationLanguage() {
-  const locale = useLocale();
+  // Null until the saved language is on screen: native keeps the last one across launches.
+  const locale = useSettledLocale();
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- publishes the app's language to the native notifications, which Android shows without JS
   useEffect(() => {
-    if (Platform.OS === "android")
+    if (Platform.OS === "android" && locale !== null)
       setAndroidNotificationStrings(androidNotificationStrings(locale));
   }, [locale]);
   return null;

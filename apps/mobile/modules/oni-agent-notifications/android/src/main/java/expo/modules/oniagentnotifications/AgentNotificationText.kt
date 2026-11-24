@@ -52,14 +52,15 @@ internal enum class AgentText(val key: String, val english: String) {
 internal class AgentNotificationText(private val translations: Map<String, String>) {
   private val locale = Locale.forLanguageTag(translations[LOCALE_KEY] ?: "en")
 
-  operator fun get(text: AgentText): String =
-    translations[text.key]?.takeIf { it.isNotBlank() } ?: text.english
+  operator fun get(text: AgentText): String = translated(text) ?: text.english
 
   fun format(text: AgentText, count: Any): String = try {
-    pattern(get(text), locale, count)
+    translated(text)?.let { pattern(it, locale, count) }
   } catch (_: IllegalArgumentException) {
-    pattern(text.english, Locale.ENGLISH, count)
-  }
+    null
+  } ?: pattern(text.english, Locale.ENGLISH, count)
+
+  private fun translated(text: AgentText) = translations[text.key]?.takeIf { it.isNotBlank() }
 
   private fun pattern(pattern: String, locale: Locale, count: Any) =
     MessageFormat(pattern, locale).format(mapOf("count" to count))

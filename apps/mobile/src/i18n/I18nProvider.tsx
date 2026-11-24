@@ -61,14 +61,26 @@ export function useLanguagePreference(): string {
     : DEFAULT_LOCALE;
 }
 
-/** Translates the app into the saved language; "system" follows the device. Mounted once in App. */
-export function I18nProvider(props: { readonly children: ReactNode }) {
-  const { catalogLocale, formattingLocale } = resolveLocaleSelection(
+function useLocaleSelection() {
+  return resolveLocaleSelection(
     useLanguagePreference(),
     readSystemLocales(),
     SUPPORTED_LOCALES,
     DEFAULT_LOCALE,
   );
+}
+
+/** The UI language once the saved preference is read and its catalog is on screen, else null. */
+export function useSettledLocale(): string | null {
+  const preferencesRead = AsyncResult.isSuccess(useAtomValue(mobilePreferencesAtom));
+  const { catalogLocale } = useLocaleSelection();
+  const locale = useLocale();
+  return preferencesRead && locale === catalogLocale ? locale : null;
+}
+
+/** Translates the app into the saved language; "system" follows the device. Mounted once in App. */
+export function I18nProvider(props: { readonly children: ReactNode }) {
+  const { catalogLocale, formattingLocale } = useLocaleSelection();
   // GT suspends while a locale's catalog loads. Deferring the switch keeps the current language
   // on screen until then, instead of GT's full-screen spinner.
   const selection = useDeferredValue(

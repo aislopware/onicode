@@ -2268,9 +2268,10 @@ private final class ReviewDiffContentView: UIView, UIGestureRecognizerDelegate {
     let chevronRect = CGRect(x: cardRect.minX + 10, y: cardRect.minY + 11, width: 16, height: 16)
     drawDisclosureChevron(rect: chevronRect, color: theme.mutedText, collapsed: isCollapsed)
 
+    let rangeLabel = row.commentRangeLabel ?? ""
     let title = (labels["commentTitle"] ?? "Comment on {line}").replacingOccurrences(
       of: "{line}",
-      with: row.commentRangeLabel ?? labels["commentLine"] ?? "line"
+      with: rangeLabel.isEmpty ? labels["commentLine"] ?? "line" : rangeLabel
     )
     drawSingleLineText(
       title,

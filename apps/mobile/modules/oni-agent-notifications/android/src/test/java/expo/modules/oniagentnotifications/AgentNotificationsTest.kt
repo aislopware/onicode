@@ -928,6 +928,11 @@ class AgentNotificationsLanguageTest : AgentNotificationsFixture() {
     AgentNotifications.receive(context, several(2))
     assertEquals("2 need you", title())
     assertEquals(listOf("Approve", "Dismiss"), card().actions.map { it.title.toString() })
+
+    // English text takes English plurals: 21 is singular in Russian.
+    AgentNotifications.setStrings(context, mapOf("locale" to "ru"))
+    AgentNotifications.receive(context, several(21))
+    assertEquals("21 need you", title())
   }
 
   @Test
