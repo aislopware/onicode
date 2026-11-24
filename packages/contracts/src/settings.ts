@@ -2084,6 +2084,9 @@ function carriesProjectScripts(patch: ServerSettingsPatch): boolean {
     Object.values(patch.projectScriptOverrides ?? {}).some((scripts) => scripts !== null) ||
     Object.values(patch.projectSettingsOverrides ?? {}).some(
       (overrides) => overrides?.defaultProjectScripts !== undefined,
+    ) ||
+    Object.values(patch.projectSettingsOverrideKeys ?? {}).some(
+      (keys) => keys.set?.defaultProjectScripts !== undefined,
     )
   );
 }
