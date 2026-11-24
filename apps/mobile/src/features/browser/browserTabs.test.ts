@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { loopbackUrlForDevice, tunnelReaches } from "./browserTabs";
+import { localPreviewUrlForDevice, loopbackUrlForDevice, tunnelReaches } from "./browserTabs";
 
 describe("loopbackUrlForDevice", () => {
   it("opens only the environment's loopback pages on this device", () => {
@@ -43,5 +43,16 @@ describe("tunnelReaches", () => {
     expect(tunnelReaches("http://[::1]:3000/", "ios")).toBe(false);
     expect(tunnelReaches("http://[::1]:3000/", "android")).toBe(true);
     expect(tunnelReaches("https://example.com/", "android")).toBe(false);
+  });
+});
+
+describe("localPreviewUrlForDevice", () => {
+  it("loads http and https addresses and nothing else", () => {
+    expect(localPreviewUrlForDevice("http://0.0.0.0:3000/")).toBe("http://localhost:3000/");
+    expect(localPreviewUrlForDevice("https://example.com/docs")).toBe("https://example.com/docs");
+    expect(localPreviewUrlForDevice(" JavaScript:void(0)")).toBeNull();
+    expect(localPreviewUrlForDevice("file:///tmp/a.html")).toBeNull();
+    expect(localPreviewUrlForDevice("data:text/html,hello")).toBeNull();
+    expect(localPreviewUrlForDevice("")).toBeNull();
   });
 });
