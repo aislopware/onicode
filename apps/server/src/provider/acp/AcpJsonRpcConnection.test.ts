@@ -186,6 +186,7 @@ describe("AcpSessionRuntime", () => {
         const setupReplied = yield* Deferred.make<void>();
         const allowStartup = yield* Deferred.make<void>();
         const events: Array<AcpSessionRuntime.AcpSessionRuntimeEvent> = [];
+        const steps: Array<string> = [];
         const runtime = yield* AcpSessionRuntime.make({
           ...mockRuntimeOptions,
           ...(setupMethod === "session/resume"
@@ -196,14 +197,21 @@ describe("AcpSessionRuntime", () => {
                 },
                 resumeSessionId: "mock-session-1",
                 resumeMethod: "resume" as const,
+                onSessionResume: Effect.sync(() => steps.push("onSessionResume")),
               }
             : {}),
           requestLogger: (event) =>
-            event.method === setupMethod && event.status === "succeeded"
-              ? Deferred.succeed(setupReplied, undefined).pipe(
-                  Effect.andThen(Deferred.await(allowStartup)),
-                )
-              : Effect.void,
+            Effect.sync(() => {
+              if (event.status === "succeeded") steps.push(event.method);
+            }).pipe(
+              Effect.andThen(
+                event.method === setupMethod && event.status === "succeeded"
+                  ? Deferred.succeed(setupReplied, undefined).pipe(
+                      Effect.andThen(Deferred.await(allowStartup)),
+                    )
+                  : Effect.void,
+              ),
+            ),
         });
         yield* runtime.getEvents().pipe(
           Stream.runForEach((event) => {
@@ -227,6 +235,14 @@ describe("AcpSessionRuntime", () => {
           "ModeChanged",
           "ConfigOptionsUpdated",
         ]);
+        // The resume hook runs once the agent is initialized, right before its session/resume.
+        expect(
+          steps.filter((step) => ["initialize", "onSessionResume", setupMethod].includes(step)),
+        ).toEqual(
+          setupMethod === "session/resume"
+            ? ["initialize", "onSessionResume", "session/resume"]
+            : ["initialize", "session/new"],
+        );
         expect(events[0]).toMatchObject({
           availableCommands: [{ name: "plan", description: "Native command" }],
         });
