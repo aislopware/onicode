@@ -219,6 +219,11 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
   const canShowActualSize = zoom === 1 && fit < 1 && naturalSize.width > 0;
   const zoomTo = (next: number) => zoomableImageRef.current?.zoomTo(next);
   const multiple = preview.images.length > 1;
+  // A long name is cut in the middle so its end and extension stay readable.
+  const nameCharacters = Array.from(item.name);
+  const nameTailLength = nameCharacters.length > 24 ? 12 : 0;
+  const nameHead = nameCharacters.slice(0, nameCharacters.length - nameTailLength).join("");
+  const nameTail = nameCharacters.slice(nameCharacters.length - nameTailLength).join("");
 
   return (
     <Dialog
@@ -265,7 +270,15 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
                   {index + 1} / {preview.images.length}
                 </span>
               )}
-              <span className="truncate text-white/60">{item.name}</span>
+              <Tooltip disabled={nameTailLength === 0}>
+                <TooltipTrigger render={<span className="flex max-w-xl min-w-0 text-white/60" />}>
+                  <span className="truncate">{nameHead}</span>
+                  <span className="shrink-0 whitespace-pre">{nameTail}</span>
+                </TooltipTrigger>
+                <TooltipPopup className="max-w-md break-all" side="bottom">
+                  {item.name}
+                </TooltipPopup>
+              </Tooltip>
             </span>
             {accessibilityDetails && item.source ? (
               <Tooltip>
