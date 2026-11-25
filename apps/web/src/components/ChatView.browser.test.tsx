@@ -193,7 +193,7 @@ it.each([{ issueSummaries: false }, { issueSummaries: true }])(
       url: `https://linear.app/${workspace}/issue/WEB-123/add-keyboard-support`,
       source: "manual",
       linkedAt: "2026-01-01T00:00:00.000Z",
-      displayKey: issueRef.key,
+      displayKey: "#123",
       title: "Add keyboard support",
     };
     const completed = {
@@ -205,7 +205,26 @@ it.each([{ issueSummaries: false }, { issueSummaries: true }])(
     };
     const grouped = threadWithHistory("issue-grouped", 1);
     using _environment = installFakeEnvironment(
-      [first, { ...linked, issues: [issue] }, { ...grouped, issues: [completed, issue] }],
+      [
+        first,
+        {
+          ...linked,
+          issues: [issue],
+          pullRequests: [
+            {
+              host: "github.com",
+              repository: "aislopware/onicode",
+              number: 124,
+              url: "https://github.com/aislopware/onicode/pull/124",
+              source: "manual",
+              linkedAt: "2026-01-01T00:00:00.000Z",
+              snapshot: null,
+              stack: null,
+            },
+          ],
+        },
+        { ...grouped, issues: [completed, issue] },
+      ],
       { issueSummaries },
     );
     const liveTitle = "Add keyboard shortcuts to the sidebar";
@@ -314,13 +333,24 @@ it.each([{ issueSummaries: false }, { issueSummaries: true }])(
       name: `Issue ${issue.displayKey}: ${liveTitle}, Open`,
     });
     await expect.element(badge).toBeVisible();
-    expect(badge.element().querySelector("svg")).toHaveClass(/text-emerald-600/);
+    expect(badge.element().querySelector("span")).toHaveClass(/text-emerald-600/);
+    expect(badge.element()).toHaveTextContent("123");
+    expect(badge.element()).not.toHaveTextContent("#");
+    const prBadge = page.getByRole("link", { name: "PR #124, status pending" });
+    await expect.element(prBadge).toHaveTextContent("124");
+    for (const control of [badge, prBadge]) {
+      expect(control.element().querySelector("span")).toHaveClass(
+        "contents",
+        "text-xs",
+        "tabular-nums",
+      );
+    }
     const groupedBadge = page.getByRole("button", { name: "2 linked issues" });
     await expect.element(groupedBadge).toBeVisible();
     if (issueSummaries) {
       // A group shows its open issue's state over a completed one.
       await vi.waitFor(() =>
-        expect(groupedBadge.element().querySelector("svg")).toHaveClass(/text-emerald-600/),
+        expect(groupedBadge.element().querySelector("span")).toHaveClass(/text-emerald-600/),
       );
     } else {
       // An older server has no summaries, and a group never reads full details for an icon.
