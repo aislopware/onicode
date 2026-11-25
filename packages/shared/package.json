@@ -59,6 +59,10 @@
       "types": "./src/projectFavicon.ts",
       "import": "./src/projectFavicon.ts"
     },
+    "./projectMonogram": {
+      "types": "./src/projectMonogram.ts",
+      "import": "./src/projectMonogram.ts"
+    },
     "./model": {
       "types": "./src/model.ts",
       "import": "./src/model.ts"

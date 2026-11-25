@@ -3855,3 +3855,4 @@ a22a4f9bba	take	adapted: renumbered migration 116->125 (toMigrationInclusive 96-
 a49ccc1fcd	take	ported cleanly
 eaa3f7da13	take	ported cleanly (kept findStoredHtmlRenderBootstrap import)
 7380740efe	take	ported cleanly
+e4da383485	take	adapted: added only ./projectMonogram export in packages/shared/package.json and kept desktop-only wording in docs/user/project-settings.md
