@@ -3850,3 +3850,4 @@ c3aacf1e5b	take	adapted: kept heicPrimaryItemProperties in imageCompression.ts a
 6b3899f224	skip	removed surface: analytics custom model reporting
 1a11aed1f8	take	adapted: kept useStepThread and Onicode shell status / thread find cleanup in WorkflowRunFeed and WorkflowThreadPane
 5d02075446	take	ported cleanly
+8f34bb193a	take	ported cleanly
