@@ -3854,3 +3854,4 @@ c3aacf1e5b	take	adapted: kept heicPrimaryItemProperties in imageCompression.ts a
 a22a4f9bba	take	adapted: renumbered migration 116->125 (toMigrationInclusive 96->101), updated isShownByLiveFork and ContextHandoffService (withScheduledRuns), fixed causal fork event order in Onicode ProjectionStore tests
 a49ccc1fcd	take	ported cleanly
 eaa3f7da13	take	ported cleanly (kept findStoredHtmlRenderBootstrap import)
+7380740efe	take	ported cleanly
