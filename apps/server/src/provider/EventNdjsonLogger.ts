@@ -68,6 +68,7 @@ const transientCursorUpdates = new Set([
   "thinking-delta",
   "token-delta",
   "shell-output-delta",
+  "shell-tool-call-delta",
   "partial-tool-call",
 ]);
 
