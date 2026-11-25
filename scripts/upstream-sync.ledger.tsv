@@ -3808,3 +3808,4 @@ f1e0c0b2eb	take	fix(server): source control discovery no longer runs the auth co
 f811978eef	take	fix(web): Esc in Theme Editor color filter clears the filter without closing the editor (#42395); kept Onicode's isImeKeyDown helper
 482e197fae	skip	removed surface: mobile analytics device id (telemetry/analytics and AnalyticsDevice capability are removed in Onicode)
 3ba003be06	take	fix(shared): Windows env capture reads User and Machine scopes for non-PATH variables (#42376); stripped removed telemetry opt-out plumbing from DesktopShellEnvironment
+54ba2408f4	take	fix(web): Enter commits Background Activity interval values (#42392)
