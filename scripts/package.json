@@ -15,7 +15,7 @@
     "@electron/osx-sign": "2.7.2",
     "@onicode/contracts": "workspace:*",
     "@onicode/shared": "workspace:*",
-    "agent-device": "0.21.41",
+    "agent-device": "0.21.42",
     "e2e": "0.24.0",
     "effect": "catalog:",
     "plist": "catalog:",

@@ -218,16 +218,25 @@ exec '${process.execPath.replaceAll("'", "'\"'\"'")}' "$@"
         "oni-a",
       ]);
       // The command is found past leading flags and their values, in either form.
-      for (const config of [["--config", "/o.json"], ["--config=/o.json"]]) {
-        expect(yield* Effect.promise(() => launch([...config, "connection"]))).toEqual([
-          ...config,
+      for (const leading of [
+        ["--config", "/o.json"],
+        ["--config=/o.json"],
+        ["--system"],
+        ["--capture-backend", "xctest"],
+        ["--save-script"],
+        ["--save-script", "./run.ad"],
+      ]) {
+        const config = leading[0]!.startsWith("--config") ? [] : ["--config", "/h.json"];
+        expect(yield* Effect.promise(() => launch([...leading, "connection"]))).toEqual([
+          ...leading,
           "connection",
+          ...config,
           "--session",
           "oni-a",
         ]);
         // device status reads claims on the machine it runs on, which is not the device's host.
         yield* Effect.promise(() =>
-          expect(launch([...config, "device", "status"])).rejects.toThrow(
+          expect(launch([...leading, "device", "status"])).rejects.toThrow(
             "`device status` reads this machine's device claims, not those on the device's host",
           ),
         );

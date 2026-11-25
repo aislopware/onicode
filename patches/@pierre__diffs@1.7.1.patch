@@ -1,5 +1,5 @@
 diff --git a/dist/editor/editor.js b/dist/editor/editor.js
-index b4c280390b52434f63fbe7916d81b150d9006fb4..db87ba385f927d793a80d908cd575216d22a09a7 100644
+index 3173d0a..9fe7f19 100644
 --- a/dist/editor/editor.js
 +++ b/dist/editor/editor.js
 @@ -95,6 +95,8 @@ var Editor = class {
@@ -241,7 +241,7 @@ index b4c280390b52434f63fbe7916d81b150d9006fb4..db87ba385f927d793a80d908cd575216
  	#focusAt(position) {
  		if (this.#focusRequest?.restore != null) this.#restoreReplacementFocus(position);
  		else this.#focus(position);
-@@ -2135,16 +2225,32 @@ var Editor = class {
+@@ -2135,6 +2225,9 @@ var Editor = class {
  	#scrollToLine(line, char = 0, noFocus = false) {
  		this.__postponeBgTokenizeToNextFrame();
  		if (this.#scrollCaretIntoView(line, char, "center")) {
@@ -251,10 +251,7 @@ index b4c280390b52434f63fbe7916d81b150d9006fb4..db87ba385f927d793a80d908cd575216
  			if (!noFocus) this.#focusAt({
  				line,
  				character: char
- 			});
- 			this.#scrollingToLine = void 0;
- 			this.#scrollingToLineChar = void 0;
- 			this.#scrollingToLineFixed = false;
+@@ -2145,6 +2238,19 @@ var Editor = class {
  			this.#scrollingToLineNoFocus = false;
  			return;
  		}
@@ -274,7 +271,7 @@ index b4c280390b52434f63fbe7916d81b150d9006fb4..db87ba385f927d793a80d908cd575216
  		let yFix = 0;
  		if (this.#scrollingToLine === line && this.#contentElement !== void 0) for (let i = this.#contentElement.childElementCount - 1; i >= 0; i--) {
  			const child = this.#contentElement.children[i];
-@@ -3370,6 +3476,7 @@ var Editor = class {
+@@ -3385,6 +3491,7 @@ var Editor = class {
  		this.#searchPanel = searchPanel;
  		this.#retainSearchPanelFocus = false;
  		searchPanel.mount();
@@ -283,7 +280,7 @@ index b4c280390b52434f63fbe7916d81b150d9006fb4..db87ba385f927d793a80d908cd575216
  	#searchWithNavigationTarget(textDocument, searchParams) {
  		const viewport = this.#getSearchViewportBounds();
 diff --git a/dist/editor/textMeasure.d.ts b/dist/editor/textMeasure.d.ts
-index 89e938d89eca77d351aeed65f3c5495383effd97..cde1d6ba89a97bbb1614754a48f8994388c186bd 100644
+index 89e938d..cde1d6b 100644
 --- a/dist/editor/textMeasure.d.ts
 +++ b/dist/editor/textMeasure.d.ts
 @@ -9,8 +9,8 @@ declare class Metrics {
@@ -298,7 +295,7 @@ index 89e938d89eca77d351aeed65f3c5495383effd97..cde1d6ba89a97bbb1614754a48f89943
     * Re-measure the '0' character width against the font that is loaded right
     * now, returning true when measurement-dependent UI should refresh.
 diff --git a/dist/editor/textMeasure.js b/dist/editor/textMeasure.js
-index 96d4fb137ea683b66381b1ce6e47e8708a89366c..13f2564897a5bf53a8f311300003b3ea875c73a5 100644
+index 96d4fb1..13f2564 100644
 --- a/dist/editor/textMeasure.js
 +++ b/dist/editor/textMeasure.js
 @@ -16,9 +16,10 @@ var Metrics = class {
@@ -327,7 +324,7 @@ index 96d4fb137ea683b66381b1ce6e47e8708a89366c..13f2564897a5bf53a8f311300003b3ea
  	/**
  	* Re-measure the '0' character width against the font that is loaded right
 diff --git a/dist/utils/parsePatchFiles.js b/dist/utils/parsePatchFiles.js
-index 48568bd6f669ba4826de17ba03caad466e1f0000..f27123f7c812c728ee8393792665ba288141771c 100644
+index 48568bd..f27123f 100644
 --- a/dist/utils/parsePatchFiles.js
 +++ b/dist/utils/parsePatchFiles.js
 @@ -339,7 +339,7 @@ function parsePatchFiles(data, options = {}) {
@@ -340,7 +337,7 @@ index 48568bd6f669ba4826de17ba03caad466e1f0000..f27123f7c812c728ee8393792665ba28
  	return stripGitPrefix && (name.startsWith("a/") || name.startsWith("b/")) ? name.slice(2) : name;
  }
 diff --git a/package.json b/package.json
-index d1fa4d5d79ba70b6cd990b0ac9df5206fe55b58d..8762624a075174f5d9f35224cf091596d951a1a7 100644
+index 26c1788..407aecc 100644
 --- a/package.json
 +++ b/package.json
 @@ -60,6 +60,18 @@

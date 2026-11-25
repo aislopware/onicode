@@ -30,6 +30,7 @@ export const DIFF_VIEW_UNSAFE_CSS = `${DIFF_SURFACE_THEME_UNSAFE_CSS}
     transparent
   );
   --diffs-fg-search-match-override: currentColor;
+  --diffs-fg-search-match-current-override: currentColor;
 }
 
 :is(

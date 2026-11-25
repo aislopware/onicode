@@ -1,5 +1,49 @@
+diff --git a/android/src/main/java/com/reactnativemenu/MenuView.kt b/android/src/main/java/com/reactnativemenu/MenuView.kt
+index cdbe544..2dfd39f 100644
+--- a/android/src/main/java/com/reactnativemenu/MenuView.kt
++++ b/android/src/main/java/com/reactnativemenu/MenuView.kt
+@@ -53,13 +53,17 @@ class MenuView(private val mContext: ReactContext) : ReactViewGroup(mContext) {
+ 
+   override fun addView(child: View?, index: Int, params: ViewGroup.LayoutParams?) {
+     super.addView(child, index, params)
+-    // Make child views trigger menu when clicked via TalkBack
+-    child?.let {
+-      it.isClickable = true
+-      it.isFocusable = true
+-      it.setOnClickListener {
+-        performClick()
+-      }
++    // A mount can set shouldOpenOnLongPress after inserting its child, so decide once it applied.
++    child?.let { post { if (it.parent === this && !mIsOnLongPress) attachTalkBackClick(it) } }
++  }
++
++  // Make child views trigger menu when clicked via TalkBack. A long-press menu's child keeps its
++  // own click: replacing the listener leaves TalkBack's double tap doing nothing.
++  private fun attachTalkBackClick(child: View) {
++    child.isClickable = true
++    child.isFocusable = true
++    child.setOnClickListener {
++      performClick()
+     }
+   }
+ 
+@@ -109,7 +113,14 @@ class MenuView(private val mContext: ReactContext) : ReactViewGroup(mContext) {
+   }
+ 
+   fun setIsOpenOnLongPress(isLongPress: Boolean) {
++    if (mIsOnLongPress == isLongPress) {
++      return
++    }
+     mIsOnLongPress = isLongPress
++    // A child's own click cannot be restored once replaced, so only a switch to tap re-syncs.
++    if (!isLongPress) {
++      for (index in 0 until childCount) attachTalkBackClick(getChildAt(index))
++    }
+   }
+ 
+   private val getActionsCount: Int
 diff --git a/ios/MenuViewManager.mm b/ios/MenuViewManager.mm
-index 6816e94..73b9e8b 100644
+index 122b838..c4b7d92 100644
 --- a/ios/MenuViewManager.mm
 +++ b/ios/MenuViewManager.mm
 @@ -65,6 +65,10 @@ RCT_EXPORT_VIEW_PROPERTY(onCloseMenu, RCTDirectEventBlock);
@@ -49,17 +93,17 @@ index 33d27c5..359cd19 100644
 +
  }
 diff --git a/ios/NewArch/FabricViewImplementationProtocol.swift b/ios/NewArch/FabricViewImplementationProtocol.swift
-index 2cef2fb..54429c7 100644
+index 56ce653..71b05dd 100644
 --- a/ios/NewArch/FabricViewImplementationProtocol.swift
 +++ b/ios/NewArch/FabricViewImplementationProtocol.swift
-@@ -8,4 +8,5 @@ import Foundation
+@@ -9,4 +9,5 @@ import Foundation
      var onPressAction: ((String) -> Void)? { get set }
      var onCloseMenu: (() -> Void)? { get set }
      var onOpenMenu: (() -> Void)? { get set }
 +    var onMenuInteractionStart: (() -> Void)? { get set }
  }
 diff --git a/ios/NewArch/MenuView.mm b/ios/NewArch/MenuView.mm
-index bc02eaf..19dc145 100644
+index 424637a..0a1f51d 100644
 --- a/ios/NewArch/MenuView.mm
 +++ b/ios/NewArch/MenuView.mm
 @@ -50,6 +50,10 @@ using namespace facebook::react;
@@ -88,21 +132,19 @@ index bc02eaf..19dc145 100644
  /**
   Responsible for iterating through the C++ vector<struct> and convert each struct element to NSDictionary, then return it all in an NSArray
   */
-@@ -109,6 +121,27 @@ using namespace facebook::react;
+@@ -109,6 +121,34 @@ using namespace facebook::react;
          NSMutableArray<NSDictionary *> *subactionsArray = [NSMutableArray arrayWithCapacity:actions.size()];
          if (action.subactions.size() > 0) {
              for (const MenuViewActionsSubactionsStruct &subaction : action.subactions) {
 +                NSMutableArray<NSDictionary *> *subSubactionsArray =
 +                    [NSMutableArray arrayWithCapacity:subaction.subactions.size()];
 +                for (const MenuViewActionsSubactionsSubactionsStruct &subSubaction : subaction.subactions) {
-+                    NSDictionary *subSubactionDict = @{
++                    NSMutableDictionary *subSubactionDict = [@{
 +                        @"id": [NSString stringWithUTF8String:subSubaction.id.c_str()],
 +                        @"title": [NSString stringWithUTF8String:subSubaction.title.c_str()],
-+                        @"titleColor": @(subSubaction.titleColor),
 +                        @"subtitle": [NSString stringWithUTF8String:subSubaction.subtitle.c_str()],
 +                        @"state": [NSString stringWithUTF8String:subSubaction.state.c_str()],
 +                        @"image": [NSString stringWithUTF8String:subSubaction.image.c_str()],
-+                        @"imageColor": @(subSubaction.imageColor),
 +                        @"displayInline": @(subSubaction.displayInline),
 +                        @"attributes": @{
 +                            @"destructive": @(subSubaction.attributes.destructive),
@@ -110,31 +152,40 @@ index bc02eaf..19dc145 100644
 +                            @"hidden": @(subSubaction.attributes.hidden),
 +                            @"keepsMenuPresented": @(subSubaction.attributes.keepsMenuPresented),
 +                        },
-+                    };
++                    } mutableCopy];
++
++                    if (subSubaction.titleColor != 0) {
++                        subSubactionDict[@"titleColor"] = @(subSubaction.titleColor);
++                    }
++
++                    if (subSubaction.imageColor != 0) {
++                        subSubactionDict[@"imageColor"] = @(subSubaction.imageColor);
++                    }
++
 +                    [subSubactionsArray addObject:subSubactionDict];
 +                }
-                 NSDictionary *subactionDict = @{
+                 NSMutableDictionary *subactionDict = [@{
                      @"id": [NSString stringWithUTF8String:subaction.id.c_str()],
                      @"title": [NSString stringWithUTF8String:subaction.title.c_str()],
-@@ -122,7 +155,9 @@ using namespace facebook::react;
+@@ -120,7 +160,9 @@ using namespace facebook::react;
                          @"destructive": @(subaction.attributes.destructive),
                          @"disabled": @(subaction.attributes.disabled),
                          @"hidden": @(subaction.attributes.hidden),
 +                        @"keepsMenuPresented": @(subaction.attributes.keepsMenuPresented),
                      },
 +                    @"subactions": subSubactionsArray,
-                 };
-                 [subactionsArray addObject:subactionDict];
-             }
-@@ -143,6 +178,7 @@ using namespace facebook::react;
+                 } mutableCopy];
+ 
+                 if (subaction.titleColor != 0) {
+@@ -148,6 +190,7 @@ using namespace facebook::react;
                  @"destructive": @(action.attributes.destructive),
                  @"disabled": @(action.attributes.disabled),
                  @"hidden": @(action.attributes.hidden),
 +                @"keepsMenuPresented": @(action.attributes.keepsMenuPresented),
              },
              @"subactions": subactionsArray,
-         };
-@@ -174,7 +210,8 @@ using namespace facebook::react;
+         } mutableCopy];
+@@ -192,7 +235,8 @@ using namespace facebook::react;
  
      if (oldViewProps.shouldOpenOnLongPress != newViewProps.shouldOpenOnLongPress) {
          _view.shouldOpenOnLongPress = newViewProps.shouldOpenOnLongPress;
@@ -180,7 +231,7 @@ index 6a2a205..4f42b64 100644
 +
  }
 diff --git a/ios/Shared/MenuViewImplementation.swift b/ios/Shared/MenuViewImplementation.swift
-index 5c4e0da..eff9c3d 100644
+index d36c8e4..1f7ce45 100644
 --- a/ios/Shared/MenuViewImplementation.swift
 +++ b/ios/Shared/MenuViewImplementation.swift
 @@ -17,7 +17,11 @@ public class MenuViewImplementation: UIButton {
@@ -239,7 +290,7 @@ index 5c4e0da..eff9c3d 100644
      private var _title: String = "";
      @objc public var title: NSString? {
          didSet {
-@@ -60,17 +100,129 @@ public class MenuViewImplementation: UIButton {
+@@ -66,7 +106,17 @@ public class MenuViewImplementation: UIButton {
      }
     
      public override func contextMenuInteraction(_ interaction: UIContextMenuInteraction, configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
@@ -255,10 +306,12 @@ index 5c4e0da..eff9c3d 100644
 +        }
 +        isMenuPresented = true
 +        sendMenuInteractionStart()
-         return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
+         let configuration = UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
              guard let self = self else { return nil }
              return self.menu
+@@ -83,11 +133,113 @@ public class MenuViewImplementation: UIButton {
          }
+         return configuration
      }
 -    
 +
@@ -371,7 +424,7 @@ index 5c4e0da..eff9c3d 100644
      func setup () {
          let menu = UIMenu(title: _title,
              identifier: nil,
-@@ -86,8 +238,113 @@ public class MenuViewImplementation: UIButton {
+@@ -103,8 +255,113 @@ public class MenuViewImplementation: UIButton {
              }
          }
  
@@ -485,7 +538,7 @@ index 5c4e0da..eff9c3d 100644
      }
  
      public override func reactSetFrame(_ frame: CGRect) {
-@@ -124,4 +381,8 @@ public class MenuViewImplementation: UIButton {
+@@ -141,4 +398,8 @@ public class MenuViewImplementation: UIButton {
      @objc func sendMenuOpen() {
          // NO-OP (should be overriden by parent)
      }
@@ -519,7 +572,7 @@ index c586b61..31eed28 100644
  
              if #available(iOS 16.0, *) {
 diff --git a/lib/commonjs/NativeModuleSpecs/UIMenuNativeComponent.ts b/lib/commonjs/NativeModuleSpecs/UIMenuNativeComponent.ts
-index d0deaa6..8b6159c 100644
+index 7f44611..30c33e1 100644
 --- a/lib/commonjs/NativeModuleSpecs/UIMenuNativeComponent.ts
 +++ b/lib/commonjs/NativeModuleSpecs/UIMenuNativeComponent.ts
 @@ -58,6 +58,7 @@ export interface NativeProps extends ViewProps {
@@ -531,7 +584,7 @@ index d0deaa6..8b6159c 100644
  	actionsHash: string; // just a workaround to make sure we don't have to manually compare MenuActions manually in C++ (since it's a struct and that's a pain)
  	title?: string;
 diff --git a/lib/module/NativeModuleSpecs/UIMenuNativeComponent.ts b/lib/module/NativeModuleSpecs/UIMenuNativeComponent.ts
-index d0deaa6..8b6159c 100644
+index 7f44611..30c33e1 100644
 --- a/lib/module/NativeModuleSpecs/UIMenuNativeComponent.ts
 +++ b/lib/module/NativeModuleSpecs/UIMenuNativeComponent.ts
 @@ -58,6 +58,7 @@ export interface NativeProps extends ViewProps {
@@ -543,7 +596,7 @@ index d0deaa6..8b6159c 100644
  	actionsHash: string; // just a workaround to make sure we don't have to manually compare MenuActions manually in C++ (since it's a struct and that's a pain)
  	title?: string;
 diff --git a/lib/typescript/src/NativeModuleSpecs/UIMenuNativeComponent.d.ts b/lib/typescript/src/NativeModuleSpecs/UIMenuNativeComponent.d.ts
-index e38ff72..78fac47 100644
+index 5784b07..620bc84 100644
 --- a/lib/typescript/src/NativeModuleSpecs/UIMenuNativeComponent.d.ts
 +++ b/lib/typescript/src/NativeModuleSpecs/UIMenuNativeComponent.d.ts
 @@ -42,6 +42,9 @@ export interface NativeProps extends ViewProps {
@@ -557,7 +610,7 @@ index e38ff72..78fac47 100644
      actionsHash: string;
      title?: string;
 diff --git a/lib/typescript/src/index.d.ts b/lib/typescript/src/index.d.ts
-index 61d210a..0672bea 100644
+index b941eb2..40255b9 100644
 --- a/lib/typescript/src/index.d.ts
 +++ b/lib/typescript/src/index.d.ts
 @@ -4,6 +4,7 @@ declare const MenuView: import("react").ForwardRefExoticComponent<{
@@ -569,7 +622,7 @@ index 61d210a..0672bea 100644
      title?: string;
      isAnchoredToRight?: boolean;
 diff --git a/lib/typescript/src/types.d.ts b/lib/typescript/src/types.d.ts
-index eac7940..19e82df 100644
+index 78cc73e..6176bd5 100644
 --- a/lib/typescript/src/types.d.ts
 +++ b/lib/typescript/src/types.d.ts
 @@ -113,6 +113,12 @@ type MenuComponentPropsBase = {
@@ -585,7 +638,7 @@ index eac7940..19e82df 100644
      /**
       * Actions to be displayed in the menu.
       */
-@@ -170,6 +176,7 @@ export type NativeMenuComponentProps = {
+@@ -181,6 +187,7 @@ export type NativeMenuComponentProps = {
      onPressAction?: ({ nativeEvent }: NativeActionEvent) => void;
      onCloseMenu?: () => void;
      onOpenMenu?: () => void;
@@ -594,7 +647,7 @@ index eac7940..19e82df 100644
      actionsHash: string;
      title?: string;
 diff --git a/src/NativeModuleSpecs/UIMenuNativeComponent.ts b/src/NativeModuleSpecs/UIMenuNativeComponent.ts
-index d0deaa6..b626f39 100644
+index 7f44611..2b8eae3 100644
 --- a/src/NativeModuleSpecs/UIMenuNativeComponent.ts
 +++ b/src/NativeModuleSpecs/UIMenuNativeComponent.ts
 @@ -22,6 +22,22 @@ import codegenNativeComponent from "react-native/Libraries/Utilities/codegenNati
@@ -649,7 +702,7 @@ index d0deaa6..b626f39 100644
  	actionsHash: string; // just a workaround to make sure we don't have to manually compare MenuActions manually in C++ (since it's a struct and that's a pain)
  	title?: string;
 diff --git a/src/types.ts b/src/types.ts
-index 9c323d9..5d5fdfb 100644
+index 7034f47..5246c44 100644
 --- a/src/types.ts
 +++ b/src/types.ts
 @@ -123,6 +123,12 @@ type MenuComponentPropsBase = {
@@ -665,7 +718,7 @@ index 9c323d9..5d5fdfb 100644
  	/**
  	 * Actions to be displayed in the menu.
  	 */
-@@ -189,6 +195,7 @@ export type NativeMenuComponentProps = {
+@@ -200,6 +206,7 @@ export type NativeMenuComponentProps = {
  	onPressAction?: ({ nativeEvent }: NativeActionEvent) => void;
  	onCloseMenu?: () => void;
  	onOpenMenu?: () => void;

@@ -12,14 +12,10 @@ packages:
 allowBuilds:
   # Platform binaries come from optional dependencies; the script only re-downloads them.
   "@sentry/cli": false
-  browser-tabs-lock: false
-  bufferutil: false
-  core-js: false
   # No install script since Electron 44; ensure:electron runs install.js.
   # Keep the key: pnpm fails installs that still record a removed `true`.
   electron: false
   electron-winstaller: false
-  esbuild: true
   # Ships prebuilds; its host-architecture probe triggers source builds during cross-packaging.
   koffi: false
   node-pty: true
@@ -27,9 +23,8 @@ allowBuilds:
   objc-js: false
   # Its postinstall only prints a banner.
   react-native-pdf-jsi: false
-  "react-native-enriched-markdown@file:apps/mobile/deps/react-native-enriched-markdown-1.2.0-oni.26-c09c93bb.tgz": true
+  "react-native-enriched-markdown@file:apps/mobile/deps/react-native-enriched-markdown-1.2.0-oni.27-ed6bb335.tgz": true
   sharp: true
-  utf-8-validate: false
   # Verifies the workerd binary for the push gateway's local dev server.
   workerd: true
 
@@ -41,9 +36,9 @@ catalog:
   "@effect/platform-node-shared": 4.1.5
   "@effect/vitest": 4.1.5
   "@electron-webauthn/macos": 1.4.0
-  "@legendapp/list": 3.7.3
+  "@legendapp/list": 3.9.0
   "@noble/hashes": 2.4.0
-  "@pierre/diffs": 1.7.0-beta.4
+  "@pierre/diffs": 1.7.1
   "@pierre/highlights": 0.5.2
   # @sentry/electron pins its core; desktop and server Sentry packages must resolve to that one copy.
   # Mobile's @sentry/react-native pins its own.
@@ -68,9 +63,9 @@ catalog:
   react-dom: 19.3.0
   tailwindcss: 4.3.5
   tldts: 7.5.5
-  undici: 8.13.0
-  vite: npm:@voidzero-dev/vite-plus-core@8.3.8000
-  vite-plus: 1.7.0
+  undici: 8.13.1
+  vite: npm:@voidzero-dev/vite-plus-core@8.3.8001
+  vite-plus: 1.8.0
   ws: 8.23.0
   yaml: ^2.9.1
   # Markdown pipeline: the server counts find matches with the same parser the
@@ -93,7 +88,6 @@ overrides:
   # release installs cannot drift past the patch. Update these with patchedDependencies.
   react-native-image-viewing: 0.2.2
   mdast-util-math: 3.0.0
-  micromark-extension-llm-math: 3.1.0
   micromark: 4.0.3
   mdast-util-to-hast: 13.2.2
   expo-audio: 58.0.12
@@ -103,17 +97,17 @@ overrides:
   expo-sharing: 58.0.23
   expo-widgets: 58.0.29
   "@ff-labs/fff-node": 0.11.0
-  "@legendapp/list": 3.7.3
-  "@pierre/diffs": 1.7.0-beta.4
-  "@react-native-menu/menu": 2.2.1
+  "@legendapp/list": 3.9.0
+  "@pierre/diffs": 1.7.1
+  "@react-native-menu/menu": 2.3.3
   "@react-navigation/native-stack": 7.21.1
   node-pty: 1.2.0-beta.18
   react-native-gesture-handler: 3.5.0
   react-native-reanimated: 4.8.0
-  react-native-keyboard-controller: 1.23.1
+  react-native-keyboard-controller: 1.24.0
   react-native-webview: 14.0.1
   react-native-svg: 15.16.1
-  react-native-pdf-jsi: 6.1.1
+  react-native-pdf-jsi: 6.2.1
   app-builder-lib: 26.18.1
   electron-updater: 6.8.12
   expo-modules-core: 58.1.0
@@ -144,6 +138,8 @@ overrides:
   "expo-sharing>@expo/config-types": 58.0.3
   # Resolve below remark-math so Vite, Metro and Node use the same tokenizer.
   "remark-math>micromark-extension-math": npm:micromark-extension-llm-math@3.1.0
+  # Its own ^0.16 is the last copy with GHSA-238p-pmpm-9mq7; share the one the web renders with.
+  "micromark-extension-llm-math>katex": 0.19.1
   micromark-extension-gfm-table: 2.1.2
   # Keep one copy of these native-binary packages. lightningcss ships 11 platform binaries per
   # version, and the workspaces' tailwindcss ^4 ranges drift into two 4.3.x copies of the family.
@@ -162,6 +158,13 @@ overrides:
   "@opencode/protocol>effect": "catalog:"
   "@opencode/schema>effect": "catalog:"
   node-abi: 4.43.0
+  # @expo/metro pins one exact Metro; React Native's ^ ranges would add a newer second copy.
+  metro: 0.87.1
+  metro-config: 0.87.1
+  metro-core: 0.87.1
+  metro-runtime: 0.87.1
+  metro-source-map: 0.87.1
+  metro-symbolicate: 0.87.1
   # react-native-worklets peers on any version, so a fresh resolve takes the newest
   # one; React Native's CLI plugin wants exactly its own. Move with react-native.
   "@react-native/metro-config": 0.88.1
@@ -191,7 +194,7 @@ patchedDependencies:
   react-native-image-viewing@0.2.2: patches/react-native-image-viewing@0.2.2.patch
   mdast-util-math@3.0.0: patches/mdast-util-math@3.0.0.patch
   micromark-extension-llm-math@3.1.0: patches/micromark-extension-llm-math@3.1.0.patch
-  "@legendapp/list@3.7.3": patches/@legendapp__list@3.7.3.patch
+  "@legendapp/list@3.9.0": patches/@legendapp__list@3.9.0.patch
   micromark-extension-gfm-table@2.1.2: patches/micromark-extension-gfm-table@2.1.2.patch
   micromark@4.0.3: patches/micromark@4.0.3.patch
   mdast-util-to-hast@13.2.2: patches/mdast-util-to-hast@13.2.2.patch
@@ -211,15 +214,15 @@ patchedDependencies:
   # Exports the dependency-light subpaths mobile and the web diff parser import, re-measures
   # editor carets when the code font changes, stops the find bar reclaiming focus from the file,
   # and keeps drag selections intact across virtualized scroll renders.
-  "@pierre/diffs@1.7.0-beta.4": patches/@pierre__diffs@1.7.0-beta.4.patch
-  "@react-native-menu/menu@2.2.1": patches/@react-native-menu__menu@2.2.1.patch
+  "@pierre/diffs@1.7.1": patches/@pierre__diffs@1.7.1.patch
+  "@react-native-menu/menu@2.3.3": patches/@react-native-menu__menu@2.3.3.patch
   "@react-navigation/native-stack@7.21.1": patches/@react-navigation%2Fnative-stack@7.21.1.patch
   node-pty@1.2.0-beta.18: patches/node-pty@1.2.0-beta.18.patch
   react-native-gesture-handler@3.5.0: patches/react-native-gesture-handler@3.5.0.patch
   # Screens v5 stack, split and tab screens leave at once, like legacy screens. Exiting animations
   # inside one otherwise hold its removal for a later mount, after its stack has moved on.
   react-native-reanimated@4.8.0: patches/react-native-reanimated@4.8.0.patch
-  react-native-keyboard-controller@1.23.1: patches/react-native-keyboard-controller@1.23.1.patch
+  react-native-keyboard-controller@1.24.0: patches/react-native-keyboard-controller@1.24.0.patch
   # Android: a nested WebView hands a vertical drag to its scrolling parent at the page's edge.
   react-native-webview@14.0.1: patches/react-native-webview@14.0.1.patch
   # Android: a Compose host that requests layout in a mount (a new screen's app bar) is laid out
@@ -238,7 +241,7 @@ patchedDependencies:
   # Android: a marker orient other than "auto" or a number (auto-start-reverse) no longer throws.
   react-native-svg@15.16.1: patches/react-native-svg@15.16.1.patch
   # Android: double-tap zoom no longer cancels itself, and taps near a link open it.
-  react-native-pdf-jsi@6.1.1: patches/react-native-pdf-jsi@6.1.1.patch
+  react-native-pdf-jsi@6.2.1: patches/react-native-pdf-jsi@6.2.1.patch
   # Local agents honor the attribution settings in the user's Cursor CLI cli-config.json, stream
   # shell output while it runs, expose agent.resume() (the protocol's ResumeAction), and offer
   # background shells to the host so they can outlive the run.
@@ -260,8 +263,6 @@ peerDependencyRules:
   allowedVersions:
     # Our react-native-screens fork is a 5.x prerelease, which ">= 4.0.0" excludes.
     "@react-navigation/native-stack>react-native-screens": "*"
-    # ws 7 (React Native dev tooling) only calls isValidUTF8, unchanged in v6.
-    "ws@7>utf-8-validate": "6"
 
 # pnpm 12 links agent skills that dependencies ship into .claude/skills once
 # approved. We curate our own skills, so deny these to keep installs quiet.
@@ -284,49 +285,26 @@ publicHoistPattern:
   - "@cursor/sdk-*"
 
 minimumReleaseAgeExclude:
-  - "@legendapp/list@3.7.3"
-  - "@vitejs/plugin-react@6.3.0"
-  - "@pierre/diffs@1.7.0-beta.4"
-  - "tldts@7.5.5"
-  - "tldts-core@7.5.5"
-  - "@cloudflare/workers-types@5.20261120.1"
-  - "@react-navigation/core@7.25.0"
-  - "@react-navigation/elements@2.9.46"
-  - "@react-navigation/native@7.5.2"
-  - "@react-navigation/native-stack@7.21.1"
-  - "@react-native-menu/menu@2.2.1"
-  - "@react-navigation/routers@7.6.6"
-  - "@anthropic-ai/claude-agent-sdk@0.3.329"
-  - "@e2e-dev/core@0.24.0"
-  - "@e2e-dev/mobile@0.12.8"
-  - "@e2e-dev/web@0.16.1"
-  - "@effect/atom-react@4.1.5"
-  - "@effect/graphql-generator@4.1.5"
-  - "@effect/openapi-generator@4.1.5"
-  - "@effect/platform-node-shared@4.1.5"
-  - "@effect/platform-node@4.1.5"
-  - "@effect/tsgo-darwin-arm64@0.73.2"
-  - "@effect/tsgo-darwin-x64@0.73.2"
-  - "@effect/tsgo-linux-arm64@0.73.2"
-  - "@effect/tsgo-linux-arm@0.73.2"
-  - "@effect/tsgo-linux-x64@0.73.2"
-  - "@effect/tsgo-win32-arm64@0.73.2"
-  - "@effect/tsgo-win32-x64@0.73.2"
-  - "@effect/tsgo@0.73.2"
-  - "@effect/vitest@4.1.5"
-  - "@peculiar/asn1-android@3.1.0"
-  - "@peculiar/asn1-schema@3.1.0"
-  - "@pierre/highlights@0.5.2"
-  - "@types/sql.js@1.16.0"
-  - "agent-device@0.21.41"
-  - "cf@1.0.0-rc.2"
-  - "e2e@0.24.0"
-  - "effect@4.1.5"
-  - "lucide-react@1.77.0"
-  - "mdast-util-directive@3.2.1"
-  - "node-abi@4.43.0"
-  - "plist@5.1.2"
-  - "react-native-reanimated@4.8.0"
-  - "react-native-worklets@0.14.0"
-  - "tailwind-merge@3.7.1"
-  - "undici@8.13.0"
+  - "@anthropic-ai/claude-agent-sdk@0.3.331"
+  - "@cloudflare/build-output-utils@1.0.0-rc.4"
+  - "@cloudflare/config@1.0.0-rc.4"
+  - "@cloudflare/runtime-types@0.1.34"
+  - "@cloudflare/vite-plugin@2.0.0-rc.5"
+  - "@cloudflare/workers-types@5.20261124.1"
+  - "@opencode/client@2.4.1"
+  - "@opencode/protocol@2.4.1"
+  - "@opencode/schema@2.4.1"
+  - "@types/sql.js@1.16.1"
+  - "@voidzero-dev/vite-plus-core@8.3.8001"
+  - "@voidzero-dev/vite-plus-darwin-arm64@1.8.0"
+  - "@voidzero-dev/vite-plus-darwin-x64@1.8.0"
+  - "@voidzero-dev/vite-plus-linux-arm64-gnu@1.8.0"
+  - "@voidzero-dev/vite-plus-linux-arm64-musl@1.8.0"
+  - "@voidzero-dev/vite-plus-linux-x64-gnu@1.8.0"
+  - "@voidzero-dev/vite-plus-linux-x64-musl@1.8.0"
+  - "@voidzero-dev/vite-plus-win32-arm64-msvc@1.8.0"
+  - "@voidzero-dev/vite-plus-win32-x64-msvc@1.8.0"
+  - cf@1.0.0-rc.4
+  - lucide-react@1.79.0
+  - miniflare@5.20261123.1-beta
+  - vite-plus@1.8.0

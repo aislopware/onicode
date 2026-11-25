@@ -12,10 +12,9 @@ const STALE_RUNTIME =
 
 const quoteShell = (value: string) => "'" + value.replaceAll("'", "'\"'\"'") + "'";
 
-/** agent-device 0.21.41's flags that take a value, so the launcher can find the command past them. */
+/** agent-device 0.21.42's flags that take a value, so the launcher can find the command past them. */
 const VALUE_FLAGS: ReadonlyArray<string> = [
   "--activity",
-  "--all",
   "--android-device-allowlist",
   "--app",
   "--appium-version",
@@ -31,6 +30,7 @@ const VALUE_FLAGS: ReadonlyArray<string> = [
   "--bearer-token",
   "--bundle-url",
   "--button",
+  "--capture-backend",
   "--config",
   "--count",
   "--crop-on",
@@ -53,12 +53,10 @@ const VALUE_FLAGS: ReadonlyArray<string> = [
   "--fps",
   "--from",
   "--geo-location",
-  "--github-actions-artifact",
   "--header",
   "--hold-ms",
   "--host",
   "--image-tag",
-  "--in-app",
   "--include",
   "--interval-ms",
   "--ios-simulator-device-set",
@@ -119,6 +117,7 @@ const VALUE_FLAGS: ReadonlyArray<string> = [
   "--public-base-url",
   "--public-origin",
   "--quality",
+  "--reason",
   "--record-as",
   "--remote-config",
   "--reporter",
@@ -130,6 +129,7 @@ const VALUE_FLAGS: ReadonlyArray<string> = [
   "-s",
   "--scale",
   "--scope",
+  "--screen-mask",
   "--search-path",
   "--serial",
   "--session",
@@ -144,7 +144,6 @@ const VALUE_FLAGS: ReadonlyArray<string> = [
   "--steps",
   "--steps-file",
   "--surface",
-  "--system",
   "--target",
   "--target-app",
   "--template",
@@ -152,6 +151,7 @@ const VALUE_FLAGS: ReadonlyArray<string> = [
   "--threshold",
   "--timeout",
   "--timezone",
+  "--ttl-ms",
   "--udid",
   "--until",
   "--wait",
@@ -179,6 +179,8 @@ for (let index = 0; index < args.length; index++) {
   if (arg === "--") { name = args[index + 1] ?? ""; break; }
   if (!arg.startsWith("-")) { name = arg; break; }
   if (!arg.includes("=") && valued.has(arg)) index++;
+  // agent-device reads --save-script's optional path only when the next word looks like one.
+  if (arg === "--save-script" && /[\\\\/]/.test(args[index + 1] ?? "") && !/^[a-zA-Z][a-zA-Z0-9+.-]*:\\/\\//.test(args[index + 1])) index++;
 }
 const informational = args.length === 0 || ["help", "--help", "-h", "--version", "version"].includes(args[0]) || options.includes("--help") || options.includes("-h");
 if (!informational && managed.includes(name)) {

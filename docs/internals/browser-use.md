@@ -122,8 +122,8 @@ of a tab: it refreshes no idle clock on the server and holds no focus on the
 desktop, or a tab an agent once touched would never rest.
 
 The release is pinned in
-[`BrowserUseDriver`](../../apps/server/src/browserUse/BrowserUseDriver.ts).
-Bump the version, sizes and hashes together. The panel target depends on fork
+[`pinnedTools.json`](../../apps/server/src/tools/pinnedTools.json), which holds
+the version, sizes and hashes together. The panel target depends on fork
 features (`OBU_SESSION`, `OBU_ENDPOINT_PATH`, `OBU_HOST_NOTE`), so an upstream
 build cannot stand in for it.
 

@@ -149,8 +149,33 @@ const operationOf = (
   return { type: `${method} ${path}`, input: { ...query, body } };
 };
 
+/** OpenCode keeps a prompt's client-sent ID, but recordings hold the IDs their recorder was given. */
+const promptIds = (entries: ReadonlyArray<ProviderReplayEntry>) => {
+  const recorded = entries.flatMap((entry) => {
+    if (entry.type !== "emit_inbound" || entry.label !== "session.prompt.response") return [];
+    const { data } = entry.frame as {
+      readonly data?: { readonly data?: { readonly id?: string } };
+    };
+    return [data?.data?.id];
+  });
+  const sent = new Map<string, string>();
+  return {
+    onPrompt: (input: unknown) => {
+      const id = recorded.shift();
+      const own = (input as { readonly id?: string } | undefined)?.id;
+      if (id !== undefined && own !== undefined) sent.set(id, own);
+    },
+    encode: (value: unknown) => {
+      let text = encodeJson(value);
+      for (const [id, own] of sent) text = text.replaceAll(encodeJson(id), encodeJson(own));
+      return text;
+    },
+  };
+};
+
 const replayHttpClient = (
   controller: OpenCodeReplayController,
+  ids: ReturnType<typeof promptIds>,
   replayGate: ProviderReplayGate | undefined,
   onPrompt: ((input: unknown) => void) | undefined,
   beforeResponse: ((path: string) => Effect.Effect<void>) | undefined,
@@ -174,7 +199,10 @@ const replayHttpClient = (
         );
         // HTTP streams and requests use separate connections; deliver prior recorded inbound data before matching requests.
         if (operation.type !== "event.subscribe") await controller.untilInboundDelivered();
-        if (operation.type === "session.prompt") onPrompt?.(operation.input);
+        if (operation.type === "session.prompt") {
+          ids.onPrompt(operation.input);
+          onPrompt?.(operation.input);
+        }
         await controller.expectOutbound(operation);
         if (operation.type === "event.subscribe") {
           controller.exited = false;
@@ -185,7 +213,7 @@ const replayHttpClient = (
             async pull(stream) {
               const next = await frames.next();
               if (next.done === true) stream.close();
-              else stream.enqueue(encoder.encode(`data: ${encodeJson(next.value)}\n\n`));
+              else stream.enqueue(encoder.encode(`data: ${ids.encode(next.value)}\n\n`));
             },
           });
           return new Response(body, { headers: { "content-type": "text/event-stream" } });
@@ -199,14 +227,14 @@ const replayHttpClient = (
         }
         if (body === "<hang>") return new Promise<Response>(() => {});
         if (typeof body === "object" && body !== null && "status" in body && "body" in body) {
-          return new Response(encodeJson(body.body), {
+          return new Response(ids.encode(body.body), {
             status: Number(body.status),
             headers: { "content-type": "application/json" },
           });
         }
         return body === null
           ? new Response(null, { status: 204 })
-          : new Response(encodeJson(body), { headers: { "content-type": "application/json" } });
+          : new Response(ids.encode(body), { headers: { "content-type": "application/json" } });
       },
       catch: (cause) =>
         new HttpClientError.HttpClientError({
@@ -242,6 +270,7 @@ export const replayServer = (
         HttpClient.HttpClient,
         replayHttpClient(
           controller,
+          promptIds(transcript.entries),
           options?.replayGate,
           options?.onPrompt,
           options?.beforeResponse,

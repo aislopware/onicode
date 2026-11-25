@@ -3713,9 +3713,10 @@ const withClaudeAppContext = (
   appContext: NonNullable<ProviderAdapter.ProviderAdapterV2TurnInput["appContext"]>,
   reservation: Effect.Success<ReturnType<typeof reserveClaudePdfBudget>>,
 ): SDKUserMessage => {
-  const content = message.message.content;
+  const { content, role } = message.message;
   if (
     appContext.length === 0 ||
+    role === "system" ||
     (typeof content === "string" && ProviderAdapter.opensWithSlashCommand(content))
   ) {
     return message;
@@ -3730,7 +3731,7 @@ const withClaudeAppContext = (
   return {
     ...message,
     message: {
-      ...message.message,
+      role,
       content: [
         ...contextBlocks,
         ...(typeof content === "string" ? [{ type: "text" as const, text: content }] : content),
@@ -4967,10 +4968,11 @@ function claudeToolResultBlocksFromAssistantMessage(
 function claudeToolResultBlocksFromUserMessage(
   message: SDKMessage,
 ): ReadonlyArray<ClaudeToolResultContentBlock> {
-  if (message.type !== "user" || typeof message.message.content === "string") {
+  if (message.type !== "user" || message.message.role === "system") {
     return [];
   }
-  return message.message.content.filter(isClaudeUserToolResultContentBlock);
+  const { content } = message.message;
+  return typeof content === "string" ? [] : content.filter(isClaudeUserToolResultContentBlock);
 }
 
 function claudeToolResultEntriesFromMessage(message: SDKMessage): ReadonlyArray<{

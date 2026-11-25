@@ -6,24 +6,12 @@ import * as Layer from "effect/Layer";
 
 import * as ServerConfig from "../config.ts";
 import * as PinnedTool from "../tools/PinnedTool.ts";
+import PINNED_TOOLS from "../tools/pinnedTools.json" with { type: "json" };
 
-// Update the version, sizes and hashes together from the assets of
+// pinnedTools.json holds the version, sizes and hashes of the assets of
 // https://github.com/aislopware/oni-browser-use/releases (tag v<version>).
-export const VERSION = "4.10.1";
-const BINARIES = {
-  "darwin-arm64": {
-    bytes: 7_302_480,
-    sha256: "e153a4f2b960e573e745207f79d5ec31edd106c304200260841ee1810e6fa7ee",
-  },
-  "linux-x64": {
-    bytes: 8_619_120,
-    sha256: "0430ed483b7b5f0f657eeb44c6f12be40cf6b33f76668be3f63865099c523d28",
-  },
-  "windows-x64": {
-    bytes: 8_040_448,
-    sha256: "58261837b9cbe5d77b84e957dbc2d04fd56ff65a0e74f9108c9d97c2260a1898",
-  },
-} as const;
+export const { version: VERSION } = PINNED_TOOLS.obu;
+const BINARIES = PINNED_TOOLS.obu.assets;
 
 const driverPlatform = (
   platform: NodeJS.Platform,

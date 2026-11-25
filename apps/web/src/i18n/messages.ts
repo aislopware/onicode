@@ -37,3 +37,15 @@ function resolve(message: string, variables: Parameters<MessageResolver>[1] = {}
  */
 export const m = ((message, variables) =>
   typeof message === "string" ? resolve(message, variables) : message) as MessageResolver;
+
+/** A `msg()` template in the current UI language, still unformatted, for libraries that format ICU themselves. */
+export function template(message: string): string {
+  const decoded = decodeOptions(message);
+  const source = typeof decoded?.$_source === "string" ? decoded.$_source : message;
+  if (activeLocale === DEFAULT_LOCALE) return source;
+  const target = getReactI18nCache().lookupTranslation(activeLocale, source, {
+    ...(typeof decoded?.$_source === "string" ? decoded : {}),
+    $format: "ICU",
+  });
+  return typeof target === "string" ? target : source;
+}

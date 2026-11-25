@@ -312,12 +312,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
               enableProviderUpdateChecks: settings.enableProviderUpdateChecks,
             }),
           ),
-          Effect.flatMap((enrichedSnapshot) =>
-            modelCatalog.pipe(
-              Effect.map((catalog) =>
-                scopeClaudeUpgradeMessageToChannel(catalog, enrichedSnapshot),
-              ),
-            ),
+          Effect.zipWith(modelCatalog, (enrichedSnapshot, catalog) =>
+            scopeClaudeUpgradeMessageToChannel(catalog, enrichedSnapshot),
           ),
           Effect.provideService(HttpClient.HttpClient, httpClient),
           Effect.provideService(ProviderLatestVersions.ProviderLatestVersions, latestVersions),

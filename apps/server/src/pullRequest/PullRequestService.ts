@@ -2398,12 +2398,10 @@ export const make = Effect.gen(function* () {
                   )
                 : Effect.succeed(false);
             return pinnedHead(project, input, "runAction").pipe(
-              Effect.flatMap((expectedHeadSha) =>
-                Effect.map(mergeSettings, (removeAgentCreditsOnMerge) => ({
-                  expectedHeadSha,
-                  removeAgentCreditsOnMerge,
-                })),
-              ),
+              Effect.zipWith(mergeSettings, (expectedHeadSha, removeAgentCreditsOnMerge) => ({
+                expectedHeadSha,
+                removeAgentCreditsOnMerge,
+              })),
               Effect.flatMap(({ expectedHeadSha, removeAgentCreditsOnMerge }) =>
                 project.api
                   .runAction({
