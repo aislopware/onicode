@@ -3821,3 +3821,4 @@ b20d7c5c7b	skip	removed surface: web dev HTTP proxy (Onicode has no browser-serv
 7e269e044b	skip	removed surface: MCP tool analytics (telemetry/ProviderDimensions is removed in Onicode)
 a2231ca59b	take	fix(web): Cmd/Ctrl+W closes the active tab on the Issues page (#42417)
 61b147b310	take	perf(server): the workflow runs list no longer loads every run's webhook payload (#42284)
+9c64ebc370	take	fix(usage): pooled limits no longer flip by a percent between refreshes (#42416)
