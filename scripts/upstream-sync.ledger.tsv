@@ -3858,3 +3858,4 @@ eaa3f7da13	take	ported cleanly (kept findStoredHtmlRenderBootstrap import)
 e4da383485	take	adapted: added only ./projectMonogram export in packages/shared/package.json and kept desktop-only wording in docs/user/project-settings.md
 739bc7adb5	take	adapted: kept #763 catalog versions in pnpm-workspace.yaml, added @pierre/trees: 1.0.0 to catalog, updated web+mobile to catalog:, regenerated pnpm-lock.yaml with vp i
 5a156a2af8	take	ported cleanly
+617d6ab628	take	ported cleanly
