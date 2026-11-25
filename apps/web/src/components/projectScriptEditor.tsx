@@ -26,7 +26,10 @@ import {
   keybindingValueForCommand,
   decodeProjectScriptKeybindingRule,
 } from "~/lib/projectScriptKeybindings";
-import { keybindingFromKeyboardEvent } from "~/components/settings/KeybindingsSettings.logic";
+import {
+  isBareEscape,
+  keybindingFromKeyboardEvent,
+} from "~/components/settings/KeybindingsSettings.logic";
 import { commandForProjectScript, nextProjectScriptId } from "~/projectScripts";
 import { projectScriptsPermissionAtom } from "~/state/server";
 import { useComposerMenuState } from "./chat/useComposerMenuState";
@@ -308,8 +311,11 @@ function ProjectScriptEditorForm({
 
   const captureKeybinding = (event: KeyboardEvent<HTMLInputElement>) => {
     if (!canEditActions) return;
-    if (event.key === "Tab") return;
+    // Tab moves on and a bare Esc closes the dialog.
+    if (event.key === "Tab" || isBareEscape(event)) return;
     event.preventDefault();
+    // The dialog closes on any other Escape that reaches it.
+    if (event.key === "Escape") event.stopPropagation();
     if (event.key === "Backspace" || event.key === "Delete") {
       setKeybinding("");
       return;
@@ -469,6 +475,7 @@ function ProjectScriptEditorForm({
               </Label>
               <Input
                 id="script-keybinding"
+                data-keybinding-capture=""
                 placeholder={gt("Press shortcut")}
                 value={keybinding}
                 readOnly

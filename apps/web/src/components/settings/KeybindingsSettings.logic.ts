@@ -609,6 +609,15 @@ function normalizeShortcutKeyToken(key: string): string | null {
   return null;
 }
 
+// Esc with a modifier is a shortcut to record, not a cancel.
+export function isBareEscape(
+  event: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "altKey" | "shiftKey">,
+) {
+  return (
+    event.key === "Escape" && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey
+  );
+}
+
 export function keybindingFromKeyboardEvent(
   event: Pick<KeyboardEvent, "key" | "code" | "metaKey" | "ctrlKey" | "altKey" | "shiftKey">,
   platform: string,

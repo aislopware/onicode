@@ -193,10 +193,10 @@ describe("wordsHast", () => {
     ).toBe(
       '<p dir="ltr"><code data-inline-code="" dir="ltr">&#x3C;p></code><br>\nkept</p>\n<p dir="ltr">\none\ntwo\n</p>\n<p dir="ltr">three\nfour</p>\n<p dir="ltr">five<br>\nsix</p>',
     );
-    // A `<p>` in a link destination is no raw paragraph, and the ones after it stay Markdown.
-    expect(wordsHtml("[a](http://x/<p>)\nb\n\nc\nd", { breaks: true })).toContain(
-      '<p dir="ltr">c<br>\nd</p>',
-    );
+    // A `<p>` in a link destination is no raw paragraph, and the others keep their kind.
+    expect(
+      wordsHtml("[a](http://x/<p>)\nb\n\n<p>\none\ntwo\n</p>\n\nc\nd", { breaks: true }),
+    ).toContain('<p dir="ltr">\none\ntwo\n</p>\n<p dir="ltr">c<br>\nd</p>');
   });
 
   it("keeps the composer's tildes and list numbers in user messages", () => {

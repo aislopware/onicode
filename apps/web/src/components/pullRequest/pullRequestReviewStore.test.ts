@@ -64,6 +64,46 @@ describe("pull request review drafts", () => {
     expect(usePullRequestReviewStore.getState().summaries["review-a"]).toBe("Revised body");
   });
 
+  it("forgets a summary erased to empty", () => {
+    usePullRequestReviewStore.getState().setSummary("review-a", "Draft");
+    usePullRequestReviewStore.getState().setSummary("review-a", "");
+
+    expect(usePullRequestReviewStore.getState().summaries).toEqual({});
+  });
+
+  it("restores only well-formed drafts and summaries", async () => {
+    const storage = createMemoryStorage();
+    storage.setItem(
+      "onicode:pull-request-review-drafts:v1",
+      JSON.stringify({
+        state: {
+          drafts: [[comment("from-array")]],
+          summaries: { "review-a": "Kept", "review-b": "", "review-c": 3 },
+        },
+        version: 0,
+      }),
+    );
+    vi.stubGlobal("localStorage", storage);
+    vi.resetModules();
+    try {
+      const restored = await import("./pullRequestReviewStore");
+      expect(restored.usePullRequestReviewStore.getState().drafts).toEqual({});
+      expect(restored.usePullRequestReviewStore.getState().summaries).toEqual({
+        "review-a": "Kept",
+      });
+
+      storage.setItem(
+        "onicode:pull-request-review-drafts:v1",
+        JSON.stringify({ state: { drafts: {}, summaries: "hi" }, version: 0 }),
+      );
+      await restored.usePullRequestReviewStore.persist.rehydrate();
+      expect(restored.usePullRequestReviewStore.getState().summaries).toEqual({});
+    } finally {
+      vi.unstubAllGlobals();
+      vi.resetModules();
+    }
+  });
+
   // regression: #42078 line comments and the summary were lost when the window reloaded
   it("keeps unsubmitted line comments and the summary across a reload", async () => {
     vi.stubGlobal("localStorage", createMemoryStorage());

@@ -41,16 +41,19 @@ const isPendingComment = (entry: unknown): entry is PendingReviewComment =>
 
 type PersistedReviewDrafts = Pick<PullRequestReviewStoreState, "drafts" | "summaries">;
 
+const recordEntries = (value: unknown): Array<[string, unknown]> =>
+  typeof value === "object" && value !== null && !Array.isArray(value) ? Object.entries(value) : [];
+
 function restoreReviewDrafts(persisted: unknown): PersistedReviewDrafts {
   const candidate = persisted as Partial<Record<keyof PersistedReviewDrafts, unknown>> | null;
   const drafts: Record<string, ReadonlyArray<PendingReviewComment>> = {};
-  for (const [key, comments] of Object.entries(candidate?.drafts ?? {})) {
+  for (const [key, comments] of recordEntries(candidate?.drafts)) {
     const valid = Array.isArray(comments) ? comments.filter(isPendingComment) : [];
     if (valid.length > 0) drafts[key] = valid;
   }
   const summaries: Record<string, string> = {};
-  for (const [key, body] of Object.entries(candidate?.summaries ?? {})) {
-    if (typeof body === "string") summaries[key] = body;
+  for (const [key, body] of recordEntries(candidate?.summaries)) {
+    if (typeof body === "string" && body !== "") summaries[key] = body;
   }
   return { drafts, summaries };
 }
@@ -96,7 +99,11 @@ export const usePullRequestReviewStore = create<PullRequestReviewStoreState>()(
           return { drafts: rest };
         }),
       setSummary: (key, body) =>
-        set((state) => ({ summaries: { ...state.summaries, [key]: body } })),
+        set((state) => {
+          if (body !== "") return { summaries: { ...state.summaries, [key]: body } };
+          const { [key]: _removed, ...rest } = state.summaries;
+          return { summaries: rest };
+        }),
       clearSummary: (key, submittedBody) =>
         set((state) => {
           // Keep summary edits made during submission; the textarea stays editable.

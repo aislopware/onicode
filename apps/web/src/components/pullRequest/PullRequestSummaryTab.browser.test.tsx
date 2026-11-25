@@ -51,12 +51,13 @@ function setup() {
   state.update.mockResolvedValue({ _tag: "Success", value: undefined });
   state.canUpdate = true;
   state.timestampFormat = "locale";
+  resetSummaryViewsForTests();
 }
 
 import "~/index.css";
 import { workspaceAreaProps } from "~/lib/workspaceFocus";
 import { act, render as renderUi } from "../../../test/render";
-import { PullRequestSummaryTab } from "./PullRequestSummaryTab";
+import { PullRequestSummaryTab, resetSummaryViewsForTests } from "./PullRequestSummaryTab";
 
 const detail: PullRequestDetailView = {
   provider: SourceControlProviderKind.make("github"),

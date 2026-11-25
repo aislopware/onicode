@@ -81,6 +81,7 @@ import {
   buildWhenVariableOptions,
   commandLabel,
   DEFAULT_WHEN_VARIABLE,
+  isBareEscape,
   isKnownWhenVariable,
   keybindingConflictLabels,
   keybindingFromKeyboardEvent,
@@ -748,13 +749,6 @@ function rowKeybindingTarget(row: KeybindingRow): ServerRemoveKeybindingInput {
     key: row.key,
     ...(row.when.trim().length > 0 ? { when: row.when } : {}),
   };
-}
-
-// Esc with a modifier is a shortcut to record, not a cancel.
-function isBareEscape(event: KeyboardEvent<HTMLInputElement>) {
-  return (
-    event.key === "Escape" && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey
-  );
 }
 
 function useKeybindingRowEditor({

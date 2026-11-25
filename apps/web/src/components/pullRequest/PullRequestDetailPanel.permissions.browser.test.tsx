@@ -75,7 +75,8 @@ vi.mock(import("~/state/use-atom-command"), async (original) => ({
 }));
 
 import { createWorkspaceFocusController, workspaceAreaProps } from "~/lib/workspaceFocus";
-import { PullRequestDetailPanel } from "./PullRequestDetailPanel";
+import { PullRequestDetailPanel, resetSummaryCondensedForTests } from "./PullRequestDetailPanel";
+import { resetSummaryViewsForTests } from "./PullRequestSummaryTab";
 
 const detail: PullRequestDetailView = {
   provider: SourceControlProviderKind.make("github"),
@@ -154,6 +155,15 @@ function setup() {
   shown.detail = detail;
   command.mockReset();
   useComposerDraftStore.setState({ draftsByThreadKey: {} });
+  resetSummaryCondensedForTests();
+  resetSummaryViewsForTests();
+}
+
+function appStyles() {
+  const style = document.createElement("style");
+  style.textContent = appCss;
+  document.head.append(style);
+  return { [Symbol.dispose]: () => style.remove() };
 }
 
 it.each([AuthSourceControlWriteScope, AuthOrchestrationOperateScope])(
@@ -264,10 +274,7 @@ it("keeps a screen reader's place when scrolling the description condenses the h
     ...detail,
     body: Array.from({ length: 80 }, (_, line) => `Line ${line}`).join("\n\n"),
   };
-  const style = document.createElement("style");
-  style.textContent = appCss;
-  document.head.append(style);
-  using _style = { [Symbol.dispose]: () => style.remove() };
+  using _style = appStyles();
   const controller = createWorkspaceFocusController(document);
   using _controller = { [Symbol.dispose]: () => controller.dispose() };
   await using screen = await render(
@@ -294,4 +301,39 @@ it("keeps a screen reader's place when scrolling the description condenses the h
   await act(() => vi.advanceTimersToNextFrame());
   // A programmatic focus() pulls the screen reader's browse cursor back to the header.
   expect(moves).not.toHaveBeenCalled();
+});
+
+it("comes back condensed at the Summary position it left while the description loads", async () => {
+  setup();
+  const body = Array.from({ length: 80 }, (_, line) => `Line ${line}`).join("\n\n");
+  shown.detail = { ...detail, body };
+  using _style = appStyles();
+  const view = () => <div className="flex h-[600px] flex-col">{panel()}</div>;
+  const summary = () => document.querySelector<HTMLElement>("[data-pull-request-summary-scroll]")!;
+  // The header's first swap row is its expanded crumbs, inert while the header is condensed.
+  const condensed = () =>
+    document.querySelector("[data-workspace-scroll-swap]")!.hasAttribute("inert");
+  let left = 0;
+  {
+    await using screen = await render(view());
+    await expect.element(screen.getByText("Line 79")).toBeInTheDocument();
+    await act(() => {
+      summary().scrollTop = 800;
+    });
+    await vi.waitFor(() => expect(condensed()).toBe(true));
+    await act(async () => summary().dispatchEvent(new Event("scroll")));
+    left = summary().scrollTop;
+  }
+  // Switching right-panel tabs remounts the panel before the description is back.
+  shown.detail = { ...detail, body: "Line 0" };
+  await using screen = await render(view());
+  await expect.element(screen.getByText("Line 0")).toBeInTheDocument();
+  expect(condensed()).toBe(true);
+  // The restore clamps near the top while the content is short, and that still reports a scroll.
+  await act(async () => summary().dispatchEvent(new Event("scroll")));
+  expect(condensed()).toBe(true);
+  shown.detail = { ...detail, body };
+  await screen.rerender(view());
+  await vi.waitFor(() => expect(summary().scrollTop).toBe(left));
+  expect(condensed()).toBe(true);
 });

@@ -61,6 +61,69 @@ describe("ExpandedImageDialog", () => {
     expect(opener.element().matches(":focus-visible")).toBe(c.focusVisible);
   });
 
+  it("Close is the first Tab stop and its context menu is not the media's", async () => {
+    await using screen = await render(
+      <ExpandedImageDialog
+        preview={{ images: [{ src: PIXEL, name: "shot.png", source: snapShotSource }], index: 0 }}
+        onClose={vi.fn()}
+      />,
+      // The dialog renders no links and reads no route.
+      { router: false },
+    );
+    const close = screen.getByRole("button", { name: "Close image preview" });
+    await expect.element(close).toHaveFocus();
+    const contextMenu = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+    close.element().dispatchEvent(contextMenu);
+    expect(contextMenu.defaultPrevented).toBe(false);
+
+    await userEvent.keyboard("{Tab}");
+    const viewer = screen.getByRole("region", { name: "shot.png, zoomable image" }).element();
+    expect(document.activeElement?.contains(viewer)).toBe(true);
+  });
+
+  it("keeps Close clear of Next for a short wide image in a gallery", async () => {
+    const viewport = { width: window.innerWidth, height: window.innerHeight };
+    await page.viewport(1280, 800);
+    await using _viewport = {
+      [Symbol.asyncDispose]: () => page.viewport(viewport.width, viewport.height),
+    };
+    const wide = `data:image/svg+xml,${encodeURIComponent(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="40"><rect width="1600" height="40"/></svg>',
+    )}`;
+    const onClose = vi.fn();
+    await using screen = await render(
+      <ExpandedImageDialog
+        preview={{
+          images: [
+            { src: wide, name: "wide.svg" },
+            { src: PIXEL, name: "shot.png" },
+          ],
+          index: 0,
+        }}
+        onClose={onClose}
+      />,
+      // The dialog renders no links and reads no route.
+      { router: false },
+    );
+    const close = screen.getByRole("button", { name: "Close image preview" });
+    const previous = screen.getByRole("button", { name: "Previous media" });
+    const next = screen.getByRole("button", { name: "Next media" });
+    await expect.element(next).toBeVisible();
+    const image = screen.getByRole("img", { name: "wide.svg" }).element() as HTMLElement;
+    await vi.waitFor(() => expect(image.style.width).not.toBe(""));
+    await vi.waitFor(() => {
+      const a = close.element().getBoundingClientRect();
+      const b = next.element().getBoundingClientRect();
+      expect(a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top).toBe(
+        true,
+      );
+    });
+    const order = close.element().compareDocumentPosition(previous.element());
+    expect(order & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    await userEvent.click(close);
+    expect(onClose).toHaveBeenCalled();
+  });
+
   it.each(["/work/pipeline.svg", "/work/diagram#v2.svg", "/work/diagram?v2.svg"])(
     "fits a markdown SVG without intrinsic size to the viewer: %s",
     async (path) => {

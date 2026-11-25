@@ -276,6 +276,8 @@ function tokenize(html: string, offsetOf: (byte: number) => number): Tokenized {
 
 /** Paragraphs written as raw HTML that look like the bare `<p>` Words writes for Markdown. */
 const rawParagraphs = new WeakSet<Element>();
+const RAW_PARAGRAPH_TAG = /<p(?=\s*\/?>)/i;
+const RAW_PARAGRAPH_TAGS = /<p(?=\s*\/?>)/gi;
 
 const hasLineBreak = (node: Element): boolean =>
   node.children.some((child) =>
@@ -296,30 +298,29 @@ const positionKey = (node: Element) =>
  */
 function parse(markdown: string, options: RenderOptions): Root {
   const offsetOf = utf16Offsets(markdown);
-  const render = (source: string, escapeHtml?: true) =>
-    tokenize(
-      decoder.decode(
-        renderToHtml(source, {
-          ...options,
-          ...(escapeHtml ? { escapeHtml } : {}),
-          sourcePositions: true,
-        }),
-      ),
-      offsetOf,
+  const html = (source: string, escapeHtml?: true) =>
+    decoder.decode(
+      renderToHtml(source, {
+        ...options,
+        ...(escapeHtml ? { escapeHtml } : {}),
+        sourcePositions: true,
+      }),
     );
+  const render = (source: string, escapeHtml?: true) =>
+    tokenize(html(source, escapeHtml), offsetOf);
   const { root, positioned, paragraphs } = render(markdown);
   if (options.escapeHtml || options.skipHtml) return root;
-  // An attribute on each `<p>` in the source reaches the tag only where Words passes raw HTML on.
-  const marked = markdown.replace(/<p(?=\s*\/?>)/gi, "$& data-raw-paragraph");
-  if (marked !== markdown && paragraphs.some(breaksLines)) {
-    const markedParagraphs = render(marked).paragraphs;
-    // The attribute can change how Words reads its line (a `<p>` in a link destination stops
-    // being a link); then the paragraphs no longer pair up, and none are marked.
-    if (markedParagraphs.length === paragraphs.length) {
+  // Words writes its own `<p>` in lower case and passes raw HTML on as written, and case never
+  // changes how Markdown reads a line. So with each `<p>` in the source upper-cased, the
+  // paragraphs pair up with the ones above, and the raw ones are those written `<P>`.
+  if (RAW_PARAGRAPH_TAG.test(markdown) && paragraphs.some(breaksLines)) {
+    const raw: boolean[] = [];
+    for (const match of html(markdown.replace(RAW_PARAGRAPH_TAGS, "<P")).matchAll(TAG)) {
+      if (!match[1] && match[2]?.toLowerCase() === "p") raw.push(match[2] === "P");
+    }
+    if (raw.length === paragraphs.length) {
       for (const [index, paragraph] of paragraphs.entries()) {
-        if (markedParagraphs[index]!.properties.dataRawParagraph !== undefined) {
-          rawParagraphs.add(paragraph);
-        }
+        if (raw[index]) rawParagraphs.add(paragraph);
       }
     }
   }

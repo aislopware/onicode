@@ -198,112 +198,116 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
         <DialogTitle className="sr-only">
           {isVideo ? gt("Expanded video preview") : gt("Expanded image preview")}
         </DialogTitle>
-        {preview.images.length > 1 && (
-          <Button
-            type="button"
-            size="icon"
-            variant="media-ghost"
-            className="absolute bottom-0 left-0 z-20 sm:top-1/2 sm:bottom-auto sm:-translate-y-1/2"
-            aria-label={gt("Previous media")}
-            onClick={() => navigateImage(-1)}
-          >
-            <ChevronLeftIcon className="size-5" />
-          </Button>
-        )}
-        <MediaActions source={actionsSource} showTooltip={false}>
-          <div className="relative isolate z-10 flex max-h-full max-w-[var(--media-width)] flex-col items-center">
-            {/* Close stays beside the media it closes: level with its top edge, or above it when the gutters are gone. */}
-            <div className="relative w-fit max-w-full min-w-0">
-              {item.type === "video" ? (
-                <ExpandedVideo key={index} item={item} />
-              ) : showingAccessibilityDetails ? (
-                accessibilityDetails ? (
-                  <SnapShotAccessibilityData
-                    details={accessibilityDetails}
-                    className="h-[min(var(--media-height),40rem)] w-[min(var(--media-width),42rem)] transition-opacity duration-150 ease-out-quint starting:opacity-0 rounded-lg border border-border bg-background p-4 text-xs leading-5 shadow-2xl motion-reduce:transition-none"
+        <div className="relative isolate z-10 flex max-h-full max-w-[var(--media-width)] flex-col items-center">
+          {/* Close stays beside the media it closes: level with its top edge, or above it when the gutters are gone. */}
+          <div className="relative w-fit max-w-full min-w-0">
+            {/* First in Tab order, and outside MediaActions so its context menu is not the media's. */}
+            <Button
+              type="button"
+              ref={closeButtonRef}
+              size="icon-sm"
+              variant="media-ghost"
+              className="absolute right-0 bottom-full z-20 mb-1.5 [anchor-name:--expanded-media-close] sm:top-0 sm:right-auto sm:bottom-auto sm:left-full sm:mb-0 sm:ml-1.5"
+              onClick={close}
+              aria-label={isVideo ? gt("Close video preview") : gt("Close image preview")}
+            >
+              <XIcon aria-hidden="true" />
+            </Button>
+            <MediaActions source={actionsSource} showTooltip={false}>
+              <div>
+                {item.type === "video" ? (
+                  <ExpandedVideo key={index} item={item} />
+                ) : showingAccessibilityDetails ? (
+                  accessibilityDetails ? (
+                    <SnapShotAccessibilityData
+                      details={accessibilityDetails}
+                      className="h-[min(var(--media-height),40rem)] w-[min(var(--media-width),42rem)] transition-opacity duration-150 ease-out-quint starting:opacity-0 rounded-lg border border-border bg-background p-4 text-xs leading-5 shadow-2xl motion-reduce:transition-none"
+                    />
+                  ) : null
+                ) : item.src === null || failedImageSrc === item.src ? (
+                  <ExpandedMediaFailure>
+                    <p>
+                      {openOriginalLink
+                        ? gt("This image could not be loaded.")
+                        : gt("Image unavailable. The file may have been moved or deleted.")}
+                    </p>
+                    {openOriginalLink}
+                  </ExpandedMediaFailure>
+                ) : (
+                  <ZoomableImage
+                    ref={zoomableImageRef}
+                    key={`${index}:${item.src}`}
+                    src={item.src}
+                    name={item.name}
+                    mimeType={itemMimeType(item)}
+                    onError={() => setFailedImageSrc(item.src)}
                   />
-                ) : null
-              ) : item.src === null || failedImageSrc === item.src ? (
-                <ExpandedMediaFailure>
-                  <p>
-                    {openOriginalLink
-                      ? gt("This image could not be loaded.")
-                      : gt("Image unavailable. The file may have been moved or deleted.")}
-                  </p>
-                  {openOriginalLink}
-                </ExpandedMediaFailure>
-              ) : (
-                <ZoomableImage
-                  ref={zoomableImageRef}
-                  key={`${index}:${item.src}`}
-                  src={item.src}
-                  name={item.name}
-                  mimeType={itemMimeType(item)}
-                  onError={() => setFailedImageSrc(item.src)}
-                />
-              )}
-              <Button
-                type="button"
-                ref={closeButtonRef}
-                size="icon-sm"
-                variant="media-ghost"
-                className="absolute right-0 bottom-full z-20 mb-1.5 sm:top-0 sm:right-auto sm:bottom-auto sm:left-full sm:mb-0 sm:ml-1.5"
-                onClick={close}
-                aria-label={isVideo ? gt("Close video preview") : gt("Close image preview")}
-              >
-                <XIcon aria-hidden="true" />
-              </Button>
-            </div>
-            <div className="mt-2 flex max-w-[var(--media-width)] items-center justify-center gap-1.5 text-xs text-white/80 max-sm:px-10">
-              <span className="truncate" aria-live="polite" aria-atomic="true">
-                {item.name}
-                {preview.images.length > 1 ? ` (${index + 1}/${preview.images.length})` : ""}
-              </span>
-              {accessibilityDetails && item.source ? (
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button
-                        aria-label={contentsLabel}
-                        aria-pressed={showingAccessibilityDetails}
-                        onClick={() =>
-                          setAccessibilityDetailsSrc(showingAccessibilityDetails ? null : item.src)
-                        }
-                        size="icon-micro"
-                        variant="overlay"
-                      />
-                    }
-                  >
-                    {showingAccessibilityDetails ? (
-                      <ImageIcon className="size-3" aria-hidden="true" />
-                    ) : (
-                      <TextIcon className="size-3" aria-hidden="true" />
-                    )}
-                  </TooltipTrigger>
-                  <TooltipPopup side="top">{contentsLabel}</TooltipPopup>
-                </Tooltip>
-              ) : item.source ? (
-                <SnapShotContentsButton source={item.source} side="top" />
-              ) : null}
-              {item.onCopySnapshot && (
-                <div className="-my-1.5">
-                  <SnapShotCopyButton onCopy={item.onCopySnapshot} />
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            </MediaActions>
           </div>
-        </MediaActions>
+          <div className="mt-2 flex max-w-[var(--media-width)] items-center justify-center gap-1.5 text-xs text-white/80 max-sm:px-10">
+            <span className="truncate" aria-live="polite" aria-atomic="true">
+              {item.name}
+              {preview.images.length > 1 ? ` (${index + 1}/${preview.images.length})` : ""}
+            </span>
+            {accessibilityDetails && item.source ? (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      aria-label={contentsLabel}
+                      aria-pressed={showingAccessibilityDetails}
+                      onClick={() =>
+                        setAccessibilityDetailsSrc(showingAccessibilityDetails ? null : item.src)
+                      }
+                      size="icon-micro"
+                      variant="overlay"
+                    />
+                  }
+                >
+                  {showingAccessibilityDetails ? (
+                    <ImageIcon className="size-3" aria-hidden="true" />
+                  ) : (
+                    <TextIcon className="size-3" aria-hidden="true" />
+                  )}
+                </TooltipTrigger>
+                <TooltipPopup side="top">{contentsLabel}</TooltipPopup>
+              </Tooltip>
+            ) : item.source ? (
+              <SnapShotContentsButton source={item.source} side="top" />
+            ) : null}
+            {item.onCopySnapshot && (
+              <div className="-my-1.5">
+                <SnapShotCopyButton onCopy={item.onCopySnapshot} />
+              </div>
+            )}
+          </div>
+        </div>
+        {/* Close and Next share a full-width media's right gutter, so the arrows never sit higher than just below Close. */}
         {preview.images.length > 1 && (
-          <Button
-            type="button"
-            size="icon"
-            variant="media-ghost"
-            className="absolute right-0 bottom-0 z-20 sm:top-1/2 sm:bottom-auto sm:-translate-y-1/2"
-            aria-label={gt("Next media")}
-            onClick={() => navigateImage(1)}
-          >
-            <ChevronRightIcon className="size-5" />
-          </Button>
+          <>
+            <Button
+              type="button"
+              size="icon"
+              variant="media-ghost"
+              className="absolute bottom-0 left-0 z-20 sm:top-[max(50%,anchor(--expanded-media-close_bottom,0px)+1.375rem)] sm:bottom-auto sm:-translate-y-1/2"
+              aria-label={gt("Previous media")}
+              onClick={() => navigateImage(-1)}
+            >
+              <ChevronLeftIcon className="size-5" />
+            </Button>
+            <Button
+              type="button"
+              size="icon"
+              variant="media-ghost"
+              className="absolute right-0 bottom-0 z-20 sm:top-[max(50%,anchor(--expanded-media-close_bottom,0px)+1.375rem)] sm:bottom-auto sm:-translate-y-1/2"
+              aria-label={gt("Next media")}
+              onClick={() => navigateImage(1)}
+            >
+              <ChevronRightIcon className="size-5" />
+            </Button>
+          </>
         )}
       </DialogPopup>
     </Dialog>

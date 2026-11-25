@@ -203,6 +203,39 @@ describe("AppRouteModal", () => {
     expect(onCommit).toHaveBeenCalledWith("Keep titles short");
   });
 
+  it.each([
+    { path: "/settings/general", from: { machine: "a" }, to: { machine: "b" } },
+    // The provider panel is keyed by its instance too.
+    {
+      path: "/settings/providers",
+      from: { machine: "a", instanceId: "claude" },
+      to: { machine: "a", instanceId: "codex" },
+    },
+  ])("commits a focused field when Back changes $path from $from", async ({ path, from, to }) => {
+    const onCommit = vi.fn();
+    // Settings content is keyed by its search, so the same page remounts under another one.
+    function SettingsRoute() {
+      const searchStr = useLocation({ select: (location) => location.searchStr });
+      return (
+        <AppRouteModal label="Settings">
+          <CommitOnBlurField key={searchStr} onCommit={onCommit} />
+        </AppRouteModal>
+      );
+    }
+    await using screen = await render(<SettingsRoute />, {
+      router: `${path}?${new URLSearchParams(from)}`,
+    });
+    screen.router!.history.push(`${path}?${new URLSearchParams(to)}`);
+    await vi.waitFor(() => expect(screen.router!.state.resolvedLocation?.search).toEqual(to));
+
+    const field = page.getByRole("textbox", { name: "Instructions" });
+    await field.fill("Keep titles short");
+    screen.router!.history.back();
+
+    await expect.element(field).toHaveValue("");
+    expect(onCommit).toHaveBeenCalledWith("Keep titles short");
+  });
+
   it("returns focus to the opener when Esc closes it", async () => {
     const opener = <button type="button">Open usage</button>;
     await using screen = await render(opener, { router: "/" });
