@@ -26,8 +26,10 @@ import * as Scope from "effect/Scope";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as Stream from "effect/Stream";
 import { DurableDeferred, WorkflowEngine } from "effect/workflow";
+import { DEFAULT_WORKFLOW_SKIPPED_RUNS_KEPT } from "@onicode/contracts";
 
 import { checkOutput, rejectionText } from "../orchestration-v2/runOutput.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import { isMissedFixedTimeRun, nextScheduledRunAt } from "../scheduledTasks/Schedule.ts";
 import { ScheduledTaskWebhookOrigin } from "../scheduledTasks/ScheduledTaskService.ts";
 import { constantTimeEquals } from "../scheduledTasks/webhookVerification.ts";
@@ -80,6 +82,8 @@ const END_AFTER = ["5 minutes", "20 minutes", "80 minutes", "5 hours"] as const;
 // An ended run's engine journal only answers replays that will not come; the run's own rows stay.
 const PRUNE_AFTER = Duration.hours(1);
 const PRUNE_BATCH = 100;
+// Skipped runs deleted per sweep, small enough that the writer lock is never held for long.
+const SKIPPED_PRUNE_BATCH = 500;
 // Delivery ids that common senders put on a request and keep when they send it again.
 const DELIVERY_HEADERS = [
   "x-github-delivery",
@@ -107,6 +111,7 @@ const make = Effect.fn("WorkflowEngine.make")(function* (
   const trackers = Option.getOrElse(yield* Effect.serviceOption(WorkflowForge), () => unavailable);
   const messages = yield* Effect.serviceOption(MessageStorage.MessageStorage);
   const sharding = yield* Effect.serviceOption(Sharding.Sharding);
+  const settings = yield* Effect.serviceOption(ServerSettings.ServerSettingsService);
   // The engine reads its own tables as BigInts. The rest of the server's queries must not.
   const plain =
     <Args extends ReadonlyArray<unknown>, A, E>(call: (...args: Args) => Effect.Effect<A, E>) =>
@@ -791,6 +796,15 @@ const make = Effect.fn("WorkflowEngine.make")(function* (
         ),
       );
     }
+    const kept = yield* Option.match(settings, {
+      onNone: () => Effect.succeed(DEFAULT_WORKFLOW_SKIPPED_RUNS_KEPT),
+      onSome: (service) =>
+        service.getSettings.pipe(
+          Effect.map((current) => current.workflowSkippedRunsKept),
+          Effect.orElseSucceed(() => DEFAULT_WORKFLOW_SKIPPED_RUNS_KEPT),
+        ),
+    });
+    yield* store.pruneSkipped(kept, SKIPPED_PRUNE_BATCH);
   });
 
   const sweep: Workflows["Service"]["sweep"] = Effect.gen(function* () {

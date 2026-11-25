@@ -101,6 +101,7 @@ describe("V2 preview upgrade", () => {
         [119, "RestoreWebhooks"],
         [120, "ReadableLinkLabelsAfterBracket"],
         [121, "LayoutCommandApprovals"],
+        [122, "WorkflowSkippedRuns"],
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
       assert.deepStrictEqual(yield* sql`SELECT * FROM orchestration_v2_legacy_imports`, imports);
@@ -245,6 +246,7 @@ describe("V2 preview upgrade", () => {
         [119, "RestoreWebhooks"],
         [120, "ReadableLinkLabelsAfterBracket"],
         [121, "LayoutCommandApprovals"],
+        [122, "WorkflowSkippedRuns"],
       ]);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
