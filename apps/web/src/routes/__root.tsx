@@ -23,6 +23,7 @@ import { AddProjectToMachineDialogHost } from "../components/AddProjectToMachine
 import { AgentSignInDialogHost } from "../components/mcp/AgentSignInDialogHost";
 import { UseInAnotherAppDialogHost } from "../components/mcp/UseInAnotherAppDialog";
 import { ConfirmDialogHost } from "../components/ConfirmDialogHost";
+import { WorktreeLayoutApprovalDialogHost } from "../components/WorktreeLayoutApprovalDialogHost";
 import { DevReplayHost } from "../components/DevReplayHost";
 import { FirstRunGate } from "../components/onboarding/FirstRunGate";
 import { SshPasswordPromptDialog } from "../components/desktop/SshPasswordPromptDialog";
@@ -166,6 +167,7 @@ function RootRouteBranch() {
       <SnapShotCoordinator />
       <ReopenClosedViewShortcut />
       <ConfirmDialogHost />
+      <WorktreeLayoutApprovalDialogHost />
       <BugReportDialogHost />
       <CustomSnoozeDialogHost />
       <ProjectCloneToastCoordinator />

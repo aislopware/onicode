@@ -120,6 +120,12 @@ const policies = (): ReadonlyArray<Policy> => [
     toggle: "PreviewTunnel",
   },
   {
+    id: "WorktreeLayoutCommands",
+    title: "Allow project worktree layout commands",
+    help: "Disabled stops Onicode from running the worktreeLayout commands a project's onicode.json declares, whether or not a user approved them. Such a project gets no new worktree threads; existing thread folders are restored and removed without the project's commands.",
+    toggle: "WorktreeLayoutCommands",
+  },
+  {
     id: "AllowedDrivers",
     title: "Allowed providers",
     help: "Only the checked providers may run. Threads on other providers stay, marked unavailable.\n\nDisabled or Not Configured: no restriction.",

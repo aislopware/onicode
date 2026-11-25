@@ -301,6 +301,7 @@ export default defineConfig({
       "onicode/no-native-title-tooltip": "error",
       // Test files only (the rule checks the filename).
       "onicode/no-polling-loop-in-tests": "error",
+      "onicode/no-layout-command-approval-writes": "error",
       "onicode/no-raw-mcp-registration": "error",
       "onicode/no-real-time-wait-in-tests": "error",
       "onicode/no-test-in-loop": "error",
@@ -392,6 +393,16 @@ export default defineConfig({
       {
         files: ["apps/server/src/mcp/McpHttpServer.ts"],
         rules: { "onicode/no-raw-mcp-registration": "off" },
+      },
+      {
+        // The client RPC, the layer that builds it, and the tests that stand in for a person.
+        files: [
+          "apps/server/src/ws.ts",
+          "apps/server/src/server.ts",
+          "apps/server/src/ws.test.ts",
+          "apps/server/src/workspace/TaskFolders.testkit.ts",
+        ],
+        rules: { "onicode/no-layout-command-approval-writes": "off" },
       },
       {
         files: ["apps/web/src/**"],

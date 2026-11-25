@@ -128,6 +128,7 @@ import Migration0117 from "./Migrations/117_SupersededRunAttemptIndex.ts";
 import Migration0118 from "./Migrations/118_ActiveShellIndexWorkflowStep.ts";
 import Migration0119 from "./Migrations/119_RestoreWebhooks.ts";
 import Migration0120 from "./Migrations/120_ReadableLinkLabelsAfterBracket.ts";
+import Migration0121 from "./Migrations/121_LayoutCommandApprovals.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -251,6 +252,7 @@ const migrationEntries = [
   [118, "ActiveShellIndexWorkflowStep", Migration0118],
   [119, "RestoreWebhooks", Migration0119],
   [120, "ReadableLinkLabelsAfterBracket", Migration0120],
+  [121, "LayoutCommandApprovals", Migration0121],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

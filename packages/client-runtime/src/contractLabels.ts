@@ -129,7 +129,8 @@ export type ManagedCapability =
   | "remoteClients"
   | "browserCookieImport"
   | "previewTunnel"
-  | "webhookTasks";
+  | "webhookTasks"
+  | "worktreeLayoutCommands";
 
 function managedCapabilityDeniedMessage(
   organization: string,
@@ -159,6 +160,12 @@ function managedCapabilityDeniedMessage(
           "{organization}'s policy does not allow opening this machine's local servers on other devices.",
           { organization },
         ),
+      );
+    case "worktreeLayoutCommands":
+      return resolve(
+        msg("{organization}'s policy does not allow project worktree layout commands.", {
+          organization,
+        }),
       );
   }
 }
