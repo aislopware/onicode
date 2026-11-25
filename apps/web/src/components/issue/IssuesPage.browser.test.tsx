@@ -41,6 +41,7 @@ vi.mock(import("~/state/environments"), async (original) => ({
 }));
 vi.mock(import("~/state/entities"), async (original) => ({
   ...(await original()),
+  useAllEnvironmentShellsBootstrapped: () => true,
   useProjects: () => [],
 }));
 vi.mock(import("~/state/issues"), async (original) => ({
