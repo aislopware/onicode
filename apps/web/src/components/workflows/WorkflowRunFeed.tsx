@@ -42,7 +42,7 @@ import { requestConfirmDialog } from "../../confirmDialog";
 import { useNowMinute } from "../../hooks/useNowMinute";
 import { cn } from "../../lib/utils";
 import { useQuietThreadShell } from "../../state/entities";
-import { useEnvironment, useEnvironmentProviders } from "../../state/environments";
+import { useEnvironmentProviders } from "../../state/environments";
 import { type MessageResolver } from "../../i18n/messages";
 import { useEnvironmentQuery, useEnvironmentQuerySelector } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
@@ -78,6 +78,7 @@ import {
 } from "@onicode/client-runtime/workflows";
 import type { WorkflowPaneTab } from "./workflowPane.logic";
 import { WorkflowReferenceChip } from "./WorkflowReferences";
+import { useWorkflowThreadOpen } from "./useWorkflowThreadOpen";
 
 /**
  * A step thread's shell, and the model it runs. The shell list leaves an idle step's thread out, and
@@ -1649,8 +1650,7 @@ function WorkflowAgentCard({
     beat.thread?.environmentId == null
       ? environmentId
       : EnvironmentId.make(beat.thread.environmentId);
-  // This client can only show a thread on an environment it is itself connected to.
-  const threadEnvironment = useEnvironment(threadEnvironmentId);
+  const threadOpen = useWorkflowThreadOpen(environmentId, threadEnvironmentId);
   const { shell, modelSelection } = useStepThread(
     beat.thread === null
       ? null
@@ -1679,7 +1679,7 @@ function WorkflowAgentCard({
     length,
     beat.attempts > 1 ? nthTry(beat.attempts, m) : null,
     elsewhere
-      ? gt("on {environment}", { environment: threadEnvironment?.label ?? threadEnvironmentId })
+      ? gt("on {environment}", { environment: threadOpen.label ?? threadEnvironmentId })
       : null,
   ]
     .filter((part) => part !== null)
@@ -1705,7 +1705,7 @@ function WorkflowAgentCard({
         name={beat.name}
         sub={sub}
         action={
-          beat.thread === null ? null : threadEnvironment === null ? (
+          beat.thread === null ? null : threadOpen.open === "unavailable" ? (
             <span className="text-xs text-muted-foreground">
               <T>
                 Thread on <Var>{threadEnvironmentId}</Var>
@@ -1850,7 +1850,8 @@ function WorkflowQuestionCard({
     question.thread?.environmentId == null
       ? environmentId
       : EnvironmentId.make(question.thread.environmentId);
-  const reachable = useEnvironment(threadEnvironmentId) !== null;
+  const reachable =
+    useWorkflowThreadOpen(environmentId, threadEnvironmentId).open !== "unavailable";
   const choose = async (choice: string) => {
     if (busy) return;
     setBusy(true);
