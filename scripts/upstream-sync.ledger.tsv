@@ -3810,3 +3810,4 @@ f811978eef	take	fix(web): Esc in Theme Editor color filter clears the filter wit
 3ba003be06	take	fix(shared): Windows env capture reads User and Machine scopes for non-PATH variables (#42376); stripped removed telemetry opt-out plumbing from DesktopShellEnvironment
 54ba2408f4	take	fix(web): Enter commits Background Activity interval values (#42392)
 84e4264bb3	skip	removed surface: telemetry/analytics Codex and Claude account IDs (telemetry is removed in Onicode)
+eb7cc44727	take	fix(web): showing or hiding a requested secret keeps the caret in place (#42309)
