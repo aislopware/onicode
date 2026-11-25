@@ -26,6 +26,7 @@ import {
   type ChatAttachment,
   CommandId,
   isCompactionCommandMessage,
+  isDelegatedAppThread,
   isDeliveredProviderTurn,
   isOrchestrationV2WorkActive,
   isProviderNativeSubagentThread,
@@ -17107,8 +17108,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         // first would cancel an automatic wake it was about to start.
         const { runs } = yield* loadProjectionForCommand(command, ["runs"]);
         const hasQueuedRun = runs.some((run) => run.status === "queued");
-        // A remote parent may still resume or act on a held follow-up it queued here.
-        if (hasQueuedRun && thread.delegatedFrom != null) {
+        // Immediate delegated fast-settle (no settledAt) waits while a follow-up is queued;
+        // inactivity settlement carries settledAt and cancels held automatic runs like normal.
+        if (hasQueuedRun && isDelegatedAppThread(thread) && command.settledAt === undefined) {
           return yield* new OrchestratorDispatchError({
             commandId: command.commandId,
             commandType: command.type,

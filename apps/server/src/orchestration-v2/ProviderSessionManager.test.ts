@@ -5764,7 +5764,88 @@ it.effect(
             event: staleEvent,
           });
         }
-        yield* subscription.close;
+        // A session-scoped running update for a recovered shell must still overwrite recovery-cancelled state.
+        const recoveredNodeId = idAllocator.derive.nodeFromProviderItem({
+          driver: CODEX_DRIVER,
+          nativeItemId: "cmd-recovered",
+        });
+        const recoveredItemId = idAllocator.derive.turnItemFromProviderItem({
+          driver: CODEX_DRIVER,
+          nativeItemId: "cmd-recovered",
+        });
+        const makeRecoveredNode = (
+          status: OrchestrationV2ExecutionNode["status"],
+        ): OrchestrationV2ExecutionNode => ({
+          ...makeNode(status),
+          id: recoveredNodeId,
+          runId: null,
+          parentNodeId: null,
+          rootNodeId: recoveredNodeId,
+          nativeItemRef: { driver: CODEX_DRIVER, nativeId: "cmd-recovered", strength: "strong" },
+        });
+        const makeRecoveredItem = (
+          status: "running" | "cancelled",
+          extra?: { readonly output: string },
+        ): OrchestrationV2TurnItem => ({
+          id: recoveredItemId,
+          threadId,
+          runId: null,
+          nodeId: null,
+          providerThreadId: providerThread.id,
+          providerTurnId: null,
+          nativeItemRef: { driver: CODEX_DRIVER, nativeId: "cmd-recovered", strength: "strong" },
+          parentItemId: null,
+          ordinal: 2,
+          status,
+          title: null,
+          startedAt: now,
+          completedAt: status === "running" ? null : now,
+          updatedAt: now,
+          type: "command_execution",
+          input: "sleep 60",
+          ...extra,
+        });
+        yield* eventSink.write({
+          events: [
+            {
+              id: yield* idAllocator.allocate.event({ threadId, providerSessionId }),
+              type: "node.updated",
+              threadId,
+              nodeId: recoveredNodeId,
+              driver: CODEX_DRIVER,
+              occurredAt: now,
+              payload: makeRecoveredNode("cancelled"),
+            },
+            {
+              id: yield* idAllocator.allocate.event({ threadId, providerSessionId }),
+              type: "turn-item.updated",
+              threadId,
+              driver: CODEX_DRIVER,
+              occurredAt: now,
+              payload: makeRecoveredItem("cancelled"),
+            },
+          ],
+        });
+        const recoveredSubscription = yield* runtime.subscribeEvents!;
+        yield* Queue.offerAll(adapterEvents!, [
+          {
+            type: "node.updated",
+            driver: CODEX_DRIVER,
+            node: makeRecoveredNode("running"),
+            sessionScoped: true,
+          },
+          {
+            type: "turn_item.updated",
+            driver: CODEX_DRIVER,
+            turnItem: makeRecoveredItem("running", { output: "still live\n" }),
+            sessionScoped: true,
+          },
+        ]);
+        const recoveredReceived = Array.from(
+          yield* recoveredSubscription.events.pipe(Stream.take(2), Stream.runCollect),
+        );
+        assert.equal(recoveredReceived.length, 2);
+        yield* recoveredSubscription.close;
         const projection = yield* projectionStore.getThreadProjection(threadId);
         assert.deepInclude(
           projection.turnItems.find((item) => item.id === turnItemId),
@@ -5773,6 +5854,14 @@ it.effect(
         assert.equal(
           projection.nodes.find((candidate) => candidate.id === nodeId)?.status,
           "completed",
+        );
+        assert.deepInclude(
+          projection.turnItems.find((item) => item.id === recoveredItemId),
+          { status: "running", output: "still live\n" },
+        );
+        assert.equal(
+          projection.nodes.find((candidate) => candidate.id === recoveredNodeId)?.status,
+          "running",
         );
       });
 

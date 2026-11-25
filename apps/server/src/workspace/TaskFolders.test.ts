@@ -761,6 +761,7 @@ it.live(
           );
           yield* approveLayoutCommands;
           const plan = yield* taskFolders.plan({ projectId, repositories: [{ path: api }] });
+          assert.isTrue(plan?.hasWorktreeLayout);
           return yield* taskFolders
             .create({
               plan: plan!,
@@ -1108,6 +1109,7 @@ it.live("selects every tracked repository up to eight and none beyond", () =>
       });
       assert.deepEqual(chosen?.repositories, [{ name: "r8", path: folders[8]! }]);
       assert.isFalse(chosen?.projectIsRepository);
+      assert.isFalse(chosen?.hasWorktreeLayout);
 
       for (const [requested, detail] of [
         [path.join(tmp, "shop", "untracked"), "is not a tracked folder"],

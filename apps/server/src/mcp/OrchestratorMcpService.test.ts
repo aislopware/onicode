@@ -2894,6 +2894,7 @@ describe("OrchestratorMcpService provider resolution", () => {
                 projectId,
                 projectRoot: workspaceRoot,
                 projectIsRepository: false,
+                hasWorktreeLayout: false,
                 anchor: workspaceRoot,
                 repositories: twoRepos,
                 trackedRepositories: twoRepos.map((repo) => repo.path),
@@ -2925,6 +2926,7 @@ describe("OrchestratorMcpService provider resolution", () => {
                 projectId,
                 projectRoot: workspaceRoot,
                 projectIsRepository: false,
+                hasWorktreeLayout: false,
                 anchor: workspaceRoot,
                 repositories:
                   repositories === undefined
@@ -3009,6 +3011,7 @@ describe("OrchestratorMcpService provider resolution", () => {
                 projectId,
                 projectRoot: workspaceRoot,
                 projectIsRepository: false,
+                hasWorktreeLayout: false,
                 anchor: workspaceRoot,
                 repositories: [],
                 trackedRepositories: nineRepos.map((repo) => repo.path),
@@ -3021,6 +3024,83 @@ describe("OrchestratorMcpService provider resolution", () => {
           assert.include(tooManyRepos.result.failure.message, "9 repositories");
         }
         assert.lengthOf(tooManyRepos.commands, 0);
+
+        // Non-Git project with 0 tracked repos is allowed when a custom worktreeLayout is configured.
+        const customLayout = yield* runDelegate({
+          requestId: "worktree-non-git-custom-layout",
+          worktreePath: null,
+          branch: null,
+          taskFolders: {
+            plan: () =>
+              Effect.succeed({
+                projectId,
+                projectRoot: workspaceRoot,
+                projectIsRepository: false,
+                hasWorktreeLayout: true,
+                anchor: workspaceRoot,
+                repositories: [],
+                trackedRepositories: [],
+              }),
+          },
+        });
+        assert.isTrue(Result.isSuccess(customLayout.result));
+        assert.deepEqual(
+          (customLayout.commands[0] as { workspaceStrategy?: unknown }).workspaceStrategy,
+          { type: "worktree", baseRef: "HEAD", startFromOrigin: false },
+        );
+
+        // Git-root project that also tracks sub-repositories inherits the parent task folder's repositories.
+        const gitRootCommit = "b".repeat(40);
+        const gitRootTaskFolderParent = yield* runDelegate({
+          requestId: "worktree-git-root-task-folder-parent",
+          worktreePath: "/worktrees/several-repos/feature-git-root",
+          branch: "feature/git-root",
+          taskFolders: {
+            plan: ({ repositories }) =>
+              Effect.succeed({
+                projectId,
+                projectRoot: workspaceRoot,
+                projectIsRepository: true,
+                hasWorktreeLayout: false,
+                anchor: workspaceRoot,
+                repositories:
+                  repositories === undefined
+                    ? twoRepos
+                    : twoRepos.filter((repo) =>
+                        repositories.some((selected) => selected.path === repo.path),
+                      ),
+                trackedRepositories: twoRepos.map((repo) => repo.path),
+              }),
+            find: () =>
+              Effect.succeed({
+                root: "/worktrees/several-repos/feature-git-root",
+                projectId,
+                projectRoot: workspaceRoot,
+                anchor: workspaceRoot,
+                projectPath: "/worktrees/several-repos/feature-git-root",
+                projectIsWorktree: true,
+                repositories: [
+                  {
+                    name: "a",
+                    repositoryPath: twoRepos[0]!.path,
+                    worktreePath: "/worktrees/several-repos/feature-git-root/a",
+                  },
+                ],
+              }),
+          },
+          resolveCommit: () => Effect.succeed({ commitSha: gitRootCommit }),
+        });
+        assert.isTrue(Result.isSuccess(gitRootTaskFolderParent.result));
+        assert.deepEqual(
+          (gitRootTaskFolderParent.commands[0] as { workspaceStrategy?: unknown })
+            .workspaceStrategy,
+          {
+            type: "worktree",
+            baseRef: "feature/git-root",
+            startFromOrigin: false,
+            repositories: [{ path: twoRepos[0]!.path }],
+          },
+        );
       }),
   );
 

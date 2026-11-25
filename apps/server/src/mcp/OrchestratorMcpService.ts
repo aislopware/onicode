@@ -3064,41 +3064,45 @@ const make = Effect.gen(function* () {
                   ),
                 ),
               );
+        const parentTaskFolder =
+          taskPlan !== null && parent.thread.worktreePath !== null
+            ? yield* taskFolders
+                .find(parent.thread.worktreePath)
+                .pipe(
+                  Effect.mapError((error) =>
+                    failure(
+                      "orchestration_error",
+                      `Unable to read the parent worktree: ${error.detail}`,
+                    ),
+                  ),
+                )
+            : null;
+        const parentInProjectTaskFolder =
+          parentTaskFolder !== null && parentTaskFolder.projectId === parent.thread.projectId;
+        const tracked = new Set(taskPlan?.trackedRepositories ?? []);
+        const inherited = parentInProjectTaskFolder
+          ? parentTaskFolder.repositories
+              .filter((repository) => tracked.has(repository.repositoryPath))
+              .map((repository) => ({ path: repository.repositoryPath }))
+          : [];
+        const selectedPlan =
+          taskPlan !== null && inherited.length > 0
+            ? yield* taskFolders
+                .plan({ projectId: parent.thread.projectId, repositories: inherited })
+                .pipe(
+                  Effect.mapError((error) =>
+                    failure(
+                      "orchestration_error",
+                      `Unable to read the project's repositories: ${error.detail}`,
+                    ),
+                  ),
+                )
+            : taskPlan;
         if (taskPlan !== null && !taskPlan.projectIsRepository) {
-          const parentTaskFolder =
-            parent.thread.worktreePath === null
-              ? null
-              : yield* taskFolders
-                  .find(parent.thread.worktreePath)
-                  .pipe(
-                    Effect.mapError((error) =>
-                      failure(
-                        "orchestration_error",
-                        `Unable to read the parent worktree: ${error.detail}`,
-                      ),
-                    ),
-                  );
-          const tracked = new Set(taskPlan.trackedRepositories);
-          const inherited =
-            parentTaskFolder !== null && parentTaskFolder.projectId === parent.thread.projectId
-              ? parentTaskFolder.repositories
-                  .filter((repository) => tracked.has(repository.repositoryPath))
-                  .map((repository) => ({ path: repository.repositoryPath }))
-              : [];
-          const selectedPlan =
-            inherited.length > 0
-              ? yield* taskFolders
-                  .plan({ projectId: parent.thread.projectId, repositories: inherited })
-                  .pipe(
-                    Effect.mapError((error) =>
-                      failure(
-                        "orchestration_error",
-                        `Unable to read the project's repositories: ${error.detail}`,
-                      ),
-                    ),
-                  )
-              : taskPlan;
-          if (selectedPlan === null || selectedPlan.repositories.length === 0) {
+          if (
+            selectedPlan === null ||
+            (selectedPlan.repositories.length === 0 && !selectedPlan.hasWorktreeLayout)
+          ) {
             return yield* failure(
               "invalid_request",
               taskPlan.trackedRepositories.length > TASK_FOLDER_DEFAULT_REPOSITORIES_MAX
@@ -3155,7 +3159,19 @@ const make = Effect.gen(function* () {
             branchHead.value.commitSha === base.commitSha
               ? parent.thread.branch
               : base.commitSha;
-          workspaceStrategy = { type: "worktree", baseRef, startFromOrigin: false };
+          workspaceStrategy = {
+            type: "worktree",
+            baseRef,
+            startFromOrigin: false,
+            ...(parentInProjectTaskFolder
+              ? {
+                  repositories:
+                    inherited.length > 0 && selectedPlan !== null
+                      ? selectedPlan.repositories.map(({ path }) => ({ path }))
+                      : [],
+                }
+              : {}),
+          };
         }
       }
       const parentNodeId = parentRun.rootNodeId;

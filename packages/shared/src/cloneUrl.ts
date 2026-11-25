@@ -5,8 +5,14 @@ export type CloneProtocol = "ssh" | "https";
 // Userinfo may contain `@`; the last one before the host separates them, as ssh and URL parsers
 // read it. A query or fragment is never userinfo.
 const SCP_LIKE_URL = /^(?:[^/:\s]*@)?(\[[^\]@/\s]+\]|[^@:/\s[\]]+):(?!\/\/)(.+)$/;
+const URL_SCHEME_PREFIX = /^(?:file|https?|ssh|git|ftps?|git\+(?:ssh|https?)|ssh\+git):\//i;
 const SSH_URL = /^ssh:\/\/(?:[^/?#\s]*@)?(\[[^\]@/\s]+\]|[^@:/?#\s]+)(:\d+)?\/(.+)$/;
 const HTTPS_URL = /^https?:\/\/(?:[^/?#\s]*@)?(\[[^\]@/\s]+\]|[^@:/?#\s]+)(:\d+)?\/(.+)$/;
+
+function matchScpLikeCloneUrl(trimmed: string): RegExpExecArray | null {
+  if (isWindowsDrivePath(trimmed) || URL_SCHEME_PREFIX.test(trimmed)) return null;
+  return SCP_LIKE_URL.exec(trimmed);
+}
 
 function parseCloneUrl(url: string): {
   protocol: CloneProtocol;
@@ -28,7 +34,7 @@ function parseCloneUrl(url: string): {
       customPort: !!https[2],
       scp: false,
     };
-  const scp = isWindowsDrivePath(trimmed) ? null : SCP_LIKE_URL.exec(trimmed);
+  const scp = matchScpLikeCloneUrl(trimmed);
   if (scp) return { protocol: "ssh", host: scp[1]!, path: scp[2]!, customPort: false, scp: true };
   return null;
 }
@@ -47,8 +53,7 @@ export function withoutRemoteUrlCredentials(url: string): string {
 }
 
 export function isScpLikeCloneUrl(url: string): boolean {
-  const trimmed = url.trim();
-  return !isWindowsDrivePath(trimmed) && SCP_LIKE_URL.test(trimmed);
+  return matchScpLikeCloneUrl(url.trim()) !== null;
 }
 
 export function cloneUrlProtocol(url: string): CloneProtocol | null {

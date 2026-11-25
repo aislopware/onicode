@@ -2581,17 +2581,33 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             updated.delete(nativeTurnId);
             return [items, updated] as const;
           });
-        const turnBelongsToProviderThread = (
+        const turnHasThreadAncestor = (
           context: ActiveCodexTurnContext,
-          providerThreadId: OrchestrationV2ProviderThread["id"],
+          matches: (candidate: ActiveCodexTurnContext) => boolean,
         ): boolean => {
           let cursor: ActiveCodexTurnContext | undefined = context;
           while (cursor !== undefined) {
-            if (cursor.providerThread.id === providerThreadId) return true;
+            if (matches(cursor)) return true;
             cursor = cursor.subagent?.parentContext;
           }
           return false;
         };
+        const turnBelongsToProviderThread = (
+          context: ActiveCodexTurnContext,
+          providerThreadId: OrchestrationV2ProviderThread["id"],
+        ): boolean =>
+          turnHasThreadAncestor(
+            context,
+            (candidate) => candidate.providerThread.id === providerThreadId,
+          );
+        const turnBelongsToNativeThread = (
+          context: ActiveCodexTurnContext,
+          nativeThreadId: string,
+        ): boolean =>
+          turnHasThreadAncestor(
+            context,
+            (candidate) => candidate.providerThread.nativeThreadRef?.nativeId === nativeThreadId,
+          );
         const terminalizedNonCompletedNativeTurns = yield* Ref.make(new Set<string>());
         // Keep the stream open until descendants settle to avoid stranding child projections.
         const deferredRootTerminals = yield* Ref.make(new Map<string, DeferredCodexRootTerminal>());
@@ -5952,7 +5968,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             if (closing !== undefined) yield* Deferred.succeed(closing, undefined);
             const completedAt = yield* DateTime.now;
             for (const context of (yield* Ref.get(settledTurns)).values()) {
-              if (context.providerThread.nativeThreadRef?.nativeId !== payload.threadId) continue;
+              if (!turnBelongsToNativeThread(context, payload.threadId)) continue;
               const commands = (yield* Ref.get(runningCommandItemsByTurn)).get(
                 context.nativeTurnId,
               );

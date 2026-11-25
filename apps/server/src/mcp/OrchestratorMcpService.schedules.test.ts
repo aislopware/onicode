@@ -262,13 +262,24 @@ it.effect(
         });
         expect(storedUnbound.createdBy).toBe("agent");
 
-        // A later save omitting createdBy (such as Settings) keeps the stored author.
+        // An internal save omitting createdBy keeps the stored author.
         const { createdBy: _createdBy, ...withoutCreatedBy } = storedBound;
         const { task: resaved } = yield* schedules.upsert({
           ...withoutCreatedBy,
-          prompt: "Tweaked in settings",
+          prompt: "Tweaked internally",
         });
         expect(resaved.createdBy).toBe("agent");
+
+        // A client save through ws.ts passes createdBy: "user" and takes an agent-edited task back.
+        const { task: reclaimed } = yield* schedules.upsert({
+          ...storedUnbound,
+          createdBy: "user",
+          prompt: "Reviewed in settings",
+        });
+        expect(reclaimed.createdBy).toBe("user");
+        expect(
+          (yield* schedules.list()).tasks.find((task) => task.id === unbound.id)?.createdBy,
+        ).toBe("user");
 
         // Firing the unbound task passes createdBy: "agent" into ThreadLaunchService.
         yield* schedules.runNow({ id: bound.id });

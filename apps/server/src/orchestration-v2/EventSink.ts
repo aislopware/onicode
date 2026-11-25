@@ -15,6 +15,7 @@ import {
   NodeId,
   type ProjectId,
   ThreadId,
+  type TurnItemId,
 } from "@onicode/contracts";
 import * as ProviderCommitBatch from "./ProviderCommitBatch.ts";
 import * as ThreadViewers from "./ThreadViewers.ts";
@@ -76,6 +77,7 @@ export type EventSinkV2Error = typeof EventSinkV2Error.Type;
 interface ProviderBatchPublication {
   readonly publish: Array<Effect.Effect<void>>;
   readonly projection: ProjectionStore.ProviderBatchProjection;
+  readonly commandItemStatuses: Map<TurnItemId, string | undefined>;
   /** The projection high-water mark, recorded once before the batch commits. */
   projectedSequence: number | undefined;
   eventCount: number;
@@ -122,6 +124,7 @@ export interface EventSinkV2Shape {
       "driver" | "providerInstanceId" | "appThreadId" | "nativeThreadRef"
     >;
     readonly guardPendingUserInputCancellations?: boolean;
+    readonly guardCommandStatusRegressions?: boolean;
     readonly commandId?: CommandId;
     readonly events: ReadonlyArray<OrchestrationV2DomainEvent>;
   }) => Effect.Effect<ReadonlyArray<OrchestrationV2StoredEvent>, EventSinkV2Error>;
@@ -136,12 +139,14 @@ export interface EventSinkV2Shape {
       "driver" | "providerInstanceId" | "appThreadId" | "nativeThreadRef"
     >;
     readonly guardPendingUserInputCancellations?: boolean;
+    readonly guardCommandStatusRegressions?: boolean;
     readonly commandId?: CommandId;
     readonly events: ReadonlyArray<OrchestrationV2DomainEvent>;
     readonly effects: ReadonlyArray<EffectOutbox.PendingOrchestrationEffectV2>;
   }) => Effect.Effect<ReadonlyArray<OrchestrationV2StoredEvent>, EventSinkV2Error>;
   readonly writeIfRunCurrent: (input: {
     readonly guardPendingUserInputCancellations?: boolean;
+    readonly guardCommandStatusRegressions?: boolean;
     readonly commandId?: CommandId;
     readonly threadId: ThreadId;
     readonly runId: RunId;
@@ -164,6 +169,7 @@ export interface EventSinkV2Shape {
   /** Commits only if the expected attempt and ordinal still own the provider thread, protecting newer attempts. */
   readonly writeIfProviderThreadOwner: (input: {
     readonly guardPendingUserInputCancellations?: boolean;
+    readonly guardCommandStatusRegressions?: boolean;
     readonly commandId?: CommandId;
     readonly providerThreadId: ProviderThreadId;
     readonly runId: RunId;
@@ -382,35 +388,91 @@ const layerBase: Layer.Layer<
       return next === "cancelled" && (current === "completed" || current === "failed");
     };
 
+    const readCachedNodeStatus = (payloadJson: string | undefined): string | undefined => {
+      if (payloadJson === undefined) return undefined;
+      try {
+        const parsed: unknown = JSON.parse(payloadJson);
+        return typeof parsed === "object" &&
+          parsed !== null &&
+          "status" in parsed &&
+          typeof parsed.status === "string"
+          ? parsed.status
+          : undefined;
+      } catch {
+        return undefined;
+      }
+    };
+
+    const isGuardedCommandNodeEvent = (event: OrchestrationV2DomainEvent): boolean =>
+      event.type === "node.updated" &&
+      event.payload.kind === "tool_call" &&
+      event.payload.runtimeRequestId === null &&
+      (isOrchestrationV2WorkActive(event.payload.status) || event.payload.status === "cancelled");
+
+    const isGuardedCommandItemEvent = (event: OrchestrationV2DomainEvent): boolean =>
+      event.type === "turn-item.updated" &&
+      event.payload.type === "command_execution" &&
+      (isOrchestrationV2WorkActive(event.payload.status) || event.payload.status === "cancelled");
+
     // A user can answer after terminal normalization reads the pending request, and a
     // session-scoped late command result can commit before queued earlier updates drain.
     // Recheck inside the write transaction so stale writes cannot erase answers or results.
-    const guardUserInputCancellations =
+    const guardProviderEvents =
       /* This helper runs for individual orchestration events; the enclosing operation owns the span. */
-      Effect.fnUntraced(function* (events: ReadonlyArray<OrchestrationV2DomainEvent>) {
+      Effect.fnUntraced(function* (
+        events: ReadonlyArray<OrchestrationV2DomainEvent>,
+        options: {
+          readonly guardPendingUserInputCancellations: boolean;
+          readonly guardCommandStatusRegressions: boolean;
+        },
+      ) {
+        const checkUserInputs =
+          options.guardPendingUserInputCancellations &&
+          events.some(
+            (event) =>
+              event.type === "runtime-request.updated" &&
+              event.payload.kind === "user_input" &&
+              event.payload.status === "cancelled",
+          );
+        const checkCommands =
+          options.guardCommandStatusRegressions &&
+          events.some(
+            (event) => isGuardedCommandNodeEvent(event) || isGuardedCommandItemEvent(event),
+          );
+        if (!checkUserInputs && !checkCommands) return events;
+
         const staleRequests = new Set<RuntimeRequestId>();
         const staleNodes = new Set<NodeId>();
-        for (const event of events) {
-          if (
-            event.type !== "runtime-request.updated" ||
-            event.payload.kind !== "user_input" ||
-            event.payload.status !== "cancelled"
-          )
-            continue;
-          const current = yield* projectionStore.getRuntimeRequest(
-            event.threadId,
-            event.payload.id,
-          );
-          if (
-            current?.status !== "pending" ||
-            current.kind !== "user_input" ||
-            current.providerTurnId !== event.payload.providerTurnId ||
-            current.responseCapability.type === "message"
-          ) {
-            staleRequests.add(event.payload.id);
-            staleNodes.add(event.payload.nodeId);
+        if (checkUserInputs) {
+          for (const event of events) {
+            if (
+              event.type !== "runtime-request.updated" ||
+              event.payload.kind !== "user_input" ||
+              event.payload.status !== "cancelled"
+            )
+              continue;
+            const current = yield* projectionStore.getRuntimeRequest(
+              event.threadId,
+              event.payload.id,
+            );
+            if (
+              current?.status !== "pending" ||
+              current.kind !== "user_input" ||
+              current.providerTurnId !== event.payload.providerTurnId ||
+              current.responseCapability.type === "message"
+            ) {
+              staleRequests.add(event.payload.id);
+              staleNodes.add(event.payload.nodeId);
+            }
           }
         }
+        const batch = checkCommands ? yield* CurrentProviderBatch : undefined;
+        const localNodeStatuses =
+          checkCommands && events.length > 1 ? new Map<NodeId, string | undefined>() : undefined;
+        const localCommandItemStatuses =
+          checkCommands && events.length > 1
+            ? new Map<TurnItemId, string | undefined>()
+            : undefined;
         const kept: Array<OrchestrationV2DomainEvent> = [];
         for (const event of events) {
           switch (event.type) {
@@ -423,20 +485,26 @@ const layerBase: Layer.Layer<
               if (event.payload.status === "cancelled" && staleNodes.has(event.payload.id)) {
                 continue;
               }
-              if (
-                event.payload.kind === "tool_call" &&
-                event.payload.runtimeRequestId === null &&
-                (isOrchestrationV2WorkActive(event.payload.status) ||
-                  event.payload.status === "cancelled")
-              ) {
-                const rows = yield* sql<{ readonly status: string }>`
-                  SELECT status
-                  FROM orchestration_v2_projection_nodes
-                  WHERE node_id = ${event.payload.id}
-                  LIMIT 1
-                `;
-                if (isCommandStatusRegression(rows[0]?.status, event.payload.status)) continue;
+              if (checkCommands && isGuardedCommandNodeEvent(event)) {
+                let currentStatus: string | undefined;
+                if (localNodeStatuses?.has(event.payload.id)) {
+                  currentStatus = localNodeStatuses.get(event.payload.id);
+                } else if (batch?.projection.nodeReads.has(event.payload.id)) {
+                  currentStatus = readCachedNodeStatus(
+                    batch.projection.nodeReads.get(event.payload.id),
+                  );
+                } else {
+                  const rows = yield* sql<{ readonly status: string }>`
+                    SELECT status
+                    FROM orchestration_v2_projection_nodes
+                    WHERE node_id = ${event.payload.id}
+                    LIMIT 1
+                  `;
+                  currentStatus = rows[0]?.status;
+                }
+                if (isCommandStatusRegression(currentStatus, event.payload.status)) continue;
               }
+              localNodeStatuses?.set(event.payload.id, event.payload.status);
               break;
             case "turn-item.updated":
               if (
@@ -446,18 +514,26 @@ const layerBase: Layer.Layer<
               ) {
                 continue;
               }
-              if (
-                event.payload.type === "command_execution" &&
-                (isOrchestrationV2WorkActive(event.payload.status) ||
-                  event.payload.status === "cancelled")
-              ) {
-                const rows = yield* sql<{ readonly status: string }>`
-                  SELECT status
-                  FROM orchestration_v2_projection_turn_items
-                  WHERE turn_item_id = ${event.payload.id}
-                  LIMIT 1
-                `;
-                if (isCommandStatusRegression(rows[0]?.status, event.payload.status)) continue;
+              if (checkCommands && isGuardedCommandItemEvent(event)) {
+                let currentStatus: string | undefined;
+                if (localCommandItemStatuses?.has(event.payload.id)) {
+                  currentStatus = localCommandItemStatuses.get(event.payload.id);
+                } else if (batch?.commandItemStatuses.has(event.payload.id)) {
+                  currentStatus = batch.commandItemStatuses.get(event.payload.id);
+                } else {
+                  const rows = yield* sql<{ readonly status: string }>`
+                    SELECT status
+                    FROM orchestration_v2_projection_turn_items
+                    WHERE turn_item_id = ${event.payload.id}
+                    LIMIT 1
+                  `;
+                  currentStatus = rows[0]?.status;
+                  batch?.commandItemStatuses.set(event.payload.id, currentStatus);
+                }
+                if (isCommandStatusRegression(currentStatus, event.payload.status)) continue;
+              }
+              if (event.payload.type === "command_execution") {
+                localCommandItemStatuses?.set(event.payload.id, event.payload.status);
               }
               break;
           }
@@ -520,10 +596,19 @@ const layerBase: Layer.Layer<
           concurrency: 1,
         });
         const sequence = storedEvents.at(-1)?.sequence;
-        if (sequence !== undefined) {
-          const batch = yield* CurrentProviderBatch;
-          if (batch !== undefined) batch.projectedSequence = sequence;
-          else yield* recordProjectedSequence(sequence);
+        const batch = yield* CurrentProviderBatch;
+        if (batch !== undefined) {
+          for (const stored of storedEvents) {
+            if (
+              stored.event.type === "turn-item.updated" &&
+              stored.event.payload.type === "command_execution"
+            ) {
+              batch.commandItemStatuses.set(stored.event.payload.id, stored.event.payload.status);
+            }
+          }
+          if (sequence !== undefined) batch.projectedSequence = sequence;
+        } else if (sequence !== undefined) {
+          yield* recordProjectedSequence(sequence);
         }
         // Read lineage here, on the connection this transaction holds; see makeRunOutcomeRecorder.
         return yield* runOutcomes.prepare(storedEvents);
@@ -613,8 +698,13 @@ const layerBase: Layer.Layer<
             ? yield* updateDelegatedCompletionOnly(input.events, () => true)
             : input.events;
           const normalized = yield* normalizeEvents(
-            input.guardPendingUserInputCancellations === true
-              ? yield* guardUserInputCancellations(events)
+            input.guardPendingUserInputCancellations === true ||
+              input.guardCommandStatusRegressions === true
+              ? yield* guardProviderEvents(events, {
+                  guardPendingUserInputCancellations:
+                    input.guardPendingUserInputCancellations === true,
+                  guardCommandStatusRegressions: input.guardCommandStatusRegressions === true,
+                })
               : events,
           );
           const committed = yield* eventStore.append({
@@ -691,8 +781,13 @@ const layerBase: Layer.Layer<
             }
 
             const normalized = yield* normalizeEvents(
-              input.guardPendingUserInputCancellations === true
-                ? yield* guardUserInputCancellations(input.events)
+              input.guardPendingUserInputCancellations === true ||
+                input.guardCommandStatusRegressions === true
+                ? yield* guardProviderEvents(input.events, {
+                    guardPendingUserInputCancellations:
+                      input.guardPendingUserInputCancellations === true,
+                    guardCommandStatusRegressions: input.guardCommandStatusRegressions === true,
+                  })
                 : input.events,
             );
             const storedEvents = yield* eventStore.append({
@@ -757,8 +852,13 @@ const layerBase: Layer.Layer<
           }
 
           const normalized = yield* normalizeEvents(
-            input.guardPendingUserInputCancellations === true
-              ? yield* guardUserInputCancellations(input.events)
+            input.guardPendingUserInputCancellations === true ||
+              input.guardCommandStatusRegressions === true
+              ? yield* guardProviderEvents(input.events, {
+                  guardPendingUserInputCancellations:
+                    input.guardPendingUserInputCancellations === true,
+                  guardCommandStatusRegressions: input.guardCommandStatusRegressions === true,
+                })
               : input.events,
           );
           const storedEvents = yield* eventStore.append({
@@ -1190,6 +1290,7 @@ const layerBase: Layer.Layer<
         publish: [],
         eventCount: 0,
         projection: { nodeReads: new Map(), threadTouches: new Map() },
+        commandItemStatuses: new Map(),
         projectedSequence: undefined,
       };
       let started = false;
@@ -1262,6 +1363,7 @@ const layerBase: Layer.Layer<
                 batch.eventCount = eventCount;
                 batch.projectedSequence = projectedSequence;
                 batch.projection.nodeReads.clear();
+                batch.commandItemStatuses.clear();
                 batch.projection.threadTouches.clear();
                 for (const [threadId, updatedAt] of threadTouches)
                   batch.projection.threadTouches.set(threadId, updatedAt);

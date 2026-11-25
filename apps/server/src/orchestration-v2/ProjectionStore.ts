@@ -255,6 +255,7 @@ export type ProjectionSettlementCandidate = Pick<
   Pick<OrchestrationV2AppThread, "lastSnoozeWakeAt"> & {
     /** Latest user or MCP agent message; automatic server and provider wakes are excluded. */
     readonly latestResumingMessageAt: DateTime.Utc | null;
+    readonly hasQueuedRun?: boolean;
   };
 
 const ProjectionCheckpointContext = Schema.Struct({
@@ -1351,6 +1352,7 @@ type SettlementThreadRow = Pick<
   | "latest_user_message_at"
 > & {
   readonly latest_resuming_message_at: string | null;
+  readonly has_queued_run: number;
 };
 
 type ShellRunItemCountRow = {
@@ -9156,7 +9158,12 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 WHERE message.thread_id = t.thread_id AND ${isResumingMessage("message")}
                 ORDER BY message.updated_at DESC, message.message_id DESC
                 LIMIT 1
-              ) AS latest_resuming_message_at
+              ) AS latest_resuming_message_at,
+              EXISTS (
+                SELECT 1 FROM orchestration_v2_projection_runs queued
+                WHERE queued.thread_id = t.thread_id
+                  AND queued.status = 'queued'
+              ) AS has_queued_run
             FROM orchestration_v2_projection_threads t
             LEFT JOIN orchestration_v2_projection_runs r ON r.run_id = (
               SELECT latest.run_id FROM orchestration_v2_projection_runs latest
@@ -9178,14 +9185,6 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                     AND parent.deleted_at IS NULL
                     AND json_extract(parent.payload_json, '$.archivedAt') IS NULL
                     AND json_extract(parent.payload_json, '$.settledOverride') IS NOT 'settled'
-                )
-              )
-              AND (
-                json_extract(t.payload_json, '$.delegatedFrom') IS NULL
-                OR NOT EXISTS (
-                  SELECT 1 FROM orchestration_v2_projection_runs queued
-                  WHERE queued.thread_id = t.thread_id
-                    AND queued.status = 'queued'
                 )
               )
               AND NOT EXISTS (
@@ -9257,6 +9256,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                     row.latest_resuming_message_at === null
                       ? null
                       : DateTime.makeUnsafe(row.latest_resuming_message_at),
+                  hasQueuedRun: row.has_queued_run !== 0,
                   activityRunStatus: null,
                   activityRunStartedAt: null,
                   pendingRuntimeRequest: null,
