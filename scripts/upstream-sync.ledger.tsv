@@ -3865,3 +3865,4 @@ e4da383485	take	adapted: added only ./projectMonogram export in packages/shared/
 2940ff33ad	take	adapted: kept onicode message key in mcpAppDocumentLink.ts and Onicode desktop/mobile wording in docs/user/html-renders.md
 ceb20555b3	skip	T3 mobile EAS preview pipeline (mobile-eas-preview-fork.yml and workflow-credentials.test.cjs do not exist in Onicode)
 34ca872cbb	take	fix(server): Needs you lists every open workflow question, however old its run (#42501)
+ea63274413	skip	kept Onicode's vite-plus 1.8.0 upgrade and highlightedCodeNodes: Onicode already ships vite-plus 1.8.0, @vitest/browser-playwright 5.1.1, e2e 0.24.0, and the vitest#11242 test fix; highlightedCodeNodes avoids duplicating token-to-Text JSX across callers; remaining 19 paths are in removed infra/
