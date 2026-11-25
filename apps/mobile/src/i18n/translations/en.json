@@ -5712,5 +5712,6 @@
   "e0856d6a402ad821": "{organization}'s policy does not allow project worktree layout commands.",
   "fc9c3a00cfc18b55": "All kinds",
   "e4d1316c85ed7066": "No questions of this kind wait on you.",
-  "45a94c724845ec1d": "Other"
+  "45a94c724845ec1d": "Other",
+  "d71048f4fb9cf44a": "Waiting to sync"
 }
