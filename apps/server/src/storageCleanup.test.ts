@@ -30,6 +30,7 @@ import { SEEDED_DEV_DATABASE_MARKER } from "@onicode/shared/devHome";
 import * as HostProcess from "@onicode/shared/HostProcess";
 import * as ServerConfig from "./config.ts";
 import * as StorageCleanup from "./storageCleanup.ts";
+import * as CheckpointCaptureIndex from "./vcs/checkpointCaptureIndex.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import * as TaskFolders from "./workspace/TaskFolders.ts";
 import { layerTaskFoldersWithGit } from "./workspace/TaskFolders.testkit.ts";
@@ -779,18 +780,29 @@ describe("checkpoint ref cleanup", () => {
       Effect.gen(function* () {
         const { service, repo, worktree, command, addThread, listRefs } =
           yield* checkpointCleanupFixture();
-        yield* addThread("deleted", { deleted: true });
+        const deleted = yield* addThread("deleted", { deleted: true });
         yield* addThread("imported-deleted", { deleted: true, legacyOnly: true });
+        const active = yield* addThread("active");
         const retained = [
-          ...(yield* addThread("active")),
+          ...active,
           ...(yield* addThread("archived", { archived: true })),
           legacyCheckpointRef("unknown-owner", 0),
         ];
+        const fs = yield* FileSystem.FileSystem;
+        const indexRoot = CheckpointCaptureIndex.storeRoot(yield* Path.Path, `${repo}/.git`);
+        const captureIndexOf = (ref: string) =>
+          `${indexRoot}/${CheckpointCaptureIndex.scopeDirectoryPrefix(ref.slice(0, ref.lastIndexOf("/") + 1))}cwd`;
+        for (const ref of [deleted.at(-1)!, active.at(-1)!]) {
+          yield* fs.makeDirectory(captureIndexOf(ref), { recursive: true });
+        }
         yield* command(repo, ["update-ref", retained.at(-1)!, "HEAD"]);
         yield* command(repo, ["pack-refs", "--all"]);
         yield* command(repo, ["worktree", "remove", worktree]);
         yield* service.runNow;
         expect(yield* listRefs()).toEqual(retained.sort());
+        // A deleted thread's capture index goes with its refs; a live thread keeps its own.
+        expect(yield* fs.exists(captureIndexOf(deleted.at(-1)!))).toBe(false);
+        expect(yield* fs.exists(captureIndexOf(active.at(-1)!))).toBe(true);
       }).pipe(Effect.provide(Sqlite.layerMemory)),
     ),
   );
