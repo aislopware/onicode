@@ -3819,3 +3819,4 @@ f67cbcd317	take	fix(cursor): release checkpoint memory with SDK 1.5.0 (#42404); 
 55085df2a6	take	fix(client-runtime): images read from paths with %, # or ? show their preview (#42369)
 b20d7c5c7b	skip	removed surface: web dev HTTP proxy (Onicode has no browser-served web app or devProxy.ts)
 7e269e044b	skip	removed surface: MCP tool analytics (telemetry/ProviderDimensions is removed in Onicode)
+a2231ca59b	take	fix(web): Cmd/Ctrl+W closes the active tab on the Issues page (#42417)
