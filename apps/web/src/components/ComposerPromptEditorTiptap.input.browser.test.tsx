@@ -1130,11 +1130,7 @@ describe("Markdown markers around styled text", () => {
     await act(async () => {
       editor.commands.undo();
     });
-    // Undo puts the caret back inside the styled text.
-    expect(editor.state.doc.textContent).toBe("**bold** after");
-    await act(async () => {
-      editor.commands.setTextSelection(end());
-    });
+    // Undo leaves the caret beside the undone change, outside the styled text.
     expect(editor.state.doc.textContent).toBe("bold after");
     expect(textWithMark(editor, "bold")).toEqual(["bold"]);
     // After a completed redo, markers still follow the caret, and Delete edits the opening one.

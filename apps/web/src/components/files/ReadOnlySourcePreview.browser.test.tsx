@@ -17,6 +17,10 @@ import ReadOnlySourcePreview from "./ReadOnlySourcePreview";
 const LINE_COUNT = 301;
 const text = `${Array.from({ length: LINE_COUNT }, (_, index) => `line ${index + 1}`).join("\n")}\n`;
 
+// A file's closing newline leaves an empty last row with no text span.
+const lastTextRow = (rows: NodeListOf<Element>) =>
+  [...rows].findLast((row) => row.querySelector("span") !== null)!;
+
 // The browser ignores a copy event's data unless the event is cancelled, and copies the selection itself.
 function copiedText(target: Element) {
   const clipboardData = new DataTransfer();
@@ -58,7 +62,7 @@ describe("ReadOnlySourcePreview", () => {
     // A selection that stops inside the mounted rows at either end stays the browser's to copy.
     const pre = root.querySelector("pre")!;
     const firstText = rows()[0]!.querySelector("span")!.firstChild!;
-    const lastText = rows()[rows().length - 1]!.querySelector("span")!.firstChild!;
+    const lastText = lastTextRow(rows()).querySelector("span")!.firstChild!;
     document.getSelection()!.setBaseAndExtent(pre, 0, lastText, 4);
     expect(copiedText(rows()[0]!)).toBeNull();
     document.getSelection()!.setBaseAndExtent(firstText, 4, pre, pre.childNodes.length);
@@ -201,7 +205,7 @@ describe("ReadOnlySourcePreview", () => {
     const scroller = screen.container.querySelector(".file-preview-virtualizer")!;
     scroller.scrollTop = scroller.scrollHeight;
     await vi.waitFor(() => expect(rows()[0]?.textContent).not.toBe("line 1"));
-    await userEvent.click(rows()[rows().length - 1]!.querySelector("span")!, {
+    await userEvent.click(lastTextRow(rows()).querySelector("span")!, {
       position: { x: 1, y: 5 },
       modifiers: ["Shift"],
     });
