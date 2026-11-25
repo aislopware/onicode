@@ -8,21 +8,57 @@ import {
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as HostProcess from "@onicode/shared/HostProcess";
 import { assert, describe, it } from "@effect/vitest";
-import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import type * as PlatformError from "effect/PlatformError";
 import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
+import { vi } from "vite-plus/test";
 
 import * as ServerConfig from "./config.ts";
 import * as EnvironmentTheme from "./environmentTheme.ts";
 import { ServerSettingsService } from "./serverSettings.ts";
 import { symlinksSupported } from "@onicode/shared/testing/symlinks";
+
+// Roots registered here silence native parent watches so poll tests do not rely on OS watch misses.
+const silentNodeWatchRoots = vi.hoisted(() => new Map<string, (watchedDir: string) => void>());
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return {
+    ...actual,
+    watch: (...args: Parameters<typeof actual.watch>) => {
+      const target = String(args[0]);
+      for (const [root, onWatch] of silentNodeWatchRoots) {
+        if (target === root || target.startsWith(`${root}/`) || target.startsWith(`${root}\\`)) {
+          onWatch(target);
+          return {
+            on: () => undefined,
+            close: () => undefined,
+          } as unknown as ReturnType<typeof actual.watch>;
+        }
+      }
+      return actual.watch(...args);
+    },
+  };
+});
+
+const silenceNodeWatchesUnder = (root: string, onWatch: (watchedDir: string) => void = () => {}) =>
+  Effect.acquireRelease(
+    Effect.sync(() => {
+      silentNodeWatchRoots.set(root, onWatch);
+    }),
+    () =>
+      Effect.sync(() => {
+        silentNodeWatchRoots.delete(root);
+      }),
+  );
 
 const encodeThemeFile = Schema.encodeSync(Schema.fromJsonString(EnvironmentThemeFile));
 /** Writes non-ASCII characters as `\uXXXX` escapes, as encoders such as Python's json.dumps do. */
@@ -63,7 +99,12 @@ const withEnvironmentThemes = <A, E>(
   options: {
     /** Receives each theme and appearance the service makes the environment default. */
     selected?: Array<{ readonly theme?: string; readonly appearance?: string }>;
-    wrapFileSystem?: (fs: FileSystem.FileSystem) => FileSystem.FileSystem;
+    wrapFileSystem?: (fs: FileSystem.FileSystem, themesDir: string) => FileSystem.FileSystem;
+    prepareDir?: (
+      themesDir: string,
+      fs: FileSystem.FileSystem,
+      baseDir: string,
+    ) => Effect.Effect<void, PlatformError.PlatformError, Path.Path | Scope.Scope>;
   } = {},
 ) =>
   Effect.gen(function* () {
@@ -74,6 +115,9 @@ const withEnvironmentThemes = <A, E>(
     yield* fs.makeDirectory(themesDir, { recursive: true });
     for (const [filename, contents] of Object.entries(seeds)) {
       yield* fs.writeFileString(path.join(themesDir, filename), contents);
+    }
+    if (options.prepareDir) {
+      yield* options.prepareDir(themesDir, fs, baseDir);
     }
 
     return yield* body.pipe(
@@ -101,7 +145,9 @@ const withEnvironmentThemes = <A, E>(
                     }),
             }),
           ),
-          Layer.provide(Layer.succeed(FileSystem.FileSystem, options.wrapFileSystem?.(fs) ?? fs)),
+          Layer.provide(
+            Layer.succeed(FileSystem.FileSystem, options.wrapFileSystem?.(fs, themesDir) ?? fs),
+          ),
         ),
       ),
     );
@@ -485,10 +531,8 @@ describe("environment theme", () => {
     "publishes themes when a linked theme tree vanishes after listing and returns between probes",
     () =>
       Effect.gen(function* () {
-        const resumeProbes = yield* Deferred.make<void>();
         let linkedEntry: string | undefined;
         let moveAfterListing: Effect.Effect<void> | undefined;
-        let holdProbes = false;
         yield* withEnvironmentThemes(
           { "nightfall.json": encodeThemeFile(NIGHTFALL_THEME) },
           Effect.gen(function* () {
@@ -524,14 +568,12 @@ describe("environment theme", () => {
 
             // The next listing succeeds, then the tree moves before its files are opened.
             moveAfterListing = Effect.orDie(fs.rename(active, previous));
-            holdProbes = true;
             yield* fs.writeFileString(
               path.join(target, "nightfall.json"),
               encodeThemeFile(NIGHTFALL_THEME),
             );
             assert.deepEqual(yield* Queue.take(snapshots), []);
             yield* fs.rename(previous, active);
-            yield* Deferred.succeed(resumeProbes, undefined);
             assert.deepEqual(yield* Queue.take(snapshots), ["Nightfall", "Shared Light"]);
           }),
           {
@@ -546,12 +588,6 @@ describe("environment theme", () => {
                       moveAfterListing = undefined;
                       return move;
                     }),
-                  ),
-                stat: (entry) =>
-                  Effect.suspend(() =>
-                    entry === linkedEntry && holdProbes
-                      ? Deferred.await(resumeProbes).pipe(Effect.andThen(fs.stat(entry)))
-                      : fs.stat(entry),
                   ),
               }),
           },
@@ -599,68 +635,48 @@ describe("environment theme", () => {
   it.live.skipIf(!symlinksSupported)(
     "publishes themes when a linked theme directory's original grandparent is restored between probes",
     () =>
-      Effect.gen(function* () {
-        const resumeProbes = yield* Deferred.make<void>();
-        let linkedEntry: string | undefined;
-        let holdProbes = false;
-        yield* withEnvironmentThemes(
-          { "nightfall.json": encodeThemeFile(NIGHTFALL_THEME) },
-          Effect.gen(function* () {
-            const service = yield* EnvironmentTheme.EnvironmentThemeService;
-            const { environmentThemesDir } = yield* ServerConfig.ServerConfig;
-            const fs = yield* FileSystem.FileSystem;
-            const path = yield* Path.Path;
-            const fixture = yield* fs.makeTempDirectoryScoped({ prefix: "onicode-linked-themes-" });
-            const active = path.join(fixture, "active");
-            const previous = path.join(fixture, "previous");
-            const target = path.join(active, "shared", "themes");
-            yield* fs.makeDirectory(target, { recursive: true });
-            yield* fs.writeFileString(
-              path.join(target, "shared-light.json"),
-              encodeThemeFile(SHARED_THEME),
-            );
+      withEnvironmentThemes(
+        { "nightfall.json": encodeThemeFile(NIGHTFALL_THEME) },
+        Effect.gen(function* () {
+          const service = yield* EnvironmentTheme.EnvironmentThemeService;
+          const { environmentThemesDir } = yield* ServerConfig.ServerConfig;
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const fixture = yield* fs.makeTempDirectoryScoped({ prefix: "onicode-linked-themes-" });
+          const active = path.join(fixture, "active");
+          const previous = path.join(fixture, "previous");
+          const target = path.join(active, "shared", "themes");
+          yield* fs.makeDirectory(target, { recursive: true });
+          yield* fs.writeFileString(
+            path.join(target, "shared-light.json"),
+            encodeThemeFile(SHARED_THEME),
+          );
 
-            const snapshots = yield* service.streamChanges.pipe(
-              Stream.map((themes) => themes.map((theme) => theme.name)),
-              Stream.toQueue({ capacity: "unbounded" }),
-            );
-            assert.deepEqual(yield* Queue.take(snapshots), ["Nightfall"]);
-            linkedEntry = environmentThemesDir;
-            yield* fs.rename(environmentThemesDir, path.join(fixture, "original"));
-            yield* fs.symlink(target, environmentThemesDir);
-            assert.deepEqual(
-              (yield* Stream.fromQueue(snapshots).pipe(
-                Stream.filter((names) => names.length > 0),
-                Stream.runHead,
-              )).valueOrUndefined,
-              ["Shared Light"],
-            );
+          const snapshots = yield* service.streamChanges.pipe(
+            Stream.map((themes) => themes.map((theme) => theme.name)),
+            Stream.toQueue({ capacity: "unbounded" }),
+          );
+          assert.deepEqual(yield* Queue.take(snapshots), ["Nightfall"]);
+          yield* fs.rename(environmentThemesDir, path.join(fixture, "original"));
+          yield* fs.symlink(target, environmentThemesDir);
+          assert.deepEqual(
+            (yield* Stream.fromQueue(snapshots).pipe(
+              Stream.filter((names) => names.length > 0),
+              Stream.runHead,
+            )).valueOrUndefined,
+            ["Shared Light"],
+          );
 
-            holdProbes = true;
-            yield* fs.rename(active, previous);
-            yield* fs.writeFileString(
-              path.join(previous, "shared", "themes", "nightfall.json"),
-              encodeThemeFile(NIGHTFALL_THEME),
-            );
-            assert.deepEqual(yield* Queue.take(snapshots), []);
-            yield* fs.rename(previous, active);
-            yield* Deferred.succeed(resumeProbes, undefined);
-            assert.deepEqual(yield* Queue.take(snapshots), ["Nightfall", "Shared Light"]);
-          }),
-          {
-            wrapFileSystem: (fs) =>
-              FileSystem.FileSystem.of({
-                ...fs,
-                stat: (entry) =>
-                  Effect.suspend(() =>
-                    entry === linkedEntry && holdProbes
-                      ? Deferred.await(resumeProbes).pipe(Effect.andThen(fs.stat(entry)))
-                      : fs.stat(entry),
-                  ),
-              }),
-          },
-        );
-      }),
+          yield* fs.rename(active, previous);
+          yield* fs.writeFileString(
+            path.join(previous, "shared", "themes", "nightfall.json"),
+            encodeThemeFile(NIGHTFALL_THEME),
+          );
+          assert.deepEqual(yield* Queue.take(snapshots), []);
+          yield* fs.rename(previous, active);
+          assert.deepEqual(yield* Queue.take(snapshots), ["Nightfall", "Shared Light"]);
+        }),
+      ),
   );
 
   it.effect("skips invalid files while keeping valid ones", () =>
@@ -919,6 +935,184 @@ describe("environment theme", () => {
             }),
           );
         }
+      }),
+  );
+
+  // watchDirectoryPath nests up to three switchMap layers plus merge before Stream.debounce.
+  const flushStreamHops = TestClock.adjust(Duration.zero).pipe(Effect.repeat({ times: 5 }));
+
+  it.effect.skipIf(!symlinksSupported)(
+    "settles on a dangling symlink without re-arming watches or refreshing again",
+    () =>
+      Effect.gen(function* () {
+        let identityChecks = 0;
+        let readDirectoryCalls = 0;
+        let parentWatchArms = 0;
+        const watchArms = yield* Queue.unbounded<string>();
+        const directoryReads = yield* Queue.unbounded<void>();
+
+        yield* withEnvironmentThemes(
+          {},
+          Effect.gen(function* () {
+            const { environmentThemesDir } = yield* ServerConfig.ServerConfig;
+            // Drain initial make() refresh (directoryIdentity + readPublishedThemes).
+            yield* Queue.take(directoryReads);
+            yield* Queue.take(directoryReads);
+            assert.equal(yield* Queue.take(watchArms), environmentThemesDir);
+
+            // Flush the initial watch-ready debounce and drain its refresh.
+            yield* flushStreamHops;
+            yield* TestClock.adjust("100 millis");
+            yield* Queue.take(directoryReads);
+            yield* Queue.take(directoryReads);
+            yield* flushStreamHops;
+
+            const settledIdentityChecks = identityChecks;
+            const settledRefreshReads = readDirectoryCalls - identityChecks;
+            const settledParentWatchArms = parentWatchArms;
+            assert.equal(yield* Queue.size(watchArms), 0);
+            assert.equal(yield* Queue.size(directoryReads), 0);
+
+            for (const delay of ["250 millis", "750 millis", "5 seconds", "5 seconds"] as const) {
+              yield* TestClock.adjust(delay);
+              yield* Queue.take(directoryReads);
+              yield* flushStreamHops;
+              yield* TestClock.adjust("100 millis");
+            }
+
+            assert.isAbove(identityChecks, settledIdentityChecks);
+            assert.equal(parentWatchArms, settledParentWatchArms);
+            assert.equal(yield* Queue.size(watchArms), 0);
+            assert.equal(readDirectoryCalls - identityChecks, settledRefreshReads);
+            assert.equal(yield* Queue.size(directoryReads), 0);
+          }),
+          {
+            prepareDir: (themesDir, fs, baseDir) =>
+              Effect.gen(function* () {
+                const path = yield* Path.Path;
+                yield* silenceNodeWatchesUnder(baseDir, (watchedDir) => {
+                  if (watchedDir === path.dirname(themesDir)) parentWatchArms += 1;
+                });
+                yield* fs.remove(themesDir, { recursive: true });
+                yield* fs.symlink(path.join(baseDir, "missing-target"), themesDir);
+              }),
+            wrapFileSystem: (fs, themesDir) =>
+              FileSystem.FileSystem.of({
+                ...fs,
+                stat: (entry) =>
+                  Effect.suspend(() => {
+                    if (entry === themesDir) identityChecks += 1;
+                    return fs.stat(entry);
+                  }),
+                lstat: (entry) =>
+                  Effect.suspend(() => {
+                    if (entry === themesDir) identityChecks += 1;
+                    return fs.lstat(entry);
+                  }),
+                readDirectory: (directory, readOptions) =>
+                  fs.readDirectory(directory, readOptions).pipe(
+                    Effect.ensuring(
+                      directory === themesDir
+                        ? Effect.sync(() => {
+                            readDirectoryCalls += 1;
+                            Queue.offerUnsafe(directoryReads, undefined);
+                          })
+                        : Effect.void,
+                    ),
+                  ),
+                watch: (directory, watchOptions) =>
+                  Stream.suspend(() => {
+                    Queue.offerUnsafe(watchArms, directory);
+                    watchOptions?.onReady?.();
+                    return Stream.never;
+                  }),
+              }),
+          },
+        );
+      }),
+  );
+
+  it.effect.skipIf(!symlinksSupported)(
+    "re-arms watches on the next poll when an empty symlink target is replaced by another empty directory",
+    () =>
+      Effect.gen(function* () {
+        let parentWatchArms = 0;
+        const watchArms = yield* Queue.unbounded<string>();
+        const directoryReads = yield* Queue.unbounded<void>();
+        let fixture = "";
+        let target = "";
+        let replacement = "";
+
+        yield* withEnvironmentThemes(
+          {},
+          Effect.gen(function* () {
+            const service = yield* EnvironmentTheme.EnvironmentThemeService;
+            const { environmentThemesDir } = yield* ServerConfig.ServerConfig;
+            const fs = yield* FileSystem.FileSystem;
+            const path = yield* Path.Path;
+
+            yield* Queue.take(directoryReads);
+            yield* Queue.take(directoryReads);
+            assert.equal(yield* Queue.take(watchArms), environmentThemesDir);
+
+            yield* flushStreamHops;
+            yield* TestClock.adjust("100 millis");
+            yield* Queue.take(directoryReads);
+            yield* Queue.take(directoryReads);
+            yield* flushStreamHops;
+
+            const settledParentWatchArms = parentWatchArms;
+            assert.equal(yield* Queue.size(watchArms), 0);
+
+            yield* fs.rename(target, path.join(fixture, "previous"));
+            yield* fs.rename(replacement, target);
+            assert.equal(parentWatchArms, settledParentWatchArms);
+            assert.equal(yield* Queue.size(watchArms), 0);
+
+            yield* TestClock.adjust("250 millis");
+            yield* Queue.take(directoryReads);
+            yield* flushStreamHops;
+            assert.isAbove(parentWatchArms, settledParentWatchArms);
+            assert.equal(yield* Queue.take(watchArms), environmentThemesDir);
+            assert.deepEqual(yield* service.current, []);
+          }),
+          {
+            prepareDir: (themesDir, fs, baseDir) =>
+              Effect.gen(function* () {
+                const path = yield* Path.Path;
+                yield* silenceNodeWatchesUnder(baseDir, (watchedDir) => {
+                  if (watchedDir === path.dirname(themesDir)) parentWatchArms += 1;
+                });
+                fixture = path.join(baseDir, "fixture");
+                target = path.join(fixture, "active", "themes");
+                replacement = path.join(fixture, "replacement");
+                yield* fs.makeDirectory(target, { recursive: true });
+                yield* fs.makeDirectory(replacement, { recursive: true });
+                yield* fs.remove(themesDir, { recursive: true });
+                yield* fs.symlink(target, themesDir);
+              }),
+            wrapFileSystem: (fs, themesDir) =>
+              FileSystem.FileSystem.of({
+                ...fs,
+                readDirectory: (directory, readOptions) =>
+                  fs.readDirectory(directory, readOptions).pipe(
+                    Effect.ensuring(
+                      directory === themesDir
+                        ? Effect.sync(() => {
+                            Queue.offerUnsafe(directoryReads, undefined);
+                          })
+                        : Effect.void,
+                    ),
+                  ),
+                watch: (directory, watchOptions) =>
+                  Stream.suspend(() => {
+                    Queue.offerUnsafe(watchArms, directory);
+                    watchOptions?.onReady?.();
+                    return Stream.never;
+                  }),
+              }),
+          },
+        );
       }),
   );
 
