@@ -10,6 +10,7 @@ import {
   type WorkLogPresentationEntry,
   workEntryIndicatesToolFailure,
   workEntryDisplayIndicatesToolFailure,
+  workEntryViewedImagePath,
 } from "./presentation.js";
 
 function commandItem(
@@ -223,5 +224,36 @@ describe("resolveViewedImageAsset", () => {
       resolveViewedImageAsset("file:///repo/my%20shot.png", { threadId: ThreadId.make("thread") })
         ?.resource.path,
     ).toBe("/repo/my shot.png");
+  });
+});
+
+describe("workEntryViewedImagePath", () => {
+  const base: WorkLogPresentationEntry = {
+    id: "read-image",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    label: "Read",
+    tone: "tool",
+    requestKind: "file-read",
+    viewedImagePath: "/repo/shot.png",
+    detail: "/repo/shot.png",
+  };
+
+  it.each([
+    ["completed", "/repo/shot.png"],
+    ["failed", null],
+    ["declined", null],
+    ["stopped", null],
+    ["inProgress", null],
+    ["idle", null],
+  ] as const)("returns a preview path only for completed reads (%s)", (status, expected) => {
+    expect(workEntryViewedImagePath({ ...base, toolLifecycleStatus: status })).toBe(expected);
+    const { viewedImagePath: _omit, ...detailOnly } = base;
+    expect(workEntryViewedImagePath({ ...detailOnly, toolLifecycleStatus: status })).toBe(expected);
+  });
+
+  it("omits error-tone entries even when completed", () => {
+    expect(
+      workEntryViewedImagePath({ ...base, tone: "error", toolLifecycleStatus: "completed" }),
+    ).toBeNull();
   });
 });

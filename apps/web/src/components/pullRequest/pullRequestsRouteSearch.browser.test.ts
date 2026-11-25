@@ -50,4 +50,19 @@ describe("pull requests route search", () => {
     );
     expect(search).toMatchObject({ repository, selectedHost: host, number: 7 });
   });
+
+  it("truncates long text filters without leaving a lone surrogate", () => {
+    const boundary = `${"a".repeat(199)}🐛`;
+    const encoded = encodeURIComponent(boundary);
+    const search = matchedSearch(
+      `/pull-requests?q=${encoded}&labels=${encoded}&host=${encoded}&author=${encoded}`,
+    );
+    const expected = "a".repeat(199);
+    expect(search).toMatchObject({
+      q: expected,
+      labels: [expected],
+      host: expected,
+      author: expected,
+    });
+  });
 });

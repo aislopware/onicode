@@ -1,6 +1,10 @@
 import { MessageId, RunId } from "@onicode/contracts";
 import { describe, expect, it } from "vite-plus/test";
-import { observeTimelineRun, resolveDisclosureRevealScrollDelta } from "./timelineScrollAnchoring";
+import {
+  observeTimelineRun,
+  resolveDisclosureRevealScrollDelta,
+  timelineContentOverflowsViewport,
+} from "./timelineScrollAnchoring";
 
 describe("observeTimelineRun", () => {
   const existing = {
@@ -97,6 +101,24 @@ describe("resolveDisclosureRevealScrollDelta", () => {
   it("never scrolls backwards when the row header is already above the anchor inset", () => {
     expect(resolveDisclosureRevealScrollDelta({ ...viewport, rowTop: -40, rowBottom: 1200 })).toBe(
       0,
+    );
+  });
+});
+
+describe("timelineContentOverflowsViewport", () => {
+  it("treats rows fitting above the composer as overflowing once a taller end inset covers them", () => {
+    const state = {
+      data: ["a", "b"],
+      scroll: 0,
+      scrollLength: 700,
+      positionAtIndex: (index: number) => index * 200,
+      sizeAtIndex: () => 180,
+    };
+    expect(timelineContentOverflowsViewport(state, { composerInset: 140, anchorOffset: 24 })).toBe(
+      false,
+    );
+    expect(timelineContentOverflowsViewport(state, { composerInset: 380, anchorOffset: 24 })).toBe(
+      true,
     );
   });
 });

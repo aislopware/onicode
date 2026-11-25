@@ -1,6 +1,8 @@
 import type { ProjectTrackedFolder } from "@onicode/contracts";
-import { hasTrailingPathSeparator } from "@onicode/client-runtime/state/projects";
-import { splitsSurrogatePair } from "@onicode/shared/assistantCitations";
+import {
+  hasTrailingPathSeparator,
+  normalizeTrackedFolderName,
+} from "@onicode/client-runtime/state/projects";
 import {
   fileBasename,
   isAbsolutePath,
@@ -34,9 +36,7 @@ export function resolveTrackedFolderInput(input: {
         : null);
   if (rawPath === null) return null;
   const path = normalizeProjectPathForDispatch(rawPath);
-  // `ProjectTrackedFolder.name` takes at most 128 characters.
-  const basename = fileBasename(path).trimStart();
-  const name = basename.slice(0, splitsSurrogatePair(basename, 128) ? 127 : 128).trimEnd();
+  const name = normalizeTrackedFolderName(fileBasename(path));
   if (path.length === 0 || name.length === 0) return null;
   return { path, name };
 }

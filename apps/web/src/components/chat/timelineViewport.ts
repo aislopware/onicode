@@ -49,6 +49,9 @@ export type TimelineNavigation =
 
 export interface TimelineViewport {
   readonly scrollNode: HTMLElement;
+  /** Effective bottom inset covering the timeline (composer and settled floating preview). */
+  readonly endInset: () => number;
+  readonly onEndInsetChange: (listener: (inset: number) => void) => () => void;
   /** Every consumer hears the same navigation, in subscription order. */
   readonly subscribe: (listener: (navigation: TimelineNavigation) => void) => () => void;
   readonly navigate: (options: { readonly releasesFollow: boolean }) => void;
@@ -76,11 +79,15 @@ const SCROLLBAR_HIT_PX = 16;
 export function attachTimelineViewport(
   scrollNode: HTMLElement,
   onFrameResize?: (frame: HTMLIFrameElement) => void,
+  initialEndInset = 0,
 ): TimelineViewport & {
+  readonly setEndInset: (inset: number) => void;
   readonly dispose: () => void;
 } {
   const listeners = new Set<(navigation: TimelineNavigation) => void>();
   const followReleasedListeners = new Set<() => void>();
+  const endInsetListeners = new Set<(inset: number) => void>();
+  let currentEndInset = initialEndInset;
   let programmaticHolds = 0;
   const emit = (navigation: TimelineNavigation) => {
     for (const listener of listeners) listener(navigation);
@@ -182,6 +189,16 @@ export function attachTimelineViewport(
   const unregisterKeyDown = registerCommands({}, { observe: handleKeyDown });
   return {
     scrollNode,
+    endInset: () => currentEndInset,
+    onEndInsetChange: (listener) => {
+      endInsetListeners.add(listener);
+      return () => endInsetListeners.delete(listener);
+    },
+    setEndInset: (inset) => {
+      if (inset === currentEndInset) return;
+      currentEndInset = inset;
+      for (const listener of endInsetListeners) listener(inset);
+    },
     subscribe: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -207,6 +224,7 @@ export function attachTimelineViewport(
       window.removeEventListener("message", handleFrameResize, true);
       listeners.clear();
       followReleasedListeners.clear();
+      endInsetListeners.clear();
       scrollNode.removeEventListener("scroll", handleScroll);
       scrollNode.removeEventListener("wheel", handleWheel);
       scrollNode.removeEventListener("touchmove", handleTouchMove);

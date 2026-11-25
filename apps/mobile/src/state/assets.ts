@@ -1,5 +1,6 @@
 import { useAtomMount, useAtomSubscribe, useAtomValue } from "@effect/atom-react";
 import { errorDisplayMessage } from "@onicode/client-runtime/errors";
+import type { ProjectFaviconTarget } from "@onicode/client-runtime/project-favicon-cache";
 import { resolveFilesystemReadAccess } from "@onicode/client-runtime/state/filesystem";
 import {
   assetUrlStateFromResult,
@@ -8,6 +9,7 @@ import {
   createProjectFaviconUrlAtomFamily,
   EMPTY_ASSET_URL_ATOM,
   makeRevisionedAssetUrlFamily,
+  projectFaviconResource,
 } from "@onicode/client-runtime/state/assets";
 import { executeAtomQuery, squashAtomCommandFailure } from "@onicode/client-runtime/state/runtime";
 import { msg, useMessages } from "gt-react-native";
@@ -39,6 +41,15 @@ export const projectFaviconUrlAtom = createProjectFaviconUrlAtomFamily({
   preparedConnection: environmentSession.preparedConnectionValueAtom,
   projectClones: environmentProjectCloneListAtom,
 });
+
+export function refreshProjectFaviconUrl(target: ProjectFaviconTarget) {
+  appAtomRegistry.refresh(
+    assetEnvironment.createUrl({
+      environmentId: target.environmentId,
+      input: { resource: projectFaviconResource(target.cwd, target.faviconPath) },
+    }),
+  );
+}
 
 const revisionedAssetUrl = makeRevisionedAssetUrlFamily(assetEnvironment.createUrl);
 

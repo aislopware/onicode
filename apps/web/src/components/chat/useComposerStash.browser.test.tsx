@@ -1,10 +1,13 @@
 import { EnvironmentId, PROVIDER_SEND_TURN_MAX_ATTACHMENTS, ThreadId } from "@onicode/contracts";
 import { useEffect } from "react";
 import { expect, it, vi } from "vite-plus/test";
+import { page } from "vite-plus/test/browser";
 
 import { act, render } from "../../../test/render";
+import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { DraftId, useComposerDraftStore } from "../../composerDraftStore";
 import { removeLocalStorageItem } from "../../hooks/useLocalStorage";
+import { isInSideChatPane } from "../../lib/sideChatPane";
 import { isMacPlatform } from "../../lib/utils";
 import {
   PROMPT_STASH_STORAGE_KEY,
@@ -269,4 +272,75 @@ it("stashes a side chat's prompt when Mod+S is pressed inside its pane", async (
       "Side chat question",
     ]);
   });
+});
+
+it("stashes the side chat's prompt when Mod+S is pressed inside its portaled popover", async () => {
+  const mainTarget = DraftId.make("stash-main-chat-portal");
+  const sideTarget = DraftId.make("stash-side-chat-portal");
+  using _drafts = {
+    [Symbol.dispose]: () => {
+      const store = useComposerDraftStore.getState();
+      store.clearComposerContent(mainTarget);
+      store.clearComposerContent(sideTarget);
+    },
+  };
+  using _stash = {
+    [Symbol.dispose]: () => {
+      writePromptStashStorageForTest("");
+      removeLocalStorageItem(PROMPT_STASH_STORAGE_KEY);
+    },
+  };
+  const mainPromptRef = { current: "Main chat prompt" };
+  const sidePromptRef = { current: "Side chat question" };
+  const mainInput = stashInput(mainTarget, mainPromptRef);
+  const sideBaseInput = stashInput(sideTarget, sidePromptRef);
+  const sideInput = {
+    ...sideBaseInput,
+    routeThreadRef: {
+      environmentId: sideBaseInput.environmentId,
+      threadId: ThreadId.make("stash-side-portal-thread"),
+    },
+  } satisfies StashInput;
+
+  await using screen = await render(
+    <>
+      <div id="stash-main-pane">
+        <textarea id="stash-main-composer" aria-label="Main chat composer" />
+        <Harness input={mainInput} />
+      </div>
+      <BackgroundThreadContext value>
+        <div data-side-chat-pane="stash-side-portal-thread">
+          <Harness input={sideInput} />
+          <Popover open>
+            <PopoverTrigger>Model</PopoverTrigger>
+            <PopoverPopup>
+              <input aria-label="Search models" />
+            </PopoverPopup>
+          </Popover>
+        </div>
+      </BackgroundThreadContext>
+    </>,
+  );
+
+  await expect.element(page.getByLabelText("Search models")).toBeVisible();
+  const mainComposer = screen.getByLabelText("Main chat composer").element();
+  const searchInput = page.getByLabelText("Search models").element() as HTMLInputElement;
+  expect(isInSideChatPane(mainComposer)).toBe(false);
+  expect(isInSideChatPane(searchInput)).toBe(true);
+  expect(searchInput.closest("[data-side-chat-pane]")).toBeNull();
+  searchInput.focus();
+  const mod = isMacPlatform(navigator.platform) ? { metaKey: true } : { ctrlKey: true };
+  const event = new KeyboardEvent("keydown", { key: "s", ...mod, bubbles: true, cancelable: true });
+  await act(() => {
+    searchInput.dispatchEvent(event);
+  });
+
+  expect(event.defaultPrevented).toBe(true);
+  await vi.waitFor(() => {
+    expect(usePromptStashStore.getState().entries.map((entry) => entry.prompt)).toEqual([
+      "Side chat question",
+    ]);
+  });
+  expect(mainPromptRef.current).toBe("Main chat prompt");
+  expect(sidePromptRef.current).toBe("");
 });

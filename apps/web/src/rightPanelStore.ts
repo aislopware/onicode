@@ -645,19 +645,22 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
   byThreadKey: Record<string, ThreadRightPanelState>;
   threadPanelVisibilityByThreadKey: Record<string, ThreadPanelVisibility>;
 } {
-  if (!persistedState || typeof persistedState !== "object") {
+  if (!persistedState || typeof persistedState !== "object" || Array.isArray(persistedState)) {
     return { byThreadKey: {}, threadPanelVisibilityByThreadKey: {} };
   }
   const byThreadKey =
     "byThreadKey" in persistedState &&
     persistedState.byThreadKey &&
-    typeof persistedState.byThreadKey === "object"
+    typeof persistedState.byThreadKey === "object" &&
+    !Array.isArray(persistedState.byThreadKey)
       ? Object.fromEntries(
           Object.entries(persistedState.byThreadKey as Record<string, ThreadRightPanelState>)
             .filter(([threadKey]) => !isPullRequestsPanelKey(threadKey))
             .map(([threadKey, threadState]) => {
               const validThreadState =
-                threadState && typeof threadState === "object" ? threadState : null;
+                threadState && typeof threadState === "object" && !Array.isArray(threadState)
+                  ? threadState
+                  : null;
               const surfaces = Array.isArray(validThreadState?.surfaces)
                 ? validThreadState.surfaces.flatMap<RightPanelSurface>((surface) => {
                     if (!surface || typeof surface !== "object") return [];
@@ -810,12 +813,20 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
   const threadPanelVisibilityByThreadKey =
     "threadPanelVisibilityByThreadKey" in persistedState &&
     persistedState.threadPanelVisibilityByThreadKey &&
-    typeof persistedState.threadPanelVisibilityByThreadKey === "object"
+    typeof persistedState.threadPanelVisibilityByThreadKey === "object" &&
+    !Array.isArray(persistedState.threadPanelVisibilityByThreadKey)
       ? Object.fromEntries(
           Object.entries(
             persistedState.threadPanelVisibilityByThreadKey as Record<string, unknown>,
           ).flatMap(([threadKey, value]) => {
-            if (!value || typeof value !== "object" || !("inlineOpen" in value)) return [];
+            if (
+              !value ||
+              typeof value !== "object" ||
+              Array.isArray(value) ||
+              !("inlineOpen" in value)
+            ) {
+              return [];
+            }
             return value.inlineOpen === false
               ? [[threadKey, { inlineOpen: false, popoverOpen: false }]]
               : [];

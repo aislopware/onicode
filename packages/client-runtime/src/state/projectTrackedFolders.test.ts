@@ -13,14 +13,26 @@ const scanned = (name: string, path = `/work/${name}`): WorkspaceScannedFolder =
 describe("suggestedTrackedFolders", () => {
   it("offers what a workspace file lists and the project does not cover, once each", () => {
     const listed = (name: string) => ({ ...scanned(name), source: "code-workspace" as const });
+    const overflowing = `${"a".repeat(127)}🚀`;
+    const padded = `${" ".repeat(127)}🚀`;
     expect(
       suggestedTrackedFolders(
         [{ path: "/work/api", name: "API", discovered: true }],
-        [listed("api"), listed("lib"), listed("lib"), scanned("web"), listed("x".repeat(200))],
+        [
+          listed("api"),
+          listed("lib"),
+          listed("lib"),
+          scanned("web"),
+          listed("x".repeat(200)),
+          listed(overflowing),
+          listed(padded),
+        ],
       ),
     ).toEqual([
       { path: "/work/lib", name: "lib" },
       { path: `/work/${"x".repeat(200)}`, name: "x".repeat(128) },
+      { path: `/work/${overflowing}`, name: "a".repeat(127) },
+      { path: `/work/${padded}`, name: "🚀" },
     ]);
   });
 });

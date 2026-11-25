@@ -245,6 +245,7 @@ export function resolveSubagentStopTarget(
     | "id"
     | "threadId"
     | "childThreadId"
+    | "remoteChild"
     | "status"
     | "origin"
     | "driver"
@@ -265,7 +266,11 @@ export function resolveSubagentStopTarget(
         }
       : null;
   }
-  if (subagent.origin === "app_owned" && subagent.childThreadId !== null) {
+  if (
+    subagent.origin === "app_owned" &&
+    (subagent.childThreadId !== null ||
+      (subagent.remoteChild !== undefined && subagent.runId !== null))
+  ) {
     return {
       kind: "subagent" as const,
       input: { threadId: subagent.threadId, subagentId: subagent.id },

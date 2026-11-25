@@ -3,6 +3,22 @@ import {
   type ProjectTrackedFolder,
   type WorkspaceScannedFolder,
 } from "@onicode/contracts";
+import { splitsSurrogatePair } from "@onicode/shared/assistantCitations";
+
+const PROJECT_TRACKED_FOLDER_NAME_MAX = 128;
+
+/** Truncates a folder label to the project schema limit without splitting a surrogate pair. */
+export function normalizeTrackedFolderName(name: string): string {
+  const trimmed = name.trimStart();
+  return trimmed
+    .slice(
+      0,
+      splitsSurrogatePair(trimmed, PROJECT_TRACKED_FOLDER_NAME_MAX)
+        ? PROJECT_TRACKED_FOLDER_NAME_MAX - 1
+        : PROJECT_TRACKED_FOLDER_NAME_MAX,
+    )
+    .trimEnd();
+}
 
 /**
  * Folders a project's `.code-workspace` file lists that the project does not cover yet. The
@@ -17,8 +33,12 @@ export function suggestedTrackedFolders(
   return scanned.flatMap((folder) => {
     if (folder.source !== "code-workspace" || seen.has(folder.path)) return [];
     seen.add(folder.path);
-    // The project schema caps a name's length.
-    return [{ path: folder.path, name: folder.name.slice(0, 128).trim() || folder.path }];
+    return [
+      {
+        path: folder.path,
+        name: normalizeTrackedFolderName(folder.name) || normalizeTrackedFolderName(folder.path),
+      },
+    ];
   });
 }
 

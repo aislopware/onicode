@@ -100,7 +100,11 @@ export const usePullRequestReviewStore = create<PullRequestReviewStoreState>()(
         }),
       setSummary: (key, body) =>
         set((state) => {
-          if (body !== "") return { summaries: { ...state.summaries, [key]: body } };
+          if (body !== "") {
+            if (state.summaries[key] === body) return state;
+            return { summaries: { ...state.summaries, [key]: body } };
+          }
+          if (!Object.hasOwn(state.summaries, key)) return state;
           const { [key]: _removed, ...rest } = state.summaries;
           return { summaries: rest };
         }),

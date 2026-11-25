@@ -23,28 +23,25 @@ export function installRecordingCursor(
   options: RecordingInputOptions = DEFAULT_RECORDING_INPUT_OPTIONS,
   emit: (input: DesktopPreviewRecordingInput) => void = () => {},
 ) {
-  const style = document.createElement("style");
-  style.textContent =
-    "html, html * { cursor: none !important; } [data-onicode-recording-cursor]::backdrop, [data-onicode-recording-agent-cursor]::backdrop { display: none !important; } @media (prefers-reduced-motion: reduce) { [data-onicode-recording-agent-cursor] { transition: none !important; } }";
+  // Constructed sheets are exempt from the page's CSP style-src; <style> elements and style attrs are not.
+  const styleSheet = new CSSStyleSheet();
+  styleSheet.replaceSync(
+    `html, html * { cursor: none !important; } [data-onicode-recording-cursor] { ${POPOVER_RESET}position:fixed;left:0;top:0;width:16px;height:24px;pointer-events:none;z-index:2147483647;display:none; } [data-onicode-recording-agent-cursor] { ${POPOVER_RESET}position:fixed;left:0;top:0;width:20px;height:20px;pointer-events:none;z-index:2147483647;display:none;filter:drop-shadow(0 1px 2px #0003);transition:transform 150ms ease-out,opacity 150ms ease-out; } [data-onicode-recording-cursor]::backdrop, [data-onicode-recording-agent-cursor]::backdrop { display: none !important; } [data-onicode-recording-agent-cursor] > svg { transform: translate(-2px, -2px) !important; } @media (prefers-reduced-motion: reduce) { [data-onicode-recording-agent-cursor] { transition: none !important; } }`,
+  );
+  document.adoptedStyleSheets = [...document.adoptedStyleSheets, styleSheet];
   const cursor = document.createElement("div");
   cursor.setAttribute("aria-hidden", "true");
   cursor.setAttribute("data-onicode-recording-cursor", "");
   cursor.popover = "manual";
-  cursor.style.cssText =
-    POPOVER_RESET +
-    "position:fixed;left:0;top:0;width:16px;height:24px;pointer-events:none;z-index:2147483647;display:none;";
   cursor.innerHTML =
     '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="24" viewBox="0 0 16 24"><path d="M1 1v18l4-4 4 8 3-1.5-4-8H15Z" fill="black" stroke="white" stroke-width="1.5" stroke-linejoin="round"/></svg>';
   const agentCursor = document.createElement("div");
   agentCursor.setAttribute("aria-hidden", "true");
   agentCursor.setAttribute("data-onicode-recording-agent-cursor", "");
   agentCursor.popover = "manual";
-  agentCursor.style.cssText =
-    POPOVER_RESET +
-    "position:fixed;left:0;top:0;width:20px;height:20px;pointer-events:none;z-index:2147483647;display:none;filter:drop-shadow(0 1px 2px #0003);transition:transform 150ms ease-out,opacity 150ms ease-out;";
   agentCursor.innerHTML =
-    '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="var(--recording-cursor-background,white)" stroke="var(--recording-cursor-primary,#2563eb)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transform:translate(-2px,-2px)"><path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z"/></svg>';
-  document.documentElement.append(style, cursor, agentCursor);
+    '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="var(--recording-cursor-background,white)" stroke="var(--recording-cursor-primary,#2563eb)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z"/></svg>';
+  document.documentElement.append(cursor, agentCursor);
   const cursors = [cursor, agentCursor];
   const raise = () => {
     for (const element of cursors) {
@@ -218,7 +215,9 @@ export function installRecordingCursor(
       window.clearTimeout(agentTimer);
       cursor.remove();
       agentCursor.remove();
-      style.remove();
+      document.adoptedStyleSheets = document.adoptedStyleSheets.filter(
+        (sheet) => sheet !== styleSheet,
+      );
     },
   };
 }

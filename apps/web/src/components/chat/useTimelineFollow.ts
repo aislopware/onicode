@@ -276,9 +276,12 @@ export function useTimelineFollow(input: TimelineFollowInput) {
       setTimelineAnchor({ threadKey: activeThreadKey, messageId: startedRunAnchor });
     }
   }
+  const readEffectiveEndInset = () =>
+    Math.max(composerTimelineInset, viewportRef.current?.endInset() ?? 0);
+  const readEffectiveEndInsetStable = useStableCallback(readEffectiveEndInset);
   const timelineRealContentOverflowsViewport = () =>
     timelineContentOverflowsViewport(legendListRef.current?.getState(), {
-      composerInset: composerTimelineInset,
+      composerInset: readEffectiveEndInset(),
       anchorOffset: CHAT_TIMELINE_ANCHOR_OFFSET,
     });
   const pageScrollControllerRef = useRef<ReturnType<typeof createPageScrollController> | null>(
@@ -329,14 +332,17 @@ export function useTimelineFollow(input: TimelineFollowInput) {
   };
   const scrollToEndStable = useStableCallback(scrollToEnd);
   // The list does not follow footer layout, so the resting composer cannot scroll it. Growth
-  // above the composer (a new notice) would cover the last rows instead.
+  // above the composer (a new notice or a floating preview) would cover the last rows instead.
   const followedInsetRef = useRef(composerTimelineInset);
+  const syncFollowedEndInset = useStableCallback((nextInset: number) => {
+    const grew = nextInset > followedInsetRef.current;
+    followedInsetRef.current = nextInset;
+    if (grew && readCurrentFollow().mode === "following") scrollToEndStable();
+  });
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- scrolls the list after its bottom inset grows
   useLayoutEffect(() => {
-    const grew = composerTimelineInset > followedInsetRef.current;
-    followedInsetRef.current = composerTimelineInset;
-    if (grew && readCurrentFollow().mode === "following") scrollToEndStable();
-  }, [composerTimelineInset, readCurrentFollow, scrollToEndStable]);
+    syncFollowedEndInset(Math.max(composerTimelineInset, viewportRef.current?.endInset() ?? 0));
+  }, [composerTimelineInset, syncFollowedEndInset]);
 
   const handleNavigation = (navigation: TimelineNavigation) => {
     const awayFromEnd = () => resolveTimelineIsAtEnd(legendListRef.current?.getState()) === false;
@@ -353,15 +359,21 @@ export function useTimelineFollow(input: TimelineFollowInput) {
    */
   const attachTimelineViewport = (viewport: TimelineViewport) => {
     viewportRef.current = viewport;
+    followedInsetRef.current = readEffectiveEndInsetStable();
     const unsubscribe = viewport.subscribe(handleNavigationStable);
+    const unsubscribeEndInset = viewport.onEndInsetChange(() => {
+      syncFollowedEndInset(readEffectiveEndInsetStable());
+    });
     const controller = createPageScrollController({
       getContainer: () => viewport.scrollNode,
-      getScrollPaddingBottomPx: followStore.readComposerOverlayHeight,
+      getScrollPaddingBottomPx: () =>
+        Math.max(followStore.readComposerOverlayHeight(), viewport.endInset()),
       onScrollStart: handlePageScrollStart,
     });
     pageScrollControllerRef.current = controller;
     return () => {
       unsubscribe();
+      unsubscribeEndInset();
       controller.dispose();
       if (pageScrollControllerRef.current === controller) pageScrollControllerRef.current = null;
       if (viewportRef.current === viewport) viewportRef.current = null;

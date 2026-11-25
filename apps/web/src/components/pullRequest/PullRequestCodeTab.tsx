@@ -146,7 +146,12 @@ import {
   toViewerSide,
 } from "./PullRequestReviewAnnotation";
 import { pullRequestCompletionScope } from "./PullRequestMarkdownTextarea";
-import { getFileViewedRange, isLineInFileDiff } from "./pullRequestDiff.logic";
+import {
+  canAttachPullRequestDraft,
+  carryDetachedPullRequestDraftText,
+  getFileViewedRange,
+  isLineInFileDiff,
+} from "./pullRequestDiff.logic";
 import { PullRequestDiffStat, PullRequestMetaLine } from "./pullRequestPresentation";
 import { PullRequestDiffUnavailableState } from "./PullRequestDiffUnavailableState";
 import { usePullRequestFilesViewed } from "./usePullRequestFilesViewed";
@@ -383,6 +388,7 @@ interface MutableAnnotationGroup {
 interface DraftAnchor {
   readonly path: string;
   readonly oldPath: string | null;
+  readonly contentVersion: number;
   readonly position: PullRequestReviewPosition;
   readonly startPosition?: PullRequestReviewPosition;
   readonly range: SelectedLineRange;
@@ -909,10 +915,23 @@ function PullRequestCodeTab({
         groupAt(anchor.side, anchor.line).pending.push(comment);
       }
     }
-    // By path, like pending comments: a refreshed page renders the file under a new key.
-    if (draft?.path === path) {
-      const anchor = getReviewPositionAnchor(draft.position);
-      groupAt(anchor.side, anchor.line).draft = true;
+    const draftAnchor = draft === null ? null : getReviewPositionAnchor(draft.position);
+    // Attach only while the file's diff is unchanged and its anchor line still sits in a hunk.
+    const hasDraft =
+      commit === null &&
+      draft !== null &&
+      draftAnchor !== null &&
+      canAttachPullRequestDraft(
+        {
+          path: draft.path,
+          contentVersion: draft.contentVersion,
+          side: draftAnchor.side,
+          line: draftAnchor.line,
+        },
+        fileDiff,
+      );
+    if (hasDraft && draftAnchor !== null) {
+      groupAt(draftAnchor.side, draftAnchor.line).draft = true;
     }
 
     const annotations: ReviewAnnotation[] = [...groups.values()].map((group) => ({
@@ -945,6 +964,7 @@ function PullRequestCodeTab({
       viewedFoldKey: buildViewedFoldKey(fileDiff),
       path,
       fileDiff,
+      hasDraft,
       annotations,
       // The viewer redraws annotations only when their version changes.
       annotationsVersion: fnv1a32(
@@ -1011,9 +1031,8 @@ function PullRequestCodeTab({
 
   const foldsAsViewed = (path: string) =>
     filesViewedEnabled && isFileViewed(path) && !isFileViewedStale(path);
-  // A refresh can drop the draft's file, and its editor with Cancel; selection then reopens.
-  const draftLocksSelection =
-    draft !== null && annotatedFiles.some((file) => file.path === draft.path);
+  // A refresh can drop or change the draft's file and hide its editor; selection then reopens.
+  const draftLocksSelection = annotatedFiles.some((file) => file.hasDraft);
   const items: CodeViewDiffItem<ReviewAnnotationGroup>[] = annotatedFiles.map(
     ({ fileKey, foldKey, viewedFoldKey, path, fileDiff, annotations, annotationsVersion }) => {
       const group = foldGroup(path);
@@ -1168,13 +1187,22 @@ function PullRequestCodeTab({
       : null;
     // A draft that could only go to the agent needs something to send.
     if (!canCommentOnLines && agentComment === null) return;
-    setDraft({
+    const nextDraft: DraftAnchor = {
       path,
       oldPath: previousPath === path ? null : previousPath,
+      contentVersion: buildFileDiffContentVersion(file),
       ...anchor,
       range,
       agentComment,
+    };
+    const carriedText = carryDetachedPullRequestDraftText({
+      previousPath: draft?.path ?? null,
+      previousAttached: draftLocksSelection,
+      previousText: draft ? draftCommentTexts.get(draft) : undefined,
+      nextPath: path,
     });
+    if (carriedText !== undefined) draftCommentTexts.set(nextDraft, carriedText);
+    setDraft(nextDraft);
   };
 
   const finishSelection = (

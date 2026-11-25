@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 
 import "~/index.css";
 
-import { render } from "../../../test/render";
+import { act, render } from "../../../test/render";
 import { Sidebar, SidebarProvider, SidebarRail, SidebarTrigger, useSidebar } from "./sidebar";
 
 function CollapseFromInside() {
@@ -157,6 +157,21 @@ it("keeps closed mobile sheet contents mounted and reports the sheet only while 
 
   await userEvent.click(screen.getByRole("button", { name: "Toggle Sidebar" }));
   await expect.element(sheetMounted).toHaveTextContent("true");
+
+  const popup = document.querySelector<HTMLElement>(
+    '[data-mobile="true"][data-sidebar="sidebar"]',
+  )!;
+  await act(() =>
+    popup.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Escape",
+        repeat: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    ),
+  );
+  expect(popup.closest("[data-closed]")).toBeNull();
 
   await userEvent.keyboard("{Escape}");
   await expect.element(sheetMounted).toHaveTextContent("false");

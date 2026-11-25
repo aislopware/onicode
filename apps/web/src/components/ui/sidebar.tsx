@@ -327,7 +327,13 @@ function Sidebar({
     return (
       <SidebarInstanceContext value={instanceContextValue}>
         <Sheet
-          onOpenChange={setOpenMobile}
+          onOpenChange={(open, eventDetails) => {
+            // Base UI's dismiss handler fires on held Esc repeats after a nested popup closes.
+            if (!open && eventDetails.reason === "escape-key" && eventDetails.event.repeat) {
+              return eventDetails.cancel();
+            }
+            setOpenMobile(open);
+          }}
           onOpenChangeComplete={(open) => {
             if (!open) setMobileSheetMounted(false);
           }}

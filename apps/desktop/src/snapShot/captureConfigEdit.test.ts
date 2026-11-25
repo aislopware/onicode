@@ -105,13 +105,17 @@ describe("Hyprland capture config edits", () => {
   it.each([
     "return {}",
     "local M = {}\n  return M",
+    "do return M end",
+    'local a = "x\\\ny"; return M; local b = "z"',
+    'local a = "x\\z\n  y"; return M; local b = "z"',
+    "end\nreturn M",
     '--[[\nhl.bind("CTRL + SHIFT + 2", hl.dsp.global("dev.onicode.Onicode:capture-window"))\n]]',
   ])("does not guess how to edit complex Lua", (source) => {
     expect(() => editCaptureConfig(source, "hyprland-lua", app, "install")).toThrow("manual edit");
   });
   it("edits Lua that returns early inside a function", () => {
     const before =
-      'local function sync(window)\n  if window == nil then\n    return\n  end\n  hl.unbind("SUPER + Q")\nend\nhl.on("window.active", sync)\n';
+      'local note = "keep\\\nreturn"\nlocal other = "keep\\z\n  return"\nlocal function sync(window)\n  if window == nil then\n    return\n  end\n  hl.unbind("SUPER + Q")\nend\nhl.on("window.active", sync)\n';
     const added = editCaptureConfig(before, "hyprland-lua", app, "install");
     expect(added.after).toBe(
       `${before}\n${captureConfigBinding("hyprland-lua", app, "Ctrl+Shift+2")}\n`,
