@@ -3884,3 +3884,4 @@ b6869fad67	take	feat(terminal): Add keybindings for cycling through terminals (#
 6c775c87b1	skip	kept Onicode's LegendList 3.9 upgrade: Onicode already ships @legendapp/list 3.9.0 and an identical patches/@legendapp__list@3.9.0.patch
 02dc3e4400	take	adopted upstream over Onicode's grep.column/fullName-only gitGrep guard: upstream also disables submodule.recurse and tests all three settings in a repository subdirectory
 2aec607976	take	kept Onicode's linked-theme watcher (symlink-chain watches + single pollUnreportedChanges loop, consistent with 69f1d31f80); added lstat+readLink entryIdentity to EnvironmentTheme's directoryIdentity so an empty plain themes folder replaced by a link to an empty or missing directory still triggers re-watching, with regression test
+5e3bc17587	take	fix(server): Claude instances that share a home through a symlink keep the session on switch (#42509)
