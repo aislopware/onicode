@@ -39,7 +39,9 @@ import {
 import { type AgentResult, WorkflowAgentError, WorkflowAgents } from "./WorkflowAgents.ts";
 import WorkflowsMigration from "../persistence/Migrations/114_Workflows.ts";
 import { workflowHooks } from "../persistence/Migrations/119_RestoreWebhooks.ts";
+import WorkflowSkippedRunsMigration from "../persistence/Migrations/122_WorkflowSkippedRuns.ts";
 import { ScheduledTaskWebhookOrigin } from "../scheduledTasks/ScheduledTaskService.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as WorkflowEngine from "./WorkflowEngine.ts";
 import {
   Issue,
@@ -874,7 +876,13 @@ const harness = Effect.fnUntraced(function* (store?: typeof WorkflowStore.layer)
   const path = yield* Path.Path;
   const directory = yield* fileSystem.makeTempDirectoryScoped({ prefix: "oni-workflows-" });
   const database = NodeSqliteClient.layer({ filename: path.join(directory, "state.sqlite") });
-  yield* Effect.provide(Effect.andThen(WorkflowsMigration, workflowHooks), database);
+  yield* Effect.provide(
+    WorkflowsMigration.pipe(
+      Effect.andThen(workflowHooks),
+      Effect.andThen(WorkflowSkippedRunsMigration),
+    ),
+    database,
+  );
   const counts = yield* Ref.make<Record<string, number>>({});
   const failures = yield* Ref.make(0);
   const latch: Latch = {
@@ -2549,6 +2557,47 @@ it.effect("pull requests opened across several pages each start a run", () =>
         assert.notInclude(forge.pagesRead, 2);
       }),
       [greet],
+    );
+  }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+);
+
+it.effect("the sweep deletes skipped runs past the number the settings keep", () =>
+  Effect.gen(function* () {
+    const exposed = exposedStore();
+    const { boot } = yield* harness(exposed.layer);
+    yield* boot(
+      Effect.gen(function* () {
+        const workflows = yield* Workflows.Workflows;
+        const store = yield* exposed.store;
+        const [hook] = yield* workflows.hooks;
+        const [hookId, token] = hook!.path.split("/").slice(-2).map(decodeURIComponent);
+        const deliver = (body: string, delivery: string) =>
+          Effect.map(
+            workflows.deliver({
+              hookId: hookId!,
+              token: token!,
+              request: { method: "POST", headers: { "x-delivery": delivery }, query: "", body },
+            }),
+            Option.getOrThrow,
+          );
+        const ping = yield* deliver("ping", "d1");
+        yield* workflows.waitFor(ping.runId, status("skipped"));
+        const hello = yield* deliver("hello", "d2");
+        yield* workflows.waitFor(hello.runId, status("completed"));
+        assert.isNull((yield* store.run(ping.runId))?.input_json);
+
+        // Deleted once its engine journal is, which waits an hour after the run ends.
+        yield* workflows.sweep;
+        assert.isDefined(yield* store.run(ping.runId));
+        yield* TestClock.adjust("2 hours");
+        yield* workflows.sweep;
+        assert.isUndefined(yield* store.run(ping.runId));
+        assert.isDefined(yield* store.run(hello.runId));
+      }),
+    ).pipe(
+      Effect.provide(
+        ServerSettings.ServerSettingsService.layerTest({ workflowSkippedRunsKept: 0 }),
+      ),
     );
   }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
 );
