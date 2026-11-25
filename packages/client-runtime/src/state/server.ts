@@ -14,6 +14,7 @@ import {
   type ServerLifecycleWelcomePayload,
   type ServerLifecycleStreamReadyEvent,
   type ServerProviderWorkspaceSnapshot,
+  applyWorkflowRunsUpdate,
   type ServerSelfUpdateProgressEvent,
   type ServerSelfUpdateResult,
   shouldRecommendDatabaseCompaction,
@@ -51,7 +52,7 @@ import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import { safeErrorLogAttributes } from "../errors/safeLog.ts";
 import * as Persistence from "../platform/persistence.ts";
 import { runCachePersistence } from "./cachePersistence.ts";
-import { applyWorkflowRunsUpdate, workflowRunRefreshKey } from "../workflows.ts";
+import { workflowRunRefreshKey } from "../workflows.ts";
 import {
   currentSession,
   isRpcClientError,
@@ -1443,16 +1444,16 @@ export function createServerEnvironmentAtoms<R, E>(
       ),
     );
   });
-  // After the first snapshot a change carries only the runs it wrote, not the list of up to 1000.
   const workflowsLive = createEnvironmentSubscriptionAtomFamily(runtime, {
     label: "environment-data:server:workflows:live",
+    // Asks for what changed after the first list; a server older than `diff` sends whole lists.
     subscribe: (input: EnvironmentRpcInput<typeof WS_METHODS.workflowsSubscribe>) =>
-      subscribe(WS_METHODS.workflowsSubscribe, { ...input, changes: true }).pipe(
+      subscribe(WS_METHODS.workflowsSubscribe, { ...input, diff: true }).pipe(
         Stream.mapAccum(
           (): WorkflowRunsSnapshot | undefined => undefined,
-          (held, update) => {
-            const next = applyWorkflowRunsUpdate(held, update);
-            return [next, next === undefined ? [] : [next]] as const;
+          (snapshot, update) => {
+            const next = applyWorkflowRunsUpdate(snapshot, update);
+            return [next, [next]] as const;
           },
         ),
       ),
