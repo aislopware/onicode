@@ -3863,3 +3863,4 @@ e4da383485	take	adapted: added only ./projectMonogram export in packages/shared/
 424895558f	take	ported cleanly
 369b46900c	take	ported cleanly
 2940ff33ad	take	adapted: kept onicode message key in mcpAppDocumentLink.ts and Onicode desktop/mobile wording in docs/user/html-renders.md
+ceb20555b3	skip	T3 mobile EAS preview pipeline (mobile-eas-preview-fork.yml and workflow-credentials.test.cjs do not exist in Onicode)
