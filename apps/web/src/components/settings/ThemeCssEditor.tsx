@@ -1,6 +1,7 @@
 import { T, useGT, Var } from "gt-react";
 import { useId, useState, type KeyboardEvent } from "react";
 
+import { isImeKeyDown } from "../../lib/imeKeyDown";
 import { Button } from "../ui/button";
 
 export function ThemeCssEditor({
@@ -30,7 +31,8 @@ export function ThemeCssEditor({
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.nativeEvent.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (isImeKeyDown(event.nativeEvent)) return;
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
     const editor = event.currentTarget;
     if (event.key === "Escape" && (tabIndents || event.repeat)) {
       event.preventDefault();

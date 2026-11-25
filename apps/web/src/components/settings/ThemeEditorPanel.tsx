@@ -31,6 +31,7 @@ import {
   type ThemeDefinition,
 } from "../../themePalette";
 import { useViewportSize } from "../../hooks/useViewportSize";
+import { isImeKeyDown } from "../../lib/imeKeyDown";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -719,7 +720,7 @@ export function ThemeEditorPanel({
       shouldDisarmAfterClick = false;
     };
     const cancelInspection = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+      if (event.key !== "Escape" || isImeKeyDown(event)) return;
       // Esc leaves inspection only; Settings must not see it and close too.
       event.preventDefault();
       event.stopImmediatePropagation();
@@ -1194,7 +1195,9 @@ export function ThemeEditorPanel({
         // Popups opened from the editor are portaled outside it and handle their own Esc.
         if (event.key !== "Escape" || event.defaultPrevented) return;
         if (!event.currentTarget.contains(event.target as Node)) return;
+        // Base UI's document listener can dismiss on a bare IME Escape (keyCode 229).
         event.stopPropagation();
+        if (isImeKeyDown(event.nativeEvent)) return;
         onOpenChange(false);
       }}
       ref={panelRef}
