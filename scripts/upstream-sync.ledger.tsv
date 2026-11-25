@@ -3800,3 +3800,4 @@ e6967d9dfe	take	fix(client): a tab-indented fence line in a PR description code 
 cad8cd0937	take	fix(server): honor sort: "created" when merging IssueService.list entries (#42350)
 431da7f4e5	take	fix(server): a terminal commit refreshes cached Changes totals (#42365); kept Onicode's pollUnreportedChanges HEAD recovery in VcsStatusBroadcaster.watchHead: macOS fs.watch still drops HEAD changes made during watch startup, so HEAD events keep headIdentity deduplication while index events bypass it
 98d940f6b2	take	fix(web): an IME Escape no longer closes the theme editor or ends inspection (#42332); kept Onicode's isImeKeyDown helper across ThemeColorPicker/ThemeCssEditor/ThemeEditorPanel and direct dispatchEvent in inert editor test
+c39c21f870	take	fix(web): Esc in a font family field closes Settings when no edit is pending (#42361)
