@@ -394,6 +394,19 @@ it.effect("a portable fork carries no context its source discarded for a fresh s
     // Runs whose every row was read, not only their prompts.
     const fullyRead = new Set<RunId | null>();
     const store: Parameters<typeof ContextHandoffService.readForkHistoryItems>[0] = {
+      getForkSourceRunIds: (threadId) =>
+        Effect.succeed(
+          threadId === freshForkId || threadId === supersededForkId
+            ? [parentRun.run.id]
+            : [
+                parentRun.run.id,
+                scheduledRun.run.id,
+                forkBefore.run.id,
+                forkFresh.run.id,
+                forkLater.run.id,
+                supersededRun.run.id,
+              ],
+        ),
       getThreadRecords: (threadId, _fields, filter) => {
         const found = projections.get(threadId);
         if (found === undefined)
@@ -410,22 +423,42 @@ it.effect("a portable fork carries no context its source discarded for a fresh s
         } as never);
       },
     };
+    const targetFork = forkTestThread(ThreadId.make("thread:fork-history-target"));
     const texts = (items: ReadonlyArray<OrchestrationV2TurnItem>) =>
       items.flatMap((item) => (item.type === "user_message" ? [item.text] : []));
 
     assert.deepEqual(
-      texts(yield* ContextHandoffService.readForkHistoryItems(store, freshFork, forkLater.run)),
+      texts(
+        yield* ContextHandoffService.readForkHistoryItems(
+          store,
+          freshFork,
+          forkLater.run,
+          targetFork,
+        ),
+      ),
       ["FRESH_START", "FORK_FOLLOW_UP"],
     );
     assert.isFalse(fullyRead.has(forkBefore.run.id));
     assert.deepEqual(
       texts(
-        yield* ContextHandoffService.readForkHistoryItems(store, supersededFork, supersededRun.run),
+        yield* ContextHandoffService.readForkHistoryItems(
+          store,
+          supersededFork,
+          supersededRun.run,
+          targetFork,
+        ),
       ),
       ["AFTER_DISCARD"],
     );
     assert.deepEqual(
-      texts(yield* ContextHandoffService.readForkHistoryItems(store, parent, scheduledRun.run)),
+      texts(
+        yield* ContextHandoffService.readForkHistoryItems(
+          store,
+          parent,
+          scheduledRun.run,
+          targetFork,
+        ),
+      ),
       ["SCHEDULED_SIDE_RUN"],
     );
   }),
@@ -440,6 +473,7 @@ it.effect("inherited history stops at a missing fork ancestor", () =>
     });
     const { items } = yield* ContextHandoffService.readInheritedHandoffItems(
       {
+        getForkSourceRunIds: () => Effect.succeed([]),
         getThreadRecords: (missing) =>
           Effect.fail(new ProjectionStoreThreadNotFoundError({ threadId: missing })),
       },
