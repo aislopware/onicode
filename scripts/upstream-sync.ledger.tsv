@@ -3849,3 +3849,4 @@ c18d6c969f	skip	removed surface: Clerk account token file mode (no Clerk in Onic
 c3aacf1e5b	take	adapted: kept heicPrimaryItemProperties in imageCompression.ts and updated mediaContent.ts readImageColorSpace import to ~/lib/imageCanvas
 6b3899f224	skip	removed surface: analytics custom model reporting
 1a11aed1f8	take	adapted: kept useStepThread and Onicode shell status / thread find cleanup in WorkflowRunFeed and WorkflowThreadPane
+5d02075446	take	ported cleanly
