@@ -3826,3 +3826,4 @@ c9ba6b4b6e	skip	removed surface: relay account deletion tunnel connectors (infra
 86272b11f0	take	fix(web): keybindings search ignores modified Esc and keeps focus on a held Esc (#42419); kept Onicode's isImeKeyDown helper
 68d6ef6f82	skip	removed surface: mobile T3 Connect relay connection traces toggle (T3 Connect, relay tracing, and mobile observability are removed in Onicode)
 924d9c1fff	take	feat(projects): worktree layout commands run only once a person approves them (#42386); migration 112->121, kept Onicode removed-surface exclusions (no telemetry/connect/guest-links in ManagedPolicy, __root.tsx, docs, 4-arg layerWsRpc), preserved Onicode branchMadeIn tracking and symlink-guard refusal check in TaskFolders, rekeyed rebranded i18n hashes
+2c0527b8d0	take	fix(server): removing a thread folder keeps a checkout that gained work while the project's remove command waited (#42432)
