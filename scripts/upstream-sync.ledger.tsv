@@ -3802,3 +3802,4 @@ cad8cd0937	take	fix(server): honor sort: "created" when merging IssueService.lis
 98d940f6b2	take	fix(web): an IME Escape no longer closes the theme editor or ends inspection (#42332); kept Onicode's isImeKeyDown helper across ThemeColorPicker/ThemeCssEditor/ThemeEditorPanel and direct dispatchEvent in inert editor test
 c39c21f870	take	fix(web): Esc in a font family field closes Settings when no edit is pending (#42361)
 4eccb0ecfc	skip	removed surface: relay HTTP tracing (infra/relay is removed in Onicode)
+f1e0c0b2eb	take	fix(server): source control discovery no longer runs the auth command of a CLI that is not installed (#42379); kept Onicode's sign-out assertion in SourceControlProviderRegistry.test.ts

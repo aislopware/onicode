@@ -1,9 +1,12 @@
 import { assert, describe, it } from "@effect/vitest";
 import { GitCommandError } from "@onicode/contracts";
+import * as HostProcess from "@onicode/shared/HostProcess";
+import { SpawnExecutableResolution } from "@onicode/shared/shell";
 import * as TestSourceControlHost from "@onicode/source-control-testing/TestSourceControlHost";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 
 import * as TanStackSourceApi from "./TanStackSourceApi.ts";
 import * as TanStackSourceSourceControlProvider from "./TanStackSourceSourceControlProvider.ts";
@@ -230,4 +233,47 @@ describe("TanStackSourceSourceControlProvider private pull requests", () => {
       ),
     );
   });
+});
+
+describe("TanStackSourceSourceControlProvider.makeDiscovery", () => {
+  const probe = (environment: NodeJS.ProcessEnv) => {
+    const spawned: Array<string> = [];
+    const api = TanStackSourceApi.TanStackSourceApi.of({
+      request: () => Effect.succeed(JSON.stringify({ username: "token-user" })),
+      response: () => Effect.die("unused"),
+    });
+    const run = TanStackSourceSourceControlProvider.makeDiscovery.pipe(
+      Effect.flatMap((spec) => spec.probe("/repo")),
+      Effect.provideService(TanStackSourceApi.TanStackSourceApi, api),
+      Effect.provide(
+        TestSourceControlHost.layer({
+          process: {
+            run: ({ command, args }) => {
+              spawned.push([command, ...args].join(" "));
+              return Effect.die("src must not be spawned");
+            },
+          },
+        }),
+      ),
+      Effect.provideService(SpawnExecutableResolution, () => undefined),
+      Effect.provideService(HostProcess.Environment, environment),
+    );
+    return { run, spawned };
+  };
+
+  it.effect("spawns nothing for an src that is not on PATH", () =>
+    Effect.gen(function* () {
+      const missing = probe({});
+      const item = yield* missing.run;
+      assert.strictEqual(item.status, "missing");
+      assert.deepStrictEqual(missing.spawned, []);
+
+      const withToken = probe({ SRC_TOKEN: "token" });
+      const signedIn = yield* withToken.run;
+      assert.strictEqual(signedIn.status, "available");
+      assert.strictEqual(signedIn.auth.status, "authenticated");
+      assert.deepStrictEqual(signedIn.auth.account, Option.some("token-user"));
+      assert.deepStrictEqual(withToken.spawned, []);
+    }),
+  );
 });
