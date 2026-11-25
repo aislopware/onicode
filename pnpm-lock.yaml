@@ -2522,6 +2522,9 @@ importers:
       '@onicode/contracts':
         specifier: workspace:*
         version: link:../packages/contracts
+      '@onicode/provider-testing':
+        specifier: workspace:*
+        version: link:../packages/provider-testing
       '@onicode/shared':
         specifier: workspace:*
         version: link:../packages/shared
