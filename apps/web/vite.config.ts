@@ -122,6 +122,13 @@ const browserTestProject = {
           await page.mouse.down();
           await page.mouse.up();
         },
+        // A press held across a render: userEvent only offers whole clicks.
+        pointerDown: async ({ page }) => {
+          await page.mouse.down();
+        },
+        pointerUp: async ({ page }) => {
+          await page.mouse.up();
+        },
       },
     },
   },

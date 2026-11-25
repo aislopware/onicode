@@ -1739,7 +1739,7 @@ const make = Effect.gen(function* () {
                 root: taskFolder.root,
                 force: false,
                 forget: deleted,
-                projectCommands: TaskFolders.linkRunsProjectCommands(thread.linkOrigin),
+                projectCommands: TaskFolders.projectCommandsForLink(thread.linkOrigin),
                 inspect: (checkout) =>
                   worktreeAdminDir(checkout.worktreePath).pipe(
                     Effect.map((adminDir) => adminDirs.set(checkout.worktreePath, adminDir)),

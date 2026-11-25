@@ -205,7 +205,7 @@ export const makeRestoreMissingWorktree = Effect.gen(function* () {
         .restore({
           taskFolder,
           branch,
-          projectCommands: TaskFolders.linkRunsProjectCommands(thread.linkOrigin),
+          projectCommands: TaskFolders.projectCommandsForLink(thread.linkOrigin),
           recreate: (checkout) =>
             Effect.logWarning("recreating missing worktree", {
               threadId: thread.id,

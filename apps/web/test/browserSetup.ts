@@ -9,6 +9,10 @@ declare module "vite-plus/test/browser" {
     resetPointer: () => Promise<void>;
     /** Defined in vite.config.ts. Clicks without moving Playwright's mouse. */
     pressPointer: () => Promise<void>;
+    /** Defined in vite.config.ts. Presses the primary button where the mouse is, without releasing. */
+    pointerDown: () => Promise<void>;
+    /** Defined in vite.config.ts. Releases the primary button. */
+    pointerUp: () => Promise<void>;
   }
 }
 

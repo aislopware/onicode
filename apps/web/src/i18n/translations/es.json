@@ -12109,5 +12109,47 @@
   "27d76249d09eb69f": "Guía de revisión lista",
   "faa3bb26abb39c93": "Falló la guía de revisión",
   "b7df38b7d8792d78": "Abrir guía",
-  "9e91e9a77b664e4e": "No se pudo iniciar una guía de revisión"
+  "9e91e9a77b664e4e": "No se pudo iniciar una guía de revisión",
+  "e0856d6a402ad821": "La política de {organization} no permite comandos de diseño de worktrees de proyectos.",
+  "206811f6f441bfc7": "Este proyecto prepara los worktrees con su propio comando, que nadie ha aprobado tal como está escrito ahora. Esta conexión no puede aprobarlo: apruébalo desde un cliente que pueda usar el terminal.",
+  "b8087c9a70c26da9": "No se pudo aprobar el comando de diseño de worktrees.",
+  "49eda70cfd56e621": "Se ejecuta cuando empieza un hilo en un worktree y cuando se restaura su carpeta",
+  "188ccaa1199f5611": "Se ejecuta cuando se elimina el worktree de un hilo",
+  "7e8476e7306acabe": "¿Permitir que este proyecto ejecute sus comandos de worktree?",
+  "0c8fe199f5a7aabd": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " prepara los hilos en worktrees con sus propios comandos de ",
+    {
+      "t": "code",
+      "i": 2,
+      "c": "onicode.json"
+    },
+    ". Se ejecutan en la máquina de este entorno con tus permisos, fuera de cualquier sandbox de agente. Se te volverá a preguntar cada vez que cambie su texto."
+  ],
+  "46807acd02a4ff72": "Aprobar y continuar",
+  "a9cb97fca6a6576b": "Comando de creación",
+  "90f45a354884ccdd": "Comando de eliminación",
+  "78e308ada516928b": "No se pudo aprobar el comando",
+  "a0c772d32a233da6": "No se pudo revocar la aprobación",
+  "0cdc8cdbed3e5eae": "Diseño de worktrees",
+  "c17b25519e2b194e": "No se pudieron cargar los comandos de diseño de worktrees",
+  "5ccd5614c65f8d1f": "Revocar la aprobación del comando {kind}",
+  "80c3794a5fa12f3a": "Aprobar el comando {kind}",
+  "35b0b7f9698cbffd": [
+    "El ",
+    {
+      "t": "code",
+      "i": 1,
+      "c": "onicode.json"
+    },
+    " de este proyecto prepara los hilos en worktrees con sus propios comandos. Se ejecutan en la máquina de este entorno con tus permisos y solo tal como se aprobaron aquí: un comando cuyo texto cambia necesita aprobación de nuevo."
+  ],
+  "f6a91589456cca50": "Aprobado",
+  "c92657bb7f2293ff": "Necesita aprobación",
+  "f1e5c1be1ac92361": "Aprobar",
+  "fcb5f3c4d4753326": "Esta conexión no puede aprobar comandos. Usa un cliente que pueda usar el terminal."
 }
