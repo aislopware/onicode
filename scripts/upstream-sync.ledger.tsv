@@ -3880,3 +3880,4 @@ c621d5fe68	take	fix(i18n): i18n:check no longer fails on Windows (#42510)
 adb6064469	take	adopted upstream over Onicode's watchChanges/WorkflowRunsChange: upstream's tagged diff handles removed runs and closed/changed questions without client-side 500-run truncation; kept optional legacy changes flag and added diff: true so v0.25/v0.26 clients and servers stay wire-compatible via wholeLists fallback
 6e597243d4	take	fix(desktop): typing with both Shift keys no longer fires the macOS SnapShot shortcut (#42474)
 a3664ff21d	take	perf(server): checkpoint captures reuse a per-thread index (#42476)
+b6869fad67	take	feat(terminal): Add keybindings for cycling through terminals (#30664)
