@@ -238,8 +238,25 @@ describe("cloneUrlRepositoryPath", () => {
       "forge.example/team#1/spec",
     );
     expect(isScpLikeCloneUrl("git@forge.example:/team/spec#2026.git")).toBe(true);
+    expect(isScpLikeCloneUrl("host:/team/repo.git")).toBe(true);
+    expect(cloneUrlRepositoryPath("host:/team/repo.git")).toBe("host/team/repo");
     expect(isScpLikeCloneUrl("C:/repos/project.git")).toBe(false);
     expect(cloneUrlProtocol("C:/repos/project.git")).toBeNull();
+    for (const schemeUrl of [
+      "file:/srv/repo.git",
+      "http:/x",
+      "https:/x",
+      "ssh:/x",
+      "git:/x",
+      "git+ssh:/x",
+      "ssh+git:/x",
+      "ftp:/x",
+      "ftps:/x",
+    ]) {
+      expect(isScpLikeCloneUrl(schemeUrl)).toBe(false);
+      expect(cloneUrlProtocol(schemeUrl)).toBeNull();
+      expect(cloneUrlRepositoryPath(schemeUrl)).toBeNull();
+    }
     expect(cloneUrlRepositoryPath("https://forge.example/team/spec.git#readme")).toBe(
       "forge.example/team/spec",
     );

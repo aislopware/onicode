@@ -1359,8 +1359,17 @@ describe("ThreadSettlementServiceV2 worker", () => {
             title: "Parent",
           },
         };
+        const delegatedEarlierQueued: OrchestrationV2AppThread = {
+          ...appThread("delegated-earlier-queued", null),
+          branch: "feature",
+          delegatedFrom: {
+            environmentId: EnvironmentId.make("environment-elsewhere"),
+            threadId: ThreadId.make("parent-elsewhere"),
+            title: "Parent",
+          },
+        };
         const ordinary = { ...appThread("ordinary", null), branch: "feature" };
-        for (const thread of [delegated, delegatedHeld, ordinary]) {
+        for (const thread of [delegated, delegatedHeld, delegatedEarlierQueued, ordinary]) {
           yield* store.apply({
             type: "thread.created",
             id: EventId.make(`created:${thread.id}`),
@@ -1405,6 +1414,41 @@ describe("ThreadSettlementServiceV2 worker", () => {
             checkpointId: null,
             contextHandoffId: null,
           },
+          {
+            id: RunId.make("run:delegated-earlier-queued:1"),
+            threadId: delegatedEarlierQueued.id,
+            ordinal: 1,
+            providerInstanceId: delegatedEarlierQueued.providerInstanceId,
+            modelSelection: delegatedEarlierQueued.modelSelection,
+            providerThreadId: null,
+            userMessageId: MessageId.make("message:delegated-earlier-queued:1"),
+            rootNodeId: null,
+            activeAttemptId: null,
+            status: "queued" as const,
+            queueHeld: true,
+            requestedAt: DateTime.makeUnsafe(NOW),
+            startedAt: null,
+            completedAt: null,
+            checkpointId: null,
+            contextHandoffId: null,
+          },
+          {
+            id: RunId.make("run:delegated-earlier-queued:2"),
+            threadId: delegatedEarlierQueued.id,
+            ordinal: 2,
+            providerInstanceId: delegatedEarlierQueued.providerInstanceId,
+            modelSelection: delegatedEarlierQueued.modelSelection,
+            providerThreadId: null,
+            userMessageId: MessageId.make("message:delegated-earlier-queued:2"),
+            rootNodeId: null,
+            activeAttemptId: null,
+            status: "failed" as const,
+            requestedAt: DateTime.makeUnsafe(NOW),
+            startedAt: DateTime.makeUnsafe(NOW),
+            completedAt: DateTime.makeUnsafe(NOW),
+            checkpointId: null,
+            contextHandoffId: null,
+          },
         ] satisfies ReadonlyArray<OrchestrationV2Run>) {
           yield* store.apply({
             type: "run.created",
@@ -1414,6 +1458,19 @@ describe("ThreadSettlementServiceV2 worker", () => {
             payload: run,
           });
         }
+        const settleInStore = (command: AutoSettleCommand) =>
+          store.getThread(command.threadId).pipe(
+            Effect.flatMap((thread) =>
+              store.apply(
+                settledEvent({
+                  ...thread,
+                  settledOverride: "settled",
+                  settledAt: command.settledAt ?? DateTime.makeUnsafe(NOW),
+                }),
+              ),
+            ),
+            Effect.orDie,
+          );
         const fixture = yield* makeHarness({
           snapshot: makeSnapshot([]),
           projections: store,
@@ -1422,6 +1479,7 @@ describe("ThreadSettlementServiceV2 worker", () => {
             sidebarAutoSettleAfterDays: null,
             sidebarAutoSettleOnMerge: false,
           },
+          onDispatch: settleInStore,
         });
         yield* Effect.gen(function* () {
           const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
@@ -1436,6 +1494,66 @@ describe("ThreadSettlementServiceV2 worker", () => {
           ]);
           expect(yield* Ref.get(fixture.branchCalls)).toEqual([]);
         }).pipe(Effect.provide(fixture.layer));
+
+        // With inactivity settlement enabled, delegated threads with any queued run wait for autoSettleAfterDays.
+        const beforeExpiry = yield* makeHarness({
+          snapshot: makeSnapshot([]),
+          projections: store,
+          settings: {
+            ...DEFAULT_SERVER_SETTINGS,
+            sidebarAutoSettleAfterDays: 7,
+            sidebarAutoSettleOnMerge: false,
+          },
+          onDispatch: settleInStore,
+        });
+        yield* Effect.gen(function* () {
+          const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+          yield* startHarness(service, beforeExpiry.activation, beforeExpiry.snapshotReads);
+          yield* service.drain;
+          expect(yield* Ref.get(beforeExpiry.commands)).toEqual([]);
+        }).pipe(Effect.provide(beforeExpiry.layer));
+
+        yield* TestClock.setTime(Date.parse(NOW) + 7 * DAY_MS + 1_000);
+        const afterExpiry = yield* makeHarness({
+          snapshot: makeSnapshot([]),
+          projections: store,
+          settings: {
+            ...DEFAULT_SERVER_SETTINGS,
+            sidebarAutoSettleAfterDays: 7,
+            sidebarAutoSettleOnMerge: false,
+          },
+          onDispatch: settleInStore,
+        });
+        yield* Effect.gen(function* () {
+          const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+          yield* startHarness(service, afterExpiry.activation, afterExpiry.snapshotReads);
+          yield* service.drain;
+          const settledAfterExpiry = yield* Ref.get(afterExpiry.commands);
+          expect(settledAfterExpiry).toHaveLength(3);
+          expect(settledAfterExpiry).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                type: "thread.auto-settle",
+                threadId: delegatedHeld.id,
+                snapshotAt: delegatedHeld.updatedAt,
+                settledAt: DateTime.makeUnsafe(NOW),
+              }),
+              expect.objectContaining({
+                type: "thread.auto-settle",
+                threadId: delegatedEarlierQueued.id,
+                snapshotAt: delegatedEarlierQueued.updatedAt,
+                settledAt: DateTime.makeUnsafe(NOW),
+              }),
+              expect.objectContaining({
+                type: "thread.auto-settle",
+                threadId: ordinary.id,
+                snapshotAt: ordinary.updatedAt,
+                settledAt: DateTime.makeUnsafe(NOW),
+              }),
+            ]),
+          );
+          expect(yield* Ref.get(afterExpiry.branchCalls)).toEqual([]);
+        }).pipe(Effect.provide(afterExpiry.layer));
       }).pipe(Effect.provide(projectionStoreSql)),
   );
 

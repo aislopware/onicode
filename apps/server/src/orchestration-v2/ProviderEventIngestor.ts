@@ -207,6 +207,8 @@ export interface ProviderEventIngestorV2Shape {
   ) => Effect.Effect<ReadonlyArray<OrchestrationV2DomainEvent>, ProviderEventIngestorV2Error>;
   readonly ingestNormalized: (
     input: ProviderEventIngestInput & {
+      /** True when ingested directly by the session pump rather than a run's event subscriber. */
+      readonly sessionScoped?: boolean;
       readonly writeIfRunCurrent?: {
         readonly runId: RunId;
         readonly activeAttemptId: RunAttemptId;
@@ -799,6 +801,14 @@ export const layer: Layer.Layer<
             if (events.length === 0) {
               return [];
             }
+            const guardCommandStatusRegressions =
+              input.sessionScoped !== true &&
+              !(
+                (input.event.type === "node.updated" ||
+                  input.event.type === "turn_item.updated" ||
+                  input.event.type === "provider_thread.updated") &&
+                input.event.sessionScoped === true
+              );
             const mapWriteError = (cause: unknown) =>
               new ProviderEventPublishError({
                 providerSessionId: input.providerSessionId,
@@ -809,6 +819,7 @@ export const layer: Layer.Layer<
               const ownerResult = yield* eventSink
                 .writeIfProviderThreadOwner({
                   guardPendingUserInputCancellations: true,
+                  guardCommandStatusRegressions,
                   ...(input.commandId === undefined ? {} : { commandId: input.commandId }),
                   ...input.writeIfProviderThreadOwner,
                   events,
@@ -820,6 +831,7 @@ export const layer: Layer.Layer<
               return yield* eventSink
                 .write({
                   guardPendingUserInputCancellations: true,
+                  guardCommandStatusRegressions,
                   ...(input.commandId === undefined ? {} : { commandId: input.commandId }),
                   events,
                 })
@@ -828,6 +840,7 @@ export const layer: Layer.Layer<
             const result = yield* eventSink
               .writeIfRunCurrent({
                 guardPendingUserInputCancellations: true,
+                guardCommandStatusRegressions,
                 ...(input.commandId === undefined ? {} : { commandId: input.commandId }),
                 threadId: input.threadId,
                 ...input.writeIfRunCurrent,

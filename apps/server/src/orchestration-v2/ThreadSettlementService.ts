@@ -186,7 +186,6 @@ export function isAutoSettlementCandidate(
   if (thread.pinnedAt != null || thread.autoSettleDisabledAt != null) return false;
   if (thread.pendingRuntimeRequest !== null) return false;
   if (thread.activityRunStatus != null) return false;
-  if (thread.delegatedFrom != null && thread.status === "queued") return false;
   const pendingTasks = thread.pendingBackgroundTasks ?? [];
   if (backgroundWorkHoldsCompletion(pendingTasks)) return false;
   // Settling ends a watch, which would silently drop a reviewer's later comments.
@@ -194,6 +193,15 @@ export function isAutoSettlementCandidate(
   if (threadHasQueuedTurnStart(thread, nowMs)) return false;
   // Interrupted runs must keep the same snooze protection the sidebar shows.
   return !isSnoozed(thread, nowMs);
+}
+
+function canFastSettleDelegated(
+  thread: Pick<
+    ProjectionStore.ProjectionSettlementCandidate,
+    "lineage" | "delegatedFrom" | "status" | "hasQueuedRun"
+  >,
+): boolean {
+  return isDelegatedAppThread(thread) && !(thread.hasQueuedRun ?? thread.status === "queued");
 }
 
 /** Match client effectiveSnoozed so agents and sidebar agree. */
@@ -375,7 +383,7 @@ export const make = Effect.gen(function* () {
     // Merge events resweep all candidates because unlinked threads settle through branch lookup.
     const candidates = threads.filter(
       (thread) =>
-        (automaticSettlementEnabled || isDelegatedAppThread(thread)) &&
+        (automaticSettlementEnabled || canFastSettleDelegated(thread)) &&
         isAutoSettlementCandidate(thread, nowMs),
     );
 
@@ -385,7 +393,7 @@ export const make = Effect.gen(function* () {
     // Runs per candidate thread, thousands per sweep on busy servers; the sweep owns the span.
     const settleThread = Effect.fnUntraced(
       function* (thread: (typeof candidates)[number], pullRequest: SettlementPullRequest | null) {
-        if (isDelegatedAppThread(thread)) {
+        if (canFastSettleDelegated(thread)) {
           if (yield* terminals.hasActiveSubprocess({ threadId: thread.id })) return null;
           // The store returns a subagent only once its parent is done, so it settles with the
           // parent. A task delegated from a linked environment has no parent here, so it settles
@@ -448,7 +456,7 @@ export const make = Effect.gen(function* () {
     const lookupCandidates = (yield* Effect.forEach(
       candidates,
       (thread) => {
-        if (isDelegatedAppThread(thread)) return settleThread(thread, null);
+        if (canFastSettleDelegated(thread)) return settleThread(thread, null);
         const projectSettings = resolveProjectSettings(settings, thread.projectId).settings;
         // Skip no-op decisions; actual settlement still reads fresh settings before dispatch.
         const settledAt = resolveAutoSettlementAt({

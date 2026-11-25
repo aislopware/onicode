@@ -8712,13 +8712,22 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     () =>
       Effect.gen(function* () {
         let linearStatus: "needs-auth" | "connected" = "needs-auth";
+        let failReconnect = false;
         const noticesAfterTurn: Array<number> = [];
         const harness = yield* makeWakeHarnessWithOptions({
           freshQueueOnReopen: true,
           mcp: {
             mcpServerStatus: Effect.sync(() => [{ name: "linear", status: linearStatus }]),
             mcpSubmitOAuthCallbackUrl: () => Effect.void,
-            reconnectMcpServer: () => Effect.void,
+            reconnectMcpServer: () =>
+              failReconnect
+                ? Effect.fail(
+                    new ClaudeAdapterV2.ClaudeAgentSdkQueryRunnerError({
+                      method: "reconnectMcpServer",
+                      cause: new Error("reconnect failed"),
+                    }),
+                  )
+                : Effect.void,
             clearMcpServerAuth: () => Effect.void,
             readMcpResource: () => Effect.die("unexpected MCP resource read"),
             callMcpTool: () => Effect.die("unexpected MCP tool call"),
@@ -8829,8 +8838,28 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           action: "clear-auth",
         });
         yield* runTurn(reopened, resumed, 9);
+        failReconnect = true;
+        const failedComplete = yield* Effect.exit(
+          reopened.mcpSignIn!.complete({
+            providerThread: resumed,
+            server: "linear",
+            callbackUrl: "http://localhost:5555/callback?code=4",
+          }),
+        );
+        assert.isTrue(Exit.isFailure(failedComplete));
+        yield* runTurn(reopened, resumed, 10);
+        const failedSubmit = yield* Effect.exit(
+          reopened.mcpServers!.submitOAuthCallback({
+            providerThread: resumed,
+            server: "linear",
+            callbackUrl: "http://localhost:5555/callback?code=5",
+          }),
+        );
+        assert.isTrue(Exit.isFailure(failedSubmit));
+        failReconnect = false;
+        yield* runTurn(reopened, resumed, 11);
 
-        assert.deepEqual(noticesAfterTurn, [1, 1, 1, 2, 3, 4, 5, 6, 7]);
+        assert.deepEqual(noticesAfterTurn, [1, 1, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
       }).pipe(
         Effect.scoped,
         Effect.provide(

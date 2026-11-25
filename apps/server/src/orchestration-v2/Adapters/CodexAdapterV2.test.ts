@@ -7970,200 +7970,272 @@ describe("CodexAdapterV2 post-settle continuation", () => {
     ),
   );
 
-  it.effect.each(["thread/closed", "unload", "archive", "interrupt"] as const)(
-    "releases settled turns pinned by unknown-outcome commands on %s",
-    (cleanup) =>
-      Effect.gen(function* () {
-        const probeItemId = "call-codex-bg-settled-probe";
-        const fence = (
-          id: number,
-          name: string,
-          notifications: ReadonlyArray<{
-            readonly type: "emit_inbound";
-            readonly label: string;
-            readonly frame: Record<string, unknown>;
-          }> = [],
-        ) => [
-          {
-            type: "expect_outbound" as const,
-            label: `fence-${name}`,
-            frame: {
-              id,
-              method: "thread/name/set",
-              params: { threadId: BG_NATIVE_THREAD, name },
-            },
+  it.effect.each([
+    "thread/closed",
+    "thread/closed (subagent)",
+    "unload",
+    "archive",
+    "interrupt",
+  ] as const)("releases settled turns pinned by unknown-outcome commands on %s", (cleanup) =>
+    Effect.gen(function* () {
+      const subagent = cleanup === "thread/closed (subagent)";
+      const closedThread = cleanup === "thread/closed" || subagent;
+      const commandThreadId = subagent ? "native-codex-bg-child-thread" : BG_NATIVE_THREAD;
+      const commandTurnId = subagent ? "native-codex-bg-child-turn" : BG_NATIVE_TURN;
+      const scenarioSuffix = subagent ? "thread-closed-subagent" : cleanup;
+      const probeItemId = "call-codex-bg-settled-probe";
+      const fence = (
+        id: number,
+        name: string,
+        notifications: ReadonlyArray<{
+          readonly type: "emit_inbound";
+          readonly label: string;
+          readonly frame: Record<string, unknown>;
+        }> = [],
+      ) => [
+        {
+          type: "expect_outbound" as const,
+          label: `fence-${name}`,
+          frame: {
+            id,
+            method: "thread/name/set",
+            params: { threadId: BG_NATIVE_THREAD, name },
           },
-          ...notifications,
-          {
-            type: "emit_inbound" as const,
-            label: `fence-${name}`,
-            frame: { id, result: {} },
-          },
-        ];
-        const cleanupEntries =
-          cleanup === "thread/closed"
-            ? fence(5, "close-fence", [
-                {
-                  type: "emit_inbound",
-                  label: "thread/closed",
-                  frame: { method: "thread/closed", params: { threadId: BG_NATIVE_THREAD } },
+        },
+        ...notifications,
+        {
+          type: "emit_inbound" as const,
+          label: `fence-${name}`,
+          frame: { id, result: {} },
+        },
+      ];
+      const openingEntries = subagent
+        ? [
+            ...codexReplayPreamble({
+              nativeThreadId: BG_NATIVE_THREAD,
+              nativeTurnId: BG_NATIVE_TURN,
+              prompt: BG_PROMPT,
+            }),
+            {
+              type: "emit_inbound" as const,
+              label: "item/completed/subAgentActivity-started",
+              frame: {
+                method: "item/completed",
+                params: {
+                  item: {
+                    type: "subAgentActivity",
+                    id: "call-codex-bg-subagent",
+                    kind: "started",
+                    agentThreadId: commandThreadId,
+                    agentPath: "/root/bg_subagent",
+                  },
+                  threadId: BG_NATIVE_THREAD,
+                  turnId: BG_NATIVE_TURN,
+                  completedAtMs: 1782622440200,
                 },
-              ])
-            : cleanup === "unload"
-              ? [
-                  {
-                    type: "expect_outbound" as const,
-                    label: "unload",
-                    frame: {
-                      id: 5,
-                      method: "thread/unsubscribe",
-                      params: { threadId: BG_NATIVE_THREAD },
-                    },
-                  },
-                  {
-                    type: "emit_inbound" as const,
-                    label: "unload",
-                    frame: { id: 5, result: { status: "notSubscribed" } },
-                  },
-                ]
-              : cleanup === "archive"
-                ? [
-                    {
-                      type: "expect_outbound" as const,
-                      label: "archive",
-                      frame: {
-                        id: 5,
-                        method: "thread/archive",
-                        params: { threadId: BG_NATIVE_THREAD },
-                      },
-                    },
-                    {
-                      type: "emit_inbound" as const,
-                      label: "archive",
-                      frame: { id: 5, result: {} },
-                    },
-                  ]
-                : [];
-        const probeFenceId = cleanup === "interrupt" ? 5 : 6;
-        const cancelled = yield* Deferred.make<void>();
-        const harness = yield* makeCodexReplayHarness(
-          makeCodexReplayTranscript({
-            scenario: `codex-bg-unknown-cleanup-${cleanup}`,
-            entries: [
-              ...backgroundExecTranscript.entries.slice(0, -1),
+              },
+            },
+            {
+              type: "emit_inbound" as const,
+              label: "turn/started/child",
+              frame: {
+                method: "turn/started",
+                params: {
+                  threadId: commandThreadId,
+                  turn: makeCodexReplayTurn({ id: commandTurnId, status: "inProgress" }),
+                },
+              },
+            },
+            {
+              type: "emit_inbound" as const,
+              label: "item/started/child-command",
+              frame: {
+                method: "item/started",
+                params: {
+                  item: backgroundCommandItem("inProgress"),
+                  threadId: commandThreadId,
+                  turnId: commandTurnId,
+                  startedAtMs: 1782622440500,
+                },
+              },
+            },
+            {
+              type: "emit_inbound" as const,
+              label: "turn/completed/child",
+              frame: {
+                method: "turn/completed",
+                params: {
+                  threadId: commandThreadId,
+                  turn: makeCodexReplayTurn({ id: commandTurnId, status: "completed" }),
+                },
+              },
+            },
+            ...backgroundExecTranscript.entries.slice(-3, -1),
+          ]
+        : backgroundExecTranscript.entries.slice(0, -1);
+      const cleanupEntries = closedThread
+        ? fence(5, "close-fence", [
+            {
+              type: "emit_inbound",
+              label: "thread/closed",
+              frame: { method: "thread/closed", params: { threadId: BG_NATIVE_THREAD } },
+            },
+          ])
+        : cleanup === "unload"
+          ? [
               {
-                type: "expect_outbound",
-                label: "list-background-terminals",
+                type: "expect_outbound" as const,
+                label: "unload",
                 frame: {
-                  id: 4,
-                  method: "thread/backgroundTerminals/list",
+                  id: 5,
+                  method: "thread/unsubscribe",
                   params: { threadId: BG_NATIVE_THREAD },
                 },
               },
               {
-                type: "emit_inbound",
-                label: "list-background-terminals",
-                frame: { id: 4, result: { data: [], nextCursor: null } },
+                type: "emit_inbound" as const,
+                label: "unload",
+                frame: { id: 5, result: { status: "notSubscribed" } },
               },
-              ...cleanupEntries,
-              ...fence(probeFenceId, "probe-fence", [
+            ]
+          : cleanup === "archive"
+            ? [
                 {
-                  type: "emit_inbound",
-                  label: "item/completed/command-late",
+                  type: "expect_outbound" as const,
+                  label: "archive",
                   frame: {
-                    method: "item/completed",
-                    params: {
-                      item: backgroundCommandItem("completed"),
-                      threadId: BG_NATIVE_THREAD,
-                      turnId: BG_NATIVE_TURN,
-                    },
+                    id: 5,
+                    method: "thread/archive",
+                    params: { threadId: BG_NATIVE_THREAD },
                   },
                 },
                 {
-                  type: "emit_inbound",
-                  label: "item/completed/probe",
-                  frame: {
-                    method: "item/completed",
-                    params: {
-                      item: { ...backgroundCommandItem("completed"), id: probeItemId },
-                      threadId: BG_NATIVE_THREAD,
-                      turnId: BG_NATIVE_TURN,
-                    },
+                  type: "emit_inbound" as const,
+                  label: "archive",
+                  frame: { id: 5, result: {} },
+                },
+              ]
+            : [];
+      const probeFenceId = cleanup === "interrupt" ? 5 : 6;
+      const cancelled = yield* Deferred.make<void>();
+      const harness = yield* makeCodexReplayHarness(
+        makeCodexReplayTranscript({
+          scenario: `codex-bg-unknown-cleanup-${scenarioSuffix}`,
+          entries: [
+            ...openingEntries,
+            {
+              type: "expect_outbound",
+              label: "list-background-terminals",
+              frame: {
+                id: 4,
+                method: "thread/backgroundTerminals/list",
+                params: { threadId: commandThreadId },
+              },
+            },
+            {
+              type: "emit_inbound",
+              label: "list-background-terminals",
+              frame: { id: 4, result: { data: [], nextCursor: null } },
+            },
+            ...cleanupEntries,
+            ...fence(probeFenceId, "probe-fence", [
+              {
+                type: "emit_inbound",
+                label: "item/completed/command-late",
+                frame: {
+                  method: "item/completed",
+                  params: {
+                    item: backgroundCommandItem("completed"),
+                    threadId: commandThreadId,
+                    turnId: commandTurnId,
                   },
                 },
-              ]),
-            ],
-          }),
-          (event) =>
-            event.type === "turn_item.updated" &&
-            event.turnItem.nativeItemRef?.nativeId === BG_COMMAND_ITEM &&
-            event.turnItem.status === "cancelled"
-              ? Deferred.succeed(cancelled, undefined)
-              : Effect.void,
-        );
-        yield* harness.runtime.startTurn(
-          makeCodexTestTurnInput({
-            threadId: harness.threadId,
-            providerThread: harness.providerThread,
-            now: yield* DateTime.now,
-            attemptId: RunAttemptId.make(`attempt-codex-bg-unknown-cleanup-${cleanup}`),
-            text: BG_PROMPT,
-          }),
-        );
-        yield* harness.firstTerminal;
-        yield* Deferred.await(cancelled);
-        const terminal = harness.terminalEvents()[0]!;
-        if (cleanup === "thread/closed") {
-          yield* harness.runtime.applyThreadTitle!({
-            providerThread: harness.providerThread,
-            title: "close-fence",
-          });
-        } else if (cleanup === "unload") {
-          yield* harness.runtime.unloadThread!({ providerThread: harness.providerThread });
-        } else if (cleanup === "archive") {
-          yield* harness.runtime.unloadThread!({
-            providerThread: harness.providerThread,
-            archive: true,
-          });
-        } else {
-          yield* harness.runtime.interruptTurn({
-            providerThread: harness.providerThread,
-            providerTurnId: terminal.providerTurnId,
-            requestRuntimeRestart: true,
-          });
-        }
+              },
+              {
+                type: "emit_inbound",
+                label: "item/completed/probe",
+                frame: {
+                  method: "item/completed",
+                  params: {
+                    item: { ...backgroundCommandItem("completed"), id: probeItemId },
+                    threadId: commandThreadId,
+                    turnId: commandTurnId,
+                  },
+                },
+              },
+            ]),
+          ],
+        }),
+        (event) =>
+          event.type === "turn_item.updated" &&
+          event.turnItem.nativeItemRef?.nativeId === BG_COMMAND_ITEM &&
+          event.turnItem.status === "cancelled"
+            ? Deferred.succeed(cancelled, undefined)
+            : Effect.void,
+      );
+      yield* harness.runtime.startTurn(
+        makeCodexTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make(`attempt-codex-bg-unknown-cleanup-${scenarioSuffix}`),
+          text: BG_PROMPT,
+        }),
+      );
+      yield* harness.firstTerminal;
+      yield* Deferred.await(cancelled);
+      const terminal = harness.terminalEvents()[0]!;
+      if (closedThread) {
         yield* harness.runtime.applyThreadTitle!({
           providerThread: harness.providerThread,
-          title: "probe-fence",
+          title: "close-fence",
         });
-        assert.deepEqual(
-          harness.events.flatMap((event) =>
+      } else if (cleanup === "unload") {
+        yield* harness.runtime.unloadThread!({ providerThread: harness.providerThread });
+      } else if (cleanup === "archive") {
+        yield* harness.runtime.unloadThread!({
+          providerThread: harness.providerThread,
+          archive: true,
+        });
+      } else {
+        yield* harness.runtime.interruptTurn({
+          providerThread: harness.providerThread,
+          providerTurnId: terminal.providerTurnId,
+          requestRuntimeRestart: true,
+        });
+      }
+      yield* harness.runtime.applyThreadTitle!({
+        providerThread: harness.providerThread,
+        title: "probe-fence",
+      });
+      assert.deepEqual(
+        harness.events.flatMap((event) =>
+          event.type === "turn_item.updated" &&
+          event.turnItem.nativeItemRef?.nativeId === BG_COMMAND_ITEM
+            ? [event.turnItem.status]
+            : [],
+        ),
+        ["running", "cancelled"],
+      );
+      assert.isEmpty(
+        harness.events.filter(
+          (event) =>
             event.type === "turn_item.updated" &&
-            event.turnItem.nativeItemRef?.nativeId === BG_COMMAND_ITEM
-              ? [event.turnItem.status]
-              : [],
-          ),
-          ["running", "cancelled"],
-        );
-        assert.isEmpty(
-          harness.events.filter(
-            (event) =>
-              event.type === "turn_item.updated" &&
-              event.turnItem.nativeItemRef?.nativeId === probeItemId,
-          ),
-        );
-        assert.lengthOf(harness.continuationRequests, 0);
-        assert.isFalse(yield* harness.hasPendingBackgroundWork);
-      }).pipe(
-        Effect.provide(
-          Layer.mergeAll(
-            IdAllocator.layer,
-            McpProviderSessions.layer,
-            NodeServices.layer,
-            NodeCrypto.layer,
-          ),
+            event.turnItem.nativeItemRef?.nativeId === probeItemId,
+        ),
+      );
+      assert.lengthOf(harness.continuationRequests, 0);
+      assert.isFalse(yield* harness.hasPendingBackgroundWork);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
         ),
       ),
+    ),
   );
 
   it.effect.each([

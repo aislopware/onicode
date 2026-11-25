@@ -16387,6 +16387,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               yield* query
                 .mcpSubmitOAuthCallbackUrl({ server, callbackUrl: pasted })
                 .pipe(Effect.mapError(failed));
+              announcedMcpSignIns.delete(mcpSignInKey(liveQuery.nativeThreadId, server));
               // The CLI reconnects after its own callback page, but not after a pasted address.
               yield* query
                 .reconnectMcpServer(server)
@@ -16397,7 +16398,6 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     ),
                   ),
                 );
-              announcedMcpSignIns.delete(mcpSignInKey(liveQuery.nativeThreadId, server));
             }),
           },
           sessionSettings: {
@@ -16645,6 +16645,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     ),
                   ),
                 );
+              announcedMcpSignIns.delete(mcpSignInKey(liveQuery.nativeThreadId, server));
               // The CLI reconnects after its own callback page, but not after a pasted address.
               yield* liveQuery.query
                 .reconnectMcpServer(server)
@@ -16655,7 +16656,6 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     ),
                   ),
                 );
-              announcedMcpSignIns.delete(mcpSignInKey(liveQuery.nativeThreadId, server));
             }),
           },
           stopTask: Effect.fn("ClaudeAdapterV2.stopTask")(function* ({ providerThread, taskId }) {

@@ -3325,6 +3325,7 @@ export const layerWithOptions = (
                         providerInstanceId: entry.runtime.instanceId,
                         threadId,
                         event,
+                        sessionScoped: true,
                       })
                       .pipe(
                         Effect.mapError(

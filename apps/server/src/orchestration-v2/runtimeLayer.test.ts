@@ -4953,6 +4953,21 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         const after = yield* orchestrator.getThreadProjection(threadId);
         assert.isNull(after.thread.settledAt);
         assert.equal(after.runs.find((run) => run.id === queuedRun.id)?.status, "queued");
+
+        // Inactivity auto-settlement passes settledAt and cancels the held automatic follow-up.
+        yield* orchestrator.dispatch({
+          type: "thread.auto-settle",
+          commandId: CommandId.make("delegated-held-auto-settle-inactivity"),
+          threadId,
+          snapshotAt: shell?.updatedAt ?? now,
+          settledAt: now,
+        });
+        const afterInactivity = yield* orchestrator.getThreadProjection(threadId);
+        assert.isNotNull(afterInactivity.thread.settledAt);
+        assert.equal(
+          afterInactivity.runs.find((run) => run.id === queuedRun.id)?.status,
+          "cancelled",
+        );
       }),
   );
 
