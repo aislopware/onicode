@@ -3806,3 +3806,4 @@ f1e0c0b2eb	take	fix(server): source control discovery no longer runs the auth co
 571ed76fc3	take	fix(web): sidebar issue and pull request badges share one component (#42275); kept Onicode's useSidebarLinkedIssue live title in SidebarThreadRow.tsx and issueSummaries parameterization in ChatView.browser.test.tsx while adopting upstream's shared ThreadLinkBadge
 3380585e1b	skip	removed surface: relay and Clerk account deletion webhook (infra/relay, Clerk, and packages/contracts/src/relay.ts are removed in Onicode)
 f811978eef	take	fix(web): Esc in Theme Editor color filter clears the filter without closing the editor (#42395); kept Onicode's isImeKeyDown helper
+482e197fae	skip	removed surface: mobile analytics device id (telemetry/analytics and AnalyticsDevice capability are removed in Onicode)
