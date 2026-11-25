@@ -1,5 +1,7 @@
 import {
   CommandId,
+  isOrchestrationV2WorkActive,
+  type OrchestrationV2ExecutionNode,
   type OrchestrationV2Run,
   OrchestrationV2DomainEvent,
   type OrchestrationV2ProviderThread,
@@ -369,8 +371,20 @@ const layerBase: Layer.Layer<
           );
       });
 
-    // A user can answer after terminal normalization reads the pending request.
-    // Recheck inside the write transaction so stale cleanup cannot erase answers.
+    const isCommandStatusRegression = (
+      current: string | undefined,
+      next: OrchestrationV2ExecutionNode["status"],
+    ): boolean => {
+      if (current === undefined) return false;
+      if (isOrchestrationV2WorkActive(next)) {
+        return current !== "pending" && current !== "running" && current !== "waiting";
+      }
+      return next === "cancelled" && (current === "completed" || current === "failed");
+    };
+
+    // A user can answer after terminal normalization reads the pending request, and a
+    // session-scoped late command result can commit before queued earlier updates drain.
+    // Recheck inside the write transaction so stale writes cannot erase answers or results.
     const guardUserInputCancellations =
       /* This helper runs for individual orchestration events; the enclosing operation owns the span. */
       Effect.fnUntraced(function* (events: ReadonlyArray<OrchestrationV2DomainEvent>) {
@@ -397,22 +411,59 @@ const layerBase: Layer.Layer<
             staleNodes.add(event.payload.nodeId);
           }
         }
-        return events.filter((event) => {
+        const kept: Array<OrchestrationV2DomainEvent> = [];
+        for (const event of events) {
           switch (event.type) {
             case "runtime-request.updated":
-              return event.payload.status !== "cancelled" || !staleRequests.has(event.payload.id);
+              if (event.payload.status === "cancelled" && staleRequests.has(event.payload.id)) {
+                continue;
+              }
+              break;
             case "node.updated":
-              return event.payload.status !== "cancelled" || !staleNodes.has(event.payload.id);
+              if (event.payload.status === "cancelled" && staleNodes.has(event.payload.id)) {
+                continue;
+              }
+              if (
+                event.payload.kind === "tool_call" &&
+                event.payload.runtimeRequestId === null &&
+                (isOrchestrationV2WorkActive(event.payload.status) ||
+                  event.payload.status === "cancelled")
+              ) {
+                const rows = yield* sql<{ readonly status: string }>`
+                  SELECT status
+                  FROM orchestration_v2_projection_nodes
+                  WHERE node_id = ${event.payload.id}
+                  LIMIT 1
+                `;
+                if (isCommandStatusRegression(rows[0]?.status, event.payload.status)) continue;
+              }
+              break;
             case "turn-item.updated":
-              return (
-                event.payload.type !== "user_input_request" ||
-                event.payload.status !== "cancelled" ||
-                !staleRequests.has(event.payload.requestId)
-              );
-            default:
-              return true;
+              if (
+                event.payload.type === "user_input_request" &&
+                event.payload.status === "cancelled" &&
+                staleRequests.has(event.payload.requestId)
+              ) {
+                continue;
+              }
+              if (
+                event.payload.type === "command_execution" &&
+                (isOrchestrationV2WorkActive(event.payload.status) ||
+                  event.payload.status === "cancelled")
+              ) {
+                const rows = yield* sql<{ readonly status: string }>`
+                  SELECT status
+                  FROM orchestration_v2_projection_turn_items
+                  WHERE turn_item_id = ${event.payload.id}
+                  LIMIT 1
+                `;
+                if (isCommandStatusRegression(rows[0]?.status, event.payload.status)) continue;
+              }
+              break;
           }
-        });
+          kept.push(event);
+        }
+        return kept;
       });
 
     const normalizeEvents = (events: ReadonlyArray<OrchestrationV2DomainEvent>) => {

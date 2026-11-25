@@ -1421,6 +1421,37 @@ it.live("restores a recorded repository the project stopped tracking as its work
   ),
 );
 
+/**
+ * The first request's command holds the project's turn; `second` is cleared when it asks, then
+ * waits, and `meanwhile` runs during that wait. The second request's outcome.
+ */
+const afterWaitingItsTurn = <A, E, R, E1, E2, R2>(
+  state: TaskFoldersTestState,
+  first: Effect.Effect<unknown, E1, R>,
+  second: Effect.Effect<A, E, R>,
+  meanwhile: Effect.Effect<unknown, E2, R2>,
+) =>
+  Effect.gen(function* () {
+    const started = yield* Queue.unbounded<void>();
+    const approvalRead = yield* Queue.unbounded<void>();
+    const finish = yield* Deferred.make<void>();
+    state.onLayoutCommand = Queue.offer(started, undefined).pipe(
+      Effect.andThen(Deferred.await(finish)),
+    );
+    state.onApprovalRead = Queue.offer(approvalRead, undefined);
+
+    const holding = yield* first.pipe(Effect.forkScoped);
+    yield* Queue.take(started);
+    yield* Queue.clear(approvalRead);
+    const waiting = yield* second.pipe(Effect.forkScoped);
+    yield* Queue.take(approvalRead);
+    yield* meanwhile;
+    yield* Deferred.succeed(finish, undefined);
+
+    assert.isNotNull(yield* Fiber.join(holding));
+    return yield* Fiber.await(waiting);
+  });
+
 it.live("never rebuilds a missing plain project folder through a link on its way", () =>
   withState((state) =>
     Effect.gen(function* () {
@@ -1453,7 +1484,7 @@ it.live("never rebuilds a missing plain project folder through a link on its way
       // A request that may not run the project's layout command rebuilds plainly, through the same guard.
       yield* fileSystem.writeFileString(
         path.join(notes, "onicode.json"),
-        JSON.stringify({ worktreeLayout: { create: "true" } }),
+        JSON.stringify({ worktreeLayout: { create: 'mkdir -p "$ONICODE_WORKTREE_PROJECT_PATH"' } }),
       );
       const refusedWithoutCommands = yield* (yield* TaskFolders.TaskFolders)
         .restore({
@@ -1464,6 +1495,23 @@ it.live("never rebuilds a missing plain project folder through a link on its way
         })
         .pipe(Effect.flip);
       assert.include(refusedWithoutCommands.detail, "lies behind a link");
+      assert.deepStrictEqual(yield* fileSystem.readDirectory(elsewhere), []);
+
+      // A cleared layout command revoked while restore waits its turn still falls back through the guard.
+      yield* approveLayoutCommands;
+      const waiting = yield* afterWaitingItsTurn(
+        state,
+        create("holding"),
+        (yield* TaskFolders.TaskFolders).restore({
+          taskFolder,
+          branch: "feature",
+          projectCommands: "permitted",
+          recreate: () => Effect.die("the repository's worktree is still there"),
+        }),
+        revokeCreateCommand,
+      );
+      const refusedAfterRevoke = yield* Effect.flip(waiting);
+      assert.include(refusedAfterRevoke.detail, "lies behind a link");
       assert.deepStrictEqual(yield* fileSystem.readDirectory(elsewhere), []);
     }),
   ),
@@ -1679,37 +1727,6 @@ it.live(
       }),
     ),
 );
-
-/**
- * The first request's command holds the project's turn; `second` is cleared when it asks, then
- * waits, and `meanwhile` runs during that wait. The second request's outcome.
- */
-const afterWaitingItsTurn = <A, E, R, E1, E2, R2>(
-  state: TaskFoldersTestState,
-  first: Effect.Effect<unknown, E1, R>,
-  second: Effect.Effect<A, E, R>,
-  meanwhile: Effect.Effect<unknown, E2, R2>,
-) =>
-  Effect.gen(function* () {
-    const started = yield* Queue.unbounded<void>();
-    const approvalRead = yield* Queue.unbounded<void>();
-    const finish = yield* Deferred.make<void>();
-    state.onLayoutCommand = Queue.offer(started, undefined).pipe(
-      Effect.andThen(Deferred.await(finish)),
-    );
-    state.onApprovalRead = Queue.offer(approvalRead, undefined);
-
-    const holding = yield* first.pipe(Effect.forkScoped);
-    yield* Queue.take(started);
-    yield* Queue.clear(approvalRead);
-    const waiting = yield* second.pipe(Effect.forkScoped);
-    yield* Queue.take(approvalRead);
-    yield* meanwhile;
-    yield* Deferred.succeed(finish, undefined);
-
-    assert.isNotNull(yield* Fiber.join(holding));
-    return yield* Fiber.await(waiting);
-  });
 
 it.live(
   "leaves a layout command unrun when its approval is withdrawn while it waits its turn",

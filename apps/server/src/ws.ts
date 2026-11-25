@@ -2329,7 +2329,9 @@ export const layerWsRpc = (
         [WS_METHODS.workflowsDeleteDefinition]: (input) => workflowDefinitions.remove(input.name),
         [WS_METHODS.scheduledTasksSubscribe]: (_input) =>
           scheduledTasks.subscribeList().pipe(Stream.map(withVisibleWebhookUrls)),
-        [WS_METHODS.scheduledTasksUpsert]: (input) => scheduledTasks.upsert(input),
+        // A save from a client is the user's, so it also takes back a task an agent last edited.
+        [WS_METHODS.scheduledTasksUpsert]: (input) =>
+          scheduledTasks.upsert({ ...input, createdBy: "user" }),
         [WS_METHODS.scheduledTasksSetEnabled]: (input) =>
           Effect.annotateCurrentSpan({ "scheduled_task.id": input.id }).pipe(
             Effect.andThen(scheduledTasks.setEnabled(input)),

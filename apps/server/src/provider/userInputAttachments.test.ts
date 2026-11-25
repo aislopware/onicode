@@ -380,6 +380,11 @@ describe("question answer paths", () => {
       "你好 🚀",
     ],
     [
+      "UTF-8 BOM in encoded runs",
+      String.raw`{\rtf1\ansi\ansicpg65001 A \'ef\'bb\'bfB\b \'ef\'bb\'bfC}`,
+      "A \uFEFFB\uFEFFC",
+    ],
+    [
       "Shift_JIS code page",
       "{\\rtf1\\ansi\\ansicpg932 \\'82\\'a0\\'82\\'a2\\'83\\\\\\'81@X}",
       "あいソ\u3000X",
@@ -1755,6 +1760,11 @@ describe("question answer paths", () => {
       expect(extracted).toContain("Hello\tworld\nUnicode α");
       expect(extracted).not.toContain("hidden");
 
+      const gb18030Bytes = Buffer.from([0x81, 0x30, 0x84, 0x33]);
+      const gb18030Char = new TextDecoder("gbk").decode(gb18030Bytes);
+      const gb18030Repeat = 750_002;
+      const gb18030Body = Buffer.alloc(gb18030Bytes.length * gb18030Repeat);
+      gb18030Body.fill(gb18030Bytes);
       for (const [name, content, expected] of [
         [
           "cyrillic-escaped",
@@ -1769,6 +1779,16 @@ describe("question answer paths", () => {
             Buffer.from("}"),
           ]),
           "Привет",
+        ],
+        [
+          "gb18030-raw",
+          Buffer.concat([
+            Buffer.from(String.raw`{\rtf1\ansi\ansicpg936 `),
+            Buffer.from([0xc4, 0xe3]),
+            gb18030Body,
+            Buffer.from("}"),
+          ]),
+          `你${gb18030Char.repeat(gb18030Repeat)}`,
         ],
       ] as const) {
         const encodedPath = NodePath.join(config.attachmentsDir, `${name}.rtf`);

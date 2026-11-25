@@ -36,12 +36,21 @@ const decodeTraceSpanLine = Schema.decodeUnknownOption(
   ),
 );
 
+const NS_PER_MS = 1_000_000n;
+const NS_PER_MINUTE = 60_000_000_000;
+
+const msToUnixNano = (ms: number): bigint => {
+  const wholeMs = Math.trunc(ms);
+  return BigInt(wholeMs) * NS_PER_MS + BigInt(Math.round((ms - wholeMs) * 1_000_000));
+};
+
 export function makeTraceSpanSummary(sinceMs = -Infinity) {
   const byName = new Map<string, { durations: number[]; interrupted: number; failures: number }>();
+  const sinceNs = Number.isFinite(sinceMs) ? msToUnixNano(sinceMs) : undefined;
   let spanCount = 0;
   let skippedLineCount = 0;
-  let firstEndMs = Infinity;
-  let lastEndMs = -Infinity;
+  let firstEndNs: bigint | undefined;
+  let lastEndNs: bigint | undefined;
   let firstPrintedMs = Infinity;
   let lastPrintedMs = -Infinity;
 
@@ -52,20 +61,22 @@ export function makeTraceSpanSummary(sinceMs = -Infinity) {
       skippedLineCount += 1;
       return;
     }
-    const endMs = Number(span.endTimeUnixNano) / 1_000_000;
+    const printedMs =
+      typeof span.endTimeUnixNano === "bigint"
+        ? Number(span.endTimeUnixNano / NS_PER_MS)
+        : span.endTimeUnixNano / 1_000_000;
     // The report prints end times as dates, so skip ones outside the Date range.
-    if (Option.isNone(DateTime.make(endMs))) {
+    if (Option.isNone(DateTime.make(printedMs))) {
       skippedLineCount += 1;
       return;
     }
-    if (endMs < sinceMs) return;
+    const endNs =
+      typeof span.endTimeUnixNano === "bigint" ? span.endTimeUnixNano : msToUnixNano(printedMs);
+    if (sinceNs !== undefined ? endNs < sinceNs : printedMs < sinceMs) return;
 
     spanCount += 1;
-    firstEndMs = Math.min(firstEndMs, endMs);
-    lastEndMs = Math.max(lastEndMs, endMs);
-    // Printed dates use the exact value while float bounds feed the rate.
-    const printedMs =
-      typeof span.endTimeUnixNano === "bigint" ? Number(span.endTimeUnixNano / 1_000_000n) : endMs;
+    firstEndNs = firstEndNs === undefined || endNs < firstEndNs ? endNs : firstEndNs;
+    lastEndNs = lastEndNs === undefined || endNs > lastEndNs ? endNs : lastEndNs;
     firstPrintedMs = Math.min(firstPrintedMs, printedMs);
     lastPrintedMs = Math.max(lastPrintedMs, printedMs);
     const stats = byName.get(span.name) ?? { durations: [], interrupted: 0, failures: 0 };
@@ -82,7 +93,10 @@ export function makeTraceSpanSummary(sinceMs = -Infinity) {
   };
 
   const finish = () => {
-    const minutes = (lastEndMs - firstEndMs) / 60_000;
+    const minutes =
+      firstEndNs === undefined || lastEndNs === undefined
+        ? 0
+        : Number(lastEndNs - firstEndNs) / NS_PER_MINUTE;
     const spans = [...byName]
       .map(([name, { durations, interrupted, failures }]) => {
         const sorted = durations.toSorted((left, right) => left - right);

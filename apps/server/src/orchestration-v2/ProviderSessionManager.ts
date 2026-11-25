@@ -4,6 +4,7 @@ import { resolveProjectSettings } from "@onicode/shared/projectSettings";
 import {
   CommandId,
   isOrchestrationV2WorkActive,
+  isProviderNativeSubagentThread,
   ModelSelection,
   type OrchestrationV2AppThread,
   OrchestrationV2DomainEvent,
@@ -402,6 +403,7 @@ function sessionScopedArtifactThreadId(
     case "runtime_request.updated":
       return event.runtimeRequest.providerTurnId === null ? event.threadId : undefined;
     case "node.updated":
+      if (event.sessionScoped === true) return event.node.threadId;
       return event.node.runId === null && event.node.runtimeRequestId !== null
         ? event.node.threadId
         : undefined;
@@ -3146,6 +3148,47 @@ export const layerWithOptions = (
         };
       };
 
+      const nativeSubagentParentsByRuntime = new WeakMap<
+        ProviderAdapter.ProviderAdapterV2SessionRuntime,
+        Map<ThreadId, ThreadId>
+      >();
+      const nativeSubagentParentsFor = (
+        runtime: ProviderAdapter.ProviderAdapterV2SessionRuntime,
+      ) => {
+        let parents = nativeSubagentParentsByRuntime.get(runtime);
+        if (parents === undefined) {
+          parents = new Map<ThreadId, ThreadId>();
+          nativeSubagentParentsByRuntime.set(runtime, parents);
+        }
+        return parents;
+      };
+      // Runs for session-scoped events on the pump; spans would be per-event noise.
+      const isSessionAttachedThread = Effect.fnUntraced(function* (
+        current: LiveSessionEntry,
+        threadId: ThreadId,
+      ) {
+        if (current.attachedThreadIds.has(threadId)) return true;
+        const nativeSubagentParents = nativeSubagentParentsFor(current.runtime);
+        let cursor: ThreadId | null = threadId;
+        const visited = new Set<ThreadId>();
+        while (cursor !== null && !visited.has(cursor)) {
+          visited.add(cursor);
+          if (current.attachedThreadIds.has(cursor)) return true;
+          let parent: ThreadId | undefined = nativeSubagentParents.get(cursor);
+          if (parent === undefined) {
+            const stored: OrchestrationV2AppThread | null = yield* projectionStore
+              .findThread(cursor)
+              .pipe(Effect.orElseSucceed(() => null));
+            if (stored === null || !isProviderNativeSubagentThread(stored)) return false;
+            parent = stored.lineage.parentThreadId ?? undefined;
+            if (parent === undefined) return false;
+            nativeSubagentParents.set(cursor, parent);
+          }
+          cursor = parent;
+        }
+        return false;
+      });
+
       const startEventPump = (entry: LiveSessionEntry) => {
         let stoppedByProvider = false;
         let lastSessionStatus = entry.runtime.providerSession.status;
@@ -3248,21 +3291,34 @@ export const layerWithOptions = (
                     });
                   });
                 }
+                if (
+                  event.type === "app_thread.created" &&
+                  isProviderNativeSubagentThread(event.appThread) &&
+                  event.appThread.lineage.parentThreadId !== null
+                ) {
+                  nativeSubagentParentsFor(entry.runtime).set(
+                    event.appThread.id,
+                    event.appThread.lineage.parentThreadId,
+                  );
+                }
                 // Requests and recovered background commands can arrive before a run subscribes.
                 const threadId = sessionScopedArtifactThreadId(event);
                 if (threadId !== undefined) {
-                  yield* Effect.gen(function* () {
+                  const persisted = yield* Effect.gen(function* () {
                     const current = (yield* Ref.get(sessions)).get(
                       sessionKey(entry.runtime.providerSessionId),
                     );
+                    const requiresAttachment =
+                      event.type === "provider_thread.updated" ||
+                      (event.type === "node.updated" && event.sessionScoped === true) ||
+                      (event.type === "turn_item.updated" &&
+                        event.turnItem.type === "command_execution");
                     if (
-                      current?.runtime !== entry.runtime ||
-                      ((event.type === "provider_thread.updated" ||
-                        (event.type === "turn_item.updated" &&
-                          event.turnItem.type === "command_execution")) &&
-                        !current.attachedThreadIds.has(threadId))
+                      current === undefined ||
+                      current.runtime !== entry.runtime ||
+                      (requiresAttachment && !(yield* isSessionAttachedThread(current, threadId)))
                     )
-                      return;
+                      return false;
                     yield* providerEventIngestor
                       .ingestNormalized({
                         providerSessionId: entry.runtime.providerSessionId,
@@ -3281,7 +3337,15 @@ export const layerWithOptions = (
                             }),
                         ),
                       );
+                    return true;
                   }).pipe(entry.requestEventPermit.withPermits(1));
+                  if (
+                    persisted &&
+                    (event.type === "node.updated" || event.type === "turn_item.updated") &&
+                    event.sessionScoped === true
+                  ) {
+                    yield* publishToSubscribers(entry.eventSubscribers, { type: "event", event });
+                  }
                   yield* releaseLiveOutput;
                   return;
                 }

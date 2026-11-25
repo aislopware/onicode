@@ -6,9 +6,11 @@ import {
   ProjectId,
   ProviderInstanceId,
   type ScheduledTaskError,
+  ThreadId,
 } from "@onicode/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Ref from "effect/Ref";
 
 import * as ProviderAdapters from "../orchestration-v2/ProviderAdapterRegistry.ts";
 import * as Launch from "../orchestration-v2/ThreadLaunchService.ts";
@@ -24,6 +26,7 @@ import * as Scheduler from "../scheduling/Scheduler.ts";
 import * as Secrets from "../secrets/SecretRequests.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as Git from "../vcs/GitVcsDriver.ts";
+import * as TaskFolders from "../workspace/TaskFolders.ts";
 import type { McpInvocationScope } from "./McpInvocationContext.ts";
 import * as Mcp from "./OrchestratorMcpService.ts";
 
@@ -43,6 +46,7 @@ const dependencies = Layer.mergeAll(
   Layer.mock(Threads.ThreadManagementService)({}),
   Layer.mock(Launch.ThreadLaunchService)({}),
   Layer.mock(Git.GitVcsDriver)({}),
+  Layer.mock(TaskFolders.TaskFolders)({}),
   Layer.mock(Secrets.SecretRequests)({}),
   Layer.mock(RemoteDelegation.RemoteDelegation)({}),
   Layer.mock(Scheduler.Scheduler)({ register: () => Effect.void }),
@@ -160,4 +164,121 @@ it.effect("an MCP edit keeps a concurrent pause or edit of the fields it leaves 
     expect(saved._tag).toBe("Success");
     expect(yield* stored()).toMatchObject({ enabled: false, title: "Renamed" });
   }).pipe(Effect.provide(layer)),
+);
+
+it.effect(
+  "an MCP edit or unbind of a user schedule marks it agent-authored so firing runs under agent checks",
+  () =>
+    Effect.gen(function* () {
+      const projectId = ProjectId.make("project");
+      const boundThreadId = ThreadId.make("thread:bound");
+      const launches = yield* Ref.make<ReadonlyArray<Launch.ThreadLaunchInput>>([]);
+      const supervisedClient: McpInvocationScope = {
+        environmentId: EnvironmentId.make("schedule-test"),
+        requestNamespace: "client:supervised",
+        thread: undefined,
+        client: { sessionId: "client:supervised", label: "Test", access: "approval-required" },
+        capabilities: new Set(["orchestration"]),
+        issuedAt: 1,
+      };
+      const overrides = Layer.mergeAll(
+        Layer.mock(Projects.ProjectService)({
+          getById: (id) => Effect.succeedSome({ id, workspaceRoot: "/repo" } as never),
+        }),
+        Layer.mock(Git.GitVcsDriver)({
+          resolvePrimaryRemoteName: () => Effect.succeed("origin"),
+          resolveDefaultBranchName: () => Effect.succeed("main"),
+          resolveCommit: () => Effect.succeed({ commitSha: "abc123" }),
+        }),
+        Layer.mock(Threads.ThreadManagementService)({
+          getThreadShell: (threadId) =>
+            Effect.succeed({
+              id: threadId,
+              projectId,
+              runtimeMode: "approval-required",
+              interactionMode: "default",
+              archivedAt: null,
+              deletedAt: null,
+            } as never),
+        }),
+        Layer.mock(Launch.ThreadLaunchService)({
+          isNonGitProject: () => Effect.succeed(false),
+          launch: (input) =>
+            Ref.update(launches, (all) => [...all, input]).pipe(
+              Effect.as({ threadId: ThreadId.make("thread:fired"), resumed: false } as never),
+            ),
+        }),
+      );
+      const testDependencies = Layer.merge(dependencies, overrides);
+      const testLayer = Mcp.layer.pipe(
+        Layer.provideMerge(Schedules.layer),
+        Layer.provideMerge(testDependencies),
+      );
+
+      yield* Effect.gen(function* () {
+        const schedules = yield* Schedules.ScheduledTaskService;
+        const mcp = yield* Mcp.OrchestratorMcpService;
+        const base = {
+          title: "Supervised review",
+          prompt: "Review",
+          projectId,
+          schedule: { type: "interval", everyMs: 60_000 } as const,
+          enabled: true,
+          modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "test" },
+          runtimeMode: "approval-required" as const,
+          interactionMode: "default" as const,
+        };
+        const { task: bound } = yield* schedules.upsert({
+          ...base,
+          threadId: boundThreadId,
+          workspaceStrategy: { type: "root" },
+        });
+        const { task: unbound } = yield* schedules.upsert({
+          ...base,
+          threadId: null,
+          workspaceStrategy: { type: "worktree", baseRef: "origin/main", startFromOrigin: true },
+        });
+        expect(bound.createdBy).toBe("user");
+        expect(unbound.createdBy).toBe("user");
+
+        // Unbinding a user task via MCP switches it to a worktree and marks it agent-authored.
+        yield* mcp.updateScheduledTask(supervisedClient, {
+          scheduledTaskId: bound.id,
+          bindToCurrentThread: false,
+        });
+        // Editing an existing unbound user worktree task via MCP marks it agent-authored too.
+        yield* mcp.updateScheduledTask(supervisedClient, {
+          scheduledTaskId: unbound.id,
+          prompt: "Edited by agent",
+        });
+
+        const storedTasks = (yield* schedules.list()).tasks;
+        const storedBound = storedTasks.find((task) => task.id === bound.id)!;
+        const storedUnbound = storedTasks.find((task) => task.id === unbound.id)!;
+        expect(storedBound).toMatchObject({
+          createdBy: "agent",
+          threadId: null,
+          workspaceStrategy: { type: "worktree", baseRef: "origin/main", startFromOrigin: true },
+        });
+        expect(storedUnbound.createdBy).toBe("agent");
+
+        // A later save omitting createdBy (such as Settings) keeps the stored author.
+        const { createdBy: _createdBy, ...withoutCreatedBy } = storedBound;
+        const { task: resaved } = yield* schedules.upsert({
+          ...withoutCreatedBy,
+          prompt: "Tweaked in settings",
+        });
+        expect(resaved.createdBy).toBe("agent");
+
+        // Firing the unbound task passes createdBy: "agent" into ThreadLaunchService.
+        yield* schedules.runNow({ id: bound.id });
+        const fired = yield* Ref.get(launches);
+        expect(fired).toHaveLength(1);
+        expect(fired[0]).toMatchObject({
+          createdBy: "agent",
+          runtimeMode: "approval-required",
+          workspaceStrategy: { type: "worktree", baseRef: "origin/main", startFromOrigin: true },
+        });
+      }).pipe(Effect.provide(testLayer));
+    }),
 );

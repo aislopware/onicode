@@ -202,6 +202,22 @@ it.layer(NodeServices.layer)("onicode install", (it) => {
         assert.equal(yield* fs.readFileString(shim), `@echo off\r\n"${executable}" %*`);
         // A PowerShell command for this window; the saved PATH is left to the user.
         assert.equal(windowsInstalled.pathCommand, `$env:Path += ';${path.join(root, "bin")}'`);
+        // Relative Path entries resolve against cwd, so they must not report binDir as onPath.
+        const relativeBinDir = path.relative(process.cwd(), path.join(root, "bin"));
+        if (!path.isAbsolute(relativeBinDir)) {
+          const fromRelativePath = yield* provide(
+            installCli().pipe(Effect.provideService(HostProcess.Platform, "win32")),
+            { PATH: relativeBinDir },
+          );
+          assert.isFalse(fromRelativePath.onPath);
+          assert.equal(fromRelativePath.pathCommand, `$env:Path += ';${path.join(root, "bin")}'`);
+        }
+        const fromAbsolutePath = yield* provide(
+          installCli().pipe(Effect.provideService(HostProcess.Platform, "win32")),
+          { PATH: `${path.join(root, "bin").toUpperCase()}/` },
+        );
+        assert.isTrue(fromAbsolutePath.onPath);
+        assert.isUndefined(fromAbsolutePath.pathCommand);
         const unrunnable = yield* windows(
           installCli().pipe(
             Effect.provideService(

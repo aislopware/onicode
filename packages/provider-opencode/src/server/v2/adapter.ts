@@ -294,8 +294,8 @@ interface ActiveTurn {
   awaitingStart: boolean;
   /** session.command queued a user item without Onicode's ID that this turn has not seen yet. */
   commandItemPending: boolean;
-  /** A wake's reports, until its first delivery settles where its history begins. */
-  opening: ReadonlySet<string> | undefined;
+  /** Items enqueued during a wake before its first delivery settles where its history begins. */
+  opening: Set<string> | undefined;
   /** Scope child tool IDs because model-generated IDs can repeat parent IDs. */
   readonly scope: string;
   usedSubagents: boolean;
@@ -332,7 +332,6 @@ interface Wake {
   dropped: boolean;
   readonly after: string | undefined;
   readonly first: string | undefined;
-  readonly taken: ReadonlySet<string>;
   readonly children: Set<string>;
   readonly awaited: Set<string>;
   /** Held shell launches whose end report arrived first; the report already cleared their status. */
@@ -3204,7 +3203,6 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
         dropped: false,
         after: delivered.at(-1)?.inboxId,
         first: leading ?? delivered[0]?.inboxId,
-        taken: new Set(delivered.map((entry) => entry.inboxId)),
         children: new Set(),
         awaited: new Set(),
         ended: new Map(),
@@ -3648,6 +3646,9 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
           yield* emitProviderThread(state);
         }
       }
+      if (event.type === "session.inbox.enqueued") {
+        state.active?.opening?.add(event.data.inboxID);
+      }
       if (
         event.type === "session.inbox.enqueued" &&
         state.subagent !== undefined &&
@@ -3673,7 +3674,11 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
           turn.opening = undefined;
           const queued = external ?? report;
           // Items queued during this turn are its steers and reports, never where it begins.
-          if (queued === undefined ? opening.has(event.data.inboxID) : queued.during !== turn) {
+          if (
+            queued === undefined
+              ? !turn.steers.has(event.data.inboxID) && !opening.has(event.data.inboxID)
+              : queued.during !== turn
+          ) {
             turn.providerTurn = {
               ...turn.providerTurn,
               nativeTurnRef: ref(event.data.inboxID, "weak"),
@@ -4833,7 +4838,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
           if (turn !== undefined && wake.after !== undefined) turn.before = wake.after;
           // Fork and rollback cut where its history begins; a prompt delivered before its reports moves it.
           if (turn !== undefined) {
-            turn.opening = wake.taken;
+            turn.opening = new Set();
             if (wake.first !== undefined) {
               turn.providerTurn = { ...turn.providerTurn, nativeTurnRef: ref(wake.first, "weak") };
             }

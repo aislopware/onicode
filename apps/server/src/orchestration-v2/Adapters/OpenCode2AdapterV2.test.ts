@@ -8583,6 +8583,97 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     }),
   );
 
+  it.effect.each([
+    {
+      name: "Onicode's own late prompt",
+      inboxID: `msg_oni_turn_${SESSION}:attempt:late`,
+      item: { type: "user" as const, payload: { text: "mine" }, delivery: "steer" as const },
+    },
+    {
+      name: "a media job notice",
+      inboxID: "msg_media_notice",
+      item: {
+        type: "synthetic" as const,
+        delivery: "steer" as const,
+        payload: {
+          description: "Image generation",
+          text: "Image generation completed.",
+          metadata: {
+            source: "experimental_image_generate",
+            jobID: "img_1",
+            state: "completed",
+          },
+        },
+      },
+    },
+  ])(
+    "replaces a disproven provisional prompt boundary when a wake opens on $name",
+    ({ inboxID, item }) =>
+      Effect.gen(function* () {
+        const offers: Array<ProviderContinuationRequests.ProviderContinuationRequest> = [];
+        const { runtime, thread } = yield* resumed([
+          event("session.inbox.enqueued", { inboxID, sessionID: SESSION, item }),
+          event("session.inbox.enqueued", {
+            inboxID: "msg_queued",
+            sessionID: SESSION,
+            item: { type: "user", payload: { text: "Run next" }, delivery: "queue" },
+          }),
+          event("session.execution.started", { sessionID: SESSION }),
+          event("session.inbox.delivered", { sessionID: SESSION, inboxID }),
+          event("session.execution.succeeded", { sessionID: SESSION }),
+          event("session.execution.started", { sessionID: SESSION }),
+          event("session.inbox.delivered", { sessionID: SESSION, inboxID: "msg_queued" }),
+          event("session.execution.succeeded", { sessionID: SESSION }),
+          // Handled only after both wakes above have buffered everything before it.
+          event("session.model.selected", {
+            sessionID: SESSION,
+            model: { id: "buffered", providerID: "opencode" },
+          }),
+        ]).pipe(
+          Effect.provideService(ProviderContinuationRequests.ProviderContinuationRequests, {
+            offer: (request) => Effect.sync(() => void offers.push(request)),
+            take: Effect.never,
+          }),
+        );
+        const completedRefs: Array<string | null | undefined> = [];
+        const buffered = yield* Deferred.make<void>();
+        const endedA = yield* Deferred.make<void>();
+        const endedB = yield* Deferred.make<void>();
+        let terminals = 0;
+        yield* runtime.events.pipe(
+          Stream.tap((event) =>
+            Effect.gen(function* () {
+              if (
+                event.type === "provider_turn.updated" &&
+                event.providerTurn.status === "completed"
+              ) {
+                completedRefs.push(event.providerTurn.nativeTurnRef?.nativeId);
+              }
+              if (
+                event.type === "provider_thread.updated" &&
+                event.providerThread.nativeMetadata?.modelSelection?.model === "opencode/buffered"
+              ) {
+                yield* Deferred.succeed(buffered, undefined);
+              }
+              if (event.type === "turn.terminal") {
+                if (++terminals === 1) yield* Deferred.succeed(endedA, undefined);
+                if (terminals === 2) yield* Deferred.succeed(endedB, undefined);
+              }
+            }),
+          ),
+          Stream.runDrain,
+          Effect.forkScoped,
+        );
+        yield* Deferred.await(buffered);
+        assert.equal(offers.length, 2);
+        yield* runtime.startTurn(continuationTurn(thread, offers[0]!, "wake-a"));
+        yield* Deferred.await(endedA);
+        yield* runtime.startTurn(continuationTurn(thread, offers[1]!, "wake-b"));
+        yield* Deferred.await(endedB);
+        assert.deepEqual(completedRefs, [inboxID, "msg_queued"]);
+      }),
+  );
+
   it.effect("shows a second prompt another client sent while its continuation was pending", () =>
     Effect.gen(function* () {
       const offers: Array<ProviderContinuationRequests.ProviderContinuationRequest> = [];

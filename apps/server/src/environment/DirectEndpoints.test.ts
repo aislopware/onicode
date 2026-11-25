@@ -1,26 +1,32 @@
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { EnvironmentId } from "@onicode/contracts";
+import * as HostProcess from "@onicode/shared/HostProcess";
 import { it as effectIt } from "@effect/vitest";
-import type * as NodeOS from "node:os";
+import * as NodeNet from "node:net";
+import * as NodeOS from "node:os";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
 import * as Ref from "effect/Ref";
 import * as Layer from "effect/Layer";
+import * as PlatformError from "effect/PlatformError";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import * as HttpClient from "effect/http/HttpClient";
 import type * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import * as ServerConfig from "../config.ts";
 import * as DirectEndpoints from "./DirectEndpoints.ts";
 import * as ServerEnvironment from "./ServerEnvironment.ts";
 import { readIsolatedLinuxBridges, resolveBoundEndpoints } from "./DirectEndpoints.ts";
+
+vi.mock("node:net", { spy: true });
+vi.mock("node:os", { spy: true });
 
 const INTERFACES: ReturnType<typeof NodeOS.networkInterfaces> = {
   lo0: [
@@ -297,13 +303,37 @@ describe("readIsolatedLinuxBridges", () => {
         "fhciowner/bridge",
         "fhciowner/brif/veth1",
         "virbr0/bridge",
+        "lockedbr/bridge",
       ];
       for (const dir of dirs) yield* fs.makeDirectory(`${root}/${dir}`, { recursive: true });
-      const names = ["eth0", "bond0", "veth1", "br0", "vmbr0", "fhciowner", "virbr0"];
-      expect([...(yield* readIsolatedLinuxBridges(names, root))].toSorted()).toEqual([
+      const names = [
+        "eth0",
+        "bond0",
+        "veth1",
+        "br0",
+        "br0:0",
+        "vmbr0",
         "fhciowner",
+        "fhciowner:0",
         "virbr0",
-      ]);
+        "lockedbr",
+      ];
+      const isolated = yield* readIsolatedLinuxBridges(names, root).pipe(
+        Effect.provideService(FileSystem.FileSystem, {
+          ...fs,
+          readDirectory: (path) =>
+            path === `${root}/lockedbr/brif`
+              ? Effect.fail(
+                  PlatformError.systemError({
+                    _tag: "PermissionDenied",
+                    module: "FileSystem",
+                    method: "readDirectory",
+                  }),
+                )
+              : fs.readDirectory(path),
+        }),
+      );
+      expect([...isolated].toSorted()).toEqual(["fhciowner", "fhciowner:0", "virbr0"]);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 });
@@ -459,5 +489,130 @@ describe("DirectEndpoints Tailscale Serve", () => {
     Effect.gen(function* () {
       expect(yield* resolveWithServe(502)).toEqual([]);
     }),
+  );
+});
+
+describe("DirectEndpoints Linux sysfs pre-filtering", () => {
+  effectIt.effect(
+    "skips sysfs reads for filtered interfaces and when LAN routes are discarded",
+    () =>
+      Effect.gen(function* () {
+        const interfaces: ReturnType<typeof NodeOS.networkInterfaces> = {
+          ...INTERFACES,
+          docker0: virtualInterface("172.17.0.1"),
+          veth1234: virtualInterface("172.18.0.2"),
+          "br-3f2a1b": virtualInterface("172.19.0.1"),
+          ipv6only: [
+            {
+              address: "fe80::2",
+              netmask: "ffff:ffff:ffff:ffff::",
+              family: "IPv6",
+              mac: "aa:bb:cc:dd:ee:01",
+              internal: false,
+              cidr: "fe80::2/64",
+              scopeid: 5,
+            },
+          ],
+          tailscale0: vpnInterface("100.70.1.2"),
+          fhciowner: virtualInterface("10.221.0.1"),
+          "fhciowner:0": virtualInterface("10.221.0.2"),
+        };
+        const interfacesSpy = vi.spyOn(NodeOS, "networkInterfaces").mockReturnValue(interfaces);
+        const connectSpy = vi.spyOn(NodeNet, "connect").mockImplementation(
+          () =>
+            ({
+              once(event: string, listener: () => void) {
+                if (event === "connect") queueMicrotask(listener);
+                return this;
+              },
+              destroy() {
+                return this;
+              },
+            }) as unknown as NodeNet.Socket,
+        );
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => {
+            interfacesSpy.mockRestore();
+            connectSpy.mockRestore();
+          }),
+        );
+
+        const resolveLinux = (overrides: {
+          readonly tailnetOnly?: boolean;
+          readonly privateNetworkOnly?: boolean;
+        }) =>
+          Effect.gen(function* () {
+            const fsPaths: string[] = [];
+            const missing = FileSystem.makeNoop({});
+            const configLayer = Layer.effect(
+              ServerConfig.ServerConfig,
+              Effect.map(ServerConfig.ServerConfig, (config) => ({
+                ...config,
+                host: "0.0.0.0",
+                port: 3773,
+                tailscaleServeEnabled: false,
+                ...overrides,
+              })),
+            ).pipe(
+              Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "oni-direct-" })),
+              Layer.provide(NodeServices.layer),
+              Layer.merge(
+                Layer.succeed(ServerEnvironment.ServerEnvironment, {
+                  getEnvironmentId: Effect.succeed(EnvironmentId.make("serve-test")),
+                  getDescriptor: Effect.die("unused"),
+                }),
+              ),
+            );
+            const service = yield* DirectEndpoints.make.pipe(
+              Effect.provide(
+                Layer.mergeAll(
+                  configLayer,
+                  Layer.succeed(HostProcess.Platform, "linux"),
+                  FileSystem.layerNoop({
+                    exists: (path) => {
+                      fsPaths.push(path);
+                      return Effect.succeed(path === "/sys/class/net/fhciowner/bridge");
+                    },
+                    readDirectory: (path) => {
+                      fsPaths.push(path);
+                      if (path === "/sys/class/net/fhciowner/brif") return Effect.succeed([]);
+                      return missing.readDirectory(path);
+                    },
+                  }),
+                  layerTailscaleUp,
+                  layerServeProbe(502),
+                ),
+              ),
+            );
+            const endpoints = yield* service.resolveAvailable();
+            return { endpoints, fsPaths };
+          });
+
+        const normal = yield* resolveLinux({});
+        expect(normal.fsPaths).toEqual([
+          "/sys/class/net/en0/bridge",
+          "/sys/class/net/fhciowner/bridge",
+          "/sys/class/net/fhciowner/brif",
+        ]);
+        expect(normal.endpoints).toEqual([
+          { kind: "lan", httpBaseUrl: "http://192.168.1.10:3773/" },
+          { kind: "tailnet", httpBaseUrl: "http://100.101.102.103:3773/" },
+          { kind: "tailnet", httpBaseUrl: "http://100.70.1.2:3773/" },
+        ]);
+
+        const tailnetOnly = yield* resolveLinux({ tailnetOnly: true });
+        expect(tailnetOnly.fsPaths).toEqual([]);
+        expect(tailnetOnly.endpoints).toEqual([
+          { kind: "tailnet", httpBaseUrl: "http://100.101.102.103:3773/" },
+          { kind: "tailnet", httpBaseUrl: "http://100.70.1.2:3773/" },
+        ]);
+
+        const cloudVm = yield* resolveLinux({ privateNetworkOnly: true });
+        expect(cloudVm.fsPaths).toEqual([]);
+        expect(cloudVm.endpoints).toEqual([
+          { kind: "tailnet", httpBaseUrl: "http://100.101.102.103:3773/" },
+          { kind: "tailnet", httpBaseUrl: "http://100.70.1.2:3773/" },
+        ]);
+      }).pipe(Effect.scoped),
   );
 });

@@ -46,6 +46,16 @@ export class DirectEndpoints extends Context.Service<
 const isAdvertisableAddress = (address: string): boolean =>
   NodeNet.isIPv4(address) && !address.startsWith("127.") && isPrivateNetworkAddress(address);
 
+const isAdvertisableWildcardEntry = (
+  name: string,
+  entry: NodeOS.NetworkInterfaceInfo,
+  platform: NodeJS.Platform,
+): boolean =>
+  !entry.internal &&
+  entry.family === "IPv4" &&
+  isAdvertisableAddress(entry.address) &&
+  !isMachineLocalInterface(name, entry.mac, platform);
+
 // macOS utun names need Tailscale's IPv6 range to identify them; WARP shares its IPv4 range.
 const isTailscaleInterface = (
   name: string,
@@ -76,12 +86,8 @@ export function resolveBoundEndpoints(input: {
         .flatMap(([name, entries]) =>
           input.isolatedBridges?.has(name)
             ? []
-            : (entries ?? []).filter(
-                (entry) =>
-                  !entry.internal &&
-                  entry.family === "IPv4" &&
-                  isAdvertisableAddress(entry.address) &&
-                  !isMachineLocalInterface(name, entry.mac, input.platform),
+            : (entries ?? []).filter((entry) =>
+                isAdvertisableWildcardEntry(name, entry, input.platform),
               ),
         )
         .map((entry) => entry.address)
@@ -108,13 +114,29 @@ export const readIsolatedLinuxBridges = Effect.fn("DirectEndpoints.readIsolatedL
   function* (names: ReadonlyArray<string>, root = SYSFS_NET) {
     const fs = yield* FileSystem.FileSystem;
     const exists = (path: string) => fs.exists(path).pipe(Effect.orElseSucceed(() => false));
-    const list = (path: string) =>
-      fs.readDirectory(path).pipe(Effect.orElseSucceed((): ReadonlyArray<string> => []));
+    const deviceExists = (path: string) =>
+      fs.exists(path).pipe(
+        Effect.catchIf(
+          (error) => error.reason._tag === "NotFound",
+          () => Effect.succeed(false),
+        ),
+        Effect.orElseSucceed(() => true),
+      );
+    const readDirOrEmptyOnMissing = (path: string) =>
+      fs.readDirectory(path).pipe(
+        Effect.catchIf(
+          (error) => error.reason._tag === "NotFound",
+          () => Effect.succeed<ReadonlyArray<string>>([]),
+        ),
+        Effect.option,
+      );
     const reachesHardware: (name: string, depth: number) => Effect.Effect<boolean> =
       Effect.fnUntraced(function* (name: string, depth: number) {
-        if (yield* exists(`${root}/${name}/device`)) return true;
+        if (yield* deviceExists(`${root}/${name}/device`)) return true;
         if (depth === 0) return false;
-        const lowers = (yield* list(`${root}/${name}`)).flatMap((entry) =>
+        const entries = yield* readDirOrEmptyOnMissing(`${root}/${name}`);
+        if (Option.isNone(entries)) return true;
+        const lowers = entries.value.flatMap((entry) =>
           entry.startsWith("lower_") ? [entry.slice("lower_".length)] : [],
         );
         for (const lower of lowers) {
@@ -122,17 +144,28 @@ export const readIsolatedLinuxBridges = Effect.fn("DirectEndpoints.readIsolatedL
         }
         return false;
       });
+    const isBaseBridgeIsolated = Effect.fnUntraced(function* (base: string) {
+      if (!(yield* exists(`${root}/${base}/bridge`))) return false;
+      const ports = yield* readDirOrEmptyOnMissing(`${root}/${base}/brif`);
+      // Unreadable brif (e.g. EACCES) cannot prove the bridge has no uplink.
+      if (Option.isNone(ports)) return false;
+      for (const port of ports.value) {
+        if (yield* reachesHardware(port, 3)) return false;
+      }
+      return true;
+    });
+    const baseIsolated = new Map<string, boolean>();
     const isolated = new Set<string>();
     for (const name of names) {
-      if (!(yield* exists(`${root}/${name}/bridge`))) continue;
-      let uplinked = false;
-      for (const port of yield* list(`${root}/${name}/brif`)) {
-        if (yield* reachesHardware(port, 3)) {
-          uplinked = true;
-          break;
-        }
+      // Labeled IPv4 aliases like `br0:0` share the base interface's sysfs entry.
+      const base = name.split(":", 1)[0] ?? "";
+      if (base === "") continue;
+      let isIsolated = baseIsolated.get(base);
+      if (isIsolated === undefined) {
+        isIsolated = yield* isBaseBridgeIsolated(base);
+        baseIsolated.set(base, isIsolated);
       }
-      if (!uplinked) isolated.add(name);
+      if (isIsolated) isolated.add(name);
     }
     return isolated;
   },
@@ -184,9 +217,20 @@ export const make = Effect.gen(function* () {
   const servedEndpoint = yield* Ref.make<Option.Option<string>>(Option.none());
   const resolveAvailable = Effect.fn("DirectEndpoints.resolveAvailable")(function* () {
     const interfaces = NodeOS.networkInterfaces();
+    const cloudVm = yield* onCloudVm;
+    const tailnetOnly = config.tailnetOnly === true;
+    const bridgeCandidates =
+      platform === "linux" && isWildcardHost(config.host) && !cloudVm && !tailnetOnly
+        ? Object.entries(interfaces).flatMap(([name, entries = []]) =>
+            !isTailscaleInterface(name, entries) &&
+            entries.some((entry) => isAdvertisableWildcardEntry(name, entry, platform))
+              ? [name]
+              : [],
+          )
+        : [];
     const isolatedBridges =
-      platform === "linux" && isWildcardHost(config.host)
-        ? yield* readIsolatedLinuxBridges(Object.keys(interfaces)).pipe(
+      bridgeCandidates.length > 0
+        ? yield* readIsolatedLinuxBridges(bridgeCandidates).pipe(
             Effect.provideService(FileSystem.FileSystem, fileSystem),
           )
         : undefined;
@@ -196,8 +240,8 @@ export const make = Effect.gen(function* () {
         host: config.host,
         port: config.port,
         interfaces,
-        onCloudVm: yield* onCloudVm,
-        tailnetOnly: config.tailnetOnly === true,
+        onCloudVm: cloudVm,
+        tailnetOnly,
         ...(isolatedBridges === undefined ? {} : { isolatedBridges }),
       }),
     ];

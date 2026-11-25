@@ -30,6 +30,7 @@ import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as CommandReceiptStore from "./CommandReceiptStore.ts";
 import * as EffectOutbox from "./EffectOutbox.ts";
 import * as EventSink from "./EventSink.ts";
+import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ThreadManagement from "./ThreadManagementService.ts";
 import * as ThreadTitleRegeneration from "./ThreadTitleRegenerationService.ts";
@@ -102,6 +103,7 @@ function makeHarness(
     Layer.provide(
       Layer.mergeAll(
         layerThreadManagement,
+        ProjectionStore.layer.pipe(Layer.provide(layerDatabase)),
         layerProjectedProjects,
         Layer.mock(TextGeneration.TextGeneration)({ generateThreadTitle }),
         layerServerSettings,
@@ -814,7 +816,10 @@ describe("ThreadTitleRegenerationService", () => {
       }),
   );
 
-  it.effect("keeps the fork point when the source rolls it back after forking", () =>
+  it.effect.each([
+    { label: "after fork", beforeFork: false },
+    { label: "with completedAt before fork", beforeFork: true },
+  ] as const)("keeps the fork point when the source rolls it back $label", ({ beforeFork }) =>
     Effect.gen(function* () {
       const harness = makeHarness();
       yield* Effect.gen(function* () {
@@ -833,6 +838,7 @@ describe("ThreadTitleRegenerationService", () => {
         const cancelled = source.runs.find((candidate) => candidate.status === "cancelled");
         assert.isDefined(cancelled);
         const now = yield* DateTime.now;
+        const completedAt = beforeFork ? DateTime.subtract(now, { milliseconds: 2 }) : now;
         const eventSink = yield* EventSink.EventSinkV2;
         yield* eventSink.write({
           events: [run, cancelled].map((rewound) => ({
@@ -841,7 +847,7 @@ describe("ThreadTitleRegenerationService", () => {
             threadId: sourceThreadId,
             runId: rewound.id,
             occurredAt: now,
-            payload: { ...rewound, status: "rolled_back" as const, completedAt: now },
+            payload: { ...rewound, status: "rolled_back" as const, completedAt },
           })),
         });
         const requestId = yield* armRegeneration({

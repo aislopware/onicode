@@ -805,6 +805,7 @@ export const layer = Layer.effect(
           END,
           runtime_mode = excluded.runtime_mode,
           interaction_mode = excluded.interaction_mode,
+          created_by = excluded.created_by,
           creation_source = excluded.creation_source,
           updated_at = excluded.updated_at,
           -- Keep a next_run_at that a finishing run moved during this save, unless
@@ -1791,7 +1792,7 @@ export const layer = Layer.effect(
         modelSelection,
         runtimeMode: input.runtimeMode,
         interactionMode: input.interactionMode,
-        createdBy: existingTask?.createdBy ?? input.createdBy ?? "user",
+        createdBy: input.createdBy ?? existingTask?.createdBy ?? "user",
         creationSource: input.creationSource ?? "web",
         createdAt: existingTask?.createdAt ?? iso(now),
         updatedAt: iso(now),

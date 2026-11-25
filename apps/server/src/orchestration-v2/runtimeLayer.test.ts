@@ -4856,6 +4856,106 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
     }),
   );
 
+  it.effect(
+    "automatic settlement keeps a remotely delegated thread open while a follow-up is queued",
+    () =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const eventSink = yield* EventSink.EventSinkV2;
+        const threadId = ThreadId.make("runtime-delegated-held-followup");
+        yield* seedProject({
+          projectId: ProjectId.make("delegated-held-project"),
+          title: "Delegated",
+          workspaceRoot: process.cwd(),
+          defaultModelSelection: null,
+          createdAt: "2026-09-17T00:00:00.000Z",
+        });
+        yield* orchestrator.dispatch({
+          type: "thread.create",
+          createdBy: "agent",
+          creationSource: "mcp",
+          commandId: CommandId.make("delegated-held-create"),
+          threadId,
+          projectId: ProjectId.make("delegated-held-project"),
+          title: "Delegated task",
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          linkOrigin: { sessionId: "peer-session-a", label: "Machine A" },
+          delegatedFrom: {
+            environmentId: EnvironmentId.make("env-machine-a"),
+            threadId: ThreadId.make("parent-on-a"),
+            title: "Parent",
+          },
+        });
+        yield* orchestrator.dispatch({
+          type: "message.dispatch",
+          createdBy: "agent",
+          creationSource: "mcp",
+          commandId: CommandId.make("delegated-held-active"),
+          threadId,
+          messageId: MessageId.make("delegated-held-active"),
+          text: "Initial task",
+          attachments: [],
+          modelSelection,
+          dispatchMode: { type: "start_immediately" },
+        });
+        yield* orchestrator.dispatch({
+          type: "message.dispatch",
+          createdBy: "agent",
+          creationSource: "mcp",
+          commandId: CommandId.make("delegated-held-followup"),
+          threadId,
+          messageId: MessageId.make("delegated-held-followup"),
+          text: "Parent follow-up",
+          attachments: [],
+          modelSelection,
+          dispatchMode: { type: "queue_after_active" },
+        });
+        const before = yield* orchestrator.getThreadProjection(threadId);
+        const activeRun = before.runs.find((run) => run.status === "starting");
+        const queuedRun = before.runs.find((run) => run.status === "queued");
+        assert.isDefined(activeRun);
+        assert.isDefined(queuedRun);
+        const now = yield* DateTime.now;
+        yield* eventSink.write({
+          commandId: CommandId.make("command:runtime-reconcile:delegated-held-followup"),
+          events: [
+            {
+              id: EventId.make("delegated-held-failed"),
+              type: "run.updated",
+              threadId,
+              occurredAt: now,
+              payload: { ...activeRun, status: "failed", completedAt: now },
+            },
+            {
+              id: EventId.make("delegated-held-hold"),
+              type: "run.updated",
+              threadId,
+              occurredAt: now,
+              payload: { ...queuedRun, queueHeld: true },
+            },
+          ],
+        });
+        yield* TestClock.adjust(Orchestrator.QUEUED_TURN_START_GRACE_MS);
+        const shell = yield* orchestrator.getThreadShell(threadId);
+        const settled = yield* orchestrator
+          .dispatch({
+            type: "thread.auto-settle",
+            commandId: CommandId.make("delegated-held-auto-settle"),
+            threadId,
+            snapshotAt: shell?.updatedAt ?? now,
+          })
+          .pipe(Effect.exit);
+        assert.equal(settled._tag, "Failure");
+        const after = yield* orchestrator.getThreadProjection(threadId);
+        assert.isNull(after.thread.settledAt);
+        assert.equal(after.runs.find((run) => run.id === queuedRun.id)?.status, "queued");
+      }),
+  );
+
   it.effect("archiving ends watches, and an archived thread cannot start one", () =>
     Effect.gen(function* () {
       const orchestrator = yield* Orchestrator.OrchestratorV2;

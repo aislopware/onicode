@@ -229,6 +229,7 @@ export type ProjectionSettlementCandidate = Pick<
   | "branch"
   | "worktreePath"
   | "lineage"
+  | "delegatedFrom"
   | "pullRequests"
   | "linkedPullRequest"
   | "branchPullRequest"
@@ -1749,27 +1750,11 @@ function createInheritedTurnItemVisibility(
   });
 }
 
-// Rollback stamps completedAt; a fork made after the rewind never received that run.
-function runRolledBackAt(run: Pick<OrchestrationV2Run, "status" | "completedAt">) {
-  return run.status === "rolled_back" ? run.completedAt : null;
-}
-
 function isRolledBackBeforeFork(
   rolledBackAt: DateTime.Utc | null,
   forkCreatedAt: DateTime.Utc,
 ): boolean {
   return rolledBackAt !== null && DateTime.isLessThan(rolledBackAt, forkCreatedAt);
-}
-
-export function forkInheritedRunOrdinals(
-  runs: ReadonlyArray<OrchestrationV2Run>,
-  forkCreatedAt: DateTime.Utc,
-): Map<RunId, number> {
-  return new Map(
-    runs
-      .filter((run) => !isRolledBackBeforeFork(runRolledBackAt(run), forkCreatedAt))
-      .map((run) => [run.id, run.ordinal]),
-  );
 }
 
 function forkMemberRunOrdinals(
@@ -9193,6 +9178,14 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                     AND parent.deleted_at IS NULL
                     AND json_extract(parent.payload_json, '$.archivedAt') IS NULL
                     AND json_extract(parent.payload_json, '$.settledOverride') IS NOT 'settled'
+                )
+              )
+              AND (
+                json_extract(t.payload_json, '$.delegatedFrom') IS NULL
+                OR NOT EXISTS (
+                  SELECT 1 FROM orchestration_v2_projection_runs queued
+                  WHERE queued.thread_id = t.thread_id
+                    AND queued.status = 'queued'
                 )
               )
               AND NOT EXISTS (

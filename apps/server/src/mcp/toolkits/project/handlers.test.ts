@@ -1152,6 +1152,79 @@ it.effect("a client launches with the fallback for an exhausted default", () =>
   }),
 );
 
+it.effect("a message-less worktree launch from a thread passes callerThreadId", () =>
+  Effect.gen(function* () {
+    const launched: Array<ThreadLaunch.ThreadLaunchInput> = [];
+    const callerThreadId = ThreadId.make("thread:caller");
+    const { projectId, modelSelection, dependencies } = clientLaunchHarness({
+      runtimeModeCeiling: "full-access",
+      launched,
+    });
+    const callerLayer = Layer.mergeAll(
+      Layer.succeed(McpInvocationContext.McpInvocationContext, {
+        environmentId: EnvironmentId.make("environment"),
+        requestNamespace: `thread:${callerThreadId}`,
+        thread: {
+          threadId: callerThreadId,
+          providerSessionId: "provider-session-1",
+          providerInstanceId: modelSelection.instanceId,
+        },
+        client: undefined,
+        issuedAt: 0,
+        capabilities: new Set(["orchestration" as const]),
+      }),
+      Layer.mock(ThreadManagement.ThreadManagementService)({
+        getThreadShell: (threadId) =>
+          Effect.succeed(
+            threadId === callerThreadId
+              ? ({
+                  id: callerThreadId,
+                  projectId,
+                  modelSelection,
+                  runtimeMode: "full-access",
+                  interactionMode: "default",
+                  archivedAt: null,
+                  deletedAt: null,
+                  activeRunId: "run:caller",
+                  providerInstanceId: modelSelection.instanceId,
+                  pendingBackgroundTasks: [],
+                } as unknown as OrchestrationV2ThreadShell)
+              : null,
+          ),
+      }),
+    );
+    const toolkit = yield* ProjectToolkit.pipe(
+      Effect.provide(
+        McpToolAccess.HandlersLayer.layer(ProjectHandlers.layer).pipe(
+          Layer.provide(callerLayer),
+          Layer.provide(dependencies),
+        ),
+      ),
+    );
+    const run = (input: { readonly message?: string }) =>
+      toolkit
+        .handle("oni_thread_launch", {
+          title: "Worktree",
+          projectId,
+          workspaceStrategy: { type: "worktree", baseRef: "main", startFromOrigin: false },
+          ...input,
+        })
+        .pipe(
+          Stream.unwrap,
+          Stream.runCollect,
+          Effect.provide(Layer.merge(dependencies, callerLayer)),
+        );
+
+    yield* run({});
+    expect(launched[0]?.initialMessage).toBeUndefined();
+    expect(launched[0]?.callerThreadId).toBe(callerThreadId);
+
+    yield* run({ message: "Start" });
+    expect(launched[1]?.callerThreadId).toBe(callerThreadId);
+    expect(launched[1]?.initialMessage?.senderThreadId).toBe(callerThreadId);
+  }),
+);
+
 it.effect("an agent's clone is not cut off while git is still transferring", () =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;

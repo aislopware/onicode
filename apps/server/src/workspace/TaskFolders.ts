@@ -439,7 +439,7 @@ const make = Effect.gen(function* () {
       );
       if (!approved)
         return refuse(
-          "which nobody has approved as it is written now. Review and approve it in the web or desktop app, under Worktree layout in the project's settings or when starting a worktree thread there.",
+          "which nobody has approved as it is written now. Review and approve it in the desktop app, under Worktree layout in the project's settings or when starting a worktree thread there.",
         );
       const command: ClearedLayoutCommand = {
         [cleared]: true,
@@ -1717,6 +1717,7 @@ const make = Effect.gen(function* () {
     const layout = present.includes(false)
       ? yield* layoutCommand(taskFolder, "create", projectCommands)
       : null;
+    let layoutRan = false;
     if (layout !== null && "refusal" in layout) {
       yield* Effect.logInfo("Restoring plain checkouts in place of the project's worktree layout", {
         root: taskFolder.root,
@@ -1733,7 +1734,14 @@ const make = Effect.gen(function* () {
         branch,
         undefined,
         repositories.map((repository) => repository.repositoryPath),
-      ).pipe(Effect.ignoreCause({ log: true }));
+      ).pipe(
+        Effect.tap((result) =>
+          Effect.sync(() => {
+            layoutRan = result !== null;
+          }),
+        ),
+        Effect.ignoreCause({ log: true }),
+      );
     }
     const recreateMissing = Effect.fnUntraced(function* (checkout: TaskFolderCheckout) {
       if (yield* isRepository(checkout.worktreePath)) {
@@ -1762,10 +1770,9 @@ const make = Effect.gen(function* () {
         repositoryPath: taskFolder.projectRoot,
       });
     } else if (!(yield* exists(taskFolder.projectPath))) {
-      const blocked =
-        layout === null || "refusal" in layout
-          ? yield* blockedOnTheWay(taskFolder.root, taskFolder.projectPath)
-          : null;
+      const blocked = layoutRan
+        ? null
+        : yield* blockedOnTheWay(taskFolder.root, taskFolder.projectPath);
       if (blocked !== null) {
         return yield* new TaskFolderError({
           operation: "create",

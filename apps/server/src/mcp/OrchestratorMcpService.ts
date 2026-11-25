@@ -66,6 +66,7 @@ import {
   latestProviderTurnForAttempt,
   resolveProjectProviderInstanceEnabled,
   SECRET_REQUEST_UNSAVED_NOTE,
+  TASK_FOLDER_DEFAULT_REPOSITORIES_MAX,
 } from "@onicode/contracts";
 import { getProviderOptionCurrentValue, withLegacyUltracodeEffort } from "@onicode/shared/model";
 import { backgroundWorkHoldsCompletion } from "@onicode/shared/orchestrationV2PendingBackgroundWork";
@@ -118,10 +119,12 @@ import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import { isSnoozed } from "../orchestration-v2/ThreadSettlementService.ts";
 import { userFacingDispatchErrorMessage } from "../orchestration-v2/UserFacingErrors.ts";
+import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as TaskFolders from "../workspace/TaskFolders.ts";
 import {
   clientModeCeiling,
   type McpInvocationScope,
@@ -1412,6 +1415,8 @@ const make = Effect.gen(function* () {
   const providerAdapters = yield* ProviderAdapterRegistry.ProviderAdapterRegistryV2;
   const scheduledTasks = yield* ScheduledTaskService.ScheduledTaskService;
   const projects = yield* ProjectService.ProjectService;
+  const managedFolders = yield* ManagedProjectFolders.ManagedProjectFolders;
+  const taskFolders = yield* TaskFolders.TaskFolders;
   const threadLaunch = yield* ThreadLaunchService.ThreadLaunchService;
   const gitDriver = yield* GitVcsDriver.GitVcsDriver;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
@@ -2648,7 +2653,8 @@ const make = Effect.gen(function* () {
           modelSelection: existing.modelSelection,
           runtimeMode: existing.runtimeMode,
           interactionMode: existing.interactionMode,
-          createdBy: existing.createdBy,
+          // Any agent edit marks the task agent-authored so below-Full-access runs stay fenced.
+          createdBy: "agent",
           creationSource: existing.creationSource,
         };
         // The modes were checked against this binding, so a save racing a rebind, a move or a mode
@@ -3043,41 +3049,114 @@ const make = Effect.gen(function* () {
         input.interactionMode,
       );
       let workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy | undefined;
-      if (
-        input.isolation === "worktree" &&
-        !isRetryOfAcceptedDelegation &&
-        (yield* threadLaunch.isNonGitProject(parent.thread.projectId))
-      ) {
-        // A plain project folder has no commit of its own; `HEAD` leaves each repository on its default branch.
-        workspaceStrategy = { type: "worktree", baseRef: "HEAD" };
-      } else if (input.isolation === "worktree" && !isRetryOfAcceptedDelegation) {
+      if (input.isolation === "worktree" && !isRetryOfAcceptedDelegation) {
         const project = yield* requireProject(parent.thread.projectId);
-        const base = yield* gitDriver
-          .resolveCommit({
-            cwd: parent.thread.worktreePath ?? project.workspaceRoot,
-            revision: "HEAD",
-          })
-          .pipe(
-            Effect.mapError(() =>
-              failure("invalid_request", "Unable to resolve the parent checkout commit."),
-            ),
-          );
-        // Launch preparation creates the worktree from the project root, so a
-        // parent checkout in another repository (such as a Git folder inside
-        // Scratch) would hand it a commit it cannot find.
-        if (parent.thread.worktreePath !== null) {
-          yield* gitDriver
-            .resolveCommit({ cwd: project.workspaceRoot, revision: base.commitSha })
+        const isScratch = yield* managedFolders.isScratchProject(parent.thread.projectId);
+        const taskPlan = isScratch
+          ? null
+          : yield* taskFolders
+              .plan({ projectId: parent.thread.projectId })
+              .pipe(
+                Effect.mapError((error) =>
+                  failure(
+                    "orchestration_error",
+                    `Unable to read the project's repositories: ${error.detail}`,
+                  ),
+                ),
+              );
+        if (taskPlan !== null && !taskPlan.projectIsRepository) {
+          const parentTaskFolder =
+            parent.thread.worktreePath === null
+              ? null
+              : yield* taskFolders
+                  .find(parent.thread.worktreePath)
+                  .pipe(
+                    Effect.mapError((error) =>
+                      failure(
+                        "orchestration_error",
+                        `Unable to read the parent worktree: ${error.detail}`,
+                      ),
+                    ),
+                  );
+          const tracked = new Set(taskPlan.trackedRepositories);
+          const inherited =
+            parentTaskFolder !== null && parentTaskFolder.projectId === parent.thread.projectId
+              ? parentTaskFolder.repositories
+                  .filter((repository) => tracked.has(repository.repositoryPath))
+                  .map((repository) => ({ path: repository.repositoryPath }))
+              : [];
+          const selectedPlan =
+            inherited.length > 0
+              ? yield* taskFolders
+                  .plan({ projectId: parent.thread.projectId, repositories: inherited })
+                  .pipe(
+                    Effect.mapError((error) =>
+                      failure(
+                        "orchestration_error",
+                        `Unable to read the project's repositories: ${error.detail}`,
+                      ),
+                    ),
+                  )
+              : taskPlan;
+          if (selectedPlan === null || selectedPlan.repositories.length === 0) {
+            return yield* failure(
+              "invalid_request",
+              taskPlan.trackedRepositories.length > TASK_FOLDER_DEFAULT_REPOSITORIES_MAX
+                ? `Project "${project.title}" tracks ${taskPlan.trackedRepositories.length} repositories (more than the default limit of ${TASK_FOLDER_DEFAULT_REPOSITORIES_MAX}), so isolation "worktree" cannot select repositories automatically. Use isolation "shared" instead.`
+                : `Project "${project.title}" has no tracked repository with a commit to branch from, so isolation "worktree" cannot create a child checkout. Use isolation "shared" instead.`,
+            );
+          }
+          workspaceStrategy = {
+            type: "worktree",
+            baseRef: parent.thread.branch ?? "HEAD",
+            startFromOrigin: false,
+            ...(inherited.length > 0
+              ? { repositories: selectedPlan.repositories.map(({ path }) => ({ path })) }
+              : {}),
+          };
+        } else {
+          const base = yield* gitDriver
+            .resolveCommit({
+              cwd: parent.thread.worktreePath ?? project.workspaceRoot,
+              revision: "HEAD",
+            })
             .pipe(
               Effect.mapError(() =>
-                failure(
-                  "invalid_request",
-                  `Isolation "worktree" creates the child checkout in project "${project.title}" (${project.workspaceRoot}), which does not contain the parent checkout's commit. Use isolation "shared" to work in the parent's checkout.`,
-                ),
+                failure("invalid_request", "Unable to resolve the parent checkout commit."),
               ),
             );
+          // Launch preparation creates the worktree from the project root, so a
+          // parent checkout in another repository (such as a Git folder inside
+          // Scratch) would hand it a commit it cannot find.
+          if (parent.thread.worktreePath !== null) {
+            yield* gitDriver
+              .resolveCommit({ cwd: project.workspaceRoot, revision: base.commitSha })
+              .pipe(
+                Effect.mapError(() =>
+                  failure(
+                    "invalid_request",
+                    `Isolation "worktree" creates the child checkout in project "${project.title}" (${project.workspaceRoot}), which does not contain the parent checkout's commit. Use isolation "shared" to work in the parent's checkout.`,
+                  ),
+                ),
+              );
+          }
+          const branchHead =
+            taskPlan !== null && parent.thread.branch !== null
+              ? yield* gitDriver
+                  .resolveCommit({
+                    cwd: project.workspaceRoot,
+                    revision: `refs/heads/${parent.thread.branch}`,
+                  })
+                  .pipe(Effect.option)
+              : Option.none();
+          const baseRef =
+            parent.thread.branch !== null &&
+            Option.isSome(branchHead) &&
+            branchHead.value.commitSha === base.commitSha
+              ? parent.thread.branch
+              : base.commitSha;
+          workspaceStrategy = { type: "worktree", baseRef, startFromOrigin: false };
         }
-        workspaceStrategy = { type: "worktree", baseRef: base.commitSha, startFromOrigin: false };
       }
       const parentNodeId = parentRun.rootNodeId;
       // The command commits the child's preparing run, which only this call
@@ -4021,6 +4100,8 @@ export const layer: Layer.Layer<
   | ProviderAdapterRegistry.ProviderAdapterRegistryV2
   | ScheduledTaskService.ScheduledTaskService
   | ProjectService.ProjectService
+  | ManagedProjectFolders.ManagedProjectFolders
+  | TaskFolders.TaskFolders
   | SecretRequests.SecretRequests
   | ServerSettings.ServerSettingsService
   | RemoteDelegation.RemoteDelegation

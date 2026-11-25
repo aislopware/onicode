@@ -186,6 +186,7 @@ export function isAutoSettlementCandidate(
   if (thread.pinnedAt != null || thread.autoSettleDisabledAt != null) return false;
   if (thread.pendingRuntimeRequest !== null) return false;
   if (thread.activityRunStatus != null) return false;
+  if (thread.delegatedFrom != null && thread.status === "queued") return false;
   const pendingTasks = thread.pendingBackgroundTasks ?? [];
   if (backgroundWorkHoldsCompletion(pendingTasks)) return false;
   // Settling ends a watch, which would silently drop a reviewer's later comments.

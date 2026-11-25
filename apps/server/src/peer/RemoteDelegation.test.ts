@@ -70,6 +70,7 @@ import * as ServerSettings from "../serverSettings.ts";
 import * as CommandReceiptStore from "../orchestration-v2/CommandReceiptStore.ts";
 import * as SourceControlRepositoryService from "../sourceControl/SourceControlRepositoryService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import * as TaskFolders from "../workspace/TaskFolders.ts";
 import * as PeerForwarding from "./PeerForwarding.ts";
 import * as PeerLinks from "./PeerLinks.ts";
 import { descriptorOf, layerLinkingEnvironment, linkTo, servePeer } from "./PeerLinks.testkit.ts";
@@ -590,15 +591,18 @@ const boxToolkitLayer = (thread: BoxThread) => {
     Layer.provide(NodeCrypto.layer),
     Layer.provide(layerBoxThreads),
     Layer.provide(layerBoxLaunches),
-    Layer.provide(Layer.mock(RemoteDelegation.RemoteDelegation)({})),
-    Layer.provide(Layer.mock(PeerForwarding.PeerForwarding)({})),
-    Layer.provide(Layer.mock(PeerLinkRequests.PeerLinkRequests)({})),
-    Layer.provide(Layer.mock(PeerLinks.PeerLinks)({})),
     Layer.provide(
-      Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/p" }),
+      Layer.mergeAll(
+        Layer.mock(RemoteDelegation.RemoteDelegation)({}),
+        Layer.mock(PeerForwarding.PeerForwarding)({}),
+        Layer.mock(PeerLinkRequests.PeerLinkRequests)({}),
+        Layer.mock(PeerLinks.PeerLinks)({}),
+        Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/p" }),
+        Layer.mock(TaskFolders.TaskFolders)({}),
+        Layer.mock(GitVcsDriver.GitVcsDriver)({}),
+        Layer.mock(SourceControlRepositoryService.SourceControlRepositoryService)({}),
+      ),
     ),
-    Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
-    Layer.provide(Layer.mock(SourceControlRepositoryService.SourceControlRepositoryService)({})),
     Layer.provide(
       ServerConfig.layerTest(process.cwd(), { prefix: "oni-remote-delegation-box-" }).pipe(
         Layer.provide(NodeServices.layer),
@@ -766,6 +770,10 @@ const makeLaptop = (
       Layer.provide(Layer.mock(ProjectCloneTracker.ProjectCloneTracker)({})),
       Layer.provide(Layer.mock(SecretRequests.SecretRequests)({})),
       Layer.provide(Layer.mock(ThreadLaunch.ThreadLaunchService)({})),
+      Layer.provide(
+        Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/p" }),
+      ),
+      Layer.provide(Layer.mock(TaskFolders.TaskFolders)({})),
       Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
       Layer.fresh,
     );
