@@ -3876,3 +3876,4 @@ b8be2287dc	skip	kept Onicode's Reanimated 4.8 upgrade: Onicode already ships rea
 2514a5ce5e	take	fix(pr): keep CI approval in sync with running checks (#42523)
 c621d5fe68	take	fix(i18n): i18n:check no longer fails on Windows (#42510)
 38adba87b3	take	fix(server): Claude no longer shows "Connecting" on every turn (#42508)
+5f3cdab9b7	take	fix(acp-registry): refresh stale registry index and supersede stale live session models (#42456)
