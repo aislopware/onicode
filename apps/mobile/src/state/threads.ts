@@ -37,6 +37,7 @@ export const olderSettledThreads = createOlderSettledThreadAtoms(
 export const threadEnvironment = createThreadEnvironmentAtoms(
   connectionAtomRuntime,
   threadFamilies.snapshotAtom,
+  environmentShell.statusAtom,
 );
 // Each change re-renders the thread screen, and a phone pays for that in battery and heat.
 export const environmentThreads = createEnvironmentThreadStateAtoms(connectionAtomRuntime, {

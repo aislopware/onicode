@@ -78,7 +78,7 @@ import {
   type ProviderSubagentStatus,
 } from "@onicode/client-runtime/state/thread-execution";
 import { formatModelSlugName, resolveSelectableModel } from "@onicode/shared/model";
-import { isProviderNativeSubagentThread } from "@onicode/contracts";
+import { AuthOrchestrationOperateScope, isProviderNativeSubagentThread } from "@onicode/contracts";
 import type { QueuedRunEdit } from "../../state/queued-run-edit";
 import type { FollowUpBehavior } from "../../lib/followUpBehavior";
 import type { ActiveTurnComposerAction } from "@onicode/client-runtime/state/composer-dispatch";
@@ -175,6 +175,7 @@ import { appAtomRegistry } from "../../state/atom-registry";
 import { threadStreamHaptics } from "./threadStreamHaptics";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { orchestrationEnvironment } from "../../state/orchestration";
+import { useEnvironmentScopeDenied } from "../../state/session";
 import type { PendingUserInputDraftAnswer } from "@onicode/client-runtime/state/pending-user-input";
 import type { RunStopPresentation } from "@onicode/client-runtime/state/thread-execution";
 import type {
@@ -586,6 +587,10 @@ function ThreadDetailBody(
   });
   const unsnoozeThread = useAtomCommand(threadEnvironment.unsnooze, { reportFailure: false });
   const unsettleThread = useAtomCommand(threadEnvironment.unsettle, { reportFailure: false });
+  const canTriageThread = !useEnvironmentScopeDenied(
+    props.environmentId,
+    AuthOrchestrationOperateScope,
+  );
   const updateMetadata = useAtomCommand(threadEnvironment.updateMetadata, { reportFailure: false });
   const visitThread = useAtomCommand(threadEnvironment.visit, { reportFailure: false });
   const anyRunStop = useAtomValue(
@@ -657,7 +662,9 @@ function ThreadDetailBody(
     latestRunCompletedAt: props.selectedThread.latestRun?.completedAt ?? null,
   });
   const runStatusAction = async (action: "stop" | "wake" | "unsettle" | "dismiss") => {
-    if (statusPending || !props.canOperateThread) return;
+    const permitted =
+      action === "wake" || action === "unsettle" ? canTriageThread : props.canOperateThread;
+    if (statusPending || !permitted) return;
     const request: BackgroundWorkStopRequest = {
       threadKey: selectedThreadKey,
       taskIds:
@@ -829,7 +836,9 @@ function ThreadDetailBody(
               : gt("Dismissing…")
           : actionLabel,
         accessibilityLabel: actionLabel,
-        disabled: !props.canOperateThread || statusPending,
+        disabled:
+          !(lifecycleSnoozed || settled ? canTriageThread : props.canOperateThread) ||
+          statusPending,
         onPress: () =>
           void runStatusAction(lifecycleSnoozed ? "wake" : settled ? "unsettle" : "dismiss"),
       },
