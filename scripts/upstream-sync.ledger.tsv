@@ -3816,3 +3816,4 @@ eb7cc44727	take	fix(web): showing or hiding a requested secret keeps the caret i
 dc7b8802b8	skip	removed surface: T3 Connect relay tracing opt-outs and scrubbing (T3 Connect, relay tracing, and mobile observability are removed in Onicode)
 4b9482e295	take	fix(shared): Usage hour labels honor the 12-hour preference in non-English locales (#42405)
 f67cbcd317	take	fix(cursor): release checkpoint memory with SDK 1.5.0 (#42404); copied @cursor__sdk@1.5.0.patch verbatim from upstream, preserved Onicode overrides/patches in pnpm-workspace.yaml, regenerated pnpm-lock.yaml via vp i
+55085df2a6	take	fix(client-runtime): images read from paths with %, # or ? show their preview (#42369)
