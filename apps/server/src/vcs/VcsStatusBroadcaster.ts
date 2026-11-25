@@ -1332,11 +1332,21 @@ export const make = Effect.gen(function* () {
             ? fs.exists(headDirectory).pipe(Effect.map((exists) => !exists))
             : Effect.succeed(false),
         ),
-        Stream.filter((event) => path.basename(event.path) === "HEAD"),
-        // A checkout made as the watch starts raises no event on macOS.
-        Stream.merge(pollUnreportedChanges(headIdentity, seenHead, covered), {
-          haltStrategy: "left",
+        // A terminal commit moves the branch ref but not HEAD; it always rewrites the index beside it.
+        Stream.filter((event) => {
+          const name = path.basename(event.path);
+          return name === "HEAD" || name === "index";
         }),
+        Stream.map((event) =>
+          path.basename(event.path) === "index" ? ("index" as const) : ("head" as const),
+        ),
+        // A checkout made as the watch starts raises no event on macOS.
+        Stream.merge(
+          pollUnreportedChanges(headIdentity, seenHead, covered).pipe(
+            Stream.map(() => "head" as const),
+          ),
+          { haltStrategy: "left" },
+        ),
         // On arrival, before the dedup below: the cache keeps the old branch until reads land.
         Stream.tap(() =>
           Effect.sync(() => {
@@ -1344,15 +1354,17 @@ export const make = Effect.gen(function* () {
             headGenerations.set(cwd, (headGenerations.get(cwd) ?? 0) + 1);
           }),
         ),
-        // An event for a change the check above already published is dropped here.
-        Stream.filterEffect(() =>
-          Effect.gen(function* () {
-            const head = yield* headIdentity;
-            const reported =
-              head !== UNREADABLE_HEAD && head === (yield* SubscriptionRef.get(seenHead));
-            if (!reported) yield* SubscriptionRef.set(seenHead, head);
-            return !reported;
-          }),
+        // An event for a HEAD change the check above already published is dropped here; index updates always refresh.
+        Stream.filterEffect((kind) =>
+          kind === "index"
+            ? Effect.succeed(true)
+            : Effect.gen(function* () {
+                const head = yield* headIdentity;
+                const reported =
+                  head !== UNREADABLE_HEAD && head === (yield* SubscriptionRef.get(seenHead));
+                if (!reported) yield* SubscriptionRef.set(seenHead, head);
+                return !reported;
+              }),
         ),
         // A rebase moves HEAD many times; refresh once for whatever arrived during a refresh.
         Stream.buffer({ capacity: 1, strategy: "sliding" }),
