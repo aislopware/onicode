@@ -520,7 +520,7 @@ function FontFamilySettingsRow({
         onKeyDown={(event) => {
           if (isImeKeyDown(event.nativeEvent)) return;
           if (event.key === "Enter") flushDraft();
-          if (event.key === "Escape") {
+          if (event.key === "Escape" && draft !== value) {
             // Discard uncommitted typing without closing the settings page,
             // which is what an unhandled Escape does.
             event.preventDefault();
