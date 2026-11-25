@@ -3870,3 +3870,4 @@ ea63274413	skip	kept Onicode's vite-plus 1.8.0 upgrade and highlightedCodeNodes:
 77bed941b3	take	chore(mobile): Expo SDK 58 patch updates (#42514) — Onicode already had the Expo 58 package/patch bumps; took the expo-sharing/<uuid> cache cleanup path update in incoming-share-model
 2210f2d733	take	fix(github): approve workflows on same-repository PRs (#26561)
 2ecf799522	skip	Clerk packages update only; Clerk is a removed surface in Onicode
+68af15d636	skip	kept Onicode's react-native-screens 5.0.0-oni.57 and PaneStack helper: Onicode's fork tarball already tracks the same upstream commit e0248889e078db887f7db918113e3ee34205e1bb and all three iOS layout files already use Stack.Host/Stack.Screen, onNativeDismiss, programmaticJs, and imageSource
