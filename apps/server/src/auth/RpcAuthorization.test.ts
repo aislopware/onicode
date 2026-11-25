@@ -90,6 +90,15 @@ describe("RPC authorization scopes", () => {
     );
   });
 
+  it("lets file readers see layout commands and takes terminal operate to approve them", () => {
+    expect(requiredScopeForRpcMethod(WS_METHODS.workspaceLayoutCommands)).toBe(
+      AuthFilesystemReadScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.workspaceApproveLayoutCommands)).toBe(
+      AuthTerminalOperateScope,
+    );
+  });
+
   it("rejects unknown RPC method names", () => {
     for (const method of ["server.notRegistered", "toString", "constructor"]) {
       expect(() => requiredScopeForRpcMethod(method)).toThrow(

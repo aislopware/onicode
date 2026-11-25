@@ -156,6 +156,7 @@ describe("command permissions", () => {
     { method: WS_METHODS.serverRunStorageCleanup, scope: AuthSettingsWriteScope },
     { method: WS_METHODS.serverReclaimDatabaseSpace, scope: AuthEnvironmentMaintainScope },
     { method: WS_METHODS.workspaceAddTaskFolderRepository, scope: AuthSourceControlWriteScope },
+    { method: WS_METHODS.workspaceApproveLayoutCommands, scope: AuthTerminalOperateScope },
     { method: WS_METHODS.providerMcpSignInStart, scope: AuthProvidersManageScope },
     { method: WS_METHODS.providerMcpSignInComplete, scope: AuthProvidersManageScope },
     { method: WS_METHODS.providerSessionMcpOAuthCallback, scope: AuthProvidersManageScope },
