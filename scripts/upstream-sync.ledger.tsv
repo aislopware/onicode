@@ -3882,3 +3882,4 @@ adb6064469	take	adopted upstream over Onicode's watchChanges/WorkflowRunsChange:
 a3664ff21d	take	perf(server): checkpoint captures reuse a per-thread index (#42476)
 b6869fad67	take	feat(terminal): Add keybindings for cycling through terminals (#30664)
 6c775c87b1	skip	kept Onicode's LegendList 3.9 upgrade: Onicode already ships @legendapp/list 3.9.0 and an identical patches/@legendapp__list@3.9.0.patch
+02dc3e4400	take	adopted upstream over Onicode's grep.column/fullName-only gitGrep guard: upstream also disables submodule.recurse and tests all three settings in a repository subdirectory

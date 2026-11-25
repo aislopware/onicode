@@ -775,6 +775,8 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
           "grep.column=false",
           "-c",
           "grep.fullName=false",
+          "-c",
+          "submodule.recurse=false",
           "grep",
           "--untracked",
           "--no-color",
