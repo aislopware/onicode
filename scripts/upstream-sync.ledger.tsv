@@ -3818,3 +3818,4 @@ dc7b8802b8	skip	removed surface: T3 Connect relay tracing opt-outs and scrubbing
 f67cbcd317	take	fix(cursor): release checkpoint memory with SDK 1.5.0 (#42404); copied @cursor__sdk@1.5.0.patch verbatim from upstream, preserved Onicode overrides/patches in pnpm-workspace.yaml, regenerated pnpm-lock.yaml via vp i
 55085df2a6	take	fix(client-runtime): images read from paths with %, # or ? show their preview (#42369)
 b20d7c5c7b	skip	removed surface: web dev HTTP proxy (Onicode has no browser-served web app or devProxy.ts)
+7e269e044b	skip	removed surface: MCP tool analytics (telemetry/ProviderDimensions is removed in Onicode)
