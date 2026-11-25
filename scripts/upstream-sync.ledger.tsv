@@ -3784,3 +3784,4 @@ aaadc0cb43	skip	kept Onicode's direct w:p > w:pPr > w:pStyle lookup and TEXT_BOX
 fa054edec8	skip	kept Onicode's CheckpointRollbackService settleIndexRefresh fix and deterministic layerGit lock-sentinel test (55303dd1c1, 506feef798) over upstream's TestClock workaround: Onicode fixes the real production race and settles the refresh deterministically
 acce92ffae	take	fix(cli): Ctrl+C or Ctrl+D at the onicode triage agent picker exits cleanly (#42303)
 6c0621f78a	take	fix(web): branch picker shows the right name for remotes containing slashes (#42301)
+dffbfdfc00	take	fix(web): shell calls without -c no longer add agent working folders (#42305)
