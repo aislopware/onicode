@@ -3788,3 +3788,4 @@ dffbfdfc00	take	fix(web): shell calls without -c no longer add agent working fol
 ddaba13471	skip	kept Onicode's ProjectService.writeProjectSettings + updateProjectSettingsOverride (c0d8bcdc56) over upstream's saveProjectSettings: already persists all folded project defaults atomically with managed-policy vetting and echo protection
 11c63a9f2c	take	fix(server): resolve percent-encoded local favicon hrefs (#42314)
 a149bdc4f6	take	fix(web): Voice Models language menu resets its search filter on close (#42321)
+ece5f21b17	skip	removed surface: T3 Connect device sign-in notices (ConnectDeviceApprovalCoordinator and AuthConnectDevice are removed in Onicode)
