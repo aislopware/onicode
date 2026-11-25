@@ -3877,3 +3877,4 @@ b8be2287dc	skip	kept Onicode's Reanimated 4.8 upgrade: Onicode already ships rea
 c621d5fe68	take	fix(i18n): i18n:check no longer fails on Windows (#42510)
 38adba87b3	take	fix(server): Claude no longer shows "Connecting" on every turn (#42508)
 5f3cdab9b7	take	fix(acp-registry): refresh stale registry index and supersede stale live session models (#42456)
+adb6064469	take	adopted upstream over Onicode's watchChanges/WorkflowRunsChange: upstream's tagged diff handles removed runs and closed/changed questions without client-side 500-run truncation; kept optional legacy changes flag and added diff: true so v0.25/v0.26 clients and servers stay wire-compatible via wholeLists fallback

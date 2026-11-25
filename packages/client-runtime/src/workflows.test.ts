@@ -1,14 +1,14 @@
-import type {
-  WorkflowQuestion,
-  WorkflowRun,
-  WorkflowRunReference,
-  WorkflowStep,
+import {
+  applyWorkflowRunsUpdate,
+  type WorkflowQuestion,
+  type WorkflowRun,
+  type WorkflowRunReference,
+  type WorkflowStep,
 } from "@onicode/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
   allWorkflowRunNodes,
-  applyWorkflowRunsUpdate,
   buildWorkflowFeed,
   buildWorkflowTimeline,
   defaultWorkflowListTab,
@@ -354,57 +354,26 @@ describe("the list of runs", () => {
 });
 
 describe("applyWorkflowRunsUpdate", () => {
-  it("replaces what it holds with a snapshot, and puts a change's runs in place by id", () => {
-    const definition = { files: [], problems: [] } as never;
-    const held = {
-      workflows: [{ name: "release", version: 1, triggers: [] }],
-      runs: [run("b", { startedAt: at(2) }), run("a", { startedAt: at(1) })],
-      questions: [question("b")],
-      definition,
-    };
-    // A change before any snapshot has nothing to apply to.
-    expect(
-      applyWorkflowRunsUpdate(undefined, { changedRuns: [run("a")], questions: [] }),
-    ).toBeUndefined();
-    const changed = applyWorkflowRunsUpdate(held, {
-      changedRuns: [
-        run("a", { startedAt: at(1), status: "completed" }),
-        run("c", { startedAt: at(3) }),
-      ],
-      questions: [],
-    });
-    expect(changed?.runs.map((each) => [each.runId, each.status])).toEqual([
-      ["c", "running"],
-      ["b", "running"],
-      ["a", "completed"],
-    ]);
-    expect(changed?.questions).toEqual([]);
-    expect(changed?.workflows).toBe(held.workflows);
-    expect(changed?.definition).toBe(definition);
-    // A snapshot, as after a reconnect, is the whole list again.
-    const again = { workflows: [], runs: [run("d")], questions: [] };
-    expect(applyWorkflowRunsUpdate(changed, again)).toBe(again);
-  });
-
-  it("keeps as many runs as the server lists, the skipped ones counted apart", () => {
-    const many = (prefix: string, count: number, fields: Partial<WorkflowRun> = {}) =>
-      Array.from({ length: count }, (_, index) =>
-        run(`${prefix}${index}`, { startedAt: at(0, 0), ...fields }),
-      );
-    const held = {
+  it("keeps the list a fresh snapshot would show, newest run and oldest question first", () => {
+    const first = applyWorkflowRunsUpdate(undefined, {
       workflows: [],
-      runs: [...many("run", 500), ...many("skip", 500, { status: "skipped" })],
-      questions: [],
-    };
-    const next = applyWorkflowRunsUpdate(held, {
-      changedRuns: [
-        run("new", { startedAt: at(1) }),
-        run("new-skip", { startedAt: at(1), status: "skipped" }),
-      ],
-      questions: [],
+      runs: [run("c", { startedAt: at(3) }), run("b", { startedAt: at(2) }), run("a")],
+      questions: [question("b"), question("c")],
     });
-    expect(next?.runs).toHaveLength(1000);
-    expect(next?.runs.slice(0, 2).map((each) => each.runId)).toEqual(["new", "new-skip"]);
+    const later = { ...question("d"), askedAt: at(2) };
+    const next = applyWorkflowRunsUpdate(first, {
+      _tag: "changed",
+      runs: [run("b", { startedAt: at(2), status: "completed" }), run("d", { startedAt: at(4) })],
+      removed: ["a"],
+      questions: [later, question("c", { title: "Ship now?" })],
+      closed: [{ runId: "b", name: "approve" }],
+    });
+    expect(next.runs.map((entry) => [entry.runId, entry.status])).toEqual([
+      ["d", "running"],
+      ["c", "running"],
+      ["b", "completed"],
+    ]);
+    expect(next.questions).toEqual([question("c", { title: "Ship now?" }), later]);
   });
 });
 

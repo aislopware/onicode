@@ -175,24 +175,76 @@ export const WorkflowCounts = Schema.Struct({
 export type WorkflowCounts = typeof WorkflowCounts.Type;
 export type WorkflowRunsSnapshot = typeof WorkflowRunsSnapshot.Type;
 
-/**
- * What a subscription with `changes` sends after its first snapshot: each run written since the
- * last message, whole, and the questions as they are now. A client upserts the runs by id.
- */
-export const WorkflowRunsChange = Schema.Struct({
-  changedRuns: Schema.Array(WorkflowRun),
+/** What changed in the runs list since the last frame a watcher was sent. */
+export const WorkflowRunsChange = Schema.TaggedStruct("changed", {
+  /** Runs new to the list or different from what was last sent. */
+  runs: Schema.Array(WorkflowRun),
+  /** Runs that left the list. */
+  removed: Schema.Array(Schema.String),
+  /** Questions newly asked or different from what was last sent. */
   questions: Schema.Array(WorkflowQuestion),
-  definition: Schema.optional(WorkflowDefinitionState),
+  /** Questions no longer open, by run and question name. */
+  closed: Schema.Array(Schema.Struct({ runId: Schema.String, name: Schema.String })),
 });
-export type WorkflowRunsChange = typeof WorkflowRunsChange.Type;
 
-/** A snapshot replaces what a client holds; a change is applied to it. */
+/**
+ * A frame of `workflows.subscribe`: the whole list, or with `diff` asked for, what changed
+ * since the last frame. A server older than `diff` ignores it and sends whole lists.
+ */
 export const WorkflowRunsUpdate = Schema.Union([WorkflowRunsSnapshot, WorkflowRunsChange]);
 export type WorkflowRunsUpdate = typeof WorkflowRunsUpdate.Type;
 
+/** The list once `update` is applied, in the order the server lists runs: newest first. */
+export function applyWorkflowRunsUpdate(
+  snapshot: WorkflowRunsSnapshot | undefined,
+  update: WorkflowRunsUpdate,
+): WorkflowRunsSnapshot {
+  if (!("_tag" in update)) return update;
+  const base = snapshot ?? { workflows: [], runs: [], questions: [] };
+  // Stable sorts, so entries of the same moment keep the order they were sent in.
+  const runs = merged(base.runs, update.runs, update.removed, (run) => run.runId).sort(
+    (left, right) =>
+      left.startedAt === right.startedAt ? 0 : left.startedAt < right.startedAt ? 1 : -1,
+  );
+  const questions = merged(
+    base.questions,
+    update.questions,
+    update.closed.map(workflowQuestionKey),
+    workflowQuestionKey,
+  ).sort((left, right) =>
+    left.askedAt === right.askedAt ? 0 : left.askedAt < right.askedAt ? -1 : 1,
+  );
+  return { ...base, runs, questions };
+}
+
+/** What names an open question: one run asks one question of a name at a time. */
+export const workflowQuestionKey = (question: { readonly runId: string; readonly name: string }) =>
+  JSON.stringify([question.runId, question.name]);
+
+/** `held` with `changed` put in place of their earlier versions and `gone` left out. */
+function merged<A>(
+  held: ReadonlyArray<A>,
+  changed: ReadonlyArray<A>,
+  gone: ReadonlyArray<string>,
+  key: (entry: A) => string,
+): Array<A> {
+  const fresh = new Map(changed.map((entry) => [key(entry), entry]));
+  const left = new Set(gone);
+  const kept = held.flatMap((entry) => {
+    const id = key(entry);
+    if (left.has(id)) return [];
+    const next = fresh.get(id);
+    fresh.delete(id);
+    return [next ?? entry];
+  });
+  return [...fresh.values(), ...kept];
+}
+
 export const WorkflowRunsSubscribeInput = Schema.Struct({
-  /** Changes after the first snapshot instead of a snapshot each time. Servers before it ignore it. */
-  changes: Schema.optional(Schema.Boolean),
+  /** Legacy v0.25/v0.26 delta flag; kept optional so older clients receive whole lists cleanly. */
+  changes: Schema.optionalKey(Schema.Boolean),
+  /** Send tagged `changed` diffs after the first list instead of whole lists. Older servers ignore it. */
+  diff: Schema.optionalKey(Schema.Boolean),
 });
 
 export const WorkflowRunGetInput = Schema.Struct({ runId: Schema.String });
