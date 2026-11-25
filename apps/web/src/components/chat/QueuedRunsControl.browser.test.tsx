@@ -177,9 +177,12 @@ it.each([false, true])(
 
     await page.getByRole("button", { name: "Preview second.png", exact: true }).click();
     await expect.element(page.getByRole("dialog")).toBeVisible();
-    await expect.element(page.getByText("second.png (2/2)", { exact: true })).toBeVisible();
+    const dialog = page.getByRole("dialog");
+    await expect.element(dialog.getByText("2 / 2", { exact: true })).toBeVisible();
+    await expect.element(dialog.getByText("second.png", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Previous media", exact: true }).click();
-    await expect.element(page.getByText("first.png (1/2)", { exact: true })).toBeVisible();
+    await expect.element(dialog.getByText("1 / 2", { exact: true })).toBeVisible();
+    await expect.element(dialog.getByText("first.png", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Close image preview", exact: true }).click();
     await expect.element(page.getByRole("dialog")).not.toBeInTheDocument();
     await expect.element(page.getByText("Later", { exact: true })).toBeVisible();
