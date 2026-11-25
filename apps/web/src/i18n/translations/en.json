@@ -12213,5 +12213,8 @@
   "39f64d971ba424b5": "No usage sources configured.",
   "dbd877abdc2c7c81": "HTTP quota source",
   "c792e744936dbe1b": "Add HTTP source",
-  "4032a03ee5301037": "The saved connection and its credentials are removed from this environment."
+  "4032a03ee5301037": "The saved connection and its credentials are removed from this environment.",
+  "07408a1ca3f33d8b": "Media controls",
+  "43878fb3f7e42f0e": "Fit to screen",
+  "10ead3798109659b": "Actual size"
 }

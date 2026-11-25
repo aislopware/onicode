@@ -72,10 +72,16 @@ describe("ExpandedImageDialog", () => {
     );
     const close = screen.getByRole("button", { name: "Close image preview" });
     await expect.element(close).toHaveFocus();
+    const dialog = screen.getByRole("dialog").element();
+    expect(dialog.querySelector("a[href], button, [tabindex='0']")).toBe(close.element());
     const contextMenu = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
     close.element().dispatchEvent(contextMenu);
     expect(contextMenu.defaultPrevented).toBe(false);
 
+    await userEvent.keyboard("{Tab}");
+    await expect
+      .element(screen.getByRole("button", { name: "No accessibility data" }))
+      .toHaveFocus();
     await userEvent.keyboard("{Tab}");
     const viewer = screen.getByRole("region", { name: "shot.png, zoomable image" }).element();
     expect(document.activeElement?.contains(viewer)).toBe(true);
@@ -153,12 +159,59 @@ describe("ExpandedImageDialog", () => {
       );
 
       const viewer = screen.getByRole("region", { name: "Pipeline, zoomable image" });
-      const availableWidth = window.innerWidth * 0.92 - (window.innerWidth >= 640 ? 96 : 0);
-      await vi.waitFor(() =>
-        expect(viewer.element().getBoundingClientRect().width).toBeCloseTo(availableWidth, 0),
-      );
+      // The image fills the stage along its limiting side.
+      await vi.waitFor(() => {
+        const style = getComputedStyle(viewer.element());
+        const stageWidth = Number.parseFloat(style.getPropertyValue("--media-width"));
+        const stageHeight = Number.parseFloat(style.getPropertyValue("--media-height"));
+        const { width, height } = viewer.element().getBoundingClientRect();
+        expect(Math.max(width / stageWidth, height / stageHeight)).toBeCloseTo(1, 2);
+      });
+      await expect.element(screen.getByText("100%", { exact: true })).toBeVisible();
     },
   );
+
+  it.each(["header", "footer"])("a click on the empty %s closes the viewer", async (row) => {
+    const onClose = vi.fn();
+    await using screen = await render(
+      <ExpandedImageDialog
+        preview={{ images: [{ src: PIXEL, name: "shot.png" }], index: 0 }}
+        onClose={onClose}
+      />,
+      // The dialog renders no links and reads no route.
+      { router: false },
+    );
+    const close = screen.getByRole("button", { name: "Close image preview" });
+    const toolbar = screen.getByRole("toolbar", { name: "Media controls" });
+    await expect.element(toolbar).toBeVisible();
+    const anchor = (row === "header" ? close : toolbar).element().getBoundingClientRect();
+    const target = document.elementFromPoint(anchor.left - 30, anchor.top + anchor.height / 2);
+    if (!(target instanceof HTMLElement)) throw new Error("Nothing beside the controls");
+    target.click();
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("reads and reaches the actual size of a capture past the zoom ceiling, and refits a replaced image", async () => {
+    const tall = (color: string) =>
+      `data:image/svg+xml,${encodeURIComponent(
+        `<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="40000"><rect width="1000" height="40000" fill="${color}"/></svg>`,
+      )}`;
+    const dialog = (src: string) => (
+      <ExpandedImageDialog
+        preview={{ images: [{ src, name: "tall.svg" }], index: 0 }}
+        onClose={() => {}}
+      />
+    );
+    // The dialog renders no links and reads no route.
+    await using screen = await render(dialog(tall("red")), { router: false });
+
+    await userEvent.click(screen.getByRole("button", { name: "Actual size" }));
+    await expect.element(screen.getByText("100%", { exact: true })).toBeVisible();
+    await expect.element(screen.getByText("100% zoom")).toBeInTheDocument();
+
+    await screen.rerender(dialog(tall("blue")));
+    await expect.element(screen.getByRole("button", { name: "Actual size" })).toBeEnabled();
+  });
 
   it("Escape closes a popup opened inside the dialog before the dialog", async () => {
     const onClose = vi.fn();
