@@ -8848,6 +8848,67 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     }),
   );
 
+  it.effect("starts history at a report the wake took before a prompt queued ahead of it", () =>
+    Effect.gen(function* () {
+      const offers: Array<ProviderContinuationRequests.ProviderContinuationRequest> = [];
+      const { runtime, thread } = yield* resumed([
+        ...backgroundLaunch(CHILD),
+        event("session.execution.succeeded", { sessionID: CHILD }),
+        event("session.execution.succeeded", { sessionID: SESSION }),
+        event("session.inbox.enqueued", {
+          inboxID: "msg_external",
+          sessionID: SESSION,
+          item: { type: "user", payload: { text: "Check the build" }, delivery: "queue" },
+        }),
+        childReport("msg_report", "CHILD_OK"),
+        event("session.execution.started", { sessionID: SESSION }),
+        event("session.inbox.delivered", { sessionID: SESSION, inboxID: "msg_report" }),
+        event("session.inbox.delivered", { sessionID: SESSION, inboxID: "msg_external" }),
+        event("session.execution.succeeded", { sessionID: SESSION }),
+        // Handled only after the wake above has buffered everything before it.
+        event("session.model.selected", {
+          sessionID: SESSION,
+          model: { id: "buffered", providerID: "opencode" },
+        }),
+      ]).pipe(
+        Effect.provideService(ProviderContinuationRequests.ProviderContinuationRequests, {
+          offer: (request) => Effect.sync(() => void offers.push(request)),
+          take: Effect.never,
+        }),
+      );
+      const refs: Array<string | null | undefined> = [];
+      const buffered = yield* Deferred.make<void>();
+      const ended = yield* Deferred.make<void>();
+      let terminalCount = 0;
+      yield* runtime.events.pipe(
+        Stream.tap((event) =>
+          Effect.gen(function* () {
+            if (event.type === "provider_turn.updated") {
+              refs.push(event.providerTurn.nativeTurnRef?.nativeId);
+            }
+            if (
+              event.type === "provider_thread.updated" &&
+              event.providerThread.nativeMetadata?.modelSelection?.model === "opencode/buffered"
+            ) {
+              yield* Deferred.succeed(buffered, undefined);
+            }
+            if (event.type === "turn.terminal" && ++terminalCount === 2) {
+              yield* Deferred.succeed(ended, undefined);
+            }
+          }),
+        ),
+        Stream.runDrain,
+        Effect.forkScoped,
+      );
+      yield* runtime.startTurn(withLineage(thread));
+      yield* Deferred.await(buffered);
+      yield* runtime.startTurn(continuationTurn(thread, offers[0]!));
+      yield* Deferred.await(ended);
+      assert.include(refs, "msg_report");
+      assert.notInclude(refs, "msg_external");
+    }),
+  );
+
   it.effect("does not show a command's own prompt as another client's steer", () =>
     Effect.gen(function* () {
       const { runtime, thread } = yield* resumed([
