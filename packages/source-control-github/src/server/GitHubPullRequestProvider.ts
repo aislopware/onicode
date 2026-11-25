@@ -505,7 +505,11 @@ export const make = Effect.gen(function* () {
 
     getChangeRequestChecks: (input) =>
       cli.revalidateChecks(input, readChecks(input)).pipe(
-        Effect.map(({ state, checks }) => ({ state, checks })),
+        Effect.map(({ state, checks, workflowApprovalsRequired }) => ({
+          state,
+          checks,
+          ...(workflowApprovalsRequired === undefined ? {} : { workflowApprovalsRequired }),
+        })),
         Effect.mapError(fail("getChangeRequestChecks")),
       ),
 
