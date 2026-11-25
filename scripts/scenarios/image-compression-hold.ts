@@ -63,12 +63,71 @@ export const holdImageCompression = (browser: Browser) =>
     OffscreenCanvas.prototype.convertToBlob = function (options) {
       return track(() => convertToBlob.call(this, options));
     };
+    const arrayBuffer = Blob.prototype.arrayBuffer;
+    Blob.prototype.arrayBuffer = function () {
+      return track(() => arrayBuffer.call(this));
+    };
     const readAsDataURL = FileReader.prototype.readAsDataURL;
     FileReader.prototype.readAsDataURL = function (blob) {
       hold.inFlight++;
       this.addEventListener("loadend", () => hold.inFlight--, { once: true });
       readAsDataURL.call(this, blob);
     };
+
+    const NativeWorker = window.Worker;
+    if (typeof NativeWorker === "function") {
+      window.Worker = new Proxy(NativeWorker, {
+        construct(Target, args: [string | URL, WorkerOptions?]) {
+          const worker = new Target(...args);
+          if (!String(args[0]).includes("imageCompression.worker")) return worker;
+
+          const pendingTasks = new Set<number>();
+          const fitTasks = new Set<number>();
+          const clearPending = () => {
+            hold.inFlight -= pendingTasks.size;
+            pendingTasks.clear();
+            fitTasks.clear();
+          };
+          const postMessage = worker.postMessage.bind(worker) as (...postArgs: unknown[]) => void;
+          const terminate = worker.terminate.bind(worker);
+
+          worker.addEventListener("message", (event: MessageEvent<{ id?: unknown }>) => {
+            const id = event.data?.id;
+            if (typeof id !== "number" || !pendingTasks.delete(id)) return;
+            if (fitTasks.delete(id)) hold.compressionDecodes++;
+            hold.inFlight--;
+          });
+          worker.addEventListener("error", clearPending);
+
+          worker.postMessage = ((...postArgs: unknown[]) => {
+            const message = postArgs[0] as { id?: unknown; task?: { kind?: unknown } } | undefined;
+            const id = message?.id;
+            if (typeof id !== "number") {
+              postMessage(...postArgs);
+              return;
+            }
+            pendingTasks.add(id);
+            hold.inFlight++;
+            if (message?.task?.kind === "fit") {
+              fitTasks.add(id);
+              if (!hold.released) {
+                hold.held.push(() => {
+                  if (pendingTasks.has(id)) postMessage(...postArgs);
+                });
+                return;
+              }
+            }
+            postMessage(...postArgs);
+          }) as Worker["postMessage"];
+
+          worker.terminate = () => {
+            clearPending();
+            terminate();
+          };
+          return worker;
+        },
+      });
+    }
   });
 
 /** Pastes a PNG wider than the 2000 px attachment limit into the focused composer. */
