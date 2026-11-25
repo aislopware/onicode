@@ -278,6 +278,16 @@ describe("windowsEnvironmentValueCommand", () => {
     expect(processAt).toBeLessThan(machineAt);
     expect(machineAt).toBeLessThan(userAt);
   });
+
+  it("reads non-PATH variables from Process, then User, then Machine", () => {
+    const command = windowsEnvironmentValueCommand("FNM_DIR");
+    const processAt = command.indexOf("[Environment]::GetEnvironmentVariable('FNM_DIR','Process')");
+    const userAt = command.indexOf("[Environment]::GetEnvironmentVariable('FNM_DIR','User')");
+    const machineAt = command.indexOf("[Environment]::GetEnvironmentVariable('FNM_DIR','Machine')");
+    expect(processAt).toBeGreaterThan(-1);
+    expect(processAt).toBeLessThan(userAt);
+    expect(userAt).toBeLessThan(machineAt);
+  });
 });
 
 describe("readEnvironmentFromWindowsShell", () => {
