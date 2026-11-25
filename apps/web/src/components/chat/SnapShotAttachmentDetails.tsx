@@ -79,9 +79,11 @@ function snapShotIncludesAccessibility(source: SnapShotSource): boolean {
 export function SnapShotCopyButton({
   onCopy,
   side = "top",
+  variant = "default",
 }: {
   onCopy: () => Promise<void>;
   side?: "top" | "right" | "bottom" | "left";
+  variant?: "default" | "media";
 }) {
   const gt = useGT();
   const ref = useRef<HTMLButtonElement>(null);
@@ -109,15 +111,18 @@ export function SnapShotCopyButton({
                   ),
               );
             }}
-            size="xs"
-            variant="ghost-muted"
+            size={variant === "media" ? "icon-sm" : "xs"}
+            variant={variant === "media" ? "media-ghost" : "ghost-muted"}
           />
         }
       >
         {copied ? (
-          <CheckIcon className="size-3 text-primary" aria-hidden="true" />
+          <CheckIcon
+            className={variant === "media" ? undefined : "size-3 text-primary"}
+            aria-hidden="true"
+          />
         ) : (
-          <CopyIcon className="size-3" aria-hidden="true" />
+          <CopyIcon className={variant === "media" ? undefined : "size-3"} aria-hidden="true" />
         )}
       </TooltipTrigger>
       <TooltipPopup side={side}>
@@ -131,11 +136,13 @@ export function SnapShotContentsButton({
   source,
   className,
   side = "top",
+  variant = "default",
   onCopySnapshot,
 }: {
   source: SnapShotSource;
   className?: string;
   side?: "top" | "right" | "bottom" | "left";
+  variant?: "default" | "media";
   onCopySnapshot?: (() => Promise<void>) | undefined;
 }) {
   const gt = useGT();
@@ -159,14 +166,14 @@ export function SnapShotContentsButton({
                   }
                   className={className}
                   onClick={(event) => event.stopPropagation()}
-                  size="icon-micro"
-                  variant="overlay"
+                  size={variant === "media" ? "icon-sm" : "icon-micro"}
+                  variant={variant === "media" ? "media-ghost" : "overlay"}
                 />
               }
             />
           }
         >
-          <ContentsIcon className="size-3" aria-hidden="true" />
+          <ContentsIcon className={variant === "media" ? undefined : "size-3"} aria-hidden="true" />
         </TooltipTrigger>
         <TooltipPopup side={side}>{tooltip}</TooltipPopup>
       </Tooltip>

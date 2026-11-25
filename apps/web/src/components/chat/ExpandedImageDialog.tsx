@@ -5,6 +5,7 @@ import {
   type CSSProperties,
   type ReactNode,
   type KeyboardEvent,
+  type MouseEvent,
 } from "react";
 import { flushSync } from "react-dom";
 import { useGT } from "gt-react";
@@ -24,7 +25,7 @@ import type { ExpandedImageItem, ExpandedImagePreview } from "./ExpandedImagePre
 import { resolveExternalWebLinkHost } from "./externalLinkContextMenu";
 import { useAssetUrlRefresh, useAssetUrlState } from "../../assets/assetUrls";
 import { OpenMediaLink } from "../media/OpenMediaLink";
-import { MediaActions, useSaveMedia, type MediaActionSource } from "../media/MediaActions";
+import { MediaActionsMenu, useMediaActions, type MediaActionSource } from "../media/MediaActions";
 import { MediaVideoPlayer } from "../media/MediaVideoPlayer";
 import { isContextMenuOpen } from "../../contextMenuFallback";
 import {
@@ -33,11 +34,13 @@ import {
   SnapShotContentsButton,
   snapShotAccessibilityDetails,
 } from "./SnapShotAttachmentDetails";
+import { MiddleTruncate } from "../ui/middle-truncate";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
-  ZOOMABLE_IMAGE_MAX_ZOOM,
   ZoomableImage,
   zoomableImageFit,
+  zoomableImageMaxZoom,
+  zoomableImageScale,
   type NaturalSize,
   type ZoomableImageBounds,
   type ZoomableImageHandle,
@@ -115,12 +118,10 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
   const [zoom, setZoom] = useState(1);
   const [natural, setNatural] = useState<{ src: string; size: NaturalSize } | null>(null);
   const [stage, setStage] = useState<ZoomableImageBounds | null>(null);
-  // A resized stage refits the image.
-  const [zoomStage, setZoomStage] = useState(stage);
-  if (zoomStage !== stage) {
-    setZoomStage(stage);
-    setZoom(1);
-  }
+  const [zoomed, setZoomed] = useState<{ stage: ZoomableImageBounds | null; view: string | null }>({
+    stage: null,
+    view: null,
+  });
   const attachStage = (element: HTMLDivElement) => {
     const measure = () => {
       // Side gutters keep the edge navigation buttons off the media.
@@ -167,11 +168,13 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
       }
     : source;
 
-  const { canSave, save } = useSaveMedia(source);
+  const mediaActions = useMediaActions(actionsSource);
+  const { canSave } = mediaActions;
 
-  const navigateImage = (direction: -1 | 1) => {
-    setImageOffset((current) => current + direction);
-    setZoom(1);
+  const navigateImage = (direction: -1 | 1) => setImageOffset((current) => current + direction);
+
+  const closeFromBackdrop = (event: MouseEvent) => {
+    if (event.target === event.currentTarget) close();
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -214,16 +217,18 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
     natural !== null && natural.src === item.src ? natural.size : { width: 0, height: 0 };
   const showsZoomableImage =
     !isVideo && !showingAccessibilityDetails && item.src !== null && failedImageSrc !== item.src;
+  // A resized stage refits the image, and a remounted one starts fitted.
+  const imageKey = `${index}:${item.src}`;
+  const view = showsZoomableImage ? imageKey : null;
+  if (zoomed.stage !== stage || zoomed.view !== view) {
+    setZoomed({ stage, view });
+    setZoom(1);
+  }
   const fit = stage ? zoomableImageFit(stage, naturalSize, itemMimeType(item)) : 1;
-  const scalePercent = Math.round(fit * zoom * 100);
+  const scalePercent = Math.round(zoomableImageScale(fit, zoom) * 100);
   const canShowActualSize = zoom === 1 && fit < 1 && naturalSize.width > 0;
   const zoomTo = (next: number) => zoomableImageRef.current?.zoomTo(next);
   const multiple = preview.images.length > 1;
-  // A long name is cut in the middle so its end and extension stay readable.
-  const nameCharacters = Array.from(item.name);
-  const nameTailLength = nameCharacters.length > 24 ? 12 : 0;
-  const nameHead = nameCharacters.slice(0, nameCharacters.length - nameTailLength).join("");
-  const nameTail = nameCharacters.slice(nameCharacters.length - nameTailLength).join("");
 
   return (
     <Dialog
@@ -255,30 +260,37 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
           return false;
         }}
         finalFocus={() => returnFocus.target}
-        onClick={(event) => {
-          if (event.target === event.currentTarget) close();
-        }}
+        onClick={closeFromBackdrop}
       >
         <DialogTitle className="sr-only">
           {isVideo ? gt("Expanded video preview") : gt("Expanded image preview")}
         </DialogTitle>
-        <div className="mb-2 flex h-9 shrink-0 items-center gap-3">
-          <div className="flex min-w-0 flex-1 items-center gap-2 text-sm">
+        <div className="mb-2 flex h-9 shrink-0 items-center gap-3" onClick={closeFromBackdrop}>
+          {/* First in Tab order, and outside the media menu so its context menu is not the media's. */}
+          <Button
+            type="button"
+            ref={closeButtonRef}
+            size="icon-lg"
+            variant="media-control"
+            className="order-last"
+            onClick={close}
+            aria-label={isVideo ? gt("Close video preview") : gt("Close image preview")}
+          >
+            <XIcon aria-hidden="true" />
+          </Button>
+          <div
+            className="flex min-w-0 flex-1 items-center gap-2 text-sm"
+            onClick={closeFromBackdrop}
+          >
             <span className="flex min-w-0 items-center gap-2" aria-live="polite" aria-atomic="true">
               {multiple && (
                 <span className="shrink-0 font-medium text-white tabular-nums">
                   {index + 1} / {preview.images.length}
                 </span>
               )}
-              <Tooltip disabled={nameTailLength === 0}>
-                <TooltipTrigger render={<span className="flex max-w-xl min-w-0 text-white/60" />}>
-                  <span className="truncate">{nameHead}</span>
-                  <span className="shrink-0 whitespace-pre">{nameTail}</span>
-                </TooltipTrigger>
-                <TooltipPopup className="max-w-md break-all" side="bottom">
-                  {item.name}
-                </TooltipPopup>
-              </Tooltip>
+              <span className="flex max-w-xl min-w-0 text-white/60">
+                <MiddleTruncate value={item.name} />
+              </span>
             </span>
             {accessibilityDetails && item.source ? (
               <Tooltip>
@@ -304,22 +316,12 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
                 <TooltipPopup side="bottom">{contentsLabel}</TooltipPopup>
               </Tooltip>
             ) : item.source ? (
-              <SnapShotContentsButton source={item.source} side="bottom" />
+              <SnapShotContentsButton source={item.source} side="bottom" variant="media" />
             ) : null}
             {item.onCopySnapshot && (
-              <SnapShotCopyButton onCopy={item.onCopySnapshot} side="bottom" />
+              <SnapShotCopyButton onCopy={item.onCopySnapshot} side="bottom" variant="media" />
             )}
           </div>
-          <Button
-            type="button"
-            ref={closeButtonRef}
-            size="icon-lg"
-            variant="media-control"
-            onClick={close}
-            aria-label={isVideo ? gt("Close video preview") : gt("Close image preview")}
-          >
-            <XIcon aria-hidden="true" />
-          </Button>
         </div>
         <div
           ref={attachStage}
@@ -332,12 +334,10 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
                 } as CSSProperties)
               : undefined
           }
-          onClick={(event) => {
-            if (event.target === event.currentTarget) close();
-          }}
+          onClick={closeFromBackdrop}
         >
           {stage && (
-            <MediaActions source={actionsSource} showTooltip={false}>
+            <MediaActionsMenu source={actionsSource} actions={mediaActions} showTooltip={false}>
               <div className="flex max-h-full max-w-[var(--media-width)] items-center justify-center">
                 {item.type === "video" ? (
                   <ExpandedVideo key={index} item={item} />
@@ -360,7 +360,7 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
                 ) : (
                   <ZoomableImage
                     ref={zoomableImageRef}
-                    key={`${index}:${item.src}`}
+                    key={imageKey}
                     src={item.src}
                     name={item.name}
                     mimeType={itemMimeType(item)}
@@ -375,10 +375,13 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
                   />
                 )}
               </div>
-            </MediaActions>
+            </MediaActionsMenu>
           )}
         </div>
-        <div className="mt-2 flex h-10 shrink-0 items-center justify-center max-sm:px-12">
+        <div
+          className="mt-2 flex h-10 shrink-0 items-center justify-center max-sm:px-12"
+          onClick={closeFromBackdrop}
+        >
           {(showsZoomableImage || canSave) && (
             <div
               role="toolbar"
@@ -412,7 +415,7 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
                     size="icon-sm"
                     variant="media-ghost"
                     aria-label={gt("Zoom in")}
-                    disabled={zoom >= ZOOMABLE_IMAGE_MAX_ZOOM}
+                    disabled={naturalSize.width === 0 || zoom >= zoomableImageMaxZoom(fit)}
                     onClick={() => zoomTo(zoom * 1.5)}
                   >
                     <ZoomInIcon aria-hidden="true" />
@@ -427,7 +430,7 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
                   size="icon-sm"
                   variant="media-ghost"
                   aria-label={isVideo ? gt("Save video") : gt("Save image")}
-                  onClick={() => void save()}
+                  onClick={() => void mediaActions.saveWithToasts()}
                 >
                   <DownloadIcon aria-hidden="true" />
                 </Button>
@@ -441,7 +444,7 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
               type="button"
               size="icon-lg"
               variant="media-control"
-              className="absolute bottom-0.5 left-0 z-20 sm:top-1/2 sm:bottom-auto sm:-translate-y-1/2"
+              className="absolute bottom-0 left-0 z-20 sm:top-1/2 sm:bottom-auto sm:-translate-y-1/2"
               aria-label={gt("Previous media")}
               onClick={() => navigateImage(-1)}
             >
@@ -451,7 +454,7 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
               type="button"
               size="icon-lg"
               variant="media-control"
-              className="absolute right-0 bottom-0.5 z-20 sm:top-1/2 sm:bottom-auto sm:-translate-y-1/2"
+              className="absolute right-0 bottom-0 z-20 sm:top-1/2 sm:bottom-auto sm:-translate-y-1/2"
               aria-label={gt("Next media")}
               onClick={() => navigateImage(1)}
             >

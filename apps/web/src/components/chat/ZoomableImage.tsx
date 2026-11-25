@@ -27,7 +27,15 @@ export function zoomableImageFit(
   );
 }
 
-export const ZOOMABLE_IMAGE_MAX_ZOOM = 8;
+/** The shown size relative to the natural size. A vector upscaled to fit has no natural size to exceed, so its fit is 1. */
+export function zoomableImageScale(fit: number, zoom: number): number {
+  return Math.min(1, fit) * zoom;
+}
+
+/** Zoom is relative to the fit, so a very large image needs a higher ceiling to reach its actual size. */
+export function zoomableImageMaxZoom(fit: number): number {
+  return Math.max(8, 1 / fit);
+}
 
 export interface ZoomableImageHandle {
   pan: (key: string) => boolean;
@@ -75,15 +83,15 @@ export function ZoomableImage({
 
   const changeZoom = (next: number, point?: { x: number; y: number }) => {
     const viewport = viewportRef.current;
-    const clamped = Math.min(ZOOMABLE_IMAGE_MAX_ZOOM, Math.max(1, next));
-    if (!viewport || zoom === clamped) return;
-    const bounds = viewport.getBoundingClientRect();
-    const x = point ? point.x - bounds.left : viewport.clientWidth / 2;
-    const y = point ? point.y - bounds.top : viewport.clientHeight / 2;
+    const clamped = Math.min(zoomableImageMaxZoom(fit), Math.max(1, next));
+    if (!viewport || naturalSize.width === 0 || zoom === clamped) return;
+    const rect = viewport.getBoundingClientRect();
+    const x = point ? point.x - rect.left : viewport.clientWidth / 2;
+    const y = point ? point.y - rect.top : viewport.clientHeight / 2;
     const anchorX = (viewport.scrollLeft + x) / zoom;
     const anchorY = (viewport.scrollTop + y) / zoom;
-    const clientX = bounds.left + x;
-    const clientY = bounds.top + y;
+    const clientX = rect.left + x;
+    const clientY = rect.top + y;
     // The new size must be laid out before the scroll position can keep the anchor in place.
     flushSync(() => onZoomChange(clamped));
     const resized = viewport.getBoundingClientRect();
@@ -91,40 +99,36 @@ export function ZoomableImage({
     viewport.scrollTop = anchorY * clamped - (clientY - resized.top);
   };
 
-  useImperativeHandle(
-    ref,
-    () => ({
-      pan(key) {
-        const viewport = viewportRef.current;
-        if (!viewport || zoom <= 1) return false;
-        // A vertical scrollbar alone must not swallow gallery navigation.
-        if (
-          (key === "ArrowLeft" || key === "ArrowRight") &&
-          viewport.scrollWidth <= viewport.offsetWidth
-        )
+  useImperativeHandle(ref, () => ({
+    pan(key) {
+      const viewport = viewportRef.current;
+      if (!viewport || zoom <= 1) return false;
+      // A vertical scrollbar alone must not swallow gallery navigation.
+      if (
+        (key === "ArrowLeft" || key === "ArrowRight") &&
+        viewport.scrollWidth <= viewport.offsetWidth
+      )
+        return false;
+      switch (key) {
+        case "ArrowLeft":
+          viewport.scrollLeft -= 40;
+          break;
+        case "ArrowRight":
+          viewport.scrollLeft += 40;
+          break;
+        case "ArrowUp":
+          viewport.scrollTop -= 40;
+          break;
+        case "ArrowDown":
+          viewport.scrollTop += 40;
+          break;
+        default:
           return false;
-        switch (key) {
-          case "ArrowLeft":
-            viewport.scrollLeft -= 40;
-            break;
-          case "ArrowRight":
-            viewport.scrollLeft += 40;
-            break;
-          case "ArrowUp":
-            viewport.scrollTop -= 40;
-            break;
-          case "ArrowDown":
-            viewport.scrollTop += 40;
-            break;
-          default:
-            return false;
-        }
-        return true;
-      },
-      zoomTo: (next) => changeZoom(next),
-    }),
-    [zoom],
-  );
+      }
+      return true;
+    },
+    zoomTo: (next) => changeZoom(next),
+  }));
 
   const attachViewport = (viewport: HTMLDivElement) => {
     viewportRef.current = viewport;
@@ -191,10 +195,10 @@ export function ZoomableImage({
           suppressClickRef.current = false;
           if (event.pointerType !== "mouse" || event.button !== 0 || zoom <= 1) return;
           const viewport = event.currentTarget;
-          const bounds = viewport.getBoundingClientRect();
+          const rect = viewport.getBoundingClientRect();
           if (
-            event.clientX - bounds.left >= viewport.clientWidth ||
-            event.clientY - bounds.top >= viewport.clientHeight
+            event.clientX - rect.left >= viewport.clientWidth ||
+            event.clientY - rect.top >= viewport.clientHeight
           )
             return;
           dragRef.current = {
@@ -250,7 +254,7 @@ export function ZoomableImage({
         />
       </div>
       <span className="sr-only" aria-live="polite">
-        {gt("{percent}% zoom", { percent: Math.round(zoom * 100) })}
+        {gt("{percent}% zoom", { percent: Math.round(zoomableImageScale(fit, zoom) * 100) })}
       </span>
     </div>
   );

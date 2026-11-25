@@ -60,7 +60,32 @@ function canReadHostMedia(environmentId: EnvironmentId | null): boolean {
   return result._tag !== "Failure" && allowsHostMedia(AsyncResult.getOrElse(result, () => null));
 }
 
+async function runWithProgressToast(
+  title: string,
+  failureTitle: string,
+  action: () => Promise<void>,
+): Promise<void> {
+  const progressToast = toastManager.add({ type: "loading", title });
+  const result = await settlePromise(action);
+  if (!AsyncResult.isFailure(result)) {
+    toastManager.close(progressToast);
+    return;
+  }
+  toastManager.update(
+    progressToast,
+    stackedThreadToast({
+      type: "error",
+      title: failureTitle,
+      description:
+        thrownErrorMessage(squashAtomCommandFailure(result), m) ??
+        m(msg("The media action failed.")),
+    }),
+  );
+}
+
 export function useMediaActions(source: MediaActionSource) {
+  const savesInFlight = useRef(new Set<string>());
+
   const hostEnvironmentId =
     source.asset &&
     (source.asset.resource._tag === "workspace-file" || source.asset.resource._tag === "media-file")
@@ -102,6 +127,20 @@ export function useMediaActions(source: MediaActionSource) {
   const save = async () => {
     await downloadMedia(await actionUrl(), mediaFileName(source));
   };
+  const canSave = canReadMedia && (source.src !== null || source.asset !== undefined);
+  const saveWithToasts = async () => {
+    const key = source.asset ? JSON.stringify(source.asset) : (source.src ?? "");
+    const inFlight = savesInFlight.current;
+    if (inFlight.has(key)) return;
+    inFlight.add(key);
+    const isImage = source.kind === "image";
+    await runWithProgressToast(
+      isImage ? m(msg("Preparing image download…")) : m(msg("Preparing video download…")),
+      isImage ? m(msg("Could not save image")) : m(msg("Could not save video")),
+      save,
+    );
+    inFlight.delete(key);
+  };
   const copyImage = async () => {
     assertCanReadMedia();
     if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") {
@@ -114,47 +153,27 @@ export function useMediaActions(source: MediaActionSource) {
       new ClipboardItem({ "image/png": actionUrl().then(readMediaPng) }),
     ]);
   };
-  return { save, copyImage, canReadMedia, assertCanReadMedia };
+  return { save, saveWithToasts, canSave, copyImage, canReadMedia, assertCanReadMedia };
 }
 
-export function useSaveMedia(source: MediaActionSource) {
-  const { save, canReadMedia } = useMediaActions(source);
-  const isImage = source.kind === "image";
-  const canSave = canReadMedia && (source.src !== null || source.asset !== undefined);
-  const saveWithToasts = async () => {
-    const progressToast = toastManager.add({
-      type: "loading",
-      title: isImage ? m(msg("Preparing image download…")) : m(msg("Preparing video download…")),
-    });
-    const result = await settlePromise(save);
-    if (!AsyncResult.isFailure(result)) {
-      toastManager.close(progressToast);
-      return;
-    }
-    toastManager.update(
-      progressToast,
-      stackedThreadToast({
-        type: "error",
-        title: isImage ? m(msg("Could not save image")) : m(msg("Could not save video")),
-        description:
-          thrownErrorMessage(squashAtomCommandFailure(result), m) ??
-          m(msg("The media action failed.")),
-      }),
-    );
-  };
-  return { canSave, save: saveWithToasts };
-}
-
-export function MediaActions({
-  source,
-  children,
-  showTooltip = true,
-}: {
+interface MediaActionsProps {
   source: MediaActionSource;
   children: ReactElement;
   showTooltip?: boolean;
-}) {
-  const { save, copyImage, canReadMedia, assertCanReadMedia } = useMediaActions(source);
+}
+
+export function MediaActions(props: MediaActionsProps) {
+  return <MediaActionsMenu {...props} actions={useMediaActions(props.source)} />;
+}
+
+/** The media context menu for a caller that also offers the actions itself. */
+export function MediaActionsMenu({
+  source,
+  actions,
+  children,
+  showTooltip = true,
+}: MediaActionsProps & { actions: ReturnType<typeof useMediaActions> }) {
+  const { saveWithToasts, canSave, copyImage, canReadMedia, assertCanReadMedia } = actions;
   const [tooltipOpen, setTooltipOpen] = useState(false);
   const menuOpen = useRef(false);
   const reference = source.reference;
@@ -166,10 +185,8 @@ export function MediaActions({
     menuOpen.current = true;
     setTooltipOpen(false);
     let failureTitle = m(msg("Could not open media menu"));
-    let progressToast: ReturnType<typeof toastManager.add> | undefined;
     const result = await settlePromise(async () => {
       const isImage = source.kind === "image";
-      const unavailable = !canReadMedia || (source.src === null && source.asset === undefined);
       const canCopyImage =
         typeof navigator !== "undefined" &&
         Boolean(navigator.clipboard?.write) &&
@@ -191,13 +208,13 @@ export function MediaActions({
       items.push({
         id: "save",
         label: isImage ? m(msg("Save image")) : m(msg("Save video")),
-        disabled: unavailable,
+        disabled: !canSave,
       });
       if (source.kind === "image") {
         items.push({
           id: "copy-image",
           label: m(msg("Copy image")),
-          disabled: unavailable || !canCopyImage,
+          disabled: !canSave || !canCopyImage,
         });
       }
 
@@ -212,13 +229,7 @@ export function MediaActions({
               ? m(msg("Could not copy url"))
               : action === "open-file"
                 ? m(msg("Could not open in file viewer"))
-                : action === "save"
-                  ? isImage
-                    ? m(msg("Could not save image"))
-                    : m(msg("Could not save video"))
-                  : action === "copy-image"
-                    ? m(msg("Could not copy image"))
-                    : m(msg("Could not complete media action"));
+                : m(msg("Could not complete media action"));
       const text =
         action === "copy-full-path" && reference?.kind === "file"
           ? reference.path
@@ -247,29 +258,26 @@ export function MediaActions({
       } else if (action === "open-file") {
         assertCanReadMedia();
         source.onOpenFile?.();
-      } else if (action === "save" || action === "copy-image") {
-        progressToast = toastManager.add({
-          type: "loading",
-          title:
-            action === "save"
-              ? isImage
-                ? m(msg("Preparing image download…"))
-                : m(msg("Preparing video download…"))
-              : m(msg("Copying image…")),
-        });
-        await (action === "save" ? save() : copyImage());
-        toastManager.close(progressToast);
+      } else if (action === "save") {
+        await saveWithToasts();
+      } else if (action === "copy-image") {
+        await runWithProgressToast(
+          m(msg("Copying image…")),
+          m(msg("Could not copy image")),
+          copyImage,
+        );
       }
     });
     if (AsyncResult.isFailure(result)) {
-      const error = squashAtomCommandFailure(result);
-      const toast = stackedThreadToast({
-        type: "error",
-        title: failureTitle,
-        description: thrownErrorMessage(error, m) ?? m(msg("The media action failed.")),
-      });
-      if (progressToast) toastManager.update(progressToast, toast);
-      else toastManager.add(toast);
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: failureTitle,
+          description:
+            thrownErrorMessage(squashAtomCommandFailure(result), m) ??
+            m(msg("The media action failed.")),
+        }),
+      );
     }
     menuOpen.current = false;
   };

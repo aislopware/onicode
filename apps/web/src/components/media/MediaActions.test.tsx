@@ -72,10 +72,11 @@ vi.mock("../ui/toast", () => ({
       return "toast";
     },
     update: () => state.menuFinished?.(),
+    close: () => {},
   },
 }));
 
-import { MediaActions, useMediaActions, type MediaActionSource } from "./MediaActions";
+import { MediaActionsMenu, useMediaActions, type MediaActionSource } from "./MediaActions";
 
 const environmentId = EnvironmentId.make("media-environment");
 const threadId = ThreadId.make("media-thread");
@@ -106,7 +107,13 @@ function openMenu(source: MediaActionSource) {
       return undefined;
     return node.props.onContextMenu ?? find(node.props.children);
   };
-  const handler = find(MediaActions({ source, children: createElement("img") }));
+  const handler = find(
+    MediaActionsMenu({
+      source,
+      actions: useMediaActions(source),
+      children: createElement("img"),
+    }),
+  );
   if (!handler) throw new Error("Media menu handler missing");
   handler({
     defaultPrevented: false,
@@ -187,3 +194,17 @@ it.each(["save", "copy-image", "open-file"])(
     expect(state.openFile).not.toHaveBeenCalled();
   },
 );
+
+it("runs one save at a time per media", async () => {
+  state.sessions.set(environmentId, granted);
+  const download = deferred<undefined>();
+  state.download.mockReturnValue(download.promise);
+  const actions = useMediaActions(hostSource());
+  const saves = [actions.saveWithToasts(), actions.saveWithToasts()];
+  download.resolve(undefined);
+  await Promise.all(saves);
+  expect(state.download).toHaveBeenCalledTimes(1);
+
+  await actions.saveWithToasts();
+  expect(state.download).toHaveBeenCalledTimes(2);
+});
