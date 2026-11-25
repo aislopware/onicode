@@ -1,68 +1,64 @@
 import { useGT } from "gt-react";
-import { useImperativeHandle, useRef, useState, useSyncExternalStore, type Ref } from "react";
+import { useImperativeHandle, useRef, useState, type Ref } from "react";
 import { flushSync } from "react-dom";
-
-import {
-  onWindowControlsOverlayGeometryChange,
-  windowControlsOverlayHeight,
-} from "../../lib/windowControlsOverlay";
 
 import { AttachmentImage } from "../media/AttachmentImage";
 
-const MAX_ZOOM = 8;
-
-// Subtract the caption strip, matching dialog CSS's --native-titlebar-height.
-function readViewerSize() {
-  return { width: window.innerWidth, height: window.innerHeight - windowControlsOverlayHeight() };
+export interface NaturalSize {
+  readonly width: number;
+  readonly height: number;
 }
 
-let viewerSize: ReturnType<typeof readViewerSize> | null = null;
-
-// Cached so an unchanged size keeps its identity: a new one resets the zoom.
-function getViewerSize() {
-  const next = readViewerSize();
-  if (next.width !== viewerSize?.width || next.height !== viewerSize.height) viewerSize = next;
-  return viewerSize;
+export interface ZoomableImageBounds {
+  readonly width: number;
+  readonly height: number;
 }
 
-function subscribeViewerSize(onChange: () => void) {
-  window.addEventListener("resize", onChange);
-  // Fullscreen caption-strip changes may not emit resize.
-  const stopOverlayListener = onWindowControlsOverlayGeometryChange(onChange);
-  return () => {
-    window.removeEventListener("resize", onChange);
-    stopOverlayListener();
-  };
+export function zoomableImageFit(
+  bounds: ZoomableImageBounds,
+  naturalSize: NaturalSize,
+  mimeType: string | undefined,
+): number {
+  // A vector scales without loss, and an SVG without width and height reports a tiny default size.
+  return Math.min(
+    mimeType === "image/svg+xml" ? Infinity : 1,
+    bounds.width / (naturalSize.width || 1),
+    bounds.height / (naturalSize.height || 1),
+  );
 }
+
+export const ZOOMABLE_IMAGE_MAX_ZOOM = 8;
 
 export interface ZoomableImageHandle {
   pan: (key: string) => boolean;
+  zoomTo: (zoom: number) => void;
 }
 
 export function ZoomableImage({
   src,
   name,
   mimeType,
+  bounds,
+  naturalSize,
+  onNaturalSize,
+  zoom,
+  onZoomChange,
   onError,
   ref,
 }: {
   src: string;
   name: string;
   mimeType?: string | undefined;
+  bounds: ZoomableImageBounds;
+  naturalSize: NaturalSize;
+  onNaturalSize: (size: NaturalSize) => void;
+  zoom: number;
+  onZoomChange: (zoom: number) => void;
   onError: () => void;
   ref?: Ref<ZoomableImageHandle>;
 }) {
   const gt = useGT();
   const viewportRef = useRef<HTMLDivElement>(null);
-  const [naturalSize, setNaturalSize] = useState({ width: 0, height: 0 });
-  const viewerSize = useSyncExternalStore(subscribeViewerSize, getViewerSize);
-  const [zoom, setZoom] = useState(1);
-  // A resized viewer refits the image.
-  const [zoomViewerSize, setZoomViewerSize] = useState(viewerSize);
-  if (zoomViewerSize !== viewerSize) {
-    setZoomViewerSize(viewerSize);
-    setZoom(1);
-  }
   const dragRef = useRef<{
     pointerId: number;
     x: number;
@@ -72,15 +68,28 @@ export function ZoomableImage({
   } | null>(null);
   const suppressClickRef = useRef(false);
   const [dragging, setDragging] = useState(false);
-  const maxHeight = Math.max(1, Math.min(viewerSize.height * 0.86, viewerSize.height - 160));
-  // A vector scales without loss, and an SVG without width and height reports a tiny default size.
-  const fit = Math.min(
-    mimeType === "image/svg+xml" ? Infinity : 1,
-    (viewerSize.width * 0.92 - (viewerSize.width >= 640 ? 96 : 0)) / (naturalSize.width || 1),
-    maxHeight / (naturalSize.height || 1),
-  );
+  const maxHeight = Math.max(1, bounds.height);
+  const fit = zoomableImageFit(bounds, naturalSize, mimeType);
   const width = naturalSize.width * fit * zoom;
   const height = naturalSize.height * fit * zoom;
+
+  const changeZoom = (next: number, point?: { x: number; y: number }) => {
+    const viewport = viewportRef.current;
+    const clamped = Math.min(ZOOMABLE_IMAGE_MAX_ZOOM, Math.max(1, next));
+    if (!viewport || zoom === clamped) return;
+    const bounds = viewport.getBoundingClientRect();
+    const x = point ? point.x - bounds.left : viewport.clientWidth / 2;
+    const y = point ? point.y - bounds.top : viewport.clientHeight / 2;
+    const anchorX = (viewport.scrollLeft + x) / zoom;
+    const anchorY = (viewport.scrollTop + y) / zoom;
+    const clientX = bounds.left + x;
+    const clientY = bounds.top + y;
+    // The new size must be laid out before the scroll position can keep the anchor in place.
+    flushSync(() => onZoomChange(clamped));
+    const resized = viewport.getBoundingClientRect();
+    viewport.scrollLeft = anchorX * clamped - (clientX - resized.left);
+    viewport.scrollTop = anchorY * clamped - (clientY - resized.top);
+  };
 
   useImperativeHandle(
     ref,
@@ -112,27 +121,10 @@ export function ZoomableImage({
         }
         return true;
       },
+      zoomTo: (next) => changeZoom(next),
     }),
     [zoom],
   );
-
-  const changeZoom = (next: number, point?: { x: number; y: number }) => {
-    const viewport = viewportRef.current;
-    const clamped = Math.min(MAX_ZOOM, Math.max(1, next));
-    if (!viewport || zoom === clamped) return;
-    const bounds = viewport.getBoundingClientRect();
-    const x = point ? point.x - bounds.left : viewport.clientWidth / 2;
-    const y = point ? point.y - bounds.top : viewport.clientHeight / 2;
-    const anchorX = (viewport.scrollLeft + x) / zoom;
-    const anchorY = (viewport.scrollTop + y) / zoom;
-    const clientX = bounds.left + x;
-    const clientY = bounds.top + y;
-    // The new size must be laid out before the scroll position can keep the anchor in place.
-    flushSync(() => setZoom(clamped));
-    const resized = viewport.getBoundingClientRect();
-    viewport.scrollLeft = anchorX * clamped - (clientX - resized.left);
-    viewport.scrollTop = anchorY * clamped - (clientY - resized.top);
-  };
 
   const attachViewport = (viewport: HTMLDivElement) => {
     viewportRef.current = viewport;
@@ -166,7 +158,7 @@ export function ZoomableImage({
           "Click to zoom in or return to fit. Pinch or Ctrl+scroll to zoom, scroll or drag to pan. Use Enter to toggle zoom, plus or minus to zoom, and 0 to fit.",
         )}
         tabIndex={0}
-        className="max-w-[var(--media-width)] overflow-auto overscroll-contain rounded-lg bg-background shadow-2xl ring-1 ring-border outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:-outline-offset-2 focus-visible:outline-ring"
+        className="max-w-[var(--media-width)] overflow-auto overscroll-contain rounded-sm outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:-outline-offset-2 focus-visible:outline-ring"
         style={{
           width: width || undefined,
           height: height || undefined,
@@ -249,7 +241,7 @@ export function ZoomableImage({
             naturalSize.width ? { width, height } : { maxWidth: "var(--media-width)", maxHeight }
           }
           onLoad={(event) => {
-            setNaturalSize({
+            onNaturalSize({
               width: event.currentTarget.naturalWidth,
               height: event.currentTarget.naturalHeight,
             });

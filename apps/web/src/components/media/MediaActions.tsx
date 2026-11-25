@@ -117,6 +117,34 @@ export function useMediaActions(source: MediaActionSource) {
   return { save, copyImage, canReadMedia, assertCanReadMedia };
 }
 
+export function useSaveMedia(source: MediaActionSource) {
+  const { save, canReadMedia } = useMediaActions(source);
+  const isImage = source.kind === "image";
+  const canSave = canReadMedia && (source.src !== null || source.asset !== undefined);
+  const saveWithToasts = async () => {
+    const progressToast = toastManager.add({
+      type: "loading",
+      title: isImage ? m(msg("Preparing image download…")) : m(msg("Preparing video download…")),
+    });
+    const result = await settlePromise(save);
+    if (!AsyncResult.isFailure(result)) {
+      toastManager.close(progressToast);
+      return;
+    }
+    toastManager.update(
+      progressToast,
+      stackedThreadToast({
+        type: "error",
+        title: isImage ? m(msg("Could not save image")) : m(msg("Could not save video")),
+        description:
+          thrownErrorMessage(squashAtomCommandFailure(result), m) ??
+          m(msg("The media action failed.")),
+      }),
+    );
+  };
+  return { canSave, save: saveWithToasts };
+}
+
 export function MediaActions({
   source,
   children,

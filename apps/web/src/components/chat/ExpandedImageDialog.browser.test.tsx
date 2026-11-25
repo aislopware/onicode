@@ -153,10 +153,14 @@ describe("ExpandedImageDialog", () => {
       );
 
       const viewer = screen.getByRole("region", { name: "Pipeline, zoomable image" });
-      const availableWidth = window.innerWidth * 0.92 - (window.innerWidth >= 640 ? 96 : 0);
-      await vi.waitFor(() =>
-        expect(viewer.element().getBoundingClientRect().width).toBeCloseTo(availableWidth, 0),
-      );
+      // The image fills the stage along its limiting side.
+      await vi.waitFor(() => {
+        const style = getComputedStyle(viewer.element());
+        const stageWidth = Number.parseFloat(style.getPropertyValue("--media-width"));
+        const stageHeight = Number.parseFloat(style.getPropertyValue("--media-height"));
+        const { width, height } = viewer.element().getBoundingClientRect();
+        expect(Math.max(width / stageWidth, height / stageHeight)).toBeCloseTo(1, 2);
+      });
     },
   );
 

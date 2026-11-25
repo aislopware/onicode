@@ -57,8 +57,10 @@ const buttonVariants = cva(
         link: "border-transparent underline-offset-4 hover:underline data-pressed:underline",
         "media-close":
           "[--control-icon-color:currentColor] border-transparent bg-black/65 text-white shadow-sm ring-1 ring-white/20 [--focus-ring:white] hover:bg-black/80 data-pressed:bg-black/80",
+        "media-control":
+          "[--control-icon-color:currentColor] rounded-full border-transparent bg-white/10 text-white/90 [--focus-ring:white] hover:bg-white/20 data-pressed:bg-white/20 hover:text-white data-pressed:text-white",
         "media-ghost":
-          "[--control-icon-color:currentColor] border-transparent text-white/90 [--focus-ring:white] hover:bg-white/10 data-pressed:bg-white/10 hover:text-white data-pressed:text-white",
+          "[--control-icon-color:currentColor] rounded-full border-transparent text-white/80 [--focus-ring:white] hover:bg-white/12 data-pressed:bg-white/12 hover:text-white data-pressed:text-white",
         outline:
           "[--control-icon-color:var(--contrast-muted-foreground)] border-border-2 bg-card text-foreground shadow-[inset_0_1px_var(--highlight-top),var(--plate-shadow)] [:disabled,:active,[data-pressed]]:shadow-none hover:bg-card-hover data-pressed:bg-card-hover",
         overlay:

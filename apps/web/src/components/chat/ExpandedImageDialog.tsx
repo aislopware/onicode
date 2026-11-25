@@ -1,14 +1,30 @@
-import { memo, useRef, useState, type ReactNode, type KeyboardEvent } from "react";
+import {
+  memo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+  type KeyboardEvent,
+} from "react";
 import { flushSync } from "react-dom";
 import { useGT } from "gt-react";
-import { ChevronLeftIcon, ChevronRightIcon, ImageIcon, TextIcon, XIcon } from "lucide-react";
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  DownloadIcon,
+  ImageIcon,
+  TextIcon,
+  XIcon,
+  ZoomInIcon,
+  ZoomOutIcon,
+} from "lucide-react";
 import { Button } from "../ui/button";
 import { Dialog, DialogPopup, DialogTitle } from "../ui/dialog";
 import type { ExpandedImageItem, ExpandedImagePreview } from "./ExpandedImagePreview";
 import { resolveExternalWebLinkHost } from "./externalLinkContextMenu";
 import { useAssetUrlRefresh, useAssetUrlState } from "../../assets/assetUrls";
 import { OpenMediaLink } from "../media/OpenMediaLink";
-import { MediaActions, type MediaActionSource } from "../media/MediaActions";
+import { MediaActions, useSaveMedia, type MediaActionSource } from "../media/MediaActions";
 import { MediaVideoPlayer } from "../media/MediaVideoPlayer";
 import { isContextMenuOpen } from "../../contextMenuFallback";
 import {
@@ -18,13 +34,21 @@ import {
   snapShotAccessibilityDetails,
 } from "./SnapShotAttachmentDetails";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { ZoomableImage, type ZoomableImageHandle } from "./ZoomableImage";
+import {
+  ZOOMABLE_IMAGE_MAX_ZOOM,
+  ZoomableImage,
+  zoomableImageFit,
+  type NaturalSize,
+  type ZoomableImageBounds,
+  type ZoomableImageHandle,
+} from "./ZoomableImage";
 import { composerFloatingLayerProps } from "./composerEventScope";
 import { useAtomValue } from "@effect/atom-react";
 import { Atom } from "effect/reactivity";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { expandedImageKey } from "./ExpandedImagePreview";
 import { registerThreadOverlay } from "./threadOverlayRetention";
+import { observeResize } from "~/lib/observeResize";
 import { mediaReferenceFileName } from "@onicode/client-runtime/media-reference";
 import { mediaMimeType, mediaMimeTypeFromExtension } from "@onicode/shared/mediaPreview";
 
@@ -88,6 +112,28 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
   const [failedImageSrc, setFailedImageSrc] = useState<string | null>(null);
   const [accessibilityDetailsSrc, setAccessibilityDetailsSrc] = useState<string | null>(null);
   const zoomableImageRef = useRef<ZoomableImageHandle>(null);
+  const [zoom, setZoom] = useState(1);
+  const [natural, setNatural] = useState<{ src: string; size: NaturalSize } | null>(null);
+  const [stage, setStage] = useState<ZoomableImageBounds | null>(null);
+  // A resized stage refits the image.
+  const [zoomStage, setZoomStage] = useState(stage);
+  if (zoomStage !== stage) {
+    setZoomStage(stage);
+    setZoom(1);
+  }
+  const attachStage = (element: HTMLDivElement) => {
+    const measure = () => {
+      // Side gutters keep the edge navigation buttons off the media.
+      const gutter = window.innerWidth >= 640 ? 96 : 0;
+      const width = Math.max(1, element.clientWidth - gutter);
+      const height = Math.max(1, element.clientHeight);
+      setStage((current) =>
+        current?.width === width && current.height === height ? current : { width, height },
+      );
+    };
+    measure();
+    return observeResize(element, measure);
+  };
   const [returnFocus] = useState(() => {
     const target = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     return { target, focusVisible: target?.matches(":focus-visible") ?? false };
@@ -121,8 +167,11 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
       }
     : source;
 
+  const { canSave, save } = useSaveMedia(source);
+
   const navigateImage = (direction: -1 | 1) => {
     setImageOffset((current) => current + direction);
+    setZoom(1);
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -161,6 +210,16 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
       ? gt("Show accessibility JSON")
       : gt("Show extracted text");
 
+  const naturalSize =
+    natural !== null && natural.src === item.src ? natural.size : { width: 0, height: 0 };
+  const showsZoomableImage =
+    !isVideo && !showingAccessibilityDetails && item.src !== null && failedImageSrc !== item.src;
+  const fit = stage ? zoomableImageFit(stage, naturalSize, itemMimeType(item)) : 1;
+  const scalePercent = Math.round(fit * zoom * 100);
+  const canShowActualSize = zoom === 1 && fit < 1 && naturalSize.width > 0;
+  const zoomTo = (next: number) => zoomableImageRef.current?.zoomTo(next);
+  const multiple = preview.images.length > 1;
+
   return (
     <Dialog
       open
@@ -180,7 +239,7 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
         mediaControlsPlacement="inside"
         showCloseButton={false}
         bottomStickOnMobile={false}
-        className="row-start-1 h-full max-h-[92vh] w-[92vw] max-w-[92vw] items-center justify-center overflow-visible [--media-width:92vw] [--media-height:min(calc((100vh-var(--native-titlebar-height,0px))*0.86),calc(100vh-var(--native-titlebar-height,0px)-160px))] sm:[--media-width:calc(92vw-96px)]"
+        className="row-start-1 h-full max-h-[92vh] w-[92vw] max-w-[92vw] overflow-visible"
         onKeyDown={onKeyDown}
         // Focus lands on Close either way, but only a keyboard open shows its ring.
         initialFocus={() => {
@@ -198,23 +257,75 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
         <DialogTitle className="sr-only">
           {isVideo ? gt("Expanded video preview") : gt("Expanded image preview")}
         </DialogTitle>
-        <div className="relative isolate z-10 flex max-h-full max-w-[var(--media-width)] flex-col items-center">
-          {/* Close stays beside the media it closes: level with its top edge, or above it when the gutters are gone. */}
-          <div className="relative w-fit max-w-full min-w-0">
-            {/* First in Tab order, and outside MediaActions so its context menu is not the media's. */}
-            <Button
-              type="button"
-              ref={closeButtonRef}
-              size="icon-sm"
-              variant="media-ghost"
-              className="absolute right-0 bottom-full z-20 mb-1.5 [anchor-name:--expanded-media-close] sm:top-0 sm:right-auto sm:bottom-auto sm:left-full sm:mb-0 sm:ml-1.5"
-              onClick={close}
-              aria-label={isVideo ? gt("Close video preview") : gt("Close image preview")}
-            >
-              <XIcon aria-hidden="true" />
-            </Button>
+        <div className="mb-2 flex h-9 shrink-0 items-center gap-3">
+          <div className="flex min-w-0 flex-1 items-center gap-2 text-sm">
+            <span className="flex min-w-0 items-center gap-2" aria-live="polite" aria-atomic="true">
+              {multiple && (
+                <span className="shrink-0 font-medium text-white tabular-nums">
+                  {index + 1} / {preview.images.length}
+                </span>
+              )}
+              <span className="truncate text-white/60">{item.name}</span>
+            </span>
+            {accessibilityDetails && item.source ? (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      aria-label={contentsLabel}
+                      aria-pressed={showingAccessibilityDetails}
+                      onClick={() =>
+                        setAccessibilityDetailsSrc(showingAccessibilityDetails ? null : item.src)
+                      }
+                      size="icon-sm"
+                      variant="media-ghost"
+                    />
+                  }
+                >
+                  {showingAccessibilityDetails ? (
+                    <ImageIcon aria-hidden="true" />
+                  ) : (
+                    <TextIcon aria-hidden="true" />
+                  )}
+                </TooltipTrigger>
+                <TooltipPopup side="bottom">{contentsLabel}</TooltipPopup>
+              </Tooltip>
+            ) : item.source ? (
+              <SnapShotContentsButton source={item.source} side="bottom" />
+            ) : null}
+            {item.onCopySnapshot && (
+              <SnapShotCopyButton onCopy={item.onCopySnapshot} side="bottom" />
+            )}
+          </div>
+          <Button
+            type="button"
+            ref={closeButtonRef}
+            size="icon-lg"
+            variant="media-control"
+            onClick={close}
+            aria-label={isVideo ? gt("Close video preview") : gt("Close image preview")}
+          >
+            <XIcon aria-hidden="true" />
+          </Button>
+        </div>
+        <div
+          ref={attachStage}
+          className="flex min-h-0 flex-1 items-center justify-center"
+          style={
+            stage
+              ? ({
+                  "--media-width": `${stage.width}px`,
+                  "--media-height": `${stage.height}px`,
+                } as CSSProperties)
+              : undefined
+          }
+          onClick={(event) => {
+            if (event.target === event.currentTarget) close();
+          }}
+        >
+          {stage && (
             <MediaActions source={actionsSource} showTooltip={false}>
-              <div>
+              <div className="flex max-h-full max-w-[var(--media-width)] items-center justify-center">
                 {item.type === "video" ? (
                   <ExpandedVideo key={index} item={item} />
                 ) : showingAccessibilityDetails ? (
@@ -240,58 +351,84 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
                     src={item.src}
                     name={item.name}
                     mimeType={itemMimeType(item)}
+                    bounds={stage}
+                    naturalSize={naturalSize}
+                    onNaturalSize={(size) => {
+                      if (item.src !== null) setNatural({ src: item.src, size });
+                    }}
+                    zoom={zoom}
+                    onZoomChange={setZoom}
                     onError={() => setFailedImageSrc(item.src)}
                   />
                 )}
               </div>
             </MediaActions>
-          </div>
-          <div className="mt-2 flex max-w-[var(--media-width)] items-center justify-center gap-1.5 text-xs text-white/80 max-sm:px-10">
-            <span className="truncate" aria-live="polite" aria-atomic="true">
-              {item.name}
-              {preview.images.length > 1 ? ` (${index + 1}/${preview.images.length})` : ""}
-            </span>
-            {accessibilityDetails && item.source ? (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      aria-label={contentsLabel}
-                      aria-pressed={showingAccessibilityDetails}
-                      onClick={() =>
-                        setAccessibilityDetailsSrc(showingAccessibilityDetails ? null : item.src)
-                      }
-                      size="icon-micro"
-                      variant="overlay"
-                    />
-                  }
-                >
-                  {showingAccessibilityDetails ? (
-                    <ImageIcon className="size-3" aria-hidden="true" />
-                  ) : (
-                    <TextIcon className="size-3" aria-hidden="true" />
-                  )}
-                </TooltipTrigger>
-                <TooltipPopup side="top">{contentsLabel}</TooltipPopup>
-              </Tooltip>
-            ) : item.source ? (
-              <SnapShotContentsButton source={item.source} side="top" />
-            ) : null}
-            {item.onCopySnapshot && (
-              <div className="-my-1.5">
-                <SnapShotCopyButton onCopy={item.onCopySnapshot} />
-              </div>
-            )}
-          </div>
+          )}
         </div>
-        {/* Close and Next share a full-width media's right gutter, so the arrows never sit higher than just below Close. */}
-        {preview.images.length > 1 && (
+        <div className="mt-2 flex h-10 shrink-0 items-center justify-center max-sm:px-12">
+          {(showsZoomableImage || canSave) && (
+            <div
+              role="toolbar"
+              aria-label={gt("Media controls")}
+              className="flex items-center gap-0.5 rounded-full bg-white/8 p-0.5 ring-1 ring-white/10"
+            >
+              {showsZoomableImage && (
+                <>
+                  <Button
+                    size="icon-sm"
+                    variant="media-ghost"
+                    aria-label={gt("Zoom out")}
+                    disabled={zoom <= 1}
+                    onClick={() => zoomTo(zoom / 1.5)}
+                  >
+                    <ZoomOutIcon aria-hidden="true" />
+                  </Button>
+                  <Button
+                    size="sm-pill"
+                    variant="media-ghost"
+                    className="min-w-14"
+                    aria-label={zoom > 1 ? gt("Fit to screen") : gt("Actual size")}
+                    disabled={zoom === 1 && !canShowActualSize}
+                    onClick={() => zoomTo(zoom > 1 ? 1 : 1 / fit)}
+                  >
+                    <span className="tabular-nums">
+                      {naturalSize.width > 0 ? `${scalePercent}%` : "–"}
+                    </span>
+                  </Button>
+                  <Button
+                    size="icon-sm"
+                    variant="media-ghost"
+                    aria-label={gt("Zoom in")}
+                    disabled={zoom >= ZOOMABLE_IMAGE_MAX_ZOOM}
+                    onClick={() => zoomTo(zoom * 1.5)}
+                  >
+                    <ZoomInIcon aria-hidden="true" />
+                  </Button>
+                </>
+              )}
+              {showsZoomableImage && canSave && (
+                <span aria-hidden="true" className="mx-1 h-4 w-px bg-white/15" />
+              )}
+              {canSave && (
+                <Button
+                  size="icon-sm"
+                  variant="media-ghost"
+                  aria-label={isVideo ? gt("Save video") : gt("Save image")}
+                  onClick={() => void save()}
+                >
+                  <DownloadIcon aria-hidden="true" />
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
+        {multiple && (
           <>
             <Button
               type="button"
-              size="icon"
-              variant="media-ghost"
-              className="absolute bottom-0 left-0 z-20 sm:top-[max(50%,anchor(--expanded-media-close_bottom,0px)+1.375rem)] sm:bottom-auto sm:-translate-y-1/2"
+              size="icon-lg"
+              variant="media-control"
+              className="absolute bottom-0.5 left-0 z-20 sm:top-1/2 sm:bottom-auto sm:-translate-y-1/2"
               aria-label={gt("Previous media")}
               onClick={() => navigateImage(-1)}
             >
@@ -299,9 +436,9 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
             </Button>
             <Button
               type="button"
-              size="icon"
-              variant="media-ghost"
-              className="absolute right-0 bottom-0 z-20 sm:top-[max(50%,anchor(--expanded-media-close_bottom,0px)+1.375rem)] sm:bottom-auto sm:-translate-y-1/2"
+              size="icon-lg"
+              variant="media-control"
+              className="absolute right-0 bottom-0.5 z-20 sm:top-1/2 sm:bottom-auto sm:-translate-y-1/2"
               aria-label={gt("Next media")}
               onClick={() => navigateImage(1)}
             >
