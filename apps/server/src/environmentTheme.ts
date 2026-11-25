@@ -325,20 +325,31 @@ const make = Effect.gen(function* () {
   const watcherScope = yield* Scope.make("sequential");
   yield* Effect.addFinalizer(() => Scope.close(watcherScope, Exit.void));
 
-  // The directory's own entry/link identity plus its entries as of the last read. Including the
-  // entry's lstat and link target catches a plain empty folder replaced by a link at start-up even
-  // if the parent watch missed it. Files past the cap are never themes' own.
-  const entryIdentity = fs.lstat(environmentThemesDir).pipe(
-    Effect.flatMap((info) => {
-      const id = `${info.dev}:${Option.getOrUndefined(info.ino)}:${Option.getOrUndefined(info.birthtime)?.getTime()}`;
-      return fs.readLink(environmentThemesDir).pipe(
-        Effect.map((link) => `link:${id}:${link}`),
-        Effect.orElseSucceed(() => `plain:${id}`),
-      );
+  // The target's stat identity, any link target, and the directory entries as of the last read.
+  // Files past the cap are never themes' own.
+  const statIdentity = fs
+    .stat(environmentThemesDir)
+    .pipe(
+      Effect.map(
+        (info) =>
+          `${info.dev}:${Option.getOrUndefined(info.ino)}:${Option.getOrUndefined(info.birthtime)?.getTime()}`,
+      ),
+    );
+  const entryIdentity = fs.readLink(environmentThemesDir).pipe(
+    Effect.matchEffect({
+      onSuccess: (link) =>
+        statIdentity.pipe(
+          Effect.map((targetId) => `link:${targetId}:${link}`),
+          Effect.orElseSucceed(() => `link:${MISSING_DIRECTORY}:${link}`),
+        ),
+      onFailure: () =>
+        statIdentity.pipe(
+          Effect.map((id) => `plain:${id}`),
+          Effect.orElseSucceed(() => MISSING_DIRECTORY),
+        ),
     }),
-    Effect.orElseSucceed(() => MISSING_DIRECTORY),
   );
-  const directoryIdentity = Effect.zipWith(
+  const readDirectoryIdentity = Effect.zipWith(
     entryIdentity,
     fs.readDirectory(environmentThemesDir).pipe(
       Effect.flatMap((entries) =>
@@ -355,24 +366,26 @@ const make = Effect.gen(function* () {
           { concurrency: 8 },
         ),
       ),
-      Effect.map((entries) => entries.join("\n")),
-      Effect.orElseSucceed(() => MISSING_DIRECTORY),
+      Effect.map((entries) => ({ entries: entries.join("\n"), missing: false })),
+      Effect.orElseSucceed(() => ({ entries: MISSING_DIRECTORY, missing: true })),
     ),
-    (root, entries) => (root === MISSING_DIRECTORY ? MISSING_DIRECTORY : `${root}\n${entries}`),
+    (root, listing) => ({
+      identity: root === MISSING_DIRECTORY ? MISSING_DIRECTORY : `${root}\n${listing.entries}`,
+      missing: root === MISSING_DIRECTORY || listing.missing,
+    }),
   );
+  const directoryIdentity = Effect.map(readDirectoryIdentity, ({ identity }) => identity);
   const readIdentity = yield* SubscriptionRef.make("");
 
   const refresh = refreshSemaphore.withPermits(1)(
     Effect.gen(function* () {
-      const identity = yield* directoryIdentity;
+      const { identity, missing } = yield* readDirectoryIdentity;
       yield* SubscriptionRef.set(readIdentity, identity);
       // A tree that moves away mid-read and returns unchanged keeps this identity, so mark the
       // read stale for the poll instead.
       const themes = yield* readPublishedThemes(
         environmentThemesDir,
-        identity === MISSING_DIRECTORY
-          ? Effect.void
-          : SubscriptionRef.set(readIdentity, STALE_READ),
+        missing ? Effect.void : SubscriptionRef.set(readIdentity, STALE_READ),
       ).pipe(Effect.provideService(FileSystem.FileSystem, fs));
       // Compare the whole value so new fields cannot silently miss republishes.
       const [changed, next] = yield* Ref.modify(
