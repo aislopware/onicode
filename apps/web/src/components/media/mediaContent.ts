@@ -1,7 +1,7 @@
 import { msg } from "gt-react";
 
 import { m } from "~/i18n/messages";
-import { readImageColorSpace } from "~/lib/imageCompression";
+import { readImageColorSpace } from "~/lib/imageCanvas";
 
 /** Resolves web references without inheriting the desktop renderer's custom app scheme. */
 export function resolveProtocolRelativeMediaUrl(src: string): string {

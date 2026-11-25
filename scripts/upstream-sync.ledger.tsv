@@ -3846,3 +3846,4 @@ f020e4ae8d	skip	removed surface: product telemetry/analytics (AnalyticsService i
 1ceeb73055	take	ported cleanly
 999fd838e7	take	ported cleanly
 c18d6c969f	skip	removed surface: Clerk account token file mode (no Clerk in Onicode)
+c3aacf1e5b	take	adapted: kept heicPrimaryItemProperties in imageCompression.ts and updated mediaContent.ts readImageColorSpace import to ~/lib/imageCanvas
