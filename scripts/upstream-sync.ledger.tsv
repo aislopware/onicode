@@ -3867,3 +3867,4 @@ ceb20555b3	skip	T3 mobile EAS preview pipeline (mobile-eas-preview-fork.yml and 
 34ca872cbb	take	fix(server): Needs you lists every open workflow question, however old its run (#42501)
 ea63274413	skip	kept Onicode's vite-plus 1.8.0 upgrade and highlightedCodeNodes: Onicode already ships vite-plus 1.8.0, @vitest/browser-playwright 5.1.1, e2e 0.24.0, and the vitest#11242 test fix; highlightedCodeNodes avoids duplicating token-to-Text JSX across callers; remaining 19 paths are in removed infra/
 622f96785a	take	fix(web): device host limit fields stay empty when cleared (#42500)
+77bed941b3	take	chore(mobile): Expo SDK 58 patch updates (#42514) — Onicode already had the Expo 58 package/patch bumps; took the expo-sharing/<uuid> cache cleanup path update in incoming-share-model
