@@ -74,6 +74,7 @@ function resolveContext(options: ShortcutMatchOptions | undefined): ShortcutMatc
     previewFocus: false,
     previewOpen: false,
     editableFocus: false,
+    isMac: isMacPlatform(resolvePlatform(options)),
     ...options?.context,
   };
 }
@@ -387,6 +388,15 @@ export function isTerminalNewShortcut(
   options?: ShortcutMatchOptions,
 ): boolean {
   return matchesCommandShortcut(event, keybindings, "terminal.new", options);
+}
+
+export function isTerminalCycleShortcut(
+  event: ShortcutEventLike,
+  keybindings: ResolvedKeybindingsConfig,
+  options?: ShortcutMatchOptions,
+): boolean {
+  const command = resolveShortcutCommand(event, keybindings, options);
+  return command === "terminal.previous" || command === "terminal.next";
 }
 
 export function isTerminalCloseShortcut(
