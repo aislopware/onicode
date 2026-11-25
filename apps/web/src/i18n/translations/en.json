@@ -10869,10 +10869,7 @@
   "404f92786aa9a22f": "Code blocks, diffs, file previews, and the terminal.",
   "5897f301f96f8abe": "Typography",
   "eb72dbf46620a039": "{title} family",
-  "f54364b854a07918": "No hubs configured.",
   "4cf6a373a7535324": "{name} · Disabled",
-  "1d1e9cda847bd398": "The hub's management key is deleted from this server. Its accounts leave the Limits view; the hub itself is untouched. Add it again with the URL and key to bring them back.",
-  "c9bee4f93481b77a": "Remove hub",
   "0424112d5a0ecd71": "Auto",
   "3f0e1b77e45d53a9": "Tap to toggle, hold to talk",
   "45928549c050a1b4": "Hold",
@@ -12169,5 +12166,22 @@
   "f6a91589456cca50": "Approved",
   "c92657bb7f2293ff": "Needs approval",
   "f1e5c1be1ac92361": "Approve",
-  "fcb5f3c4d4753326": "This connection cannot approve commands. Use a client that can use the terminal."
+  "fcb5f3c4d4753326": "This connection cannot approve commands. Use a client that can use the terminal.",
+  "65300794c1edb929": "Bearer token (optional)",
+  "0c026221dcd2820b": "Add an HTTP quota source",
+  "d185c750156b2121": [
+    "Read quotas from an endpoint on ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    "."
+  ],
+  "2324770ba91371ac": "Endpoint URL",
+  "e4e5b75bba51396c": "Bearer token (optional)",
+  "39f64d971ba424b5": "No usage sources configured.",
+  "dbd877abdc2c7c81": "HTTP quota source",
+  "c792e744936dbe1b": "Add HTTP source",
+  "4032a03ee5301037": "The saved connection and its credentials are removed from this environment."
 }

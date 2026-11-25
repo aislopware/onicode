@@ -10859,10 +10859,7 @@
   "404f92786aa9a22f": "Blocs de code, diffs, aperçus de fichiers et terminal.",
   "5897f301f96f8abe": "Typographie",
   "eb72dbf46620a039": "Famille {title}",
-  "f54364b854a07918": "Aucun hub configuré.",
   "4cf6a373a7535324": "{name} · Désactivé",
-  "1d1e9cda847bd398": "La clé de gestion du hub est supprimée de ce serveur. Ses comptes quittent la vue Limites ; le hub lui-même n’est pas touché. Ajoutez-le à nouveau avec l’URL et la clé pour les récupérer.",
-  "c9bee4f93481b77a": "Supprimer le hub",
   "0424112d5a0ecd71": "Auto",
   "3f0e1b77e45d53a9": "Appuyer pour basculer, maintenir pour parler",
   "45928549c050a1b4": "Maintenir",
@@ -12160,5 +12157,22 @@
   "f6a91589456cca50": "Approuvée",
   "c92657bb7f2293ff": "Approbation requise",
   "f1e5c1be1ac92361": "Approuver",
-  "fcb5f3c4d4753326": "Cette connexion ne peut pas approuver de commandes. Utilisez un client qui peut utiliser le terminal."
+  "fcb5f3c4d4753326": "Cette connexion ne peut pas approuver de commandes. Utilisez un client qui peut utiliser le terminal.",
+  "65300794c1edb929": "Jeton Bearer (facultatif)",
+  "0c026221dcd2820b": "Ajouter une source de quotas HTTP",
+  "d185c750156b2121": [
+    "Consultez les quotas depuis un point de terminaison sur ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    "."
+  ],
+  "2324770ba91371ac": "URL du point de terminaison",
+  "e4e5b75bba51396c": "Jeton Bearer (facultatif)",
+  "39f64d971ba424b5": "Aucune source de suivi de l’utilisation configurée.",
+  "dbd877abdc2c7c81": "Source de quotas HTTP",
+  "c792e744936dbe1b": "Ajouter une source HTTP",
+  "4032a03ee5301037": "La connexion enregistrée et ses identifiants sont supprimés de cet environnement."
 }
