@@ -467,7 +467,10 @@ function computeToolGroupAction(entry: WorkLogPresentationEntry): ToolGroupActio
 }
 
 export function workEntryViewedImagePath(entry: WorkLogPresentationEntry): string | null {
-  if (entry.toolLifecycleStatus === "failed") {
+  if (
+    entry.tone === "error" ||
+    (entry.toolLifecycleStatus !== undefined && entry.toolLifecycleStatus !== "completed")
+  ) {
     return null;
   }
   const viewedImagePath = entry.viewedImagePath?.trim();

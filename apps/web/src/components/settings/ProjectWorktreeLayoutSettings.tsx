@@ -1,19 +1,23 @@
+import { useAtomValue } from "@effect/atom-react";
 import { managedCapabilityDenial } from "@onicode/client-runtime/contract-labels";
 import { squashAtomCommandFailure } from "@onicode/client-runtime/state/runtime";
 import {
-  AuthTerminalOperateScope,
+  AuthFilesystemReadScope,
+  type EnvironmentId,
+  type ProjectId,
   type WorktreeLayoutCommand,
   type WorktreeLayoutCommandKind,
 } from "@onicode/contracts";
+import { AsyncResult, Atom } from "effect/reactivity";
 import { msg, T, useGT, useMessages } from "gt-react";
 import { useState } from "react";
 
 import type { SidebarProjectGroupMember } from "../../sidebarProjectGrouping";
 import { useEnvironments } from "../../state/environments";
-import { filesystemEnvironment, useFilesystemReadAccess } from "../../state/filesystem";
+import { filesystemEnvironment } from "../../state/filesystem";
 import { useManagedPolicy } from "../../state/managedPolicy";
 import { useEnvironmentQuery } from "../../state/query";
-import { useEnvironmentScope } from "../../state/session";
+import { useEnvironmentsWithScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
@@ -26,20 +30,59 @@ const COMMAND_TITLES: Record<WorktreeLayoutCommandKind, string> = {
   remove: msg("Remove command"),
 };
 
+const checkoutLayoutCommandsAtom = Atom.family((key: string) => {
+  const targets = JSON.parse(key) as ReadonlyArray<{
+    readonly environmentId: EnvironmentId;
+    readonly projectId: ProjectId;
+  }>;
+  return Atom.make((get) =>
+    targets.map(({ environmentId, projectId }) =>
+      get(filesystemEnvironment.layoutCommands({ environmentId, input: { projectId } })),
+    ),
+  ).pipe(Atom.withLabel(`project-worktree-layout-commands:${key}`));
+});
+
 /** The `worktreeLayout` commands each checkout's `onicode.json` declares, and whether they may run. */
 export function ProjectWorktreeLayoutSettings({
   members,
 }: {
   members: ReadonlyArray<SidebarProjectGroupMember>;
 }) {
+  const gt = useGT();
   const checkouts = members.filter((member) => !member.isScratch);
-  return checkouts.map((member) => (
-    <CheckoutWorktreeLayout
-      key={member.physicalProjectKey}
-      member={member}
-      showCheckout={checkouts.length > 1}
-    />
-  ));
+  const readableEnvironmentIds = useEnvironmentsWithScope(checkouts, AuthFilesystemReadScope);
+  const readableCheckouts = checkouts.filter((member) =>
+    readableEnvironmentIds.has(member.environmentId),
+  );
+  const results = useAtomValue(
+    checkoutLayoutCommandsAtom(
+      JSON.stringify(
+        readableCheckouts.map((member) => ({
+          environmentId: member.environmentId,
+          projectId: member.id,
+        })),
+      ),
+    ),
+  );
+  const visibleCheckouts = readableCheckouts.filter((_, index) => {
+    const result = results[index];
+    if (result === undefined) return false;
+    const data = AsyncResult.getOrElse(result, () => null);
+    return (data === null && result._tag === "Failure") || (data?.commands.length ?? 0) > 0;
+  });
+  // Most projects declare none, and then there is nothing to show.
+  if (visibleCheckouts.length === 0) return null;
+  return (
+    <SettingsSection id="project-worktree-layout" title={gt("Worktree layout")}>
+      {visibleCheckouts.map((member) => (
+        <CheckoutWorktreeLayout
+          key={member.physicalProjectKey}
+          member={member}
+          showCheckout={checkouts.length > 1}
+        />
+      ))}
+    </SettingsSection>
+  );
 }
 
 function CheckoutWorktreeLayout({
@@ -56,17 +99,16 @@ function CheckoutWorktreeLayout({
   const isConnected =
     environments.find((entry) => entry.environmentId === environmentId)?.connection.phase ===
     "connected";
-  const access = useFilesystemReadAccess(environmentId);
-  const canApprove = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
+  const canApprove = useAtomValue(
+    filesystemEnvironment.approveLayoutCommands.permissionAtom(environmentId),
+  );
   const policyDenial = managedCapabilityDenial(
     useManagedPolicy(environmentId),
     "worktreeLayoutCommands",
     m,
   );
   const query = useEnvironmentQuery(
-    access.canReadFiles
-      ? filesystemEnvironment.layoutCommands({ environmentId, input: { projectId: member.id } })
-      : null,
+    filesystemEnvironment.layoutCommands({ environmentId, input: { projectId: member.id } }),
   );
   const approve = useAtomCommand(filesystemEnvironment.approveLayoutCommands, {
     reportFailure: false,
@@ -76,20 +118,22 @@ function CheckoutWorktreeLayout({
   // A failed first read is not a project without commands.
   if (query.data === null && query.error !== null) {
     return (
-      <SettingsSection id="project-worktree-layout" title={gt("Worktree layout")}>
-        <SettingsRow
-          title={gt("Could not load the worktree layout commands")}
-          description={query.error}
-          control={
-            <Button size="xs" variant="outline" onClick={query.refresh}>
-              <T>Retry</T>
-            </Button>
-          }
-        />
-      </SettingsSection>
+      <SettingsRow
+        title={gt("Could not load the worktree layout commands")}
+        description={query.error}
+        status={
+          showCheckout
+            ? `${member.environmentLabel ?? gt("Environment")} · ${member.workspaceRoot}`
+            : undefined
+        }
+        control={
+          <Button size="xs" variant="outline" onClick={query.refresh}>
+            <T>Retry</T>
+          </Button>
+        }
+      />
     );
   }
-  // Most projects declare none, and then there is nothing to show.
   if (commands.length === 0) return null;
 
   // Approving sends the text on screen, so a file that changed since is not approved unseen.
@@ -115,7 +159,7 @@ function CheckoutWorktreeLayout({
   };
 
   return (
-    <SettingsSection id="project-worktree-layout" title={gt("Worktree layout")}>
+    <>
       <p className="px-3 py-2.5 text-xs text-muted-foreground sm:px-4">
         {policyDenial ?? (
           <T>
@@ -189,6 +233,6 @@ function CheckoutWorktreeLayout({
           {query.error}
         </p>
       ) : null}
-    </SettingsSection>
+    </>
   );
 }

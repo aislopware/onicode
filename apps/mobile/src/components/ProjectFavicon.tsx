@@ -2,7 +2,7 @@ import { useGT } from "gt-react-native";
 import { SymbolView } from "./ui/AppSymbol";
 import { AppText } from "./ui/AppText";
 import { Image } from "expo-image";
-import { memo, useLayoutEffect, useMemo, useState } from "react";
+import { memo, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { View } from "react-native";
 import type { EnvironmentId, ProjectIconOverride } from "@onicode/contracts";
 import {
@@ -13,7 +13,7 @@ import {
 import { useAtomValue } from "@effect/atom-react";
 import { Atom } from "effect/reactivity";
 import { useAppearancePreferences } from "../features/settings/appearance/AppearancePreferencesProvider";
-import { projectFaviconUrlAtom } from "../state/assets";
+import { projectFaviconUrlAtom, refreshProjectFaviconUrl } from "../state/assets";
 import {
   countGlyphs,
   projectAutoMonogram,
@@ -46,14 +46,16 @@ export const ProjectFavicon = memo(function ProjectFavicon(props: {
   const size = props.size ?? 42;
   const symbol = resolveProjectIconSymbol(props.projectIcon);
   const glyph = resolveProjectIconGlyph(props.projectIcon, props.projectTitle);
-  const faviconUrl = useAtomValue(
+  const faviconTarget =
     props.workspaceRoot == null || glyph !== null
-      ? EMPTY_FAVICON_URL
-      : projectFaviconUrlAtom({
+      ? null
+      : {
           environmentId: props.environmentId,
           cwd: props.workspaceRoot,
           faviconPath: props.faviconPath,
-        }),
+        };
+  const faviconUrl = useAtomValue(
+    faviconTarget === null ? EMPTY_FAVICON_URL : projectFaviconUrlAtom(faviconTarget),
   );
   const renderableFaviconUrl = isProjectFaviconFallbackUrl(faviconUrl) ? null : faviconUrl;
   // Key remote images by revision so token rotation reuses the cache while changed icons reload.
@@ -87,6 +89,10 @@ export const ProjectFavicon = memo(function ProjectFavicon(props: {
       open={props.open}
       projectTitle={props.projectTitle}
       size={size}
+      // An icon too large to cache inline loads from a signed URL that expires.
+      onRemoteLoadError={
+        faviconTarget === null ? undefined : () => refreshProjectFaviconUrl(faviconTarget)
+      }
     />
   );
 });
@@ -147,6 +153,7 @@ function ProjectFaviconImage(props: {
   readonly open?: boolean;
   readonly projectTitle: string;
   readonly size: number;
+  readonly onRemoteLoadError?: () => void;
 }) {
   const gt = useGT();
   const faviconRequest = createProjectFaviconRequest(props.cacheKey, props.faviconUrl);
@@ -163,6 +170,8 @@ function ProjectFaviconImage(props: {
       ? "loaded"
       : "loading",
   );
+  // One refresh per failure: a fresh URL for a file that cannot load would fail again.
+  const refreshedAfterErrorRef = useRef(false);
 
   const { themeAppearance } = useAppearancePreferences();
   const requestFaviconUrl = faviconRequest?.faviconUrl;
@@ -217,11 +226,16 @@ function ProjectFaviconImage(props: {
           contentFit="contain"
           onLoad={() => {
             if (!markProjectFaviconLoaded(faviconRequest)) return;
+            refreshedAfterErrorRef.current = false;
             setStatus("loaded");
           }}
           onError={() => {
             if (!markProjectFaviconFailed(faviconRequest)) return;
             setStatus("error");
+            if (faviconRequest.faviconUrl.startsWith("data:") || refreshedAfterErrorRef.current)
+              return;
+            refreshedAfterErrorRef.current = true;
+            props.onRemoteLoadError?.();
           }}
         />
       ) : null}

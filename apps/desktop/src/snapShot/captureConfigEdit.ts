@@ -137,17 +137,27 @@ function removeNodes(source: string, ranges: { start: number; end: number }[]) {
   return result;
 }
 
-// A top-level return must end the chunk, so appending a binding after it would break the config.
-// Block depth, not indentation, decides scope. Long brackets are rejected before this runs.
+// A top-level return ends the chunk (even inside do/if/loops), so appending after it would break
+// or never run. Long brackets are rejected before this runs.
 function luaTopLevelReturn(source: string) {
-  const code = source.replace(/--[^\n]*|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'/g, " ");
-  let depth = 0;
+  const code = source.replace(
+    /--[^\r\n]*|"(?:\\z(?:[ \t\f\v]*[\r\n])*|\\\r\n|\\\n\r|\\[^z]|[^"\\\r\n])*"|'(?:\\z(?:[ \t\f\v]*[\r\n])*|\\\r\n|\\\n\r|\\[^z]|[^'\\\r\n])*'/g,
+    " ",
+  );
+  if (/["']/.test(code)) return true;
+  const blocks: Array<"function" | "block" | "repeat"> = [];
   for (const [word] of code.matchAll(/\b(?:function|if|do|repeat|end|until|return)\b/g)) {
-    if (word === "return" && depth === 0) return true;
-    if (word === "end" || word === "until") depth--;
-    else if (word !== "return") depth++;
+    if (word === "return") {
+      if (!blocks.includes("function")) return true;
+    } else if (word === "end") {
+      if (blocks.length === 0 || blocks.pop() === "repeat") return true;
+    } else if (word === "until") {
+      if (blocks.pop() !== "repeat") return true;
+    } else {
+      blocks.push(word === "function" || word === "repeat" ? word : "block");
+    }
   }
-  return false;
+  return blocks.length > 0;
 }
 
 export function editCaptureConfig(

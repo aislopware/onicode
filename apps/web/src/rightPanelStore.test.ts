@@ -821,6 +821,15 @@ describe("rightPanelStore", () => {
         "env-1:thread-A": { inlineOpen: false, popoverOpen: false },
       },
     });
+    expect(
+      migratePersistedRightPanelState({
+        byThreadKey: [{ isOpen: true, surfaces: [{ id: "diff", kind: "diff" }] }],
+        threadPanelVisibilityByThreadKey: [{ inlineOpen: false }],
+      }),
+    ).toEqual({
+      byThreadKey: {},
+      threadPanelVisibilityByThreadKey: {},
+    });
   });
 
   it("closes the popover atomically when the real right panel opens", () => {

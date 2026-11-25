@@ -7,7 +7,7 @@ import { Rolldown } from "vite-plus/pack";
 import { isDesktopRuntimeExternalDependency } from "../../scripts/lib/desktop-external-packages.ts";
 import { loadRepoEnv } from "../../scripts/lib/public-config.ts";
 
-const domTests = ["src/preview/PickPreload.test.ts"];
+const domTests = ["src/preview/PickPreload.test.ts", "src/preview/RecordingCursor.test.ts"];
 
 // Install only bundle externals; the server bundle already carries its dependency tree.
 const isMainProcessExternal = (id: string) =>

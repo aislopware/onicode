@@ -17,9 +17,44 @@ import { getClientSettings } from "../hooks/useSettings";
 import { linkedThreadRouteParams } from "../linkedThreadSurface";
 import { rightPanelHostRef, useRightPanelStore } from "../rightPanelStore";
 
-/** Whether an event started in the side chat pane (`data-side-chat-pane`), which the main chat ignores. */
+const FLOATING_PORTAL_SELECTOR = "[data-base-ui-portal]";
+
+/**
+ * Whether an event started in the side chat pane (`data-side-chat-pane`), including
+ * portaled popovers and menus whose ARIA owner sits inside that pane.
+ */
 export function isInSideChatPane(target: EventTarget | null): boolean {
-  return target instanceof Element && target.closest("[data-side-chat-pane]") !== null;
+  if (!(target instanceof Element)) return false;
+  if (target.closest("[data-side-chat-pane]") !== null) return true;
+  if (target.closest(FLOATING_PORTAL_SELECTOR) === null) return false;
+  const doc = target.ownerDocument;
+  if (doc.querySelector("[data-side-chat-pane]") === null) return false;
+  const visited = new Set<Element>();
+  const pending: Element[] = [target];
+  while (pending.length > 0) {
+    const start = pending.pop()!;
+    for (
+      let el: Element | null = start;
+      el && el !== doc.body && el !== doc.documentElement;
+      el = el.parentElement
+    ) {
+      if (visited.has(el)) break;
+      visited.add(el);
+      if (!el.id) continue;
+      const id = CSS.escape(el.id);
+      for (const owner of doc.querySelectorAll(`[aria-owns~="${id}"], [aria-controls~="${id}"]`)) {
+        if (owner.closest("[data-side-chat-pane]") !== null) return true;
+        if (
+          !el.contains(owner) &&
+          !visited.has(owner) &&
+          owner.closest(FLOATING_PORTAL_SELECTOR) !== null
+        ) {
+          pending.push(owner);
+        }
+      }
+    }
+  }
+  return false;
 }
 
 /**

@@ -283,6 +283,46 @@ function currentSubagent<Agent extends RuntimeSubagent>(
   };
 }
 
+const SUBAGENT_TRAILING_STOP_VISIBILITY_CLASS =
+  "group-hover:opacity-0 group-focus-within:opacity-0 pointer-coarse:opacity-0 [@media(hover:none)]:opacity-0";
+
+function SubagentStopButton(props: {
+  readonly title: string;
+  readonly stopping: boolean;
+  readonly disabled: boolean;
+  readonly onStop: () => void;
+}) {
+  const gt = useGT();
+  return (
+    <div className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 pointer-coarse:pointer-events-auto pointer-coarse:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100">
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <ThreadDetailsControl
+              size="icon-xs"
+              variant="ghost"
+              part="icon"
+              tone="destructive"
+              aria-label={gt("Stop subagent {threadTitle}", { threadTitle: props.title })}
+              disabled={props.disabled}
+              onClick={props.onStop}
+            />
+          }
+        >
+          {props.stopping ? (
+            <Spinner aria-hidden size="xs" />
+          ) : (
+            <SquareIcon aria-hidden className="size-3 fill-current" />
+          )}
+        </TooltipTrigger>
+        <TooltipPopup side="left">
+          <T>Stop subagent</T>
+        </TooltipPopup>
+      </Tooltip>
+    </div>
+  );
+}
+
 /**
  * A task delegated to a linked environment. It has no thread here, so it opens the thread there:
  * in place when this client is connected to that environment, else read-only through this one.
@@ -293,12 +333,21 @@ function RemoteSubagentRow(props: {
   readonly parentRef: ScopedThreadRef;
   readonly provider: ServerProvider | undefined;
   readonly anyInstanceBadge: boolean;
+  readonly canOperate: boolean;
+  readonly onStop: () => void;
+  readonly stopping: boolean;
+  readonly stopDisabled: boolean;
 }) {
   const gt = useGT();
   const m = useMessages();
   const { remoteChild } = props.agent;
   const status = props.agent.status;
   const failed = status === "failed";
+  const canStop =
+    props.canOperate &&
+    props.agent.origin === "app_owned" &&
+    props.agent.runId !== null &&
+    ["pending", "running", "waiting"].includes(status);
   const timing = {
     status,
     startedAt: props.agent.startedAt ? DateTime.formatIso(props.agent.startedAt) : null,
@@ -339,7 +388,7 @@ function RemoteSubagentRow(props: {
             </span>
           </span>
           <span
-            className={`flex max-w-1/2 shrink-0 gap-1 text-2xs ${failed ? "text-destructive" : "text-muted-foreground"}`}
+            className={`flex max-w-1/2 shrink-0 gap-1 text-2xs ${failed ? "text-destructive" : "text-muted-foreground"} ${canStop ? SUBAGENT_TRAILING_STOP_VISIBILITY_CLASS : ""}`}
           >
             <span className="truncate">
               <T>
@@ -371,6 +420,14 @@ function RemoteSubagentRow(props: {
           {title}
         </TooltipPopup>
       </Tooltip>
+      {canStop ? (
+        <SubagentStopButton
+          title={title}
+          stopping={props.stopping}
+          disabled={props.stopDisabled}
+          onStop={props.onStop}
+        />
+      ) : null}
     </li>
   );
 }
@@ -523,7 +580,7 @@ export function ThreadRelationshipsPanel(props: {
   const stopSession = useAtomCommand(threadEnvironment.stopSession);
   const interruptTurn = useAtomCommand(threadEnvironment.interruptTurn);
   const stopWorkflowCommand = useAtomCommand(orchestrationEnvironment.stopWorkflow);
-  const canOperateWorkflow = useAtomValue(
+  const canOperate = useAtomValue(
     orchestrationEnvironment.stopWorkflow.permissionAtom(props.environmentId),
   );
   const [busyAction, setBusyAction] = useState<"merge" | "detach" | null>(null);
@@ -773,11 +830,11 @@ export function ThreadRelationshipsPanel(props: {
   };
 
   const stopSubagent = async (
-    childThreadId: ThreadId,
+    stopKey: string,
     agent: Pick<OrchestrationV2Subagent, "id" | "threadId">,
   ) => {
     if (stoppingId !== null) return;
-    setStoppingId(childThreadId);
+    setStoppingId(stopKey);
     const result = await interruptTurn({
       environmentId: props.environmentId,
       input: { threadId: agent.threadId, subagentId: agent.id },
@@ -831,6 +888,7 @@ export function ThreadRelationshipsPanel(props: {
     const agent = workflowGroup ? projectedAgent : currentSubagent(projectedAgent, node?.thread);
     const failed = rowStatus === "failed" || rowStatus === "error";
     const canStop =
+      canOperate &&
       agent &&
       (agent.origin === "app_owned" ||
         (agent.origin === "provider_native" &&
@@ -859,12 +917,12 @@ export function ThreadRelationshipsPanel(props: {
     );
     const providerDriver = agent?.driver ?? provider?.driver;
     const canStopWorkflow =
-      canOperateWorkflow &&
+      canOperate &&
       workflowGroup?.workflow.status === "running" &&
       agent?.origin === "provider_native" &&
       providerDriver === "claudeAgent";
     const trailingVisibilityClass = (workflowGroup ? canStopWorkflow : canStop)
-      ? "group-hover:opacity-0 group-focus-within:opacity-0 pointer-coarse:opacity-0 [@media(hover:none)]:opacity-0"
+      ? SUBAGENT_TRAILING_STOP_VISIBILITY_CLASS
       : "";
     const project = projects.find((project) => project.id === node?.thread?.projectId);
     const isSideChat = node?.thread?.lineage.sideChat === true && !isParent;
@@ -1041,32 +1099,12 @@ export function ThreadRelationshipsPanel(props: {
           relationshipLink
         )}
         {canStop && agent ? (
-          <div className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 pointer-coarse:pointer-events-auto pointer-coarse:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100">
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <ThreadDetailsControl
-                    size="icon-xs"
-                    variant="ghost"
-                    part="icon"
-                    tone="destructive"
-                    aria-label={gt("Stop subagent {threadTitle}", { threadTitle })}
-                    disabled={stoppingId !== null}
-                    onClick={() => void stopSubagent(threadId, agent)}
-                  />
-                }
-              >
-                {stoppingId === threadId ? (
-                  <Spinner aria-hidden size="xs" />
-                ) : (
-                  <SquareIcon aria-hidden className="size-3 fill-current" />
-                )}
-              </TooltipTrigger>
-              <TooltipPopup side="left">
-                <T>Stop subagent</T>
-              </TooltipPopup>
-            </Tooltip>
-          </div>
+          <SubagentStopButton
+            title={threadTitle}
+            stopping={stoppingId === threadId}
+            disabled={stoppingId !== null}
+            onStop={() => void stopSubagent(threadId, agent)}
+          />
         ) : null}
       </li>
     );
@@ -1141,6 +1179,10 @@ export function ThreadRelationshipsPanel(props: {
                         .get(row.remote.remoteChild.environmentId)
                         ?.find((entry) => entry.instanceId === row.remote.providerInstanceId)}
                       anyInstanceBadge={hasInstanceBadge(providerEntries)}
+                      canOperate={canOperate}
+                      onStop={() => void stopSubagent(row.remote.id, row.remote)}
+                      stopping={stoppingId === row.remote.id}
+                      stopDisabled={stoppingId !== null}
                     />
                   ) : (
                     renderRelationshipRow(row)

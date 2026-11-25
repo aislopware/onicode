@@ -1,5 +1,6 @@
 import { createRuntimeCommand } from "@onicode/client-runtime/state/runtime";
 import * as Effect from "effect/Effect";
+import * as Semaphore from "effect/Semaphore";
 import { AsyncResult, Atom, type AtomRegistry } from "effect/reactivity";
 
 import * as MobilePreferences from "../persistence/mobile-preferences";
@@ -39,10 +40,11 @@ export function createMobilePreferencesState(
     Atom.keepAlive,
     Atom.withLabel("mobile:preferences:optimistic-patch"),
   );
-  const confirmedPreferencesAtom = Atom.make<MobilePreferences.Preferences>({}).pipe(
+  const confirmedPreferencesAtom = Atom.make<MobilePreferences.Preferences | null>(null).pipe(
     Atom.keepAlive,
     Atom.withLabel("mobile:preferences:confirmed"),
   );
+  const saveLock = Semaphore.makeUnsafe(1);
   let nextPatchVersion = 0;
 
   const preferencesAtom = Atom.make((get) => {
@@ -50,8 +52,7 @@ export function createMobilePreferencesState(
     const confirmed = get(confirmedPreferencesAtom);
     const optimistic = get(optimisticPatchAtom);
     return AsyncResult.map(stored, (preferences) => ({
-      ...preferences,
-      ...confirmed,
+      ...(confirmed ?? preferences),
       ...optimistic.values,
     }));
   }).pipe(Atom.keepAlive, Atom.withLabel("mobile:preferences"));
@@ -100,11 +101,12 @@ export function createMobilePreferencesState(
     registry: AtomRegistry.AtomRegistry,
   ) {
     const store = yield* MobilePreferences.MobilePreferencesStore;
-    const staged = yield* Effect.sync(() => stage(update, registry));
+    const staged = stage(update, registry);
     return yield* (
       "transform" in update ? store.update(update.transform) : store.savePatch(staged.patch)
     ).pipe(
       Effect.tap((saved) => Effect.sync(() => registry.set(confirmedPreferencesAtom, saved))),
+      saveLock.withPermit,
       Effect.ensuring(Effect.sync(() => settlePatch(registry, staged.patch, staged.version))),
     );
   });

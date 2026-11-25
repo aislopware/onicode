@@ -66,9 +66,13 @@ function makePreferencesState(
 describe("mobile preferences state", () => {
   it.effect("preserves an optimistic patch when the initial load finishes later", () =>
     Effect.gen(function* () {
+      const initial: MobilePreferences.Preferences = {
+        baseFontSize: 18,
+        collapsedProjectGroups: ["project:old"],
+      };
       const pendingLoad = deferred<MobilePreferences.Preferences>();
       const savePatch = vi.fn((patch: Partial<MobilePreferences.Preferences>) =>
-        Effect.succeed(patch),
+        Effect.succeed({ ...initial, ...patch }),
       );
       const state = makePreferencesState({
         load: Effect.promise(() => pendingLoad.promise),
@@ -85,10 +89,7 @@ describe("mobile preferences state", () => {
         ),
         { startImmediately: true },
       );
-      pendingLoad.resolve({
-        baseFontSize: 18,
-        collapsedProjectGroups: ["project:old"],
-      });
+      pendingLoad.resolve(initial);
 
       const preferences = yield* AtomRegistry.getResult(registry, state.preferencesAtom, {
         suspendOnWaiting: true,
@@ -228,6 +229,97 @@ describe("mobile preferences state", () => {
           suspendOnWaiting: true,
         }),
       ).toEqual({});
+
+      unmount();
+      registry.dispose();
+    }),
+  );
+
+  it.effect("keeps a cleared preference undefined across later saves", () =>
+    Effect.gen(function* () {
+      let persisted: MobilePreferences.Preferences = { workflowQuestionKind: "feature" };
+      const persist = (patch: Partial<MobilePreferences.Preferences>) => {
+        const next: MobilePreferences.Preferences = { ...persisted, ...patch };
+        persisted = JSON.parse(JSON.stringify(next)) as MobilePreferences.Preferences;
+        return next;
+      };
+      const state = makePreferencesState({
+        load: Effect.sync(() => persisted),
+        savePatch: (patch) => Effect.sync(() => persist(patch)),
+      });
+      const registry = AtomRegistry.make();
+      const unmount = registry.mount(state.preferencesAtom);
+      yield* AtomRegistry.getResult(registry, state.preferencesAtom, { suspendOnWaiting: true });
+
+      yield* state.savePreferences.run(registry, { workflowQuestionKind: undefined });
+      yield* state.savePreferences.run(registry, { baseFontSize: 18 });
+
+      const preferences = yield* AtomRegistry.getResult(registry, state.preferencesAtom, {
+        suspendOnWaiting: true,
+      });
+      expect(preferences.workflowQuestionKind).toBeUndefined();
+      expect(preferences).toEqual({ baseFontSize: 18 });
+
+      unmount();
+      registry.dispose();
+    }),
+  );
+
+  it.effect("resolves two overlapping saves without reverting an earlier clear", () =>
+    Effect.gen(function* () {
+      let persisted: MobilePreferences.Preferences = {
+        workflowQuestionKind: "feature",
+        baseFontSize: 16,
+      };
+      const firstStarted = yield* Deferred.make<void>();
+      const releaseFirst = yield* Deferred.make<void>();
+      let calls = 0;
+      const persist = (patch: Partial<MobilePreferences.Preferences>) => {
+        const next: MobilePreferences.Preferences = { ...persisted, ...patch };
+        persisted = JSON.parse(JSON.stringify(next)) as MobilePreferences.Preferences;
+        return next;
+      };
+      const state = makePreferencesState({
+        load: Effect.sync(() => persisted),
+        savePatch: (patch) =>
+          Effect.gen(function* () {
+            calls += 1;
+            if (calls === 1) {
+              yield* Deferred.succeed(firstStarted, undefined);
+              yield* Deferred.await(releaseFirst);
+            }
+            return persist(patch);
+          }),
+      });
+      const registry = AtomRegistry.make();
+      const unmount = registry.mount(state.preferencesAtom);
+      yield* AtomRegistry.getResult(registry, state.preferencesAtom, { suspendOnWaiting: true });
+
+      const first = yield* Effect.forkChild(
+        Effect.exit(state.savePreferences.run(registry, { workflowQuestionKind: undefined })),
+        { startImmediately: true },
+      );
+      yield* Deferred.await(firstStarted);
+
+      const second = yield* Effect.forkChild(
+        Effect.exit(state.savePreferences.run(registry, { baseFontSize: 18 })),
+        { startImmediately: true },
+      );
+      expect(AsyncResult.getOrElse(registry.get(state.preferencesAtom), () => ({}))).toEqual({
+        workflowQuestionKind: undefined,
+        baseFontSize: 18,
+      });
+
+      yield* Deferred.succeed(releaseFirst, undefined);
+      const firstResult = yield* Fiber.join(first);
+      const secondResult = yield* Fiber.join(second);
+      expect(Exit.isFailure(firstResult)).toBe(false);
+      expect(Exit.isFailure(secondResult)).toBe(false);
+      expect(
+        yield* AtomRegistry.getResult(registry, state.preferencesAtom, {
+          suspendOnWaiting: true,
+        }),
+      ).toEqual({ baseFontSize: 18 });
 
       unmount();
       registry.dispose();

@@ -4,6 +4,7 @@ import {
   projectedSubagentsToRuntime,
 } from "@onicode/client-runtime/state/subagentRuntime";
 import {
+  EnvironmentId,
   NodeId,
   ProviderDriverKind,
   RunId,
@@ -278,6 +279,12 @@ const stopAgent = {
   nativeTaskRef: null,
 };
 
+const remoteChild = {
+  environmentId: EnvironmentId.make("peer"),
+  threadId: ThreadId.make("remote-child"),
+  label: "Peer",
+};
+
 describe("resolveSubagentStopTarget", () => {
   it.each(["pending", "running", "waiting"] as const)(
     "stops the parent task and child of an app-owned %s agent",
@@ -287,6 +294,21 @@ describe("resolveSubagentStopTarget", () => {
         input: { threadId: stopAgent.threadId, subagentId: stopAgent.id },
       });
       expect(resolveSubagentStopTarget({ ...stopAgent, status, childThreadId: null })).toBeNull();
+      expect(
+        resolveSubagentStopTarget({ ...stopAgent, status, childThreadId: null, remoteChild }),
+      ).toEqual({
+        kind: "subagent",
+        input: { threadId: stopAgent.threadId, subagentId: stopAgent.id },
+      });
+      expect(
+        resolveSubagentStopTarget({
+          ...stopAgent,
+          status,
+          childThreadId: null,
+          remoteChild,
+          runId: null,
+        }),
+      ).toBeNull();
     },
   );
 
@@ -294,6 +316,9 @@ describe("resolveSubagentStopTarget", () => {
     "offers no Stop for a %s agent",
     (status) => {
       expect(resolveSubagentStopTarget({ ...stopAgent, status })).toBeNull();
+      expect(
+        resolveSubagentStopTarget({ ...stopAgent, status, childThreadId: null, remoteChild }),
+      ).toBeNull();
     },
   );
 

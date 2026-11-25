@@ -113,6 +113,17 @@ const useHeldSourceSize = create<{
   readonly source: PreviewMiniPlayerSize;
 } | null>(() => null);
 
+// The preview source with a drag or resize gesture in progress, so the timeline holds its
+// end inset steady until the gesture settles instead of relayouting every frame.
+const useActivePreviewGesture = create<{
+  readonly key: string;
+  readonly sourceKey: string;
+} | null>(() => null);
+
+export function usePreviewMiniPlayerGestureActive(sourceKey: string | null): boolean {
+  return useActivePreviewGesture((state) => sourceKey !== null && state?.sourceKey === sourceKey);
+}
+
 const NO_DEVICE_SCREEN_ATOM = Atom.make<DeviceScreenSize | null>(null).pipe(
   Atom.withLabel("device-stream-screen:none"),
 );
@@ -500,23 +511,28 @@ function MiniPlayerShell({
     if (handle?.hasPointerCapture(gesture.pointerId)) {
       handle.releasePointerCapture(gesture.pointerId);
     }
-    if (gesture.direction === null) return gesture;
-    useHeldSourceSize.setState((state) => (state?.key === heldSourceKey ? null : state), true);
-    const settled =
-      frame && container
-        ? settlePreviewMiniPlayerResize({
-            frame,
-            direction: gesture.direction,
-            held: gesture.source,
-            source: sourceSize,
-            container,
-          })
-        : null;
-    if (settled) {
-      usePreviewMiniPlayerStore
-        .getState()
-        .resize(threadRef, sourceKey, settled.width, { x: settled.x, y: settled.y });
+    if (gesture.direction !== null) {
+      useHeldSourceSize.setState((state) => (state?.key === heldSourceKey ? null : state), true);
+      const settled =
+        frame && container
+          ? settlePreviewMiniPlayerResize({
+              frame,
+              direction: gesture.direction,
+              held: gesture.source,
+              source: sourceSize,
+              container,
+            })
+          : null;
+      if (settled) {
+        usePreviewMiniPlayerStore
+          .getState()
+          .resize(threadRef, sourceKey, settled.width, { x: settled.x, y: settled.y });
+      }
     }
+    useActivePreviewGesture.setState(
+      (state) => (state?.key === heldSourceKey ? null : state),
+      true,
+    );
     return gesture;
   };
   const endInterruptedGesture = useEffectEvent(() => {
@@ -528,6 +544,10 @@ function MiniPlayerShell({
     return () => {
       window.removeEventListener("blur", endInterruptedGesture);
       useHeldSourceSize.setState((state) => (state?.key === heldSourceKey ? null : state), true);
+      useActivePreviewGesture.setState(
+        (state) => (state?.key === heldSourceKey ? null : state),
+        true,
+      );
     };
   }, [heldSourceKey]);
 
@@ -548,6 +568,7 @@ function MiniPlayerShell({
       moved: false,
     };
     captureRef.current = event.currentTarget;
+    useActivePreviewGesture.setState({ key: heldSourceKey, sourceKey }, true);
     if (direction !== null) {
       useHeldSourceSize.setState({ key: heldSourceKey, source: sourceSize }, true);
     }

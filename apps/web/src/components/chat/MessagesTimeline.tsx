@@ -8,6 +8,7 @@ import { AudioPreviewUnmountContext } from "../files/AudioPreview";
 import { ThreadFindTimelineContext } from "./ThreadFindProvider";
 import { MarkdownFindContext } from "./markdownFindContext";
 import { useChatCanvas } from "./ChatCanvasContext";
+import { usePreviewMiniPlayerGestureActive } from "../preview/ThreadPreviewMiniPlayer";
 import { WorkLogBlock } from "./WorkLog";
 import { TimelinePendingApprovalRow } from "./TimelinePendingApprovalRow";
 import type { WorktreeSetupSnapshot } from "@onicode/contracts";
@@ -168,11 +169,11 @@ const TIMELINE_LIST_FADE_HEADER = (
 );
 // A floating preview over the lower half of a narrow chat covers the timeline's last rows,
 // so the end must scroll them above it as it does for the composer.
-function resolveTimelineEndInset(composerInset: number, canvas: ReturnType<typeof useChatCanvas>) {
+function resolveTimelinePreviewInset(canvas: ReturnType<typeof useChatCanvas>): number {
   const frame = canvas?.layout.overlapsChat ? canvas.layout.frame : null;
   const height = canvas?.container.height ?? 0;
-  if (!frame || frame.y + frame.height / 2 < height / 2) return composerInset;
-  return Math.max(composerInset, Math.ceil(height - frame.y));
+  if (!frame || frame.y + frame.height / 2 < height / 2) return 0;
+  return Math.max(0, Math.ceil(height - frame.y));
 }
 
 function TimelineListFooter({
@@ -445,7 +446,16 @@ const ConversationTimeline = memo(function ConversationTimeline({
 }: MessagesTimelineProps) {
   const gt = useGT();
   const canvas = useChatCanvas();
-  const contentInsetEndAdjustment = resolveTimelineEndInset(composerInsetEnd, canvas);
+  const previewGesturing = usePreviewMiniPlayerGestureActive(canvas?.previewKey ?? null);
+  const livePreviewInset = resolveTimelinePreviewInset(canvas);
+  const [settledPreviewInset, setSettledPreviewInset] = useState(livePreviewInset);
+  if (!previewGesturing && settledPreviewInset !== livePreviewInset) {
+    setSettledPreviewInset(livePreviewInset);
+  }
+  const contentInsetEndAdjustment = Math.max(
+    composerInsetEnd,
+    previewGesturing ? settledPreviewInset : livePreviewInset,
+  );
   const listIdentityKey = displayThreadKey ?? routeThreadKey;
   // Snapshot restore positions on identity changes; ongoing scroll writes must not move them.
   // Find open at the opening is part of the snapshot: opening find later
@@ -819,7 +829,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   const nextOpening = nextListOpening(listOpening, !showsEmptyState, listIdentityKey);
   if (nextOpening !== listOpening) setListOpening(nextOpening);
   const listOpenedOn = nextOpening.mounted ? nextOpening.identity : null;
-  const viewportRef = useRef<TimelineViewport | null>(null);
+  const viewportRef = useRef<ReturnType<typeof attachTimelineViewport> | null>(null);
   const navigateTimeline = () => viewportRef.current?.navigate({ releasesFollow: true });
   const restoreReady = restoringThreadPosition && rows.length > 0;
   // Z: syncs LegendList's scroll position with which thread it shows. The list
@@ -1308,13 +1318,18 @@ const ConversationTimeline = memo(function ConversationTimeline({
     const scrollNode: HTMLElement | null = list?.getScrollableNode() ?? null;
     registerTimeline?.(scrollNode);
     const viewport = scrollNode
-      ? attachTimelineViewport(scrollNode, (frame) => {
-          const rowId = frame.closest<HTMLElement>("[data-timeline-row-id]")?.dataset.timelineRowId;
-          if (rowId && list) {
-            list.cancelScroll();
-            list.anchorVisibleContent({ key: rowId });
-          }
-        })
+      ? attachTimelineViewport(
+          scrollNode,
+          (frame) => {
+            const rowId =
+              frame.closest<HTMLElement>("[data-timeline-row-id]")?.dataset.timelineRowId;
+            if (rowId && list) {
+              list.cancelScroll();
+              list.anchorVisibleContent({ key: rowId });
+            }
+          },
+          contentInsetEndAdjustment,
+        )
       : null;
     viewportRef.current = viewport;
     const stopPreservingReadingPosition = scrollNode
@@ -1367,6 +1382,11 @@ const ConversationTimeline = memo(function ConversationTimeline({
       registerTimeline?.(null);
     };
   });
+
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- shares the settled end inset with the attached viewport so follow and PageUp account for a floating preview
+  useLayoutEffect(() => {
+    viewportRef.current?.setEndInset(contentInsetEndAdjustment);
+  }, [contentInsetEndAdjustment]);
 
   useThreadFindPositionReader({
     threadKey: listIdentityKey,

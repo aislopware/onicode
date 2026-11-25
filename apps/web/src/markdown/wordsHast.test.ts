@@ -196,7 +196,7 @@ describe("wordsHast", () => {
     // A `<p>` in a link destination is no raw paragraph, and the others keep their kind.
     expect(
       wordsHtml("[a](http://x/<p>)\nb\n\n<p>\none\ntwo\n</p>\n\nc\nd", { breaks: true }),
-    ).toContain('<p dir="ltr">\none\ntwo\n</p>\n<p dir="ltr">c<br>\nd</p>');
+    ).toContain('a</a><br>\nb</p>\n<p dir="ltr">\none\ntwo\n</p>\n<p dir="ltr">c<br>\nd</p>');
   });
 
   it("keeps the composer's tildes and list numbers in user messages", () => {

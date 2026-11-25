@@ -64,11 +64,28 @@ describe("pull request review drafts", () => {
     expect(usePullRequestReviewStore.getState().summaries["review-a"]).toBe("Revised body");
   });
 
-  it("forgets a summary erased to empty", () => {
-    usePullRequestReviewStore.getState().setSummary("review-a", "Draft");
-    usePullRequestReviewStore.getState().setSummary("review-a", "");
+  it("forgets a summary erased to empty without writing when nothing changed", () => {
+    const listener = vi.fn();
+    const unsubscribe = usePullRequestReviewStore.subscribe(listener);
+    try {
+      usePullRequestReviewStore.getState().setSummary("review-a", "");
+      expect(listener).not.toHaveBeenCalled();
 
-    expect(usePullRequestReviewStore.getState().summaries).toEqual({});
+      usePullRequestReviewStore.getState().setSummary("review-a", "Draft");
+      expect(listener).toHaveBeenCalledTimes(1);
+
+      usePullRequestReviewStore.getState().setSummary("review-a", "Draft");
+      expect(listener).toHaveBeenCalledTimes(1);
+
+      usePullRequestReviewStore.getState().setSummary("review-a", "");
+      expect(listener).toHaveBeenCalledTimes(2);
+      expect(usePullRequestReviewStore.getState().summaries).toEqual({});
+
+      usePullRequestReviewStore.getState().setSummary("review-a", "");
+      expect(listener).toHaveBeenCalledTimes(2);
+    } finally {
+      unsubscribe();
+    }
   });
 
   it("restores only well-formed drafts and summaries", async () => {

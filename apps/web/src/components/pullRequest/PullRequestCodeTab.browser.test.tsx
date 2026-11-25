@@ -829,25 +829,49 @@ it("keeps an open line comment and its text through a refresh that changes the p
   // A push changes the page, and with it every file's render key on it.
   singlePage.current = {
     ...singlePage.first,
-    patch: singlePage.first.patch
-      .replace("@@ -1,6 +1,6 @@", "@@ -1,6 +1,7 @@")
-      .replace(" five()", "+six()\n five()"),
+    patch:
+      singlePage.first.patch +
+      singlePage.first.patch.replaceAll("a.ts", "other.ts").replace("after()", "otherFile()"),
   };
   await screen.rerender(view(1));
 
-  await expect.element(screen.getByText("six()")).toBeVisible();
+  await expect.element(screen.getByText("otherFile()")).toBeVisible();
   await expect.element(draft).toHaveValue("Unsent");
   // The remounted editor leaves focus where the user put it.
   await userEvent.keyboard("x");
   await expect.element(elsewhere).toHaveValue("x");
+
+  // A push that removes the draft's line from the diff detaches the editor and reopens selection,
+  // keeping the typed text when the user picks a new line in the same file.
+  singlePage.current = {
+    ...singlePage.first,
+    patch: [
+      "diff --git a/a.ts b/a.ts",
+      "index 1111111..3333333 100644",
+      "--- a/a.ts",
+      "+++ a/a.ts",
+      "@@ -20,2 +20,2 @@",
+      "-oldTail()",
+      "+newTail()",
+      " tail()",
+      "",
+    ].join("\n"),
+  };
+  await screen.rerender(view(2));
+  await expect.element(screen.getByText("newTail()")).toBeVisible();
+  await expect.element(draft).not.toBeInTheDocument();
+  await vi.waitFor(() => expect(numberCell(20)).not.toBeNull());
+  await userEvent.click(numberCell(20)!);
+  await expect.element(draft).toHaveValue("Unsent");
 
   // A refresh that drops the draft's file takes its Cancel button too, so selection reopens.
   singlePage.current = {
     ...singlePage.first,
     patch: singlePage.first.patch.replaceAll("a.ts", "b.ts"),
   };
-  await screen.rerender(view(2));
+  await screen.rerender(view(3));
   await expect.element(screen.getByText("b.ts")).toBeVisible();
+  await vi.waitFor(() => expect(numberCell(3)).not.toBeNull());
   await userEvent.click(numberCell(3)!);
   await expect.element(draft).toHaveValue("");
 });

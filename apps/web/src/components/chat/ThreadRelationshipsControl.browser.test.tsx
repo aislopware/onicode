@@ -1,6 +1,6 @@
 import "~/index.css";
 import * as DateTime from "effect/DateTime";
-import { EnvironmentId, NodeId, ThreadId } from "@onicode/contracts";
+import { EnvironmentId, NodeId, RunId, ThreadId } from "@onicode/contracts";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
 import { expect, it, vi } from "vite-plus/test";
@@ -11,9 +11,11 @@ import "~/index.css";
 const state = vi.hoisted(() => ({
   projection: null as unknown,
   commandSucceeds: false,
+  commands: [] as Array<{ command: unknown; request: unknown }>,
   relatedShells: [] as unknown[],
   threadTitles: {} as Record<string, string>,
   archivedThreads: [] as unknown[],
+  atomValues: new Map<unknown, unknown>(),
 }));
 
 vi.mock(import("../../state/query"), async (original) => ({
@@ -26,7 +28,7 @@ vi.mock(import("../../state/query"), async (original) => ({
 
 vi.mock(import("@effect/atom-react"), async (original) => ({
   ...(await original()),
-  useAtomValue: (() => false) as never,
+  useAtomValue: ((atom: unknown) => state.atomValues.get(atom) ?? false) as never,
 }));
 
 vi.mock(import("../../state/entities"), () => ({
@@ -58,10 +60,12 @@ vi.mock(import("../../lib/archivedThreadsState"), () => ({
   })) as never,
 }));
 vi.mock(import("../../state/use-atom-command"), () => ({
-  useAtomCommand: (() => async () =>
-    state.commandSucceeds
+  useAtomCommand: ((command: unknown) => async (request: unknown) => {
+    state.commands.push({ command, request });
+    return state.commandSucceeds
       ? AsyncResult.success(undefined)
-      : AsyncResult.failure(Cause.fail(new Error("Connection lost")))) as never,
+      : AsyncResult.failure(Cause.fail(new Error("Connection lost")));
+  }) as never,
 }));
 
 import { scopeThreadRef } from "@onicode/client-runtime/environment";
@@ -69,6 +73,8 @@ import { scopeThreadRef } from "@onicode/client-runtime/environment";
 import { fakeTimers, render } from "../../../test/render";
 import { isMacPlatform } from "../../lib/utils";
 import { selectThreadRightPanelState, useRightPanelStore } from "../../rightPanelStore";
+import { orchestrationEnvironment } from "../../state/orchestration";
+import { threadEnvironment } from "../../state/threads";
 import { makeThreadProjectionFixture } from "../../test-fixtures";
 import { ScrollArea } from "../ui/scroll-area";
 import { ToastProvider } from "../ui/toast";
@@ -80,9 +86,13 @@ const threadId = ThreadId.make("fork");
 function setup() {
   useRightPanelStore.setState(useRightPanelStore.getInitialState());
   state.commandSucceeds = false;
+  state.commands = [];
   state.relatedShells = [];
   state.threadTitles = { source: "Source" };
   state.archivedThreads = [];
+  state.atomValues = new Map([
+    [orchestrationEnvironment.stopWorkflow.permissionAtom(environmentId), true],
+  ]);
   state.projection = {
     thread: {
       id: threadId,
@@ -403,6 +413,90 @@ it("shows a remote subagent's full title in its tooltip even when its environmen
 
   await row.click({ force: true });
   expect(screen.router?.state.location.pathname).toBe("/environment/fork");
+  await expect
+    .element(screen.getByRole("button", { name: new RegExp(`Stop subagent ${longTitle}`) }))
+    .not.toBeInTheDocument();
+});
+
+it("stops a running peer-delegated subagent through interruptTurn", async () => {
+  setup();
+  const remoteAgentId = NodeId.make("remote-agent-running");
+  const remoteTitle = "Run tests on remote box";
+  const startedAt = DateTime.makeUnsafe("2026-11-23T12:00:00.000Z");
+  state.projection = {
+    ...(state.projection as Record<string, unknown>),
+    subagents: [
+      {
+        id: remoteAgentId,
+        threadId,
+        runId: RunId.make("run-1"),
+        parentNodeId: NodeId.make("parent"),
+        origin: "app_owned",
+        createdBy: "agent",
+        driver: "remote",
+        providerInstanceId: "provider",
+        providerThreadId: null,
+        childThreadId: null,
+        nativeTaskRef: null,
+        prompt: "Run remote tests",
+        title: remoteTitle,
+        model: null,
+        status: "running",
+        result: null,
+        startedAt,
+        completedAt: null,
+        updatedAt: startedAt,
+        remoteChild: {
+          environmentId: EnvironmentId.make("remote-env"),
+          threadId: ThreadId.make("remote-thread"),
+          label: "remote-box",
+        },
+      },
+    ],
+  };
+  await using screen = await render(
+    <ToastProvider timeout={0}>
+      <ThreadRelationshipsPanel
+        environmentId={environmentId}
+        threadId={threadId}
+        showLineage
+        showSideChats={false}
+      />
+    </ToastProvider>,
+    { router: "/environment/fork" },
+  );
+
+  const row = screen.getByRole("button", { name: new RegExp(`^${remoteTitle}`) });
+  await userEvent.hover(row);
+  const stopButton = screen.getByRole("button", { name: `Stop subagent ${remoteTitle}` });
+  await expect.element(stopButton).toBeVisible();
+
+  await stopButton.click();
+  expect(state.commands).toEqual([
+    {
+      command: threadEnvironment.interruptTurn,
+      request: {
+        environmentId,
+        input: { threadId, subagentId: remoteAgentId },
+      },
+    },
+  ]);
+  await expect.element(page.getByText("Could not stop subagent", { exact: true })).toBeVisible();
+
+  state.atomValues.set(orchestrationEnvironment.stopWorkflow.permissionAtom(environmentId), false);
+  await screen.rerender(
+    <ToastProvider timeout={0}>
+      <ThreadRelationshipsPanel
+        environmentId={environmentId}
+        threadId={threadId}
+        showLineage
+        showSideChats={false}
+      />
+    </ToastProvider>,
+  );
+  await expect
+    .element(screen.getByRole("button", { name: `Stop subagent ${remoteTitle}` }))
+    .not.toBeInTheDocument();
 });
 
 it("shows how long a running remote subagent has been running, as a local one does", async () => {
@@ -453,7 +547,7 @@ it("shows how long a running remote subagent has been running, as a local one do
   );
 
   // Assert synchronously: expect.element polls on timers this test fakes.
-  const row = screen.getByRole("button", { name: new RegExp(remoteTitle) });
+  const row = screen.getByRole("button", { name: new RegExp(`^${remoteTitle}`) });
   expect(row.element().textContent).toContain("12m");
 });
 

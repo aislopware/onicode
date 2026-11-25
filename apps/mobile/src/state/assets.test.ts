@@ -64,7 +64,13 @@ vi.mock("gt-react-native", async (importOriginal) => {
   return { ...gt, useMessages: () => gt.mFallback };
 });
 
-import { refreshAssetUrl, useRefreshAssetUrl, useAssetUrlState } from "./assets";
+import { appAtomRegistry } from "./atom-registry";
+import {
+  refreshAssetUrl,
+  refreshProjectFaviconUrl,
+  useRefreshAssetUrl,
+  useAssetUrlState,
+} from "./assets";
 
 const environmentId = EnvironmentId.make("asset-environment");
 const threadId = ThreadId.make("asset-thread");
@@ -136,4 +142,18 @@ it("rejects with the server's error and resolves null only without a connection"
 
   state.preparedConnectionAtom = Atom.make({ _tag: "None" });
   await expect(refreshAssetUrl(environmentId, resource)).resolves.toBeNull();
+});
+
+it("refreshes the project favicon url query for the target resource", () => {
+  const refresh = vi.spyOn(appAtomRegistry, "refresh").mockImplementation(() => undefined);
+  try {
+    refreshProjectFaviconUrl({ environmentId, cwd: "/repo", faviconPath: "icon.svg" });
+    expect(state.assetQuery).toHaveBeenCalledWith({
+      environmentId,
+      input: { resource: { _tag: "project-favicon", cwd: "/repo", path: "icon.svg" } },
+    });
+    expect(refresh).toHaveBeenCalledWith(state.assetAtom);
+  } finally {
+    refresh.mockRestore();
+  }
 });
