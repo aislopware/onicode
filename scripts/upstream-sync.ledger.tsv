@@ -3872,3 +3872,4 @@ ea63274413	skip	kept Onicode's vite-plus 1.8.0 upgrade and highlightedCodeNodes:
 2ecf799522	skip	Clerk packages update only; Clerk is a removed surface in Onicode
 68af15d636	skip	kept Onicode's react-native-screens 5.0.0-oni.57 and PaneStack helper: Onicode's fork tarball already tracks the same upstream commit e0248889e078db887f7db918113e3ee34205e1bb and all three iOS layout files already use Stack.Host/Stack.Screen, onNativeDismiss, programmaticJs, and imageSource
 622d65faaf	take	fix(server): detect new repos in folders named like ..cache right away (#42507)
+b8be2287dc	skip	kept Onicode's Reanimated 4.8 upgrade: Onicode already ships react-native-reanimated 4.8.0, react-native-worklets 0.14.0, ENABLE_SHARED_ELEMENT_TRANSITIONS: false, and an identical patches/react-native-reanimated@4.8.0.patch
