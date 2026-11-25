@@ -494,6 +494,7 @@ function ProjectScriptEditorForm({
               </Label>
               <Textarea
                 id="script-command"
+                data-script-command-input
                 // oxlint-disable-next-line onicode/no-untranslated-copy -- example shell command
                 placeholder="bun test"
                 value={command}
