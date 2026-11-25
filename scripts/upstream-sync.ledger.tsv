@@ -3838,3 +3838,4 @@ dfa73216cc	take	fix(web): search results show the matched lines (#42429)
 bd3e495b5f	take	fix(web): mod+f opens find in read-only source previews (#42442); kept Onicode's lastTextRow helper in ReadOnlySourcePreview.browser.test.tsx
 5ac27b4007	take	feat(workflows): questions have kinds and runs have tags, and Needs you filters by kind (#42008); migration 115->124, kept Onicode's agentContextBudget.json baseline (+70 mcpToolListJsonBytes) and mobile-preferences without connectionTracesEnabled
 f020e4ae8d	skip	removed surface: product telemetry/analytics (AnalyticsService is removed in Onicode)
+49ef156624	skip	removed surface: relay tracing desktop shell wait (relay tracing is removed in Onicode)
