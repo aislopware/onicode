@@ -36,7 +36,7 @@
     "@onicode/secret-provider-onepassword": "workspace:*",
     "@onicode/shared": "workspace:*",
     "@pierre/diffs": "catalog:",
-    "@pierre/trees": "1.0.0",
+    "@pierre/trees": "catalog:",
     "@pierre/words": "file:deps/pierre-words-0.2.2-t3.4-7c04b7f1.tgz",
     "@sentry/electron": "catalog:",
     "@sentry/react": "catalog:",

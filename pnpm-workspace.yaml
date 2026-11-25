@@ -40,6 +40,7 @@ catalog:
   "@noble/hashes": 2.4.0
   "@pierre/diffs": 1.7.1
   "@pierre/highlights": 0.5.2
+  "@pierre/trees": 1.0.0
   # @sentry/electron pins its core; desktop and server Sentry packages must resolve to that one copy.
   # Mobile's @sentry/react-native pins its own.
   "@sentry/core": 11.10.0
