@@ -3787,3 +3787,4 @@ acce92ffae	take	fix(cli): Ctrl+C or Ctrl+D at the onicode triage agent picker ex
 dffbfdfc00	take	fix(web): shell calls without -c no longer add agent working folders (#42305)
 ddaba13471	skip	kept Onicode's ProjectService.writeProjectSettings + updateProjectSettingsOverride (c0d8bcdc56) over upstream's saveProjectSettings: already persists all folded project defaults atomically with managed-policy vetting and echo protection
 11c63a9f2c	take	fix(server): resolve percent-encoded local favicon hrefs (#42314)
+a149bdc4f6	take	fix(web): Voice Models language menu resets its search filter on close (#42321)
