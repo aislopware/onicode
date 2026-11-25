@@ -1948,7 +1948,13 @@ export const layer: Layer.Layer<
                 Effect.forkIn(scope),
               );
             }
-          } else if (deliveredEvent) {
+          } else if (
+            deliveredEvent &&
+            !(
+              (event.type === "node.updated" || event.type === "turn_item.updated") &&
+              event.sessionScoped === true
+            )
+          ) {
             storedEventCount = yield* ingestDelivered(event, deliveredEvent);
           } else if (
             event.type === "turn_item.updated" &&

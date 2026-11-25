@@ -6743,6 +6743,14 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
   const announcedMcpSignIns = new Set<string>();
   const mcpSignInKey = (nativeThreadId: string, server: string) =>
     `${nativeThreadId}\u0000${server}`;
+  const rememberAnnouncedMcpSignIn = (key: string) => {
+    announcedMcpSignIns.delete(key);
+    announcedMcpSignIns.add(key);
+    if (announcedMcpSignIns.size > 1000) {
+      const oldest = announcedMcpSignIns.values().next().value;
+      if (oldest !== undefined) announcedMcpSignIns.delete(oldest);
+    }
+  };
 
   return ProviderAdapter.ProviderAdapterV2.of({
     instanceId: adapterOptions.instanceId,
@@ -9755,7 +9763,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             // Every claude.ai connector the user never connected reports this too.
             if (status.status !== "needs-auth" || status.scope === "claudeai") continue;
             if (announcedMcpSignIns.has(key)) continue;
-            announcedMcpSignIns.add(key);
+            rememberAnnouncedMcpSignIn(key);
             const nativeItemId = `mcp-sign-in:${context.providerTurnId}:${status.name}`;
             const now = yield* DateTime.now;
             yield* emitProviderEvent({
@@ -16329,13 +16337,15 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   detail: "Onicode's own MCP server is managed by Onicode.",
                 });
               }
-              const query = yield* liveSessionQuery(providerThread);
+              const liveQuery = yield* liveSessionContext(providerThread);
+              const { query } = liveQuery;
               const failed = sessionRequestFailed(
                 `Claude could not ${action} MCP server ${server}.`,
               );
               switch (action) {
                 case "reconnect":
                   yield* query.reconnectMcpServer(server).pipe(Effect.mapError(failed));
+                  announcedMcpSignIns.delete(mcpSignInKey(liveQuery.nativeThreadId, server));
                   return {};
                 case "enable":
                 case "disable":
@@ -16350,6 +16360,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   );
                 case "clear-auth":
                   yield* query.clearMcpServerAuth(server).pipe(Effect.mapError(failed));
+                  announcedMcpSignIns.delete(mcpSignInKey(liveQuery.nativeThreadId, server));
                   return {};
               }
             }),
@@ -16358,13 +16369,17 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               server,
               callbackUrl,
             }) {
-              const query = yield* liveSessionQuery(providerThread);
+              const liveQuery = yield* liveSessionContext(providerThread);
+              const { query } = liveQuery;
               const failed = sessionRequestFailed(
                 `Claude could not finish signing in to ${server}.`,
               );
               const statuses = yield* query.mcpServerStatus.pipe(Effect.mapError(failed));
               // A browser on this machine may already have finished it on Claude's own page.
-              if (statuses.find((status) => status.name === server)?.status === "connected") return;
+              if (statuses.find((status) => status.name === server)?.status === "connected") {
+                announcedMcpSignIns.delete(mcpSignInKey(liveQuery.nativeThreadId, server));
+                return;
+              }
               const pasted = yield* Effect.try({
                 try: () => pastedUrl(callbackUrl).toString(),
                 catch: sessionProtocolError("That isn't an address. Paste the whole address."),
@@ -16382,6 +16397,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     ),
                   ),
                 );
+              announcedMcpSignIns.delete(mcpSignInKey(liveQuery.nativeThreadId, server));
             }),
           },
           sessionSettings: {
@@ -16611,7 +16627,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 Effect.mapError(() => fail(`Claude couldn't finish the sign-in to ${server}.`)),
               );
               // A browser on this machine may already have finished it on Claude's own page.
-              if (statuses.find((status) => status.name === server)?.status === "connected") return;
+              if (statuses.find((status) => status.name === server)?.status === "connected") {
+                announcedMcpSignIns.delete(mcpSignInKey(liveQuery.nativeThreadId, server));
+                return;
+              }
               const pasted = yield* Effect.try({
                 try: () => pastedUrl(callbackUrl).toString(),
                 catch: () =>
@@ -16636,6 +16655,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     ),
                   ),
                 );
+              announcedMcpSignIns.delete(mcpSignInKey(liveQuery.nativeThreadId, server));
             }),
           },
           stopTask: Effect.fn("ClaudeAdapterV2.stopTask")(function* ({ providerThread, taskId }) {

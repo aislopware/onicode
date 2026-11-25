@@ -365,9 +365,18 @@ workflow("sorter", { version: 1, payload: Schema.Struct({})${asks} }, () =>
         [asks === "" ? [] : ["feature"]],
       );
     }
-    yield* fileSystem.writeFileString(at("sorter.ts"), sorter(', asks: { feature: "" }'));
-    const refused = yield* WorkflowRuntime.loadDefinitions(at("sorter.ts"), 1).pipe(Effect.flip);
-    assert.include(String(refused.cause), 'asks gives the kind "feature" no label');
+    for (const [index, [asks, message]] of (
+      [
+        [', asks: { feature: "" }', 'asks gives the kind "feature" no label'],
+        [', asks: { "*": "All" }', 'asks cannot use the reserved kind "*"'],
+      ] as const
+    ).entries()) {
+      yield* fileSystem.writeFileString(at("sorter.ts"), sorter(asks));
+      const refused = yield* WorkflowRuntime.loadDefinitions(at("sorter.ts"), index + 1).pipe(
+        Effect.flip,
+      );
+      assert.include(String(refused.cause), message);
+    }
   }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
 );
 

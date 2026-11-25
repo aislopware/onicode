@@ -4,7 +4,7 @@ export type CloneProtocol = "ssh" | "https";
 
 // Userinfo may contain `@`; the last one before the host separates them, as ssh and URL parsers
 // read it. A query or fragment is never userinfo.
-const SCP_LIKE_URL = /^(?:[^/:\s]*@)?(\[[^\]@/\s]+\]|[^@:/\s[\]]+):(?!\/)(.+)$/;
+const SCP_LIKE_URL = /^(?:[^/:\s]*@)?(\[[^\]@/\s]+\]|[^@:/\s[\]]+):(?!\/\/)(.+)$/;
 const SSH_URL = /^ssh:\/\/(?:[^/?#\s]*@)?(\[[^\]@/\s]+\]|[^@:/?#\s]+)(:\d+)?\/(.+)$/;
 const HTTPS_URL = /^https?:\/\/(?:[^/?#\s]*@)?(\[[^\]@/\s]+\]|[^@:/?#\s]+)(:\d+)?\/(.+)$/;
 
@@ -28,7 +28,7 @@ function parseCloneUrl(url: string): {
       customPort: !!https[2],
       scp: false,
     };
-  const scp = SCP_LIKE_URL.exec(trimmed);
+  const scp = isWindowsDrivePath(trimmed) ? null : SCP_LIKE_URL.exec(trimmed);
   if (scp) return { protocol: "ssh", host: scp[1]!, path: scp[2]!, customPort: false, scp: true };
   return null;
 }
@@ -47,7 +47,8 @@ export function withoutRemoteUrlCredentials(url: string): string {
 }
 
 export function isScpLikeCloneUrl(url: string): boolean {
-  return SCP_LIKE_URL.test(url);
+  const trimmed = url.trim();
+  return !isWindowsDrivePath(trimmed) && SCP_LIKE_URL.test(trimmed);
 }
 
 export function cloneUrlProtocol(url: string): CloneProtocol | null {
@@ -63,7 +64,7 @@ export function cloneUrlForProtocol(url: string, protocol: CloneProtocol): strin
   const parsed = parseCloneUrl(url);
   if (!parsed) return null;
   if (parsed.protocol === protocol) return url.trim();
-  if (parsed.customPort) return null;
+  if (parsed.customPort || (parsed.scp && parsed.path.startsWith("/"))) return null;
   // Azure's transports use different hosts and put the repository marker in
   // different positions; changing only the scheme produces an invalid clone URL.
   if (parsed.protocol === "ssh" && parsed.host.toLowerCase() === "ssh.dev.azure.com") {

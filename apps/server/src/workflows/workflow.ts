@@ -626,6 +626,9 @@ const checkAskKinds = (workflow: string, asks: unknown): AskKinds => {
     throw new Error(`workflow("${workflow}")'s asks is each kind with its label, ${example}.`);
   }
   for (const [kind, label] of Object.entries(asks)) {
+    if (kind === "*") {
+      throw new Error(`workflow("${workflow}")'s asks cannot use the reserved kind "*".`);
+    }
     if (kind.trim() === "" || typeof label !== "string" || label.trim() === "") {
       throw new Error(
         `workflow("${workflow}")'s asks gives the kind "${kind}" no label. Each kind takes one, ${example}.`,

@@ -10,6 +10,7 @@ import {
   type ModelSelection,
   type OrchestrationV2AppThread,
   type OrchestrationV2DomainEvent,
+  type OrchestrationV2ExecutionNode,
   type OrchestrationV2PromptSuggestion,
   type OrchestrationV2ProviderCapabilities,
   type OrchestrationV2ProviderSession,
@@ -778,6 +779,7 @@ function layerTest(input: {
   return Layer.mergeAll(
     layerTestStores,
     layerConfiguredEventSink,
+    layerProviderEventIngestorTest,
     EffectOutbox.layer.pipe(Layer.provide(layerTestDatabase)),
     IdAllocator.layer,
     layerConfiguredMcpRegistry,
@@ -5264,10 +5266,41 @@ it.effect(
           fixtureName: "unattached-shell-owner",
           projectId,
         });
+        const childThreadId = yield* idAllocator.allocate.thread({
+          fixtureName: "native-subagent-shell-owner",
+          projectId,
+        });
+        const childThreadEvent = yield* makeThreadCreatedEvent({
+          idAllocator,
+          threadId: childThreadId,
+          now,
+          projectId,
+        });
+        const childProviderThread = makeProviderThread({
+          idAllocator,
+          threadId: childThreadId,
+          providerSessionId,
+          nativeThreadId: "native-child-thread",
+          now,
+        });
         yield* eventSink.write({
           events: [
             yield* makeThreadCreatedEvent({ idAllocator, threadId, now }),
             yield* makeThreadCreatedEvent({ idAllocator, threadId: otherThreadId, now }),
+            {
+              ...childThreadEvent,
+              payload: {
+                ...childThreadEvent.payload,
+                createdBy: "agent",
+                creationSource: "provider",
+                activeProviderThreadId: childProviderThread.id,
+                lineage: {
+                  parentThreadId: threadId,
+                  relationshipToParent: "subagent",
+                  rootThreadId: threadId,
+                },
+              },
+            },
           ],
         });
         yield* manager.open({
@@ -5306,19 +5339,104 @@ it.effect(
           input: "echo retained",
           output: "retained",
         };
+        const anchoredRunId = idAllocator.derive.run({ threadId, ordinal: 1 });
+        const anchoredNodeId = idAllocator.derive.nodeFromProviderItem({
+          driver: CODEX_DRIVER,
+          nativeItemId: "sh_anchored",
+        });
+        const anchoredNode: OrchestrationV2ExecutionNode = {
+          id: anchoredNodeId,
+          threadId,
+          runId: anchoredRunId,
+          parentNodeId: null,
+          rootNodeId: idAllocator.derive.rootNode({ runId: anchoredRunId }),
+          kind: "tool_call",
+          status: "completed",
+          countsForRun: false,
+          providerThreadId: providerThread.id,
+          providerTurnId: null,
+          nativeItemRef: {
+            driver: CODEX_DRIVER,
+            nativeId: "sh_anchored",
+            strength: "strong",
+          },
+          runtimeRequestId: null,
+          checkpointScopeId: null,
+          startedAt: now,
+          completedAt: now,
+        };
         const anchored = {
           ...command,
           id: idAllocator.derive.turnItemFromProviderItem({
             driver: CODEX_DRIVER,
             nativeItemId: "sh_anchored",
           }),
-          runId: idAllocator.derive.run({ threadId, ordinal: 1 }),
+          runId: anchoredRunId,
+          nodeId: anchoredNodeId,
+        };
+        const childNodeId = idAllocator.derive.nodeFromProviderItem({
+          driver: CODEX_DRIVER,
+          nativeItemId: "sh_child",
+        });
+        const childNode: OrchestrationV2ExecutionNode = {
+          id: childNodeId,
+          threadId: childThreadId,
+          runId: null,
+          parentNodeId: null,
+          rootNodeId: childNodeId,
+          kind: "tool_call",
+          status: "completed",
+          countsForRun: false,
+          providerThreadId: childProviderThread.id,
+          providerTurnId: null,
+          nativeItemRef: { driver: CODEX_DRIVER, nativeId: "sh_child", strength: "strong" },
+          runtimeRequestId: null,
+          checkpointScopeId: null,
+          startedAt: now,
+          completedAt: now,
+        };
+        const childCommand = {
+          ...command,
+          id: idAllocator.derive.turnItemFromProviderItem({
+            driver: CODEX_DRIVER,
+            nativeItemId: "sh_child",
+          }),
+          threadId: childThreadId,
+          nodeId: childNodeId,
+          providerThreadId: childProviderThread.id,
+          nativeItemRef: {
+            driver: CODEX_DRIVER,
+            nativeId: "sh_child",
+            strength: "strong" as const,
+          },
+          status: "completed" as const,
+          exitCode: 0,
+          output: "child done",
+          completedAt: now,
         };
         const commandEvents = [
+          {
+            type: "node.updated" as const,
+            driver: CODEX_DRIVER,
+            node: anchoredNode,
+            sessionScoped: true,
+          },
           {
             type: "turn_item.updated" as const,
             driver: CODEX_DRIVER,
             turnItem: anchored,
+            sessionScoped: true,
+          },
+          {
+            type: "node.updated" as const,
+            driver: CODEX_DRIVER,
+            node: childNode,
+            sessionScoped: true,
+          },
+          {
+            type: "turn_item.updated" as const,
+            driver: CODEX_DRIVER,
+            turnItem: childCommand,
             sessionScoped: true,
           },
           {
@@ -5359,7 +5477,8 @@ it.effect(
           Stream.filter(
             (stored) =>
               stored.event.type === "runtime-request.updated" ||
-              stored.event.type === "node.updated" ||
+              (stored.event.type === "node.updated" &&
+                stored.event.payload.id === pendingRequest.nodeId) ||
               (stored.event.type === "turn-item.updated" &&
                 stored.event.payload.type === "approval_request"),
           ),
@@ -5371,6 +5490,19 @@ it.effect(
         assert.isDefined(adapterEvents);
         yield* Queue.offerAll(adapterEvents!, [
           ...commandEvents,
+          {
+            type: "node.updated",
+            driver: CODEX_DRIVER,
+            sessionScoped: true,
+            node: {
+              ...anchoredNode,
+              id: idAllocator.derive.nodeFromProviderItem({
+                driver: CODEX_DRIVER,
+                nativeItemId: "sh_unrelated",
+              }),
+              threadId: otherThreadId,
+            },
+          },
           {
             type: "turn_item.updated",
             driver: CODEX_DRIVER,
@@ -5416,9 +5548,23 @@ it.effect(
           projection.turnItems.find((item) => item.id === anchored.id),
           { runId: anchored.runId, output: "retained" },
         );
+        assert.equal(
+          projection.nodes.find((candidate) => candidate.id === anchoredNodeId)?.status,
+          "completed",
+        );
         assert.isEmpty(projection.runs);
+        const childProjection = yield* projectionStore.getThreadProjection(childThreadId);
+        assert.deepInclude(
+          childProjection.turnItems.find((item) => item.id === childCommand.id),
+          { status: "completed", exitCode: 0, output: "child done" },
+        );
+        assert.equal(
+          childProjection.nodes.find((candidate) => candidate.id === childNodeId)?.status,
+          "completed",
+        );
         const unrelated = yield* projectionStore.getThreadProjection(otherThreadId);
         assert.isEmpty(unrelated.turnItems);
+        assert.isEmpty(unrelated.nodes);
         assert.isEmpty(unrelated.providerThreads);
         assert.equal(request?.status, "pending");
         assert.equal(request?.providerTurnId, null);
@@ -5429,6 +5575,208 @@ it.effect(
       });
 
       yield* effect.pipe(Effect.provide(layerTest({ state, idleTimeoutMs: 1000 })));
+    }),
+);
+
+it.effect(
+  "ProviderSessionManagerV2 preserves a late session-scoped command result when queued earlier updates drain afterward",
+  () =>
+    Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      const effect = Effect.gen(function* () {
+        const eventSink = yield* EventSink.EventSinkV2;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+        const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
+        const ingestor = yield* ProviderEventIngestor.ProviderEventIngestorV2;
+        const now = yield* DateTime.now;
+        const projectId = yield* idAllocator.allocate.project({
+          fixtureName: "provider-session-manager-late-order",
+        });
+        const threadId = yield* idAllocator.allocate.thread({
+          fixtureName: "provider-session-manager-late-order",
+          projectId,
+        });
+        const providerSessionId = yield* idAllocator.allocate.providerSession({
+          providerInstanceId: modelSelection.instanceId,
+          threadId,
+        });
+        const providerThread = makeProviderThread({
+          idAllocator,
+          threadId,
+          providerSessionId,
+          now,
+        });
+        yield* eventSink.write({
+          events: [yield* makeThreadCreatedEvent({ idAllocator, threadId, now, projectId })],
+        });
+        const runtime = yield* manager.open({
+          threadId,
+          providerSessionId,
+          modelSelection,
+          runtimePolicy,
+        });
+        const subscription = yield* runtime.subscribeEvents!;
+        const runId = idAllocator.derive.run({ threadId, ordinal: 1 });
+        const rootNodeId = idAllocator.derive.rootNode({ runId });
+        const nodeId = idAllocator.derive.nodeFromProviderItem({
+          driver: CODEX_DRIVER,
+          nativeItemId: "cmd-race",
+        });
+        const turnItemId = idAllocator.derive.turnItemFromProviderItem({
+          driver: CODEX_DRIVER,
+          nativeItemId: "cmd-race",
+        });
+        const makeNode = (
+          status: OrchestrationV2ExecutionNode["status"],
+        ): OrchestrationV2ExecutionNode => ({
+          id: nodeId,
+          threadId,
+          runId,
+          parentNodeId: rootNodeId,
+          rootNodeId,
+          kind: "tool_call",
+          status,
+          countsForRun: false,
+          providerThreadId: providerThread.id,
+          providerTurnId: null,
+          nativeItemRef: { driver: CODEX_DRIVER, nativeId: "cmd-race", strength: "strong" },
+          runtimeRequestId: null,
+          checkpointScopeId: null,
+          startedAt: now,
+          completedAt: status === "running" ? null : now,
+        });
+        const makeItem = (
+          status: "running" | "cancelled" | "completed",
+          extra?: { readonly exitCode: number; readonly output: string },
+        ): OrchestrationV2TurnItem => ({
+          id: turnItemId,
+          threadId,
+          runId,
+          nodeId,
+          providerThreadId: providerThread.id,
+          providerTurnId: null,
+          nativeItemRef: { driver: CODEX_DRIVER, nativeId: "cmd-race", strength: "strong" },
+          parentItemId: null,
+          ordinal: 1,
+          status,
+          title: null,
+          startedAt: now,
+          completedAt: status === "running" ? null : now,
+          updatedAt: now,
+          type: "command_execution",
+          input: "echo race",
+          ...extra,
+        });
+        const afterSequence = yield* eventSink.latestSequence({ threadId });
+        const completedPersisted = yield* eventSink.stream({ threadId, afterSequence }).pipe(
+          Stream.filter(
+            (stored) =>
+              (stored.event.type === "node.updated" &&
+                stored.event.payload.id === nodeId &&
+                stored.event.payload.status === "completed") ||
+              (stored.event.type === "turn-item.updated" &&
+                stored.event.payload.id === turnItemId &&
+                stored.event.payload.status === "completed"),
+          ),
+          Stream.take(2),
+          Stream.runCollect,
+          Effect.forkScoped,
+        );
+        const adapterEvents = (yield* Ref.get(state)).eventQueues.get(String(providerSessionId));
+        assert.isDefined(adapterEvents);
+        const runningNodeEvent = {
+          type: "node.updated" as const,
+          driver: CODEX_DRIVER,
+          node: makeNode("running"),
+        };
+        const runningItemEvent = {
+          type: "turn_item.updated" as const,
+          driver: CODEX_DRIVER,
+          turnItem: makeItem("running"),
+        };
+        yield* Queue.offerAll(adapterEvents!, [
+          runningNodeEvent,
+          runningItemEvent,
+          {
+            type: "node.updated",
+            driver: CODEX_DRIVER,
+            node: makeNode("cancelled"),
+            sessionScoped: true,
+          },
+          {
+            type: "turn_item.updated",
+            driver: CODEX_DRIVER,
+            turnItem: makeItem("cancelled"),
+            sessionScoped: true,
+          },
+          {
+            type: "node.updated",
+            driver: CODEX_DRIVER,
+            node: makeNode("completed"),
+            sessionScoped: true,
+          },
+          {
+            type: "turn_item.updated",
+            driver: CODEX_DRIVER,
+            turnItem: makeItem("completed", { exitCode: 0, output: "done\n" }),
+            sessionScoped: true,
+          },
+        ]);
+        yield* Fiber.join(completedPersisted);
+        // Drain the run subscription after the session-scoped result already committed.
+        const received = Array.from(
+          yield* subscription.events.pipe(Stream.take(6), Stream.runCollect),
+        );
+        assert.deepEqual(
+          received.map((event) =>
+            event.type === "node.updated"
+              ? ["node", event.node.status, event.sessionScoped === true]
+              : event.type === "turn_item.updated"
+                ? ["item", event.turnItem.status, event.sessionScoped === true]
+                : [event.type],
+          ),
+          [
+            ["node", "running", false],
+            ["item", "running", false],
+            ["node", "cancelled", true],
+            ["item", "cancelled", true],
+            ["node", "completed", true],
+            ["item", "completed", true],
+          ],
+        );
+        // Simulate a lagging subscriber flushing earlier running/cancelled updates after completed.
+        for (const staleEvent of [
+          runningNodeEvent,
+          runningItemEvent,
+          { type: "node.updated" as const, driver: CODEX_DRIVER, node: makeNode("cancelled") },
+          {
+            type: "turn_item.updated" as const,
+            driver: CODEX_DRIVER,
+            turnItem: makeItem("cancelled"),
+          },
+        ]) {
+          yield* ingestor.ingestNormalized({
+            providerSessionId,
+            providerInstanceId: modelSelection.instanceId,
+            threadId,
+            runId,
+            event: staleEvent,
+          });
+        }
+        yield* subscription.close;
+        const projection = yield* projectionStore.getThreadProjection(threadId);
+        assert.deepInclude(
+          projection.turnItems.find((item) => item.id === turnItemId),
+          { status: "completed", exitCode: 0, output: "done\n" },
+        );
+        assert.equal(
+          projection.nodes.find((candidate) => candidate.id === nodeId)?.status,
+          "completed",
+        );
+      });
+
+      yield* effect.pipe(Effect.provide(layerTest({ state, idleTimeoutMs: 60_000 })));
     }),
 );
 

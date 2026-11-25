@@ -33,7 +33,7 @@ import {
 import { neverStarted } from "./RestartBackgroundNote.ts";
 import type { OrchestratorV2Error } from "./Orchestrator.ts";
 import * as ProjectStore from "./ProjectStore.ts";
-import { forkInheritedRunOrdinals, ProjectionStoreThreadNotFoundError } from "./ProjectionStore.ts";
+import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 
 import { boundedRedactedText } from "@onicode/provider-core/server/failure";
@@ -90,7 +90,9 @@ type Outcome =
 
 const MAX_FAILURE_MESSAGE_LENGTH = 300;
 const isTextGenerationError = Schema.is(TextGenerationError);
-const isProjectionStoreThreadNotFoundError = Schema.is(ProjectionStoreThreadNotFoundError);
+const isProjectionStoreThreadNotFoundError = Schema.is(
+  ProjectionStore.ProjectionStoreThreadNotFoundError,
+);
 
 function failureMessage(cause: Cause.Cause<unknown>): string {
   const error = Cause.squash(cause);
@@ -107,6 +109,7 @@ function failureMessage(cause: Cause.Cause<unknown>): string {
 
 const make = Effect.gen(function* () {
   const threads = yield* ThreadManagementService.ThreadManagementService;
+  const projections = yield* ProjectionStore.ProjectionStoreV2;
   const projects = yield* ProjectStore.ProjectStoreV2;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const textGeneration = yield* TextGeneration.TextGeneration;
@@ -155,20 +158,35 @@ const make = Effect.gen(function* () {
     );
 
   const messagesThroughRun = Effect.fn("ThreadTitleRegenerationService.messagesThroughRun")(
-    function* (threadId: ThreadId, runId: RunId, forkCreatedAt: DateTime.Utc) {
+    function* (
+      forkThreadId: ThreadId,
+      threadId: ThreadId,
+      runId: RunId,
+      forkCreatedAt: DateTime.Utc,
+    ) {
       const source = yield* threads.getThreadRecords(
         threadId,
         ["messages", "runs", "contextTransfers", "providerThreads"],
         { messageRoles: ["user", "assistant"] },
       );
-      const ordinals = forkInheritedRunOrdinals(source.runs, forkCreatedAt);
-      const forkOrdinal = ordinals.get(runId);
-      if (forkOrdinal === undefined) return undefined;
+      const inheritedRunIds = new Set(yield* projections.getForkSourceRunIds(forkThreadId));
+      const forkRun = source.runs.find((run) => run.id === runId && inheritedRunIds.has(run.id));
+      if (forkRun === undefined) return undefined;
+      const runs = source.runs
+        .filter((run) => run.ordinal <= forkRun.ordinal && inheritedRunIds.has(run.id))
+        .map((run) =>
+          run.status === "rolled_back"
+            ? {
+                ...run,
+                status: run.startedAt === null ? ("cancelled" as const) : ("completed" as const),
+              }
+            : run,
+        );
       const conversation = yield* readConversation(
         threadId,
-        source.runs.filter((run) => run.ordinal <= forkOrdinal),
+        runs,
         source.providerThreads,
-        source.runs.find((run) => run.id === runId),
+        runs.find((run) => run.id === runId),
       );
       const unjoined = unjoinedRunIds(source.runs, forkCreatedAt);
       const messages = source.messages.filter((message) => {
@@ -176,9 +194,7 @@ const make = Effect.gen(function* () {
         if (message.runId === null) {
           return conversation.boundary === 0 && source.thread.historyOrigin === "v1_import";
         }
-        if (unjoined.has(message.runId)) return false;
-        const ordinal = ordinals.get(message.runId) ?? Infinity;
-        return conversation.runIds.has(message.runId) && ordinal <= forkOrdinal;
+        return !unjoined.has(message.runId) && conversation.runIds.has(message.runId);
       });
       return { ...source, messages, boundary: conversation.boundary };
     },
@@ -205,7 +221,7 @@ const make = Effect.gen(function* () {
     ) {
       const { threadId, runId } = current.forkedFrom;
       seen.add(threadId);
-      const source = yield* messagesThroughRun(threadId, runId, current.createdAt);
+      const source = yield* messagesThroughRun(current.id, threadId, runId, current.createdAt);
       if (source === undefined) break;
       history.push(source.messages);
       title ??= source.thread.title;

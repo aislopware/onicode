@@ -71,6 +71,7 @@ import * as CommandReceiptStore from "./CommandReceiptStore.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as EffectOutbox from "./EffectOutbox.ts";
 import * as IdAllocator from "@onicode/provider-core/server/IdAllocator";
+import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as TaskFolders from "../workspace/TaskFolders.ts";
 import {
@@ -333,6 +334,7 @@ function makeHarness(options: HarnessOptions = {}) {
     Layer.provide(
       Layer.mergeAll(
         layerThreadManagement,
+        ProjectionStore.layer.pipe(Layer.provide(layerDatabase)),
         layerProjectedProjects,
         layerExternalServices,
         NodeServices.layer,
@@ -3599,6 +3601,7 @@ it.live(
         Effect.gen(function* () {
           const launches = yield* ThreadLaunch.ThreadLaunchService;
           const threads = yield* ThreadManagement.ThreadManagementService;
+          const tracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
           const askerId = ThreadId.make("thread:asker");
           yield* threads.dispatch({
             type: "thread.create",
@@ -3638,6 +3641,50 @@ it.live(
           const settled = yield* preparationSettled(launched.threadId);
           assert.equal(settled.runs[0]?.status, "failed");
           assert.isNull(settled.thread.worktreePath);
+          assert.equal(yield* ran, "");
+
+          // A message-less launch still rechecks the thread that asked, not the new thread's modes.
+          const emptyAskerId = ThreadId.make("thread:asker-empty");
+          yield* threads.dispatch({
+            type: "thread.create",
+            commandId: CommandId.make("asker-empty:create"),
+            threadId: emptyAskerId,
+            projectId,
+            title: "Asker",
+            modelSelection,
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: null,
+            createdBy: "user",
+            creationSource: "web",
+          });
+          whilePreparing = threads
+            .dispatch({
+              type: "thread.runtime-mode.set",
+              commandId: CommandId.make("asker-empty:lower"),
+              threadId: emptyAskerId,
+              runtimeMode: "auto",
+            })
+            .pipe(Effect.orDie);
+          const emptyLaunched = yield* launches.launch({
+            ...launchInput({
+              command: "launch:lowered-empty",
+              thread: "thread:lowered-empty",
+              workspace: { type: "worktree", baseRef: "main", branch: "feature/lowered-empty" },
+            }),
+            callerThreadId: emptyAskerId,
+            createdBy: "agent",
+            creationSource: "mcp",
+          });
+
+          const emptySetup = yield* tracker.stream(emptyLaunched.threadId).pipe(
+            Stream.filter((snapshot) => snapshot !== null && snapshot.phase !== "running"),
+            Stream.runHead,
+          );
+          assert.equal(Option.getOrUndefined(emptySetup)?.phase, "failed");
+          assert.include(Option.getOrUndefined(emptySetup)?.error ?? "", "Full access");
+          assert.isNull((yield* threads.getThreadShell(emptyLaunched.threadId))?.worktreePath);
           assert.equal(yield* ran, "");
         }),
       { hasCommit: () => Effect.suspend(() => whilePreparing).pipe(Effect.as(false)) },

@@ -160,7 +160,7 @@ export const installCli = Effect.fn("cli.install.install")(function* () {
   const firstOther = Effect.gen(function* () {
     for (const entry of entries) {
       const absolute = path.isAbsolute(entry);
-      if ((windows || absolute) && same(entry)) return null;
+      if (absolute && same(entry)) return null;
       const dir = absolute ? entry : windows || !cwd ? undefined : path.resolve(cwd, entry);
       if (dir === undefined || detectCliRunner(`${dir}/`) !== null) continue;
       for (const name of windows ? ["onicode.cmd", "onicode.exe"] : ["onicode"]) {

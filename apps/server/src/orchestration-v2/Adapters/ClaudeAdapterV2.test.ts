@@ -4396,16 +4396,23 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                   mcpServerStatus: options?.mcp?.mcpServerStatus ?? Effect.succeed([]),
                   readMcpResource: () => Effect.die("unexpected MCP resource read"),
                   callMcpTool: () => Effect.die("unexpected MCP tool call"),
-                  mcpAuthenticate: () => Effect.die("unexpected MCP sign-in"),
-                  mcpSubmitOAuthCallbackUrl: () => Effect.die("unexpected MCP sign-in"),
-                  reconnectMcpServer: () => Effect.die("unexpected MCP reconnect"),
+                  mcpAuthenticate:
+                    options?.mcp?.mcpAuthenticate ?? (() => Effect.die("unexpected MCP sign-in")),
+                  mcpSubmitOAuthCallbackUrl:
+                    options?.mcp?.mcpSubmitOAuthCallbackUrl ??
+                    (() => Effect.die("unexpected MCP sign-in")),
+                  reconnectMcpServer:
+                    options?.mcp?.reconnectMcpServer ??
+                    (() => Effect.die("unexpected MCP reconnect")),
                   listPermissionRules: Effect.die("unexpected permission rules read"),
                   getContextUsage: Effect.die("unexpected context usage read"),
                   sessionDialog: (subtype) => Effect.die(`unexpected ${subtype}`),
                   initializationResult: Effect.die("unexpected initialization result read"),
                   reloadOutputStyles: Effect.die("unexpected output style reload"),
                   toggleMcpServer: () => Effect.die("unexpected MCP toggle"),
-                  clearMcpServerAuth: () => Effect.die("unexpected MCP clear auth"),
+                  clearMcpServerAuth:
+                    options?.mcp?.clearMcpServerAuth ??
+                    (() => Effect.die("unexpected MCP clear auth")),
                   stopTask: options?.stopTask ?? (() => Effect.void),
                   interrupt: Effect.void,
                   close: Queue.shutdown(processMessages),
@@ -8710,6 +8717,9 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           freshQueueOnReopen: true,
           mcp: {
             mcpServerStatus: Effect.sync(() => [{ name: "linear", status: linearStatus }]),
+            mcpSubmitOAuthCallbackUrl: () => Effect.void,
+            reconnectMcpServer: () => Effect.void,
+            clearMcpServerAuth: () => Effect.void,
             readMcpResource: () => Effect.die("unexpected MCP resource read"),
             callMcpTool: () => Effect.die("unexpected MCP tool call"),
           },
@@ -8787,8 +8797,40 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         yield* runTurn(reopened, resumed, 3);
         linearStatus = "needs-auth";
         yield* runTurn(reopened, resumed, 4);
+        yield* reopened.mcpSignIn!.complete({
+          providerThread: resumed,
+          server: "linear",
+          callbackUrl: "http://localhost:5555/callback?code=1",
+        });
+        yield* runTurn(reopened, resumed, 5);
+        linearStatus = "connected";
+        yield* reopened.mcpSignIn!.complete({
+          providerThread: resumed,
+          server: "linear",
+          callbackUrl: "http://localhost:5555/callback?code=2",
+        });
+        linearStatus = "needs-auth";
+        yield* runTurn(reopened, resumed, 6);
+        yield* reopened.mcpServers!.submitOAuthCallback({
+          providerThread: resumed,
+          server: "linear",
+          callbackUrl: "http://localhost:5555/callback?code=3",
+        });
+        yield* runTurn(reopened, resumed, 7);
+        yield* reopened.mcpServers!.act({
+          providerThread: resumed,
+          server: "linear",
+          action: "reconnect",
+        });
+        yield* runTurn(reopened, resumed, 8);
+        yield* reopened.mcpServers!.act({
+          providerThread: resumed,
+          server: "linear",
+          action: "clear-auth",
+        });
+        yield* runTurn(reopened, resumed, 9);
 
-        assert.deepEqual(noticesAfterTurn, [1, 1, 1, 2]);
+        assert.deepEqual(noticesAfterTurn, [1, 1, 1, 2, 3, 4, 5, 6, 7]);
       }).pipe(
         Effect.scoped,
         Effect.provide(

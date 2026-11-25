@@ -83,8 +83,23 @@ it("keeps sub-millisecond windows and rates without rounding printed dates", () 
   const row = formatted.split("\n").find((line) => line.startsWith("rpc"));
 
   assert.strictEqual(summary.spanCount, 2);
-  assert.strictEqual(row?.trim().split(/\s+/)[2], "120000.0");
+  assert.strictEqual(row?.trim().split(/\s+/)[2], "119994.1");
   assert.include(formatted, "from 2026-11-23T23:59:59.998Z to 2026-11-23T23:59:59.999Z");
+
+  // Sub-256ns offsets around a millisecond boundary must not round into the cutoff or collapse the window.
+  const exactCutoff = makeTraceSpanSummary(1_795_478_400_000);
+  ["1795478399999999950", "1795478400000000000"]
+    .map((endTimeUnixNano) => JSON.stringify({ name: "rpc", durationMs: 1, endTimeUnixNano }))
+    .forEach(exactCutoff.addLine);
+  assert.strictEqual(exactCutoff.finish().spanCount, 1);
+
+  const straddling = makeTraceSpanSummary();
+  ["1795478399999999950", "1795478400000000050"]
+    .map((endTimeUnixNano) => JSON.stringify({ name: "rpc", durationMs: 1, endTimeUnixNano }))
+    .forEach(straddling.addLine);
+  const straddlingSummary = straddling.finish();
+  assert.isAbove(straddlingSummary.minutes, 0);
+  assert.isDefined(straddlingSummary.spans[0]?.perMinute);
 });
 
 it("prints end times in other numeric spellings as before", () => {

@@ -4,6 +4,7 @@ import {
   cloneUrlForProtocol,
   cloneUrlProtocol,
   cloneUrlRepositoryPath,
+  isScpLikeCloneUrl,
   withoutRemoteUrlCredentials,
 } from "./cloneUrl.ts";
 
@@ -230,6 +231,15 @@ describe("cloneUrlRepositoryPath", () => {
     expect(cloneUrlRepositoryPath("git@forge.example:team#1/spec#2026.git")).toBe(
       "forge.example/team#1/spec#2026",
     );
+    expect(cloneUrlRepositoryPath("git@forge.example:/team/spec#2026.git")).toBe(
+      "forge.example/team/spec#2026",
+    );
+    expect(cloneUrlRepositoryPath("git@forge.example:/team#1/spec.git")).toBe(
+      "forge.example/team#1/spec",
+    );
+    expect(isScpLikeCloneUrl("git@forge.example:/team/spec#2026.git")).toBe(true);
+    expect(isScpLikeCloneUrl("C:/repos/project.git")).toBe(false);
+    expect(cloneUrlProtocol("C:/repos/project.git")).toBeNull();
     expect(cloneUrlRepositoryPath("https://forge.example/team/spec.git#readme")).toBe(
       "forge.example/team/spec",
     );

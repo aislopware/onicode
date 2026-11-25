@@ -124,6 +124,8 @@ export interface ThreadLaunchInput {
   };
   readonly createdBy: OrchestrationV2Actor;
   readonly creationSource: OrchestrationV2CreationSource;
+  /** The thread that asked for this launch, when an agent inside one called it. */
+  readonly callerThreadId?: ThreadId;
   /** The linked environment this launch is for, if one asked for it. */
   readonly linkOrigin?: OrchestrationV2LinkOrigin;
   /** The parent there, when that environment's agent delegated this as a task. */
@@ -1715,7 +1717,11 @@ const make = Effect.gen(function* () {
             const askedBy =
               current === null || acceptedRun === undefined || acceptedMessages === null
                 ? input.createdBy === "agent"
-                  ? { askedByAgent: { threadId: input.initialMessage?.senderThreadId } }
+                  ? {
+                      askedByAgent: {
+                        threadId: input.callerThreadId ?? input.initialMessage?.senderThreadId,
+                      },
+                    }
                   : {}
                 : askedByAgent(
                     current.thread,

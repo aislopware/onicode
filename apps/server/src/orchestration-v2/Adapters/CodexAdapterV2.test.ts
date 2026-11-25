@@ -7931,10 +7931,26 @@ describe("CodexAdapterV2 post-settle continuation", () => {
       assert.deepEqual(
         harness.events.flatMap((event) =>
           event.type === "turn_item.updated" && event.turnItem.type === "command_execution"
-            ? [event.turnItem.status]
+            ? [[event.turnItem.status, event.sessionScoped === true]]
             : [],
         ),
-        ["running", "cancelled", "completed"],
+        [
+          ["running", false],
+          ["cancelled", true],
+          ["completed", true],
+        ],
+      );
+      assert.deepEqual(
+        harness.events.flatMap((event) =>
+          event.type === "node.updated" && event.node.kind === "tool_call"
+            ? [[event.node.status, event.sessionScoped === true]]
+            : [],
+        ),
+        [
+          ["running", false],
+          ["cancelled", true],
+          ["completed", true],
+        ],
       );
       assert.deepEqual(
         harness.terminalEvents().map((event) => event.status),
@@ -7952,6 +7968,202 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         ),
       ),
     ),
+  );
+
+  it.effect.each(["thread/closed", "unload", "archive", "interrupt"] as const)(
+    "releases settled turns pinned by unknown-outcome commands on %s",
+    (cleanup) =>
+      Effect.gen(function* () {
+        const probeItemId = "call-codex-bg-settled-probe";
+        const fence = (
+          id: number,
+          name: string,
+          notifications: ReadonlyArray<{
+            readonly type: "emit_inbound";
+            readonly label: string;
+            readonly frame: Record<string, unknown>;
+          }> = [],
+        ) => [
+          {
+            type: "expect_outbound" as const,
+            label: `fence-${name}`,
+            frame: {
+              id,
+              method: "thread/name/set",
+              params: { threadId: BG_NATIVE_THREAD, name },
+            },
+          },
+          ...notifications,
+          {
+            type: "emit_inbound" as const,
+            label: `fence-${name}`,
+            frame: { id, result: {} },
+          },
+        ];
+        const cleanupEntries =
+          cleanup === "thread/closed"
+            ? fence(5, "close-fence", [
+                {
+                  type: "emit_inbound",
+                  label: "thread/closed",
+                  frame: { method: "thread/closed", params: { threadId: BG_NATIVE_THREAD } },
+                },
+              ])
+            : cleanup === "unload"
+              ? [
+                  {
+                    type: "expect_outbound" as const,
+                    label: "unload",
+                    frame: {
+                      id: 5,
+                      method: "thread/unsubscribe",
+                      params: { threadId: BG_NATIVE_THREAD },
+                    },
+                  },
+                  {
+                    type: "emit_inbound" as const,
+                    label: "unload",
+                    frame: { id: 5, result: { status: "notSubscribed" } },
+                  },
+                ]
+              : cleanup === "archive"
+                ? [
+                    {
+                      type: "expect_outbound" as const,
+                      label: "archive",
+                      frame: {
+                        id: 5,
+                        method: "thread/archive",
+                        params: { threadId: BG_NATIVE_THREAD },
+                      },
+                    },
+                    {
+                      type: "emit_inbound" as const,
+                      label: "archive",
+                      frame: { id: 5, result: {} },
+                    },
+                  ]
+                : [];
+        const probeFenceId = cleanup === "interrupt" ? 5 : 6;
+        const cancelled = yield* Deferred.make<void>();
+        const harness = yield* makeCodexReplayHarness(
+          makeCodexReplayTranscript({
+            scenario: `codex-bg-unknown-cleanup-${cleanup}`,
+            entries: [
+              ...backgroundExecTranscript.entries.slice(0, -1),
+              {
+                type: "expect_outbound",
+                label: "list-background-terminals",
+                frame: {
+                  id: 4,
+                  method: "thread/backgroundTerminals/list",
+                  params: { threadId: BG_NATIVE_THREAD },
+                },
+              },
+              {
+                type: "emit_inbound",
+                label: "list-background-terminals",
+                frame: { id: 4, result: { data: [], nextCursor: null } },
+              },
+              ...cleanupEntries,
+              ...fence(probeFenceId, "probe-fence", [
+                {
+                  type: "emit_inbound",
+                  label: "item/completed/command-late",
+                  frame: {
+                    method: "item/completed",
+                    params: {
+                      item: backgroundCommandItem("completed"),
+                      threadId: BG_NATIVE_THREAD,
+                      turnId: BG_NATIVE_TURN,
+                    },
+                  },
+                },
+                {
+                  type: "emit_inbound",
+                  label: "item/completed/probe",
+                  frame: {
+                    method: "item/completed",
+                    params: {
+                      item: { ...backgroundCommandItem("completed"), id: probeItemId },
+                      threadId: BG_NATIVE_THREAD,
+                      turnId: BG_NATIVE_TURN,
+                    },
+                  },
+                },
+              ]),
+            ],
+          }),
+          (event) =>
+            event.type === "turn_item.updated" &&
+            event.turnItem.nativeItemRef?.nativeId === BG_COMMAND_ITEM &&
+            event.turnItem.status === "cancelled"
+              ? Deferred.succeed(cancelled, undefined)
+              : Effect.void,
+        );
+        yield* harness.runtime.startTurn(
+          makeCodexTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now: yield* DateTime.now,
+            attemptId: RunAttemptId.make(`attempt-codex-bg-unknown-cleanup-${cleanup}`),
+            text: BG_PROMPT,
+          }),
+        );
+        yield* harness.firstTerminal;
+        yield* Deferred.await(cancelled);
+        const terminal = harness.terminalEvents()[0]!;
+        if (cleanup === "thread/closed") {
+          yield* harness.runtime.applyThreadTitle!({
+            providerThread: harness.providerThread,
+            title: "close-fence",
+          });
+        } else if (cleanup === "unload") {
+          yield* harness.runtime.unloadThread!({ providerThread: harness.providerThread });
+        } else if (cleanup === "archive") {
+          yield* harness.runtime.unloadThread!({
+            providerThread: harness.providerThread,
+            archive: true,
+          });
+        } else {
+          yield* harness.runtime.interruptTurn({
+            providerThread: harness.providerThread,
+            providerTurnId: terminal.providerTurnId,
+            requestRuntimeRestart: true,
+          });
+        }
+        yield* harness.runtime.applyThreadTitle!({
+          providerThread: harness.providerThread,
+          title: "probe-fence",
+        });
+        assert.deepEqual(
+          harness.events.flatMap((event) =>
+            event.type === "turn_item.updated" &&
+            event.turnItem.nativeItemRef?.nativeId === BG_COMMAND_ITEM
+              ? [event.turnItem.status]
+              : [],
+          ),
+          ["running", "cancelled"],
+        );
+        assert.isEmpty(
+          harness.events.filter(
+            (event) =>
+              event.type === "turn_item.updated" &&
+              event.turnItem.nativeItemRef?.nativeId === probeItemId,
+          ),
+        );
+        assert.lengthOf(harness.continuationRequests, 0);
+        assert.isFalse(yield* harness.hasPendingBackgroundWork);
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+          ),
+        ),
+      ),
   );
 
   it.effect.each([
@@ -8634,146 +8846,177 @@ describe("CodexAdapterV2 post-settle continuation", () => {
     }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
-  it.effect("records a command's late result after its run stopped listening", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "oni-bg-late-result-workspace-" });
-      const transcript = makeCodexReplayTranscript({
-        scenario: "codex-bg-late-result",
-        entries: [
-          ...backgroundExecTranscript.entries.slice(0, -1),
-          {
-            type: "expect_outbound",
-            label: "list-background-terminals",
-            frame: {
-              id: 4,
-              method: "thread/backgroundTerminals/list",
-              params: { threadId: BG_NATIVE_THREAD },
-            },
-          },
-          {
-            type: "emit_inbound",
-            label: "list-background-terminals",
-            frame: { id: 4, result: { data: [], nextCursor: null } },
-          },
-          {
-            type: "emit_inbound",
-            label: "item/completed/command-late",
-            frame: {
-              method: "item/completed",
-              params: {
-                item: backgroundCommandItem("completed"),
-                threadId: BG_NATIVE_THREAD,
-                turnId: BG_NATIVE_TURN,
+  it.effect.each(["after_stop", "immediate"] as const)(
+    "records a command's late result after its run stopped listening (%s)",
+    (arrival) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const cwd = yield* fs.makeTempDirectoryScoped({
+          prefix: `oni-bg-late-result-${arrival}-workspace-`,
+        });
+        const transcript = makeCodexReplayTranscript({
+          scenario: `codex-bg-late-result-${arrival}`,
+          entries: [
+            ...backgroundExecTranscript.entries.slice(0, -1),
+            {
+              type: "expect_outbound",
+              label: "list-background-terminals",
+              frame: {
+                id: 4,
+                method: "thread/backgroundTerminals/list",
+                params: { threadId: BG_NATIVE_THREAD },
               },
             },
-          },
-        ],
-      });
-      const localTranscript = withConfigReads(
-        yield* decodeReplayTranscriptJson(
-          (yield* encodeReplayTranscriptJson(transcript)).replaceAll(
-            yield* encodeStringJson("/workspace"),
-            yield* encodeStringJson(cwd),
-          ),
-        ),
-        "Background late result",
-      );
-      const released = yield* Deferred.make<void>();
-      const replayDriver = yield* CodexReplay.makeReplayDriver(localTranscript, {
-        beforeEmitInbound: (entry) =>
-          entry.label === "item/completed/command-late" ? Deferred.await(released) : Effect.void,
-      });
-      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-      for (const args of [
-        ["init", "--quiet"],
-        [
-          "-c",
-          "user.name=Test",
-          "-c",
-          "user.email=test@example.com",
-          "commit",
-          "--allow-empty",
-          "--quiet",
-          "-m",
-          "Initial commit",
-        ],
-      ]) {
-        assert.equal(Number(yield* spawner.exitCode(ChildProcess.make("git", args, { cwd }))), 0);
-      }
-      yield* Effect.gen(function* () {
-        const orchestrator = yield* Orchestrator.OrchestratorV2;
-        const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
-        const threadId = ThreadId.make("thread:background-late-result");
-        yield* orchestrator.dispatch({
-          type: "thread.create",
-          commandId: CommandId.make("create-background-late-result"),
-          threadId,
-          projectId: ProjectId.make("project:background-late-result"),
-          title: "Background late result",
-          modelSelection: CODEX_TEST_MODEL_SELECTION,
-          runtimeMode: "full-access",
-          interactionMode: "default",
-          branch: null,
-          worktreePath: cwd,
-          createdBy: "user",
-          creationSource: "web",
+            {
+              type: "emit_inbound",
+              label: "list-background-terminals",
+              frame: { id: 4, result: { data: [], nextCursor: null } },
+            },
+            {
+              type: "emit_inbound",
+              label: "item/completed/command-late",
+              frame: {
+                method: "item/completed",
+                params: {
+                  item: backgroundCommandItem("completed"),
+                  threadId: BG_NATIVE_THREAD,
+                  turnId: BG_NATIVE_TURN,
+                },
+              },
+            },
+          ],
         });
-        const commandStatus = (status: string) =>
-          orchestrator.streamDomainEvents.pipe(
+        const localTranscript = withConfigReads(
+          yield* decodeReplayTranscriptJson(
+            (yield* encodeReplayTranscriptJson(transcript)).replaceAll(
+              yield* encodeStringJson("/workspace"),
+              yield* encodeStringJson(cwd),
+            ),
+          ),
+          "Background late result",
+        );
+        const released = yield* Deferred.make<void>();
+        const replayDriver = yield* CodexReplay.makeReplayDriver(localTranscript, {
+          beforeEmitInbound: (entry) =>
+            arrival === "after_stop" && entry.label === "item/completed/command-late"
+              ? Deferred.await(released)
+              : Effect.void,
+        });
+        const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+        for (const args of [
+          ["init", "--quiet"],
+          [
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "--allow-empty",
+            "--quiet",
+            "-m",
+            "Initial commit",
+          ],
+        ]) {
+          assert.equal(Number(yield* spawner.exitCode(ChildProcess.make("git", args, { cwd }))), 0);
+        }
+        yield* Effect.gen(function* () {
+          const orchestrator = yield* Orchestrator.OrchestratorV2;
+          const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+          const threadId = ThreadId.make(`thread:background-late-result-${arrival}`);
+          yield* orchestrator.dispatch({
+            type: "thread.create",
+            commandId: CommandId.make(`create-background-late-result-${arrival}`),
+            threadId,
+            projectId: ProjectId.make(`project:background-late-result-${arrival}`),
+            title: "Background late result",
+            modelSelection: CODEX_TEST_MODEL_SELECTION,
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: cwd,
+            createdBy: "user",
+            creationSource: "web",
+          });
+          const commandStatus = (status: string) =>
+            orchestrator.streamDomainEvents.pipe(
+              Stream.filter(
+                (event) =>
+                  event.type === "turn-item.updated" &&
+                  event.payload.type === "command_execution" &&
+                  event.payload.status === status,
+              ),
+              Stream.runHead,
+              Effect.forkChild({ startImmediately: true }),
+            );
+          const runCompleted = yield* orchestrator.streamDomainEvents.pipe(
             Stream.filter(
-              (event) =>
-                event.type === "turn-item.updated" &&
-                event.payload.type === "command_execution" &&
-                event.payload.status === status,
+              (event) => event.type === "run.updated" && event.payload.status === "completed",
             ),
             Stream.runHead,
             Effect.forkChild({ startImmediately: true }),
           );
-        const cancelled = yield* commandStatus("cancelled");
-        yield* orchestrator.dispatch({
-          type: "message.dispatch",
-          commandId: CommandId.make("start-background-late-result"),
-          threadId,
-          messageId: MessageId.make("message:background-late-result"),
-          text: BG_PROMPT,
-          attachments: [],
-          createdBy: "user",
-          creationSource: "web",
-          dispatchMode: { type: "start_immediately" },
-        });
-        yield* worker.drain();
-        yield* Fiber.join(cancelled);
-        yield* worker.drain();
-        assert.equal(
-          (yield* orchestrator.getThreadProjection(threadId)).runs.at(-1)?.status,
-          "completed",
-        );
-        assert.deepEqual(
-          (yield* orchestrator.getThreadShell(threadId))?.pendingBackgroundTasks,
-          [],
-        );
-        const completed = yield* commandStatus("completed");
-        yield* Deferred.succeed(released, undefined);
-        yield* Fiber.join(completed);
-        yield* worker.drain();
-        assert.isNull((yield* Ref.get(replayDriver.state)).failure);
-        assert.deepEqual(
-          (yield* orchestrator.getThreadProjection(threadId)).turnItems.flatMap((item) =>
-            item.type === "command_execution" ? [[item.status, item.exitCode, item.output]] : [],
+          const cancelled = arrival === "after_stop" ? yield* commandStatus("cancelled") : null;
+          const immediateCompleted =
+            arrival === "immediate" ? yield* commandStatus("completed") : null;
+          yield* orchestrator.dispatch({
+            type: "message.dispatch",
+            commandId: CommandId.make(`start-background-late-result-${arrival}`),
+            threadId,
+            messageId: MessageId.make(`message:background-late-result-${arrival}`),
+            text: BG_PROMPT,
+            attachments: [],
+            createdBy: "user",
+            creationSource: "web",
+            dispatchMode: { type: "start_immediately" },
+          });
+          yield* worker.drain();
+          if (cancelled !== null) {
+            yield* Fiber.join(cancelled);
+            yield* Fiber.join(runCompleted);
+            yield* worker.drain();
+            assert.equal(
+              (yield* orchestrator.getThreadProjection(threadId)).runs.at(-1)?.status,
+              "completed",
+            );
+            assert.deepEqual(
+              (yield* orchestrator.getThreadShell(threadId))?.pendingBackgroundTasks,
+              [],
+            );
+            const completed = yield* commandStatus("completed");
+            yield* Deferred.succeed(released, undefined);
+            yield* Fiber.join(completed);
+          } else if (immediateCompleted !== null) {
+            yield* Fiber.join(immediateCompleted);
+            yield* Fiber.join(runCompleted);
+          }
+          yield* worker.drain();
+          assert.isNull((yield* Ref.get(replayDriver.state)).failure);
+          const projection = yield* orchestrator.getThreadProjection(threadId);
+          assert.equal(projection.runs.at(-1)?.status, "completed");
+          assert.deepEqual(
+            (yield* orchestrator.getThreadShell(threadId))?.pendingBackgroundTasks,
+            [],
+          );
+          assert.deepEqual(
+            projection.turnItems.flatMap((item) =>
+              item.type === "command_execution" ? [[item.status, item.exitCode, item.output]] : [],
+            ),
+            [["completed", 0, "CODEX_BG_WAKE_DONE\n"]],
+          );
+          assert.deepEqual(
+            projection.nodes.flatMap((node) => (node.kind === "tool_call" ? [node.status] : [])),
+            ["completed"],
+          );
+        }).pipe(
+          Effect.provide(
+            ProviderReplayHarness.layerWithRegistry(
+              { name: `codex-background-late-result-${arrival}`, runtimePolicyOverride: { cwd } },
+              CodexAdapterV2Testkit.layer({ transcript: localTranscript, driver: replayDriver }),
+              { runEffectWorker: false },
+            ),
           ),
-          [["completed", 0, "CODEX_BG_WAKE_DONE\n"]],
         );
-      }).pipe(
-        Effect.provide(
-          ProviderReplayHarness.layerWithRegistry(
-            { name: "codex-background-late-result", runtimePolicyOverride: { cwd } },
-            CodexAdapterV2Testkit.layer({ transcript: localTranscript, driver: replayDriver }),
-            { runEffectWorker: false },
-          ),
-        ),
-      );
-    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+      }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   const INTERRUPT_SCENARIO = "codex-interrupt-mid-command";

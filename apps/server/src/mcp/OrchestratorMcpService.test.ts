@@ -66,11 +66,13 @@ import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import { buildUnavailableProviderSnapshot } from "../provider/unavailableProviderSnapshot.ts";
+import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as RemoteDelegation from "../peer/RemoteDelegation.ts";
+import * as TaskFolders from "../workspace/TaskFolders.ts";
 import type { McpInvocationScope } from "./McpInvocationContext.ts";
 import { idleThreadProjection, liveThreadShell } from "./McpToolAccess.testkit.ts";
 import * as OrchestratorMcpService from "./OrchestratorMcpService.ts";
@@ -83,6 +85,13 @@ const decodeTarget = Schema.decodeUnknownEffect(OrchestratorMcpTarget);
 const layerOrchestratorService = OrchestratorMcpService.layer.pipe(
   Layer.provide(Layer.mock(ThreadLaunchService.ThreadLaunchService)({})),
   Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
+  Layer.provide(
+    Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+      namedProjectsRoot: "/projects",
+      isScratchProject: () => Effect.succeed(false),
+    }),
+  ),
+  Layer.provide(Layer.mock(TaskFolders.TaskFolders)({})),
 );
 
 describe("OrchestratorMcpService", () => {
@@ -2760,104 +2769,259 @@ describe("OrchestratorMcpService provider resolution", () => {
     }),
   );
 
-  it.effect("gives a worktree child in a project whose folder holds several repositories", () =>
-    Effect.gen(function* () {
-      // A plain project folder: Git finds no repository at its root, only in a/ and b/.
-      const workspaceRoot = "/work/several-repos";
-      const commands: Array<unknown> = [];
-      const task = {
-        id: taskId,
-        threadId: parentThreadId,
-        origin: "app_owned",
-        childThreadId,
-        providerInstanceId: codexInstanceId,
-        model: "gpt-5.4",
-        status: "running",
-        result: null,
-      };
-      const dependencies = Layer.mergeAll(
-        NodeServices.layer,
-        NodeCrypto.layer,
-        Layer.mock(ThreadManagementService.ThreadManagementService)({
-          hasReceipt: () => Effect.succeed(false),
-          getThreadRecords: (threadId) =>
-            Effect.succeed(
-              threadId === parentThreadId
-                ? (() => {
-                    const parent = parentProjection(commands.length > 0 ? [task] : []);
+  it.effect(
+    "validates worktree isolation across multi-repo, non-Git, Scratch, >8-repo, and worktree parents",
+    () =>
+      Effect.gen(function* () {
+        const workspaceRoot = "/work/several-repos";
+        const notARepository = (cwd: string) =>
+          new GitCommandError({
+            operation: "GitVcsDriver.resolveCommit",
+            command: "git rev-parse --verify HEAD^{commit}",
+            cwd,
+            detail: "fatal: not a git repository (or any of the parent directories): .git",
+          });
+        const runDelegate = (options: {
+          readonly requestId: string;
+          readonly worktreePath: string | null;
+          readonly branch: string | null;
+          readonly isScratch?: boolean;
+          readonly taskFolders: Partial<TaskFolders.TaskFolders["Service"]>;
+          readonly resolveCommit?: GitVcsDriver.GitVcsDriver["Service"]["resolveCommit"];
+        }) =>
+          Effect.gen(function* () {
+            const commands: Array<unknown> = [];
+            const task = {
+              id: taskId,
+              threadId: parentThreadId,
+              origin: "app_owned",
+              childThreadId,
+              providerInstanceId: codexInstanceId,
+              model: "gpt-5.4",
+              status: "running",
+              result: null,
+            };
+            const dependencies = Layer.mergeAll(
+              NodeServices.layer,
+              NodeCrypto.layer,
+              Layer.mock(ThreadManagementService.ThreadManagementService)({
+                hasReceipt: () => Effect.succeed(false),
+                getThreadRecords: (threadId) =>
+                  Effect.succeed(
+                    threadId === parentThreadId
+                      ? (() => {
+                          const parent = parentProjection(commands.length > 0 ? [task] : []);
+                          return {
+                            ...parent,
+                            thread: {
+                              ...parent.thread,
+                              worktreePath: options.worktreePath,
+                              branch: options.branch,
+                            },
+                          } as OrchestrationV2ThreadProjection;
+                        })()
+                      : childProjection,
+                  ),
+                dispatch: (command) =>
+                  Effect.sync(() => {
+                    commands.push(command);
                     return {
-                      ...parent,
-                      thread: { ...parent.thread, worktreePath: null },
-                    } as OrchestrationV2ThreadProjection;
-                  })()
-                : childProjection,
-            ),
-          dispatch: (command) =>
-            Effect.sync(() => {
-              commands.push(command);
-              return {
-                sequence: 1,
-                storedEvents: [{ event: { type: "subagent.updated", payload: task } }],
-              } as never;
-            }),
-        }),
-        ServerSettings.layerTest(),
-        providerRegistryLayer([
-          providerSnapshot({
-            instanceId: codexInstanceId,
-            driver: ProviderDriverKind.make("codex"),
-            model: "gpt-5.4",
-          }),
-        ]),
-        adapterRegistryLayer([codexInstanceId]),
-        Layer.mock(ProjectService.ProjectService)({
-          getById: () =>
-            Effect.succeedSome({ id: projectId, title: "parent", workspaceRoot } as never),
-        }),
-        Layer.mock(SecretRequests.SecretRequests)({}),
-        Layer.mock(RemoteDelegation.RemoteDelegation)({}),
-        Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
-      );
-      const notARepository = (cwd: string) =>
-        new GitCommandError({
-          operation: "GitVcsDriver.resolveCommit",
-          command: "git rev-parse --verify HEAD^{commit}",
-          cwd,
-          detail: "fatal: not a git repository (or any of the parent directories): .git",
+                      sequence: 1,
+                      storedEvents: [{ event: { type: "subagent.updated", payload: task } }],
+                    } as never;
+                  }),
+              }),
+              ServerSettings.layerTest(),
+              providerRegistryLayer([
+                providerSnapshot({
+                  instanceId: codexInstanceId,
+                  driver: ProviderDriverKind.make("codex"),
+                  model: "gpt-5.4",
+                }),
+              ]),
+              adapterRegistryLayer([codexInstanceId]),
+              Layer.mock(ProjectService.ProjectService)({
+                getById: () =>
+                  Effect.succeedSome({ id: projectId, title: "parent", workspaceRoot } as never),
+              }),
+              Layer.mock(SecretRequests.SecretRequests)({}),
+              Layer.mock(RemoteDelegation.RemoteDelegation)({}),
+              Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
+            );
+            const layerService = OrchestratorMcpService.layer.pipe(
+              Layer.provide(Layer.mock(ThreadLaunchService.ThreadLaunchService)({})),
+              Layer.provide(
+                Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+                  namedProjectsRoot: "/projects",
+                  isScratchProject: () => Effect.succeed(options.isScratch ?? false),
+                }),
+              ),
+              Layer.provide(Layer.mock(TaskFolders.TaskFolders)(options.taskFolders)),
+              Layer.provide(
+                Layer.mock(GitVcsDriver.GitVcsDriver)({
+                  resolveCommit:
+                    options.resolveCommit ?? (({ cwd }) => Effect.fail(notARepository(cwd))),
+                }),
+              ),
+              Layer.provide(dependencies),
+            );
+            const result = yield* Effect.gen(function* () {
+              const service = yield* OrchestratorMcpService.OrchestratorMcpService;
+              return yield* service
+                .delegateTask(scope, {
+                  task: "Add a line to a/README.md.",
+                  isolation: "worktree",
+                  mode: "async",
+                  clientRequestId: options.requestId,
+                })
+                .pipe(Effect.result);
+            }).pipe(Effect.provide(layerService));
+            return { result, commands };
+          });
+
+        // Plain folder holding several repositories starts from HEAD (each repo's default branch).
+        const twoRepos = [
+          { name: "a", path: `${workspaceRoot}/a` },
+          { name: "b", path: `${workspaceRoot}/b` },
+        ];
+        const multiRepo = yield* runDelegate({
+          requestId: "worktree-several-repos",
+          worktreePath: null,
+          branch: null,
+          taskFolders: {
+            plan: () =>
+              Effect.succeed({
+                projectId,
+                projectRoot: workspaceRoot,
+                projectIsRepository: false,
+                anchor: workspaceRoot,
+                repositories: twoRepos,
+                trackedRepositories: twoRepos.map((repo) => repo.path),
+              }),
+          },
         });
-      const layerService = OrchestratorMcpService.layer.pipe(
-        Layer.provide(
-          Layer.mock(ThreadLaunchService.ThreadLaunchService)({
-            isNonGitProject: () => Effect.succeed(true),
-          }),
-        ),
-        Layer.provide(
-          Layer.mock(GitVcsDriver.GitVcsDriver)({
-            resolveCommit: ({ cwd }) => Effect.fail(notARepository(cwd)),
-          }),
-        ),
-        Layer.provide(dependencies),
-      );
-      yield* Effect.gen(function* () {
-        const service = yield* OrchestratorMcpService.OrchestratorMcpService;
-        const result = yield* service
-          .delegateTask(scope, {
-            task: "Add a line to a/README.md.",
-            isolation: "worktree",
-            mode: "async",
-            clientRequestId: "worktree-several-repos",
-          })
-          .pipe(Effect.result);
         assert.isTrue(
-          Result.isSuccess(result),
-          `worktree isolation was refused: ${Result.isFailure(result) ? result.failure.message : ""}`,
+          Result.isSuccess(multiRepo.result),
+          `worktree isolation was refused: ${Result.isFailure(multiRepo.result) ? multiRepo.result.failure.message : ""}`,
         );
-        assert.equal(
-          (commands[0] as { workspaceStrategy?: { type: string } }).workspaceStrategy?.type,
-          "worktree",
+        assert.deepEqual(
+          (multiRepo.commands[0] as { workspaceStrategy?: unknown }).workspaceStrategy,
+          { type: "worktree", baseRef: "HEAD", startFromOrigin: false },
         );
-      }).pipe(Effect.provide(layerService));
-    }),
+
+        // Multi-repo parent worktree passes its branch and inherits its selected repositories
+        // even when the project tracks more than eight repositories.
+        const nineRepos = Array.from({ length: 9 }, (_, index) => ({
+          name: `r${index}`,
+          path: `${workspaceRoot}/r${index}`,
+        }));
+        const multiRepoParent = yield* runDelegate({
+          requestId: "worktree-multi-repo-parent",
+          worktreePath: "/worktrees/several-repos/feature-parent",
+          branch: "feature/parent-work",
+          taskFolders: {
+            plan: ({ repositories }) =>
+              Effect.succeed({
+                projectId,
+                projectRoot: workspaceRoot,
+                projectIsRepository: false,
+                anchor: workspaceRoot,
+                repositories:
+                  repositories === undefined
+                    ? []
+                    : nineRepos.filter((repo) =>
+                        repositories.some((selected) => selected.path === repo.path),
+                      ),
+                trackedRepositories: nineRepos.map((repo) => repo.path),
+              }),
+            find: () =>
+              Effect.succeed({
+                root: "/worktrees/several-repos/feature-parent",
+                projectId,
+                projectRoot: workspaceRoot,
+                anchor: workspaceRoot,
+                projectPath: "/worktrees/several-repos/feature-parent",
+                projectIsWorktree: false,
+                repositories: [
+                  {
+                    name: "r0",
+                    repositoryPath: nineRepos[0]!.path,
+                    worktreePath: "/worktrees/several-repos/feature-parent/r0",
+                  },
+                ],
+              }),
+          },
+        });
+        assert.isTrue(Result.isSuccess(multiRepoParent.result));
+        assert.deepEqual(
+          (multiRepoParent.commands[0] as { workspaceStrategy?: unknown }).workspaceStrategy,
+          {
+            type: "worktree",
+            baseRef: "feature/parent-work",
+            startFromOrigin: false,
+            repositories: [{ path: nineRepos[0]!.path }],
+          },
+        );
+
+        // Plain non-Git folder with no repositories rejects synchronously without creating a child.
+        const emptyFolder = yield* runDelegate({
+          requestId: "worktree-non-git-empty",
+          worktreePath: null,
+          branch: null,
+          taskFolders: { plan: () => Effect.succeed(null) },
+        });
+        assert.isTrue(Result.isFailure(emptyFolder.result));
+        if (Result.isFailure(emptyFolder.result)) {
+          assert.equal(emptyFolder.result.failure.code, "invalid_request");
+        }
+        assert.lengthOf(emptyFolder.commands, 0);
+
+        // Scratch never calls TaskFolders.plan and still hits the parent-checkout guard.
+        const scratchGitChild = yield* runDelegate({
+          requestId: "worktree-scratch-git-folder",
+          worktreePath: `${workspaceRoot}/thread-with-git`,
+          branch: "main",
+          isScratch: true,
+          taskFolders: { plan: () => Effect.die("Scratch must not scan task folders") },
+          resolveCommit: ({ cwd }) =>
+            cwd === `${workspaceRoot}/thread-with-git`
+              ? Effect.succeed({ commitSha: "a".repeat(40) })
+              : Effect.fail(notARepository(cwd)),
+        });
+        assert.isTrue(Result.isFailure(scratchGitChild.result));
+        if (Result.isFailure(scratchGitChild.result)) {
+          assert.equal(scratchGitChild.result.failure.code, "invalid_request");
+          assert.include(
+            scratchGitChild.result.failure.message,
+            "does not contain the parent checkout's commit",
+          );
+        }
+        assert.lengthOf(scratchGitChild.commands, 0);
+
+        // More than eight tracked repositories with no parent selection rejects instead of making an empty worktree.
+        const tooManyRepos = yield* runDelegate({
+          requestId: "worktree-over-eight-repos",
+          worktreePath: null,
+          branch: null,
+          taskFolders: {
+            plan: () =>
+              Effect.succeed({
+                projectId,
+                projectRoot: workspaceRoot,
+                projectIsRepository: false,
+                anchor: workspaceRoot,
+                repositories: [],
+                trackedRepositories: nineRepos.map((repo) => repo.path),
+              }),
+          },
+        });
+        assert.isTrue(Result.isFailure(tooManyRepos.result));
+        if (Result.isFailure(tooManyRepos.result)) {
+          assert.equal(tooManyRepos.result.failure.code, "invalid_request");
+          assert.include(tooManyRepos.result.failure.message, "9 repositories");
+        }
+        assert.lengthOf(tooManyRepos.commands, 0);
+      }),
   );
 
   it.effect("rejects delegation to a provider without a registered adapter", () =>
@@ -3299,6 +3463,13 @@ describe("OrchestratorMcpService provider resolution", () => {
             }),
           ),
           Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
+          Layer.provide(
+            Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+              namedProjectsRoot: "/projects",
+              isScratchProject: () => Effect.succeed(false),
+            }),
+          ),
+          Layer.provide(Layer.mock(TaskFolders.TaskFolders)({})),
         );
 
         yield* Effect.gen(function* () {
@@ -4100,6 +4271,12 @@ describe("OrchestratorMcpService provider resolution", () => {
     ) =>
       OrchestratorMcpService.layer.pipe(
         Layer.provide(Layer.mock(ThreadLaunchService.ThreadLaunchService)({})),
+        Layer.provide(
+          Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+            namedProjectsRoot: "/projects",
+          }),
+        ),
+        Layer.provide(Layer.mock(TaskFolders.TaskFolders)({})),
         // A new-thread task resolves its base branch.
         Layer.provide(
           Layer.mock(GitVcsDriver.GitVcsDriver)({
@@ -4363,6 +4540,12 @@ describe("OrchestratorMcpService provider resolution", () => {
     ) =>
       OrchestratorMcpService.layer.pipe(
         Layer.provide(Layer.mock(ThreadLaunchService.ThreadLaunchService)({})),
+        Layer.provide(
+          Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+            namedProjectsRoot: "/projects",
+          }),
+        ),
+        Layer.provide(Layer.mock(TaskFolders.TaskFolders)({})),
         Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)(git)),
         Layer.provide(
           Layer.mergeAll(

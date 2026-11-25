@@ -153,6 +153,8 @@ export const ProviderAdapterV2Event = Schema.Union([
     type: Schema.Literal("node.updated"),
     driver: ProviderDriverKind,
     node: OrchestrationV2ExecutionNode,
+    /** Persist recovered activity independently of a run subscription. */
+    sessionScoped: Schema.optional(Schema.Boolean),
   }),
   Schema.Struct({
     type: Schema.Literal("subagent.updated"),

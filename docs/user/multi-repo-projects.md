@@ -151,7 +151,7 @@ What the commands can rely on, and what they must do:
 #### Approve the commands
 
 Onicode runs `create` and `remove` only after you have approved them. The first time you start a
-worktree thread in the project from the web or desktop app, it shows both commands in full and asks.
+worktree thread in the project from the desktop app, it shows both commands in full and asks.
 **Approve and continue** records the approval and starts the thread; **Cancel** leaves your draft as
 it was. You can also review, approve, and revoke each command under **Worktree layout** in the
 project's settings. Approving needs a client that can use the terminal (`terminal:operate`).
@@ -165,7 +165,7 @@ While a command is not approved:
 
 - **Nothing that needs `create` gets a worktree.** A worktree thread started from the mobile app,
   by a scheduled task, or by an agent fails with a message that says so. Approve the command in the
-  web or desktop app, then start it again.
+  desktop app, then start it again.
 - **A thread folder that went missing comes back as plain checkouts**, without the project's
   `create`.
 - **Removing a thread's worktree skips `remove`** and removes the checkouts.

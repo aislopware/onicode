@@ -559,6 +559,8 @@ const CODE_PAGES = new Map([
 const codePage = (value: number) =>
   value === 874 || (value >= 1250 && value <= 1258) ? `windows-${value}` : CODE_PAGES.get(value);
 
+const makeRtfDecoder = (label: string) => new TextDecoder(label, { ignoreBOM: true });
+
 function* rtf(source: string): Generator<string, void> {
   if (!source.startsWith("{\\rtf")) throw new Error("Invalid RTF document");
   let state = {
@@ -569,7 +571,7 @@ function* rtf(source: string): Generator<string, void> {
     font: 0,
     fontTable: false,
     fontFile: false,
-    decoder: new TextDecoder("windows-1252"),
+    decoder: makeRtfDecoder("windows-1252"),
   };
   const stack: Array<typeof state> = [];
   // A font's \cpg, else its \fcharset, not the document code page, encodes its bytes. \cpg0 is
@@ -582,21 +584,28 @@ function* rtf(source: string): Generator<string, void> {
   const hidden = () => state.skip || state.deleted || state.hiddenText;
   let encoded: Uint8Array | undefined;
   let encodedLength = 0;
-  function* flushBytes(): Generator<string, void> {
-    if (!encodedLength) return;
-    const chunk = encoded!.subarray(0, encodedLength);
+  let streaming = false;
+  function* flushBytes(stream = false): Generator<string, void> {
+    if (!encodedLength && (stream || !streaming)) return;
+    const chunk = encodedLength ? encoded!.subarray(0, encodedLength) : undefined;
     encodedLength = 0;
-    yield decoder().decode(chunk);
+    streaming = stream;
+    const decoded = decoder().decode(chunk, { stream });
+    if (decoded) yield decoded;
   }
   function* emitByte(byte: number): Generator<string, void> {
     // No supported multibyte code page uses bytes below 0x30 as trail bytes.
-    if ((!encodedLength && byte < 128) || (encodedLength && byte < 0x30)) {
+    if (!encodedLength && !streaming && byte < 128) {
+      yield String.fromCharCode(byte);
+      return;
+    }
+    if ((encodedLength || streaming) && byte < 0x30) {
       yield* flushBytes();
       yield String.fromCharCode(byte);
       return;
     }
-    encoded ??= new Uint8Array(Math.min(source.length, MAX_OUTPUT * 3 + 4));
-    if (encodedLength === encoded.length) yield* flushBytes();
+    encoded ??= new Uint8Array(Math.min(source.length, 64 * 1024));
+    if (encodedLength === encoded.length) yield* flushBytes(true);
     encoded[encodedLength++] = byte;
   }
   const symbols = new Map([
@@ -686,13 +695,13 @@ function* rtf(source: string): Generator<string, void> {
           else {
             const charsetPage = FONT_CODE_PAGES.get(value);
             const label = charsetPage === undefined ? undefined : codePage(charsetPage);
-            if (label) fontCharsets.set(state.font, new TextDecoder(label));
+            if (label) fontCharsets.set(state.font, makeRtfDecoder(label));
           }
         } else if (control === "cpg" && state.fontTable && !state.fontFile) {
           if (value === 0) fontCodePages.delete(state.font);
           else {
             const label = codePage(value);
-            if (label) fontCodePages.set(state.font, new TextDecoder(label));
+            if (label) fontCodePages.set(state.font, makeRtfDecoder(label));
           }
         }
         if (control === "deleted") state.deleted = value !== 0;
@@ -702,11 +711,11 @@ function* rtf(source: string): Generator<string, void> {
           state.hiddenText = false;
           state.font = defaultFont;
         }
-        if (control === "mac") state.decoder = new TextDecoder("macintosh");
+        if (control === "mac") state.decoder = makeRtfDecoder("macintosh");
         else if (control === "ansicpg") {
           const label = codePage(value);
           if (!label) throw new Error("Unsupported RTF code page");
-          state.decoder = new TextDecoder(label);
+          state.decoder = makeRtfDecoder(label);
         } else if (control === "uc") {
           if (!Number.isSafeInteger(value) || value < 0)
             throw new Error("Invalid RTF fallback count");

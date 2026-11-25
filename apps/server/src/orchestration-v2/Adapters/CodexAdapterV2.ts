@@ -2573,6 +2573,25 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
         }
         // Commands settled as cancelled, by turn, while their item/completed may still arrive.
         const unknownOutcomeCommandItemsByTurn = yield* Ref.make(new Map<string, Set<string>>());
+        const clearUnknownOutcomeCommandItems = (nativeTurnId: string) =>
+          Ref.modify(unknownOutcomeCommandItemsByTurn, (current) => {
+            const items = current.get(nativeTurnId);
+            if (items === undefined) return [undefined, current] as const;
+            const updated = new Map(current);
+            updated.delete(nativeTurnId);
+            return [items, updated] as const;
+          });
+        const turnBelongsToProviderThread = (
+          context: ActiveCodexTurnContext,
+          providerThreadId: OrchestrationV2ProviderThread["id"],
+        ): boolean => {
+          let cursor: ActiveCodexTurnContext | undefined = context;
+          while (cursor !== undefined) {
+            if (cursor.providerThread.id === providerThreadId) return true;
+            cursor = cursor.subagent?.parentContext;
+          }
+          return false;
+        };
         const terminalizedNonCompletedNativeTurns = yield* Ref.make(new Set<string>());
         // Keep the stream open until descendants settle to avoid stranding child projections.
         const deferredRootTerminals = yield* Ref.make(new Map<string, DeferredCodexRootTerminal>());
@@ -3171,6 +3190,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           status: "interrupted" | "failed" | "cancelled",
           completedAt: DateTime.Utc,
           only?: ReadonlySet<string>,
+          sessionScoped = false,
         ) {
           const items = (yield* Ref.get(runningCommandItemsByTurn)).get(nativeTurnId);
           if (items === undefined || items.size === 0) {
@@ -3229,11 +3249,13 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               type: "node.updated",
               driver: CODEX_PROVIDER,
               node,
+              ...(sessionScoped ? { sessionScoped: true } : {}),
             });
             yield* emitProviderEvent({
               type: "turn_item.updated",
               driver: CODEX_PROVIDER,
               turnItem,
+              ...(sessionScoped ? { sessionScoped: true } : {}),
             });
           }
         });
@@ -3340,6 +3362,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                   "cancelled",
                   yield* DateTime.now,
                   exited,
+                  true,
                 );
                 // Keep the settled context: a late item/completed still routes its result and wake.
                 for (const itemId of exited) yield* clearRunningCommandItem(nativeTurnId, itemId);
@@ -5933,8 +5956,13 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               const commands = (yield* Ref.get(runningCommandItemsByTurn)).get(
                 context.nativeTurnId,
               );
-              if (commands !== undefined) {
-                context.closedCommandItemIds = new Set(commands.keys());
+              const unknownCommands = yield* clearUnknownOutcomeCommandItems(context.nativeTurnId);
+              if (commands !== undefined || unknownCommands !== undefined) {
+                context.closedCommandItemIds = new Set([
+                  ...(context.closedCommandItemIds ?? []),
+                  ...(commands?.keys() ?? []),
+                  ...(unknownCommands ?? []),
+                ]);
               }
               yield* terminalizeRunningCommandItems(
                 context,
@@ -6256,6 +6284,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 type: "node.updated",
                 driver: CODEX_PROVIDER,
                 node: artifacts.node,
+                ...(settledUnknown ? { sessionScoped: true } : {}),
               });
               yield* emitProviderEvent({
                 type: "turn_item.updated",
@@ -9065,6 +9094,26 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 }
                 yield* client.request("thread/unsubscribe", { threadId: nativeThreadId });
               }
+              // Unloading stops notifications for this thread, so unknown-outcome commands cannot keep turns pinned.
+              yield* turnTerminalizationPermit.withPermits(1)(
+                Effect.gen(function* () {
+                  for (const context of (yield* Ref.get(settledTurns)).values()) {
+                    if (!turnBelongsToProviderThread(context, unloadInput.providerThread.id)) {
+                      continue;
+                    }
+                    const unknownCommands = yield* clearUnknownOutcomeCommandItems(
+                      context.nativeTurnId,
+                    );
+                    if (unknownCommands !== undefined) {
+                      context.closedCommandItemIds = new Set([
+                        ...(context.closedCommandItemIds ?? []),
+                        ...unknownCommands,
+                      ]);
+                    }
+                    yield* releaseSettledTurnIfIdle(context.nativeTurnId);
+                  }
+                }),
+              );
               // No turn/completed arrives for an unloaded thread, so a Stop Codex never
               // confirmed would otherwise keep its turn open for the life of the session.
               const interrupting = yield* Ref.get(interruptingNativeTurns);
@@ -9411,6 +9460,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                         updated.delete(context.nativeTurnId);
                         return updated;
                       });
+                      yield* clearUnknownOutcomeCommandItems(context.nativeTurnId);
                       yield* clearImageWork(context);
                       yield* releaseSettledTurnIfIdle(context.nativeTurnId);
                     }

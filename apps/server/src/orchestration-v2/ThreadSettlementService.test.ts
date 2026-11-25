@@ -1350,14 +1350,68 @@ describe("ThreadSettlementServiceV2 worker", () => {
             title: "Parent",
           },
         };
+        const delegatedHeld: OrchestrationV2AppThread = {
+          ...appThread("delegated-held", null),
+          branch: "feature",
+          delegatedFrom: {
+            environmentId: EnvironmentId.make("environment-elsewhere"),
+            threadId: ThreadId.make("parent-elsewhere"),
+            title: "Parent",
+          },
+        };
         const ordinary = { ...appThread("ordinary", null), branch: "feature" };
-        for (const thread of [delegated, ordinary]) {
+        for (const thread of [delegated, delegatedHeld, ordinary]) {
           yield* store.apply({
             type: "thread.created",
             id: EventId.make(`created:${thread.id}`),
             threadId: thread.id,
             occurredAt: thread.createdAt,
             payload: thread,
+          });
+        }
+        for (const run of [
+          {
+            id: RunId.make("run:delegated-held:1"),
+            threadId: delegatedHeld.id,
+            ordinal: 1,
+            providerInstanceId: delegatedHeld.providerInstanceId,
+            modelSelection: delegatedHeld.modelSelection,
+            providerThreadId: null,
+            userMessageId: MessageId.make("message:delegated-held:1"),
+            rootNodeId: null,
+            activeAttemptId: null,
+            status: "failed" as const,
+            requestedAt: DateTime.makeUnsafe(NOW),
+            startedAt: DateTime.makeUnsafe(NOW),
+            completedAt: DateTime.makeUnsafe(NOW),
+            checkpointId: null,
+            contextHandoffId: null,
+          },
+          {
+            id: RunId.make("run:delegated-held:2"),
+            threadId: delegatedHeld.id,
+            ordinal: 2,
+            providerInstanceId: delegatedHeld.providerInstanceId,
+            modelSelection: delegatedHeld.modelSelection,
+            providerThreadId: null,
+            userMessageId: MessageId.make("message:delegated-held:2"),
+            rootNodeId: null,
+            activeAttemptId: null,
+            status: "queued" as const,
+            queueHeld: true,
+            requestedAt: DateTime.makeUnsafe(NOW),
+            startedAt: null,
+            completedAt: null,
+            checkpointId: null,
+            contextHandoffId: null,
+          },
+        ] satisfies ReadonlyArray<OrchestrationV2Run>) {
+          yield* store.apply({
+            type: "run.created",
+            id: EventId.make(`created:${run.id}`),
+            threadId: run.threadId,
+            occurredAt: DateTime.makeUnsafe(NOW),
+            payload: run,
           });
         }
         const fixture = yield* makeHarness({
