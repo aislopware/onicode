@@ -122,6 +122,7 @@ import { PullRequestMarkdownContext } from "./PullRequestMarkdown";
 import { pullRequestMarkdownExtensions } from "./pullRequestMarkdown.logic";
 import { PullRequestComposer } from "./PullRequestComposer";
 import { PullRequestSummaryTab } from "./PullRequestSummaryTab";
+import { isScrollTopHeld } from "./holdLinkedNodeInView";
 import { PullRequestTimelineTab } from "./PullRequestTimelineTab";
 import {
   buildAddSelectionToAgentHandoff,
@@ -350,6 +351,10 @@ function linkedTab(anchor: PullRequestAnchor | null): PullRequestDetailTab | nul
 // The Summary restores its scroll on remount; a header left expanded would condense over the
 // restored position and its scroll compensation would move the view.
 const summaryCondensedByScopeKey = new Map<string, boolean>();
+
+export function resetSummaryCondensedForTests(): void {
+  summaryCondensedByScopeKey.clear();
+}
 
 export function PullRequestDetailPanel({
   environmentId,
@@ -2110,6 +2115,8 @@ export function PullRequestDetailPanel({
         onScrollCapture={(event) => {
           const scroller = scrollerByTab.current[tab];
           if (event.target !== scroller || scroller === null || scroller === undefined) return;
+          // A restore clamped by content still loading is not the reader leaving the top.
+          if (isScrollTopHeld(scroller)) return;
           const top = scroller.scrollTop;
           const previous = condensedByTab[tab] ?? false;
           const foldHeight = foldRef.current?.scrollHeight ?? 0;

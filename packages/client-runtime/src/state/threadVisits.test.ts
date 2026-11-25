@@ -38,6 +38,7 @@ function setup(threadName: string, initial: Omit<Shell, "environmentId" | "id"> 
   let pendingResult: Effect.Effect<void, string> | undefined;
   const attempts: Array<VisitThreadInput> = [];
   const sessionGenerationAtom = Atom.make(1);
+  const viewingAtom = Atom.make(true);
   const tracker = createThreadVisitTracker({
     threadShellAtom: () => shellAtom,
     sessionGenerationAtom: () => sessionGenerationAtom,
@@ -55,6 +56,7 @@ function setup(threadName: string, initial: Omit<Shell, "environmentId" | "id"> 
         }),
     },
     markLocalVisit: (_ref, visitedAt) => localVisits.push(visitedAt),
+    viewingAtom,
   });
   const registry = AtomRegistry.make();
   return {
@@ -69,6 +71,7 @@ function setup(threadName: string, initial: Omit<Shell, "environmentId" | "id"> 
     },
     reconnect: () => registry.set(sessionGenerationAtom, registry.get(sessionGenerationAtom) + 1),
     mount: () => registry.mount(tracker(ref)),
+    setViewing: (value: boolean) => registry.set(viewingAtom, value),
     setOnline: (value: boolean) => {
       online = value;
     },
@@ -189,6 +192,21 @@ it("drops a pending visit when the thread is no longer viewed", () => {
   unmount();
   vi.advanceTimersByTime(VISIT_DISPATCH_THROTTLE_MS);
   expect(t.visits).toHaveLength(1);
+});
+
+it("claims the open only once the thread is seen", () => {
+  using t = setup("thread-unseen-mount", {
+    updatedAt: at(10),
+    lastVisitedAt: at(0),
+    latestRun: null,
+  });
+  t.setViewing(false);
+  const unmount = t.mount();
+  unmount();
+  vi.runOnlyPendingTimers();
+  t.setViewing(true);
+  t.mount();
+  expect(t.visits).toEqual([{ threadId: t.ref.threadId, visitedAt: at(10), opened: true }]);
 });
 
 it("sends the open with the first visit when the shell arrives after the thread is shown", () => {

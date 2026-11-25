@@ -15,7 +15,7 @@ import {
 } from "../../lib/snapShotShortcut";
 import { SnapShotShortcutKeys } from "../desktop/SnapShotShortcutKeys";
 import { Button } from "../ui/button";
-import { keybindingFromKeyboardEvent } from "./KeybindingsSettings.logic";
+import { isBareEscape, keybindingFromKeyboardEvent } from "./KeybindingsSettings.logic";
 import { createRecordingRequestTracker } from "./SnapShotSettings.logic";
 
 const MODIFIER_FROM_KEY: Readonly<Record<string, SnapShotModifier>> = {
@@ -93,7 +93,7 @@ export function useSnapShotShortcutRecorder({
     if (!recording || event.key === "Tab" || event.repeat) return;
     event.preventDefault();
     event.stopPropagation();
-    if (event.key === "Escape") {
+    if (isBareEscape(event)) {
       stopRecording();
       return;
     }

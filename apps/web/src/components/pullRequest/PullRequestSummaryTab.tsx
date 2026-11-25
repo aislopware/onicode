@@ -1,6 +1,6 @@
 import { pullRequestCommentPreview } from "./pullRequestMarkdown.logic";
 import { parsePullRequestAnchor } from "@onicode/shared/pullRequestAnchor";
-import { holdLinkedNodeInView, holdScrollTop } from "./holdLinkedNodeInView";
+import { holdLinkedNodeInView, holdScrollTop, isScrollTopHeld } from "./holdLinkedNodeInView";
 import { useAtomValue } from "@effect/atom-react";
 import { sourceControlClients } from "@onicode/client-runtime/source-control-clients";
 import { useAtomCommand } from "~/state/use-atom-command";
@@ -480,6 +480,10 @@ interface SummaryView {
 // Session-only: switching right-panel tabs unmounts the Summary, which comes back as it was left.
 const summaryViewByScopeKey = new Map<string, SummaryView>();
 
+export function resetSummaryViewsForTests(): void {
+  summaryViewByScopeKey.clear();
+}
+
 const COMMENT_FILTER_STORAGE_KEY = "onicode:pull-request-comment-filter:v1";
 const CommentFilterSchema = Schema.Struct({ bots: Schema.Boolean, resolved: Schema.Boolean });
 const DEFAULT_COMMENT_FILTER: typeof CommentFilterSchema.Type = { bots: false, resolved: false };
@@ -674,8 +678,6 @@ export function PullRequestSummaryTab({
     }
   }
   const stopHolding = useRef<(() => void) | null>(null);
-  // A restore clamped by content still loading must not overwrite the saved position.
-  const restoringScroll = useRef(false);
   const revealSummary = useEffectEvent(() => {
     const root = scrollRef.current;
     if (revealUrl === undefined || !root) return;
@@ -717,10 +719,7 @@ export function PullRequestSummaryTab({
   useLayoutEffect(() => {
     const scrollTop = summaryViewByScopeKey.get(viewKey)?.scrollTop ?? 0;
     if (!scrollRef.current || scrollTop === 0) return;
-    restoringScroll.current = true;
-    stopHolding.current = holdScrollTop(scrollRef.current, scrollTop, () => {
-      restoringScroll.current = false;
-    });
+    stopHolding.current = holdScrollTop(scrollRef.current, scrollTop);
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- restores once per mount
   }, []);
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- the hold observes DOM outside React and must end with the tab
@@ -923,7 +922,10 @@ export function PullRequestSummaryTab({
         scrollerRef(node);
       }}
       onScroll={(event) => {
-        if (!restoringScroll.current) rememberView({ scrollTop: event.currentTarget.scrollTop });
+        // A restore clamped by content still loading must not overwrite the saved position.
+        if (!isScrollTopHeld(event.currentTarget)) {
+          rememberView({ scrollTop: event.currentTarget.scrollTop });
+        }
       }}
       tabIndex={-1}
       data-workspace-focus-default

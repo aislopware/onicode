@@ -38,21 +38,25 @@ export function holdLinkedNodeInView(
   return stop;
 }
 
+const heldScrollers = new WeakSet<HTMLElement>();
+
+/** Whether `scroller` is being put back by `holdScrollTop`, so its scrolls are not the reader's. */
+export function isScrollTopHeld(scroller: HTMLElement): boolean {
+  return heldScrollers.has(scroller);
+}
+
 /**
  * Keeps the scroller at `scrollTop` while content loads in under it, until the user scrolls or the
  * returned stop runs. A remounted tab can render before the content that reached that offset.
  */
-export function holdScrollTop(
-  scroller: HTMLElement,
-  scrollTop: number,
-  onStop: () => void,
-): () => void {
+export function holdScrollTop(scroller: HTMLElement, scrollTop: number): () => void {
   const controller = new AbortController();
   const stop = () => {
     unobserve();
     controller.abort();
-    onStop();
+    heldScrollers.delete(scroller);
   };
+  heldScrollers.add(scroller);
   const unobserve = observeResize([...scroller.children], () => {
     scroller.scrollTop = scrollTop;
   });

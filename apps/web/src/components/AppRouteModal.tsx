@@ -130,16 +130,18 @@ export function AppRouteModal({ label, children }: { label: string; children: Re
   // buttons). Below sm the modal fills the window and leaves that strip empty; up to lg its
   // 1.5rem inset is shorter than the strip.
   const nativeTitlebarHeight = useNativeTitlebarHeight();
-  // Leaving the page without closing (Navigation: Back) unmounts a focused field during a
-  // commit, when React no longer delivers its blur, so commit-on-blur rows would drop what was
-  // typed. Blur text fields before the navigation renders; other controls keep their focus.
+  // Leaving the page, or a search its content is keyed by (a settings scope or provider instance),
+  // without closing (Navigation: Back) unmounts a focused field during a commit, when React no
+  // longer delivers its blur, so commit-on-blur rows would drop what was typed. Blur text fields
+  // before the navigation renders. No field here writes the search as it is typed.
   // Not onBeforeNavigate: the router skips it while a past redirect is still recorded.
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- router listener that blurs a field before navigation unmounts it
   useEffect(
     () =>
-      router.subscribe("onBeforeLoad", ({ pathChanged }) => {
+      router.subscribe("onBeforeLoad", ({ pathChanged, fromLocation, toLocation }) => {
+        const remounts = pathChanged || fromLocation?.searchStr !== toLocation.searchStr;
         const focused = document.activeElement;
-        if (pathChanged && focused?.matches("input, textarea, [contenteditable]")) {
+        if (remounts && focused?.matches("input, textarea, [contenteditable]")) {
           blurFocusedWithin(popupRef.current);
         }
       }),

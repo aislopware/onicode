@@ -11,6 +11,7 @@ vi.mock(import("~/state/server"), async (original) => {
   return { ...(await original()), projectScriptsPermissionAtom: () => allowed };
 });
 
+import { registerCommands } from "~/shortcuts/dispatcher";
 import {
   EMPTY_PROJECT_SCRIPT_INPUT,
   ProjectScriptEditorDialog,
@@ -98,5 +99,38 @@ describe("project action editor dismissal", () => {
     await userEvent.click(document.body, { position: { x: 1, y: 1 } });
 
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("records Shift+Esc as the keybinding, and closes on a bare Esc", async () => {
+    setup();
+    await using screen = await render(null);
+    await open(screen, { scriptId: null, initial: EMPTY_PROJECT_SCRIPT_INPUT });
+    const field = page.getByRole("textbox", { name: "Keybinding" });
+    await userEvent.click(field);
+
+    await userEvent.keyboard("{Shift>}{Escape}{/Shift}");
+    await expect.element(field).toHaveValue("shift+esc");
+    expect(onClose).not.toHaveBeenCalled();
+
+    await userEvent.keyboard("{Escape}");
+    expect(onClose).toHaveBeenCalled();
+    await expect.element(field).toHaveValue("shift+esc");
+  });
+
+  it("takes keys that workspace shortcuts capture", async () => {
+    setup();
+    await using screen = await render(null);
+    await open(screen, { scriptId: null, initial: EMPTY_PROJECT_SCRIPT_INPUT });
+    const consumed = vi.fn((event: KeyboardEvent) => event.stopPropagation());
+    using _scope = {
+      [Symbol.dispose]: registerCommands({}, { capture: true, onKeyDown: consumed }),
+    };
+    const field = page.getByRole("textbox", { name: "Keybinding" });
+    await userEvent.click(field);
+
+    await userEvent.keyboard("{F6}");
+
+    await expect.element(field).toHaveValue("f6");
+    expect(consumed).not.toHaveBeenCalled();
   });
 });

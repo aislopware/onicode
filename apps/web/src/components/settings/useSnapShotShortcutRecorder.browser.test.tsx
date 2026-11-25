@@ -70,3 +70,15 @@ it("ignores late suppression acknowledgements after cancellation", async () => {
   expect(suppress).toHaveBeenLastCalledWith(false);
   expect(recorded).not.toHaveBeenCalled();
 });
+
+it("records Shift+Esc instead of cancelling", async () => {
+  setup();
+  using _platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64");
+  await using screen = await renderRecorder();
+  await screen.start();
+
+  await userEvent.keyboard("{Shift>}{Escape}{/Shift}");
+
+  expect(recorded).toHaveBeenCalledWith(expect.objectContaining({ key: "escape", shiftKey: true }));
+  await screen.expectRecording(false);
+});
