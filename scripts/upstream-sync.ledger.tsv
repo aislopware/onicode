@@ -3813,3 +3813,4 @@ f811978eef	take	fix(web): Esc in Theme Editor color filter clears the filter wit
 eb7cc44727	take	fix(web): showing or hiding a requested secret keeps the caret in place (#42309)
 796103f4b7	skip	removed surface: agent feedback and analytics (FeedbackStore and AnalyticsService are removed in Onicode)
 11edf884bc	take	fix(web,mobile): workflowChip keeps non-BMP characters intact (#42409)
+dc7b8802b8	skip	removed surface: T3 Connect relay tracing opt-outs and scrubbing (T3 Connect, relay tracing, and mobile observability are removed in Onicode)
