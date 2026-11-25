@@ -3793,3 +3793,4 @@ ece5f21b17	skip	removed surface: T3 Connect device sign-in notices (ConnectDevic
 457a52eb0a	take	fix(web): opening a resolved PR comment keeps its toggle under the cursor (#42312)
 e87df609e6	take	fix(web): large SVG project icons come back after their link expires (#42329)
 8261b23226	take	fix(server): Antigravity quota failures keep the 'Resets in' reset time (#42339)
+8a5dbb4095	take	fix(server): file listing keeps gitignore status when a filename looks like a git pathspec (#42333)
