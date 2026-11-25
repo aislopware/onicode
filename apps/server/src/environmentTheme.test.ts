@@ -880,6 +880,48 @@ describe("environment theme", () => {
     );
   });
 
+  it.live.skipIf(!symlinksSupported)(
+    "follows an empty themes folder replaced by a symlink to an empty or missing directory",
+    () =>
+      Effect.gen(function* () {
+        for (const createTargetFirst of [true, false]) {
+          yield* withEnvironmentThemes(
+            {},
+            Effect.gen(function* () {
+              const service = yield* EnvironmentTheme.EnvironmentThemeService;
+              const { environmentThemesDir } = yield* ServerConfig.ServerConfig;
+              const fs = yield* FileSystem.FileSystem;
+              const path = yield* Path.Path;
+              const fixture = yield* fs.makeTempDirectoryScoped({
+                prefix: "onicode-linked-empty-themes-",
+              });
+              const target = path.join(fixture, "elsewhere", "themes");
+              if (createTargetFirst) {
+                yield* fs.makeDirectory(target, { recursive: true });
+              }
+
+              const snapshots = yield* service.streamChanges.pipe(
+                Stream.map((themes) => themes.map((theme) => theme.name)),
+                Stream.toQueue({ capacity: "unbounded" }),
+              );
+              assert.deepEqual(yield* Queue.take(snapshots), []);
+
+              yield* fs.rename(environmentThemesDir, path.join(fixture, "original"));
+              yield* fs.symlink(target, environmentThemesDir);
+              if (!createTargetFirst) {
+                yield* fs.makeDirectory(target, { recursive: true });
+              }
+              yield* fs.writeFileString(
+                path.join(target, "shared-light.json"),
+                encodeThemeFile(SHARED_THEME),
+              );
+              assert.deepEqual(yield* Queue.take(snapshots), ["Shared Light"]);
+            }),
+          );
+        }
+      }),
+  );
+
   it.effect("does not charge skipped files against the total size limit", () =>
     withEnvironmentThemes(
       {

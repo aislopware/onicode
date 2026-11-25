@@ -325,24 +325,40 @@ const make = Effect.gen(function* () {
   const watcherScope = yield* Scope.make("sequential");
   yield* Effect.addFinalizer(() => Scope.close(watcherScope, Exit.void));
 
-  // The directory's entries as of the last read. Files past the cap are never themes' own.
-  const directoryIdentity = fs.readDirectory(environmentThemesDir).pipe(
-    Effect.flatMap((entries) =>
-      Effect.forEach(
-        entries.toSorted().slice(0, MAX_THEME_FILES * 4),
-        (entry) =>
-          fs.stat(`${environmentThemesDir}/${entry}`).pipe(
-            Effect.map(
-              (info) =>
-                `${entry}:${Option.getOrUndefined(info.ino)}:${Option.getOrUndefined(info.mtime)?.getTime()}:${info.size}`,
-            ),
-            Effect.orElseSucceed(() => entry),
-          ),
-        { concurrency: 8 },
-      ),
-    ),
-    Effect.map((entries) => entries.join("\n")),
+  // The directory's own entry/link identity plus its entries as of the last read. Including the
+  // entry's lstat and link target catches a plain empty folder replaced by a link at start-up even
+  // if the parent watch missed it. Files past the cap are never themes' own.
+  const entryIdentity = fs.lstat(environmentThemesDir).pipe(
+    Effect.flatMap((info) => {
+      const id = `${info.dev}:${Option.getOrUndefined(info.ino)}:${Option.getOrUndefined(info.birthtime)?.getTime()}`;
+      return fs.readLink(environmentThemesDir).pipe(
+        Effect.map((link) => `link:${id}:${link}`),
+        Effect.orElseSucceed(() => `plain:${id}`),
+      );
+    }),
     Effect.orElseSucceed(() => MISSING_DIRECTORY),
+  );
+  const directoryIdentity = Effect.zipWith(
+    entryIdentity,
+    fs.readDirectory(environmentThemesDir).pipe(
+      Effect.flatMap((entries) =>
+        Effect.forEach(
+          entries.toSorted().slice(0, MAX_THEME_FILES * 4),
+          (entry) =>
+            fs.stat(`${environmentThemesDir}/${entry}`).pipe(
+              Effect.map(
+                (info) =>
+                  `${entry}:${Option.getOrUndefined(info.ino)}:${Option.getOrUndefined(info.mtime)?.getTime()}:${info.size}`,
+              ),
+              Effect.orElseSucceed(() => entry),
+            ),
+          { concurrency: 8 },
+        ),
+      ),
+      Effect.map((entries) => entries.join("\n")),
+      Effect.orElseSucceed(() => MISSING_DIRECTORY),
+    ),
+    (root, entries) => (root === MISSING_DIRECTORY ? MISSING_DIRECTORY : `${root}\n${entries}`),
   );
   const readIdentity = yield* SubscriptionRef.make("");
 
