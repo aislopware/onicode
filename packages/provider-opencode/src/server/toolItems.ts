@@ -1,4 +1,5 @@
 import type { OrchestrationV2TurnItem } from "@onicode/contracts";
+import { parseGrepOutput } from "@onicode/shared/grepOutput";
 import { HTML_RENDER_TOOL_NAME } from "@onicode/shared/htmlRender";
 import { resolveOniMcpToolId } from "@onicode/shared/oniMcpToolPresentation";
 import { formatReadToolLabel, formatSearchToolLabel } from "@onicode/shared/toolActivity";
@@ -316,7 +317,9 @@ export function openCodeToolTurnItem(
           ? {}
           : {
               results: [
-                { fileName: searchRoot, preview: output.slice(0, SEARCH_PREVIEW_MAX_CHARS) },
+                ...(parseGrepOutput(output, searchRoot) ?? [
+                  { fileName: searchRoot, preview: output.slice(0, SEARCH_PREVIEW_MAX_CHARS) },
+                ]),
               ],
             }),
       };
