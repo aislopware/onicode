@@ -2,6 +2,7 @@ import { msg, T, useGT, useMessages } from "gt-react";
 import { memo, useEffect, useRef, useState } from "react";
 import { m, type MessageResolver } from "../../i18n/messages";
 import { isThemeColor, themeColorToHex, type ThemeColorRole } from "../../themePalette";
+import { isImeKeyDown } from "../../lib/imeKeyDown";
 import { cn } from "../../lib/utils";
 import { hexToHsv, hsvToHex, type HsvColor } from "../../lib/color";
 import { ColorHueSlider, ColorSaturationValuePlane } from "../ui/color-picker";
@@ -272,6 +273,15 @@ function ThemeColorPicker({
   return (
     <Popover
       onOpenChange={(open, eventDetails) => {
+        // Base UI's dismiss skips composing keys but not a bare keyCode 229 from an IME.
+        if (
+          !open &&
+          eventDetails.reason === "escape-key" &&
+          eventDetails.event instanceof KeyboardEvent &&
+          isImeKeyDown(eventDetails.event)
+        ) {
+          return eventDetails.cancel();
+        }
         cancelledRef.current = !open && eventDetails.reason === "escape-key";
         if (open) {
           onEditStart?.();
