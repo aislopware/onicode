@@ -3790,3 +3790,4 @@ ddaba13471	skip	kept Onicode's ProjectService.writeProjectSettings + updateProje
 a149bdc4f6	take	fix(web): Voice Models language menu resets its search filter on close (#42321)
 ece5f21b17	skip	removed surface: T3 Connect device sign-in notices (ConnectDeviceApprovalCoordinator and AuthConnectDevice are removed in Onicode)
 902d369808	take	fix(web): new-commits banner on a PR spans the full header width (#42342)
+457a52eb0a	take	fix(web): opening a resolved PR comment keeps its toggle under the cursor (#42312)
