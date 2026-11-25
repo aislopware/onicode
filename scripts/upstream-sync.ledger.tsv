@@ -3804,3 +3804,4 @@ c39c21f870	take	fix(web): Esc in a font family field closes Settings when no edi
 4eccb0ecfc	skip	removed surface: relay HTTP tracing (infra/relay is removed in Onicode)
 f1e0c0b2eb	take	fix(server): source control discovery no longer runs the auth command of a CLI that is not installed (#42379); kept Onicode's sign-out assertion in SourceControlProviderRegistry.test.ts
 571ed76fc3	take	fix(web): sidebar issue and pull request badges share one component (#42275); kept Onicode's useSidebarLinkedIssue live title in SidebarThreadRow.tsx and issueSummaries parameterization in ChatView.browser.test.tsx while adopting upstream's shared ThreadLinkBadge
+3380585e1b	skip	removed surface: relay and Clerk account deletion webhook (infra/relay, Clerk, and packages/contracts/src/relay.ts are removed in Onicode)
