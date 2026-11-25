@@ -3830,3 +3830,4 @@ c9ba6b4b6e	skip	removed surface: relay account deletion tunnel connectors (infra
 c6162da7ec	take	fix(server): skipped workflow runs no longer keep their webhook payloads forever (#42353); migration 113->122, kept Onicode's LabsSettingsPanel without Clerk/GuestLinks/AgentFeedback and settings.ts without guestSharingEnabled
 16742ca802	take	feat(usage): support user-hosted HTTP quota sources (#41291); kept Onicode's 4-arg layerWsRpc and non-relay compatibility/resolver tests
 6e044b4ff7	take	perf(server): workflow queries use indexes instead of scanning every run (#42341); migration 114->123
+cb09dea14d	take	fix(shared): chunked Markdown previews keep a link definition right after a code fence (#42427); kept Onicode's incremental MarkdownSplitResume/withoutComments engine and adopted upstream's <!(--) lookahead and openedFence tracking

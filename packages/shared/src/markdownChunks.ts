@@ -18,7 +18,8 @@ const ORDERED_ITEM = /^\d{1,9}[.)](?:[ \t]|\r?$)/;
 // CommonMark HTML blocks of types 1-5 and display math run past blank lines until their closer.
 const SPANNING_BLOCKS: ReadonlyArray<readonly [open: RegExp, close: RegExp]> = [
   [/^ {0,3}<(?:script|pre|style|textarea)(?=[\s>]|$)/i, /<\/(?:script|pre|style|textarea)>/i],
-  [/^ {0,3}<!--/, /-->/],
+  // "<!-->" and "<!--->" close themselves, so the closer is searched from just after "<!".
+  [/^ {0,3}<!(?=--)/, /-->/],
   [/^ {0,3}<\?/, /\?>/],
   [/^ {0,3}<!\[CDATA\[/, /\]\]>/],
   [/^ {0,3}<![A-Za-z]/, />/],
@@ -101,8 +102,7 @@ function blockCloser(line: string): ((line: string) => boolean) | null {
   for (const [open, close] of SPANNING_BLOCKS) {
     const opener = open.exec(line)?.[0];
     if (opener === undefined) continue;
-    // `<!-->` and `<!--->` end where they start.
-    const rest = line.slice(opener.endsWith("<!--") ? opener.length - 2 : opener.length);
+    const rest = line.slice(opener.length);
     return close.test(rest) ? null : (next) => close.test(next);
   }
   // Other HTML blocks (CommonMark types 6 and 7) run until a blank line.
@@ -235,6 +235,7 @@ function scanMarkdown(
   let lines: string[] = [];
   let chars = 0;
   let closes: ((line: string) => boolean) | null = null;
+  let openedFence = false;
   // A cut needs no open wrapper, so a resumed scan starts with none.
   let openWrappers = 0;
   let wrapperStart = 0;
@@ -259,6 +260,7 @@ function scanMarkdown(
     const blockBefore = closes;
     if (inFrontmatter) {
       // Masked to blank lines, so nothing inside is a cut, a block or a definition.
+      openedFence = false;
     } else if (closes !== null) {
       if (closes(line)) closes = null;
     } else {
@@ -295,8 +297,10 @@ function scanMarkdown(
         }
       }
       closes = blockCloser(line);
-      // A definition cannot interrupt a paragraph, so it follows a blank line, a heading or
-      // another definition.
+      // An indented fence may sit in a list item, which this does not track.
+      openedFence = /^[`~]/.test(line) && FENCE_OPEN.test(line);
+      // A definition cannot interrupt a paragraph, so it follows a blank line, a heading,
+      // a closing code fence or another definition.
       const definition: boolean =
         (offset === 0 || afterBlankLine || afterDefinition || afterHeading) &&
         LINK_DEFINITION.test(line);
@@ -355,6 +359,7 @@ function scanMarkdown(
       lines = [];
       chars = 0;
       closes = null;
+      openedFence = false;
       openWrappers = 0;
       wrapperStart = 0;
       commentIn = null;
@@ -364,7 +369,10 @@ function scanMarkdown(
       continue;
     }
     afterBlankLine = inFrontmatter || line.trim() === "";
-    afterHeading = closes === null && (ATX_HEADING.test(line) || THEMATIC_BREAK.test(line));
+    afterHeading =
+      !inFrontmatter &&
+      closes === null &&
+      (openedFence || ATX_HEADING.test(line) || THEMATIC_BREAK.test(line));
     offset += line.length + 1;
     linesBefore++;
   }
