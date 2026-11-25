@@ -275,12 +275,31 @@ it.layer(NodeServices.layer)("EventNdjsonLogger", (it) => {
         { type: "thinking-delta", text: "Hmm" },
         { type: "token-delta", tokens: 3 },
         { type: "shell-output-delta", event: { stdout: "a.ts\n" } },
+        {
+          type: "shell-tool-call-delta",
+          callId: "call-1",
+          modelCallId: "m-1",
+          stream: "stdout",
+          content: "a.ts\n",
+        },
         { type: "partial-tool-call", callId: "call-1", modelCallId: "m-1", toolCall },
         {
           type: "tool-call-delta",
           callId: "call-1",
           modelCallId: "m-1",
           taskUpdate: { type: "text-delta", text: "Sub" },
+        },
+        {
+          type: "tool-call-delta",
+          callId: "call-2",
+          modelCallId: "m-2",
+          taskUpdate: {
+            type: "shell-tool-call-delta",
+            callId: "call-3",
+            modelCallId: "m-3",
+            stream: "stderr",
+            content: "warn\n",
+          },
         },
       ].map(cursorUpdate);
       const retained = [
