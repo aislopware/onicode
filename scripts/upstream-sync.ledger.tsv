@@ -3875,3 +3875,4 @@ ea63274413	skip	kept Onicode's vite-plus 1.8.0 upgrade and highlightedCodeNodes:
 b8be2287dc	skip	kept Onicode's Reanimated 4.8 upgrade: Onicode already ships react-native-reanimated 4.8.0, react-native-worklets 0.14.0, ENABLE_SHARED_ELEMENT_TRANSITIONS: false, and an identical patches/react-native-reanimated@4.8.0.patch
 2514a5ce5e	take	fix(pr): keep CI approval in sync with running checks (#42523)
 c621d5fe68	take	fix(i18n): i18n:check no longer fails on Windows (#42510)
+38adba87b3	take	fix(server): Claude no longer shows "Connecting" on every turn (#42508)
