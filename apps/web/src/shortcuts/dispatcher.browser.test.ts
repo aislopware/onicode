@@ -158,7 +158,9 @@ describe("command dispatcher", () => {
 
   it("leaves keys typed into a capturing element to that element", () => {
     const command = vi.fn();
-    const early = vi.fn();
+    const early = vi.fn((event: KeyboardEvent) => {
+      event.preventDefault();
+    });
     const observed: boolean[] = [];
     const picture = document.createElement("div");
     picture.setAttribute("data-keybinding-capture", "");
@@ -178,6 +180,9 @@ describe("command dispatcher", () => {
     expect(early).not.toHaveBeenCalled();
     expect(event.defaultPrevented).toBe(false);
     expect(observed).toEqual([true]);
+
+    press("k");
+    expect(early).toHaveBeenCalledOnce();
   });
 
   it("routes a menu action to its newest handler", () => {

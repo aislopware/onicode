@@ -311,11 +311,11 @@ function ProjectScriptEditorForm({
 
   const captureKeybinding = (event: KeyboardEvent<HTMLInputElement>) => {
     if (!canEditActions) return;
+    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
     // Tab moves on and a bare Esc closes the dialog.
     if (event.key === "Tab" || isBareEscape(event)) return;
     event.preventDefault();
-    // The dialog closes on any other Escape that reaches it.
-    if (event.key === "Escape") event.stopPropagation();
+    event.stopPropagation();
     if (event.key === "Backspace" || event.key === "Delete") {
       setKeybinding("");
       return;
