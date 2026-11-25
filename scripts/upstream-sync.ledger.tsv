@@ -3832,3 +3832,4 @@ c6162da7ec	take	fix(server): skipped workflow runs no longer keep their webhook 
 6e044b4ff7	take	perf(server): workflow queries use indexes instead of scanning every run (#42341); migration 114->123
 cb09dea14d	take	fix(shared): chunked Markdown previews keep a link definition right after a code fence (#42427); kept Onicode's incremental MarkdownSplitResume/withoutComments engine and adopted upstream's <!(--) lookahead and openedFence tracking
 edeb3bf454	take	fix(server): file search keeps symlinks when a link's name looks like a git pathspec (#42436)
+dfa73216cc	take	fix(web): search results show the matched lines (#42429)
