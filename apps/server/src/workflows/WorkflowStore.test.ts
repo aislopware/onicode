@@ -16,6 +16,7 @@ import * as MilestoneHub from "../milestones/MilestoneHub.ts";
 import WorkflowsMigration from "../persistence/Migrations/114_Workflows.ts";
 import WorkflowSkippedRunsMigration from "../persistence/Migrations/122_WorkflowSkippedRuns.ts";
 import WorkflowRunIndexesMigration from "../persistence/Migrations/123_WorkflowRunIndexes.ts";
+import WorkflowRunTagsMigration from "../persistence/Migrations/124_WorkflowRunTags.ts";
 import * as WorkflowStore from "./WorkflowStore.ts";
 
 const withStore = <A, E>(
@@ -33,6 +34,7 @@ const withStore = <A, E>(
     const migrated = Layer.effectDiscard(
       Effect.andThen(WorkflowsMigration, WorkflowSkippedRunsMigration).pipe(
         Effect.andThen(WorkflowRunIndexesMigration),
+        Effect.andThen(WorkflowRunTagsMigration),
       ),
     );
     return yield* Effect.provide(

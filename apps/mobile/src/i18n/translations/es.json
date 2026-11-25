@@ -5701,5 +5701,8 @@
   "3328503592789bed": "Zen",
   "856812e7e1fc445e": "Llamadas a herramientas en el chat",
   "8d545d54c0a9e950": "Oculta los comandos, ediciones y búsquedas que ejecutan los agentes. Ocultar las correctas mantiene los fallos. Zen solo muestra las respuestas finales. Las aprobaciones, preguntas y errores siempre se muestran.",
-  "e0856d6a402ad821": "La política de {organization} no permite comandos de diseño de worktrees de proyectos."
+  "e0856d6a402ad821": "La política de {organization} no permite comandos de diseño de worktrees de proyectos.",
+  "fc9c3a00cfc18b55": "Todos los tipos",
+  "e4d1316c85ed7066": "No hay preguntas de este tipo esperándote.",
+  "45a94c724845ec1d": "Otras"
 }
