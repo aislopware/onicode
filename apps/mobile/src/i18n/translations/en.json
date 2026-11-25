@@ -5709,5 +5709,8 @@
   "3328503592789bed": "Zen",
   "856812e7e1fc445e": "Tool calls in chat",
   "8d545d54c0a9e950": "Hide the commands, edits, and searches agents run. Hide successful keeps failures. Zen shows only final answers. Approvals, questions, and errors always show.",
-  "e0856d6a402ad821": "{organization}'s policy does not allow project worktree layout commands."
+  "e0856d6a402ad821": "{organization}'s policy does not allow project worktree layout commands.",
+  "fc9c3a00cfc18b55": "All kinds",
+  "e4d1316c85ed7066": "No questions of this kind wait on you.",
+  "45a94c724845ec1d": "Other"
 }
