@@ -31,11 +31,76 @@ function copiedText(target: Element) {
 }
 
 describe("ReadOnlySourcePreview", () => {
+  it("opens a find field on mod+f after a click in the file, as the editable view does", async () => {
+    await getSyntaxHighlighterPromise("typescript");
+    await using screen = await render(
+      <div className="flex h-100 flex-col">
+        <ReadOnlySourcePreview name="other.ts" text={'export const needle = "findme";\n'} />
+      </div>,
+    );
+    const root = screen.container.querySelector("diffs-container")!.shadowRoot!;
+    const firstRow = () => root.querySelector("[data-line]");
+    await vi.waitFor(() => expect(firstRow()?.textContent).toContain("needle"));
+
+    await userEvent.click(firstRow()!);
+    await userEvent.keyboard("{ControlOrMeta>}f{/ControlOrMeta}");
+
+    await vi.waitFor(() => {
+      let active = document.activeElement;
+      while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement;
+      expect(active).toBeInstanceOf(HTMLInputElement);
+    });
+
+    await userEvent.keyboard("findme");
+    await vi.waitFor(() =>
+      expect(Array.from(CSS.highlights.get("diffs-search-current") ?? [], String)).toEqual([
+        "findme",
+      ]),
+    );
+
+    await userEvent.keyboard("{Escape}");
+    await vi.waitFor(() =>
+      expect(screen.container.querySelector("[data-search-panel]")).toBeNull(),
+    );
+  });
+
+  it("updates rendered text and search matches when text changes without remounting", async () => {
+    await getSyntaxHighlighterPromise("typescript");
+    await using screen = await render(
+      <div className="flex h-100 flex-col">
+        <ReadOnlySourcePreview name="stream.ts" text={"const first = 1;\n"} />
+      </div>,
+    );
+    const root = screen.container.querySelector("diffs-container")!.shadowRoot!;
+    await vi.waitFor(() => expect(root.textContent).toContain("first"));
+
+    await screen.rerender(
+      <div className="flex h-100 flex-col">
+        <ReadOnlySourcePreview name="stream.ts" text={"const first = 1;\nconst second = 2;\n"} />
+      </div>,
+    );
+    await vi.waitFor(() => expect(root.textContent).toContain("second"));
+
+    await userEvent.click(root.querySelector("[data-line]")!);
+    await userEvent.keyboard("{ControlOrMeta>}f{/ControlOrMeta}");
+    await vi.waitFor(() => {
+      let active = document.activeElement;
+      while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement;
+      expect(active).toBeInstanceOf(HTMLInputElement);
+    });
+    await userEvent.keyboard("second");
+    await vi.waitFor(() =>
+      expect(Array.from(CSS.highlights.get("diffs-search-current") ?? [], String)).toEqual([
+        "second",
+      ]),
+    );
+  });
+
   it("copies the whole file after Select All, wherever the preview is scrolled", async () => {
     // File paints nothing until the shared highlighter has loaded; once it has, mount renders synchronously.
     await getSyntaxHighlighterPromise("text");
     await using screen = await render(
-      <div className="flex h-[400px] flex-col">
+      <div className="flex h-100 flex-col">
         <ReadOnlySourcePreview name="notes.txt" text={text} wordWrap={false} />
       </div>,
     );
@@ -76,7 +141,7 @@ describe("ReadOnlySourcePreview", () => {
     const contents = text.replaceAll("\n", ending);
     await getSyntaxHighlighterPromise("text");
     await using screen = await render(
-      <div className="flex h-[400px] flex-col">
+      <div className="flex h-100 flex-col">
         <ReadOnlySourcePreview name="notes.txt" text={contents} wordWrap={false} />
       </div>,
     );
@@ -129,7 +194,7 @@ describe("ReadOnlySourcePreview", () => {
   it("drops a selection scrolled out of the mounted window when a click lands on its edge", async () => {
     await getSyntaxHighlighterPromise("text");
     await using screen = await render(
-      <div className="flex h-[400px] flex-col">
+      <div className="flex h-100 flex-col">
         <ReadOnlySourcePreview name="notes.txt" text={text} wordWrap={false} />
       </div>,
     );
@@ -153,7 +218,7 @@ describe("ReadOnlySourcePreview", () => {
   it("copies a drag that autoscrolls past the edge of the preview", async () => {
     await getSyntaxHighlighterPromise("text");
     await using screen = await render(
-      <div className="flex h-[400px] flex-col">
+      <div className="flex h-100 flex-col">
         <ReadOnlySourcePreview name="notes.txt" text={text} wordWrap={false} />
       </div>,
     );
@@ -178,7 +243,10 @@ describe("ReadOnlySourcePreview", () => {
     await mouse("mouseMoved", start.left + 30, edge - 5);
     // Held below the preview, the pointer is over no row while the browser scrolls the drag on.
     await mouse("mouseMoved", start.left + 30, edge + 60);
-    await vi.waitFor(() => expect(rows()[0]?.textContent).not.toBe("line 1"), { timeout: 10_000 });
+    await vi.waitFor(
+      () => expect(Number(rows()[0]?.getAttribute("data-line"))).toBeGreaterThan(5),
+      { timeout: 10_000 },
+    );
     await mouse("mouseReleased", start.left + 30, edge + 60);
 
     const copied = copiedText(rows()[0]!)!;
@@ -186,14 +254,14 @@ describe("ReadOnlySourcePreview", () => {
     expect(copied).toBe(text.slice(from, from + copied.length));
     // The drag ends in the rows on screen, short of the last mounted one.
     const lastLine = 4 + copied.split("\n").length;
-    expect(lastLine).toBeGreaterThan(50);
+    expect(lastLine).toBeGreaterThan(20);
     expect(lastLine).toBeLessThan(Number(rows()[rows().length - 1]!.getAttribute("data-line")));
   });
 
   it("extends a selection with Shift+click after its anchor scrolls out of the mounted window", async () => {
     await getSyntaxHighlighterPromise("text");
     await using screen = await render(
-      <div className="flex h-[400px] flex-col">
+      <div className="flex h-100 flex-col">
         <ReadOnlySourcePreview name="notes.txt" text={text} wordWrap={false} />
       </div>,
     );

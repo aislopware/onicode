@@ -3835,3 +3835,4 @@ edeb3bf454	take	fix(server): file search keeps symlinks when a link's name looks
 dfa73216cc	take	fix(web): search results show the matched lines (#42429)
 3336504f31	take	fix(preview): agent recordings keep refining the frame while the page is idle (#42445)
 30f141e2e7	skip	removed surface: relay tracing for webhook runs (relay and @onicode/shared/relayTracing are removed in Onicode)
+bd3e495b5f	take	fix(web): mod+f opens find in read-only source previews (#42442); kept Onicode's lastTextRow helper in ReadOnlySourcePreview.browser.test.tsx
