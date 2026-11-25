@@ -3829,3 +3829,4 @@ c9ba6b4b6e	skip	removed surface: relay account deletion tunnel connectors (infra
 2c0527b8d0	take	fix(server): removing a thread folder keeps a checkout that gained work while the project's remove command waited (#42432)
 c6162da7ec	take	fix(server): skipped workflow runs no longer keep their webhook payloads forever (#42353); migration 113->122, kept Onicode's LabsSettingsPanel without Clerk/GuestLinks/AgentFeedback and settings.ts without guestSharingEnabled
 16742ca802	take	feat(usage): support user-hosted HTTP quota sources (#41291); kept Onicode's 4-arg layerWsRpc and non-relay compatibility/resolver tests
+6e044b4ff7	take	perf(server): workflow queries use indexes instead of scanning every run (#42341); migration 114->123

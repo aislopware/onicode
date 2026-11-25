@@ -130,6 +130,7 @@ import Migration0119 from "./Migrations/119_RestoreWebhooks.ts";
 import Migration0120 from "./Migrations/120_ReadableLinkLabelsAfterBracket.ts";
 import Migration0121 from "./Migrations/121_LayoutCommandApprovals.ts";
 import Migration0122 from "./Migrations/122_WorkflowSkippedRuns.ts";
+import Migration0123 from "./Migrations/123_WorkflowRunIndexes.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -255,6 +256,7 @@ const migrationEntries = [
   [120, "ReadableLinkLabelsAfterBracket", Migration0120],
   [121, "LayoutCommandApprovals", Migration0121],
   [122, "WorkflowSkippedRuns", Migration0122],
+  [123, "WorkflowRunIndexes", Migration0123],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
