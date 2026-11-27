@@ -4221,3 +4221,4 @@ b7c4f0a59a	take	taken as is
 f1ff53853f	take	taken as is
 b0edd30be4	take	taken as is
 e63b9ada75	take	taken as is
+5519a98a8e	take	code as is; kept Onicode's usage.md structure and rewrote its OpenCode paragraph (external OpenCode 2 servers now report limits)
