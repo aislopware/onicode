@@ -12347,5 +12347,8 @@
   "bbe126c259d4d596": "Le déchiffrement de ce document demande trop de calculs pour l’aperçu.",
   "53c28271192e5707": "Ce fichier est endommagé ou n’est pas un document Office valide.",
   "0f959b69c5eb2499": "Ce livre numérique nécessite une liseuse compatible avec son DRM.",
-  "533f7af3d2552cd0": "Ce fichier Office Open XML n’est pas valide."
+  "533f7af3d2552cd0": "Ce fichier Office Open XML n’est pas valide.",
+  "717c1c47a852a1a5": "Mettre la narration en pause",
+  "0eceb5780908eb6c": "Lire à voix haute",
+  "3ee98da81538c6de": "Impossible de lire la narration."
 }

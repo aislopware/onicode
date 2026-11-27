@@ -12355,5 +12355,8 @@
   "bbe126c259d4d596": "This document requires too much work to decrypt in the preview.",
   "53c28271192e5707": "This file is damaged or is not a valid Office document.",
   "0f959b69c5eb2499": "This ebook requires a reader that supports its DRM.",
-  "533f7af3d2552cd0": "This is not a valid Office Open XML file."
+  "533f7af3d2552cd0": "This is not a valid Office Open XML file.",
+  "717c1c47a852a1a5": "Pause narration",
+  "0eceb5780908eb6c": "Read aloud",
+  "3ee98da81538c6de": "Could not play narration."
 }

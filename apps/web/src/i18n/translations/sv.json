@@ -12354,5 +12354,8 @@
   "bbe126c259d4d596": "Det krävs för mycket bearbetning för att dekryptera dokumentet i förhandsvisningen.",
   "53c28271192e5707": "Filen är skadad eller är inte ett giltigt Office-dokument.",
   "0f959b69c5eb2499": "Den här e-boken kräver en läsare som stöder dess DRM.",
-  "533f7af3d2552cd0": "Det här är inte en giltig Office Open XML-fil."
+  "533f7af3d2552cd0": "Det här är inte en giltig Office Open XML-fil.",
+  "717c1c47a852a1a5": "Pausa uppläsningen",
+  "0eceb5780908eb6c": "Läs upp",
+  "3ee98da81538c6de": "Det gick inte att spela upp uppläsningen."
 }

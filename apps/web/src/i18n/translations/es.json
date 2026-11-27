@@ -12342,5 +12342,8 @@
   "bbe126c259d4d596": "Descifrar este documento requiere demasiado procesamiento para la vista previa.",
   "53c28271192e5707": "Este archivo está dañado o no es un documento de Office válido.",
   "0f959b69c5eb2499": "Este libro electrónico requiere un lector compatible con su DRM.",
-  "533f7af3d2552cd0": "Este no es un archivo de Office Open XML válido."
+  "533f7af3d2552cd0": "Este no es un archivo de Office Open XML válido.",
+  "717c1c47a852a1a5": "Pausar narración",
+  "0eceb5780908eb6c": "Leer en voz alta",
+  "3ee98da81538c6de": "No se pudo reproducir la narración."
 }

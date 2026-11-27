@@ -21,6 +21,7 @@ import { useTheme } from "~/hooks/useTheme";
 import { FileSurfaceAction, FileSurfaceLoading } from "./fileSurfaceChrome";
 import type { EpubLocation, EpubPage, OfficeWorkerResult } from "./officePreviewProtocol";
 import { epubSource, prepareEpubDocument } from "./epubSource";
+import { EpubNarration } from "./EpubNarration";
 import { previewFailureText } from "./previewFailureMessages";
 
 type Book = Extract<OfficeWorkerResult, { type: "epub" }>;
@@ -72,56 +73,61 @@ function ReadingFrame(props: {
   const darkPage = resolvedTheme === "dark" && !props.page.styles?.length && !fixed;
   const srcDoc = epubSource(props.page, darkPage);
   return (
-    <div ref={container} className="min-h-0 flex-1 overflow-auto scrollbar-gutter-both">
-      <div
-        className={fixed ? "mx-auto" : "size-full"}
-        style={
-          fixed
-            ? { width: fixed.width * scale, height: fixed.height * scale, overflow: "hidden" }
-            : undefined
-        }
-      >
-        <iframe
-          ref={frame}
-          title={props.name}
-          srcDoc={srcDoc}
-          sandbox="allow-same-origin"
-          className={`block border-0 ${fixed ? "origin-top-left" : "size-full"} ${darkPage ? "" : "bg-white"}`}
+    <>
+      {props.page.narration?.length ? (
+        <EpubNarration cues={props.page.narration} frame={frame} />
+      ) : null}
+      <div ref={container} className="min-h-0 flex-1 overflow-auto scrollbar-gutter-both">
+        <div
+          className={fixed ? "mx-auto" : "size-full"}
           style={
             fixed
-              ? { width: fixed.width, height: fixed.height, transform: `scale(${scale})` }
+              ? { width: fixed.width * scale, height: fixed.height * scale, overflow: "hidden" }
               : undefined
           }
-          onLoad={(event) => {
-            const doc = event.currentTarget.contentDocument;
-            if (!doc?.body) return;
-            prepareEpubDocument(doc);
-            if (!fixed)
-              doc.documentElement.style.setProperty("zoom", String(props.zoom), "important");
-            goToAnchor(doc, props.location.anchor);
-            doc.onclick = (click) => {
-              const target = click.target;
-              if (!(target instanceof doc.defaultView!.Element)) return;
-              const link = target.closest("a[href]");
-              if (!link) return;
-              click.preventDefault();
-              const href = link.getAttribute("data-epub-external");
-              if (href !== null) {
-                const url = externalUrl(href);
-                if (url && click.isTrusted) window.open(url, "_blank", "noopener,noreferrer");
-                return;
-              }
-              const linkIndex = link.getAttribute("data-epub-index");
-              if (linkIndex === null) return;
-              const index = Number(linkIndex);
-              const anchor = link.getAttribute("data-epub-anchor") ?? undefined;
-              if (index === props.location.index) goToAnchor(doc, anchor);
-              props.navigate({ index, ...(anchor ? { anchor } : {}) });
-            };
-          }}
-        />
+        >
+          <iframe
+            ref={frame}
+            title={props.name}
+            srcDoc={srcDoc}
+            sandbox="allow-same-origin"
+            className={`block border-0 ${fixed ? "origin-top-left" : "size-full"} ${darkPage ? "" : "bg-white"}`}
+            style={
+              fixed
+                ? { width: fixed.width, height: fixed.height, transform: `scale(${scale})` }
+                : undefined
+            }
+            onLoad={(event) => {
+              const doc = event.currentTarget.contentDocument;
+              if (!doc?.body) return;
+              prepareEpubDocument(doc);
+              if (!fixed)
+                doc.documentElement.style.setProperty("zoom", String(props.zoom), "important");
+              goToAnchor(doc, props.location.anchor);
+              doc.onclick = (click) => {
+                const target = click.target;
+                if (!(target instanceof doc.defaultView!.Element)) return;
+                const link = target.closest("a[href]");
+                if (!link) return;
+                click.preventDefault();
+                const href = link.getAttribute("data-epub-external");
+                if (href !== null) {
+                  const url = externalUrl(href);
+                  if (url && click.isTrusted) window.open(url, "_blank", "noopener,noreferrer");
+                  return;
+                }
+                const linkIndex = link.getAttribute("data-epub-index");
+                if (linkIndex === null) return;
+                const index = Number(linkIndex);
+                const anchor = link.getAttribute("data-epub-anchor") ?? undefined;
+                if (index === props.location.index) goToAnchor(doc, anchor);
+                props.navigate({ index, ...(anchor ? { anchor } : {}) });
+              };
+            }}
+          />
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -162,7 +168,7 @@ export default function EpubViewer(props: {
     <div className="flex min-h-0 flex-1 flex-col">
       {props.book.chapters.length > 1 || props.book.contents.length > 1 ? (
         <div
-          className="flex h-10 shrink-0 items-center gap-2 border-b border-border/60 px-3 text-xs"
+          className="flex min-h-10 shrink-0 items-center gap-2 border-b border-border/60 px-3 text-xs max-sm:py-1 max-sm:[&_button]:min-h-11 max-sm:[&_button]:min-w-11"
           dir={props.book.rtl ? "rtl" : "ltr"}
         >
           <FileSurfaceAction
@@ -211,7 +217,7 @@ export default function EpubViewer(props: {
           </FileSurfaceAction>
         </div>
       ) : null}
-      <div className="flex min-h-10 shrink-0 flex-wrap items-center gap-1 border-b border-border/60 px-3 py-1 text-xs text-muted-foreground">
+      <div className="flex min-h-10 shrink-0 flex-wrap items-center gap-1 border-b border-border/60 px-3 py-1 text-xs text-muted-foreground max-sm:[&_button]:min-h-11 max-sm:[&_button]:min-w-11">
         <span className="min-w-0 flex-1 tabular-nums" role="status">
           {gt("Chapter {page} of {count}", {
             page: String(index + 1),
