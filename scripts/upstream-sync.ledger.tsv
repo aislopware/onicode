@@ -4661,3 +4661,4 @@ de4328bfb5	take	adopted upstream's index-walking sweep filter; kept Onicode's ge
 44b3c4e0c6	take	taken as is
 ff6ad845f0	take	taken as is
 50464c16e0	take	adapted: the neighbour pick goes into Onicode's shared withoutTerminal helper (closeTerminal and dropTerminals both use it), kept Onicode's helper since it already serves server-closed terminals
+835de2827e	take	taken; import conflict in IssueDetailPanel resolved (Onicode already imports useOpenLink with anchorOpenHandlers). Wire-compatible: query and assigneeSearch are optional
