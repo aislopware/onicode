@@ -711,8 +711,8 @@ importers:
         specifier: 0.88.1
         version: 0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1)
       react-native-enriched-markdown:
-        specifier: file:deps/react-native-enriched-markdown-1.2.0-oni.30-dd3130fb.tgz
-        version: file:apps/mobile/deps/react-native-enriched-markdown-1.2.0-oni.30-dd3130fb.tgz(katex@0.19.1)(react-native@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)
+        specifier: file:deps/react-native-enriched-markdown-1.2.0-oni.31-6eac4eb0.tgz
+        version: file:apps/mobile/deps/react-native-enriched-markdown-1.2.0-oni.31-6eac4eb0.tgz(katex@0.19.1)(react-native@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)
       react-native-gesture-handler:
         specifier: 3.5.0
         version: 3.5.0(patch_hash=171379dd378f8f11e9187876dec2116e5cbf5f21cef6576cdde6956518324f98)(react-native@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)
@@ -10686,9 +10686,9 @@ packages:
   react-is@19.3.1:
     resolution: {integrity: sha512-RRieF6IyxQBkcK6pP8xOHprLTPW6QjRkbGdImtqNme+/hYVwCZkLQLdlZGOhUqXwkS9IEynaGvPJtv6XB/cz0Q==}
 
-  react-native-enriched-markdown@file:apps/mobile/deps/react-native-enriched-markdown-1.2.0-oni.30-dd3130fb.tgz:
-    resolution: {integrity: sha512-CJLZ+baV53pjDY1nEq62BMe+lw4GllA8wHAfesH2FC8mhhU2jf89bZcmu+8wIMSRn/dAhOclsUaW3f/aUIWNuw==, tarball: file:apps/mobile/deps/react-native-enriched-markdown-1.2.0-oni.30-dd3130fb.tgz}
-    version: 1.2.0-oni.30
+  react-native-enriched-markdown@file:apps/mobile/deps/react-native-enriched-markdown-1.2.0-oni.31-6eac4eb0.tgz:
+    resolution: {integrity: sha512-fqIphzwd8YA2/KAj5ZKBpkMUiseV/3fcjUGm2KSd3/KrWJchEn3ZmEahXWopvwMcpfkgsbiof7sfSfYAgsbJzw==, tarball: file:apps/mobile/deps/react-native-enriched-markdown-1.2.0-oni.31-6eac4eb0.tgz}
+    version: 1.2.0-oni.31
     peerDependencies:
       katex: '>=0.16.0'
       react: '*'
@@ -20587,7 +20587,7 @@ snapshots:
 
   react-is@19.3.1: {}
 
-  react-native-enriched-markdown@file:apps/mobile/deps/react-native-enriched-markdown-1.2.0-oni.30-dd3130fb.tgz(katex@0.19.1)(react-native@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0):
+  react-native-enriched-markdown@file:apps/mobile/deps/react-native-enriched-markdown-1.2.0-oni.31-6eac4eb0.tgz(katex@0.19.1)(react-native@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0):
     dependencies:
       react: 19.3.0
       react-native: 0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1)
