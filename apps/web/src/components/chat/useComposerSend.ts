@@ -76,11 +76,8 @@ import { recordPromptSent } from "../GitHubStarPrompt";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { newMessageId, newThreadId } from "~/lib/utils";
-import {
-  detachedDraftSendState,
-  holdSendForWorkspaceDefault,
-  useNewThreadHandler,
-} from "../../hooks/useHandleNewThread";
+import { detachedDraftSendState, useNewThreadHandler } from "../../hooks/useHandleNewThread";
+import { holdSendForWorkspaceDefault } from "../../lib/draftWorkspaceDefaults";
 import { buildThreadRouteParams } from "../../threadRoutes";
 import {
   beginBackgroundDraftSubmissionByRef,

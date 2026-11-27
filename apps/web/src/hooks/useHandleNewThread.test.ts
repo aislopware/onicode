@@ -310,11 +310,13 @@ vi.mock("../uiStateStore", () => ({
 vi.mock("./useSettings", () => ({ getClientSettings: () => ({}) }));
 
 import {
-  detachedDraftSendState,
   holdSendForWorkspaceDefault,
+  WORKSPACE_DEFAULT_SEND_WAIT_MS,
+} from "../lib/draftWorkspaceDefaults";
+import {
+  detachedDraftSendState,
   resolveDefaultProjectRef,
   useNewThreadHandler,
-  WORKSPACE_DEFAULT_SEND_WAIT_MS,
 } from "./useHandleNewThread";
 
 const holdSend = (draftId: string) => holdSendForWorkspaceDefault(draftId as never);
