@@ -4078,3 +4078,4 @@ b76d0f023f	take	dropped managedRelayState/TunnelUsage and the SavedEnvironmentRo
 ef49296026	take	taken as is
 cbe475e5d6	take	applied cleanly on Onicode's documentTextWorker
 6f44901b02	take	taken as is
+e057f7a770	take	adopted upstream's one benchmark per surface over Onicode's render-metrics, web/client-runtime bench files and mobile measure-renders (client-metrics --renders measures the real desktop app); carried Onicode's divergences through the moves: survivors-only processTable kill in metrics/core (upstream's descendantsOf dropped), forge gpgsign off (01eac8908f), server-metrics 514397c661, client-metrics desktop target; kept the mobile render counter (mobile:behavior uses it) and emitShellThread; docs point the payload row at transferBudgetV2.integration.test.ts and name the client row Desktop client

@@ -29,18 +29,11 @@ import { HttpClient, HttpClientResponse, HttpServer, HttpServerResponse } from "
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import { chromium, type Browser, type CDPSession, type Page } from "playwright-core";
 
-import {
-  DOM_CENSUS,
-  Census,
-  ProbeReading,
-  RENDER_PROBE,
-  rendersOf,
-} from "./client-metrics-probes.ts";
+import { DOM_CENSUS, Census, ProbeReading, RENDER_PROBE, rendersOf } from "./probes.ts";
 import {
   CASES,
   ClientMetrics,
   compareClientMetrics,
-  Floors,
   isSwitchCase,
   noiseReport,
   parseCases,
@@ -58,24 +51,19 @@ import {
   type Step,
   type Switch,
   type SwitchCase,
-} from "./client-metrics-report.ts";
-import {
-  analyzeTrace,
-  END_LABEL,
-  MARK_PREFIX,
-  Trace,
-  type CallSite,
-} from "./client-metrics-trace.ts";
-import { prepareHome, SCENARIO_MACHINE_ENV } from "./scenarios/start-app.ts";
-import { run } from "./scenarios/shell.ts";
-import { DIFF_FILES, pullRequestDetail, sourceFile } from "./client-metrics-fixture.ts";
-import { serveFakeGitHub } from "./server-metrics-forge.ts";
+} from "./report.ts";
+import { analyzeTrace, END_LABEL, MARK_PREFIX, Trace, type CallSite } from "./trace.ts";
+import { prepareHome, SCENARIO_MACHINE_ENV } from "../../scenarios/start-app.ts";
+import { run } from "../../scenarios/shell.ts";
+import { DIFF_FILES, pullRequestDetail, sourceFile } from "../core/fixture.ts";
+import { serveFakeGitHub } from "../core/forge.ts";
 import {
   describeFailure,
   descendantProcesses,
+  Floors,
   loadWarnings,
   unchangedProcesses,
-} from "./server-metrics-report.ts";
+} from "../core/report.ts";
 import {
   freePort,
   machineLoad,
@@ -85,7 +73,7 @@ import {
   processTable,
   runAbRounds,
   watchMachine,
-} from "./server-metrics.ts";
+} from "../core/run.ts";
 
 const PositiveInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1));
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
@@ -109,7 +97,7 @@ const decodeFloors = decodeJson(Floors);
 const encodeFloors = Schema.encodeEffect(fromJsonStringPretty(Floors));
 
 /** The harness's own replay agent, so an older checkout still plays the bench recordings. */
-const REPLAY_AGENT = new URL("../apps/server/scripts/dev-replay-agent.ts", import.meta.url);
+const REPLAY_AGENT = new URL("../../../apps/server/scripts/dev-replay-agent.ts", import.meta.url);
 const VIEWPORT = { width: 1512, height: 900 };
 /** The production renderer's origin. Its router keeps the route in the hash. */
 const APP_ORIGIN = "onicode://app";
@@ -1732,7 +1720,7 @@ const runCommand = Command.make(
   Effect.fn("clientMetrics.run")(function* (input) {
     const path = yield* Path.Path;
     const checkout = path.resolve(
-      Option.getOrElse(input.checkout, () => path.resolve(import.meta.dirname, "..")),
+      Option.getOrElse(input.checkout, () => path.resolve(import.meta.dirname, "../../..")),
     );
     const cases = yield* casesOf(input.cases);
     const meta = yield* metaFor(checkout);
