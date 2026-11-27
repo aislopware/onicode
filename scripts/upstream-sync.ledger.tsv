@@ -4236,3 +4236,4 @@ f1568fae66	take	code as is; scenario ported to the desktop target: startSecondEn
 e6789ebdd2	take	taken as is
 12fda73203	take	taken as is
 a7ead0ea7f	take	parenthesis finder built from Onicode's ESCAPE and PARAGRAPH_END constants like its other tail finders
+e0370221a4	take	taken as is (the next-line expects land in Onicode's tapped-checkbox test)
