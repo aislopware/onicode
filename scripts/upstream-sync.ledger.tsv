@@ -3903,3 +3903,4 @@ b530e1f304	take	applied to Onicode's react-native-keyboard-controller@1.24.0 pat
 36d6333885	take	dropped the BrowserSession.test.ts hunk (would delete Onicode's only HostProcess import); merged the onlyTestFiles mock into Onicode's test harness
 17e1e01dbe	skip	net no-op with e7f1f81a21; 1a3c772c65 was ported without upstream's duplicate HostProcess import, so Onicode's single import already matches upstream's end state
 3d4fd8346e	skip	kept Onicode's truncateSearchText in _chat.pull-requests.tsx: same fix, also covers host and selectedUrl, tested by pullRequestsRouteSearch.browser.test.ts
+e77d460e41	take	taken as is
