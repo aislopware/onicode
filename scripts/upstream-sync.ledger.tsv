@@ -4404,3 +4404,4 @@ beb24ffed8	take	took hasNonCatalogModels; kept wave 3's customApiEndpoint gate s
 04770fe6c1	take	applied cleanly; mobile n.a. (native picker)
 314f59d1e7	take	usage scan cache bumped to Onicode v19 (Onicode's v18 already meant the Codex state re-parse): v18 file added to legacy names, Grok legacy check version < 19, Codex clause kept, comments merged; test asserts v19
 d8193acc38	take	applied cleanly on the ported document worker chain
+59e80b72ca	take	applied cleanly; SidebarProjectFolderHeader only, Sidebar hook order untouched; visual, captures in the integrated pass
