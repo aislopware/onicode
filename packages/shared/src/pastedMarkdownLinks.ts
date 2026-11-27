@@ -33,7 +33,7 @@ export function escapeMarkdownProse(text: string, { label = false } = {}): strin
         // The renderer shows escapes in a drive path as written, so they stay as they are.
         if (!label || escapedByBackslash(text, wordOffset + offset)) return match;
         if (match === "\\") return after === undefined ? "\\\\" : match;
-        return match === "[" || match === "]" ? `\\${match}` : match;
+        return match === "[" || match === "]" || match === "`" ? `\\${match}` : match;
       }
       if (match === "\\" && after !== undefined && /[^\S\n]/.test(after)) return match;
       // A text node's edge may touch another node's markers, so it counts as neither.
@@ -53,7 +53,10 @@ const LINK_DESTINATION =
 function linkDestination(href: string): string | undefined {
   const trimmed = href.trim();
   if (!LINK_DESTINATION.test(trimmed)) return undefined;
-  return trimmed.replace(/[\s\p{Cc}]/gu, encodeURIComponent);
+  // Lowercase like URL would: the renderer's sanitizer matches schemes case-sensitively.
+  return trimmed
+    .replace(/^[a-z]+:/i, (scheme) => scheme.toLowerCase())
+    .replace(/[\s\p{Cc}<>]/gu, encodeURIComponent);
 }
 
 /**

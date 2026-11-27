@@ -550,7 +550,7 @@ it("keeps mixed-case local editor file links by lowercasing the scheme before sa
   ]);
 });
 
-it("keeps uppercase HTTP(S) link and image URLs by lowercasing the scheme before sanitizing", () => {
+it("keeps uppercase HTTP(S) and MAILTO link and image URLs by lowercasing the scheme before sanitizing", () => {
   const processor = unified()
     .use(remarkParse)
     .use(CHAT_MARKDOWN_REMARK_PLUGINS)
@@ -564,7 +564,7 @@ it("keeps uppercase HTTP(S) link and image URLs by lowercasing the scheme before
   const tree = processor.runSync(
     processor.parse(
       [
-        "[upper](HTTPS://Example.com/A?Key=Value#Part) [mixed](hTtP://Example.com/B) [js](JAVASCRIPT:alert(1))",
+        "[upper](HTTPS://Example.com/A?Key=Value#Part) [mixed](hTtP://Example.com/B) [js](JAVASCRIPT:alert(1)) [mail](MAILTO:ada@example.com)",
         "",
         "![shot](HTTPS://Example.com/Shot.png)",
         "",
@@ -576,6 +576,7 @@ it("keeps uppercase HTTP(S) link and image URLs by lowercasing the scheme before
     { href: "https://Example.com/A?Key=Value#Part" },
     { href: "http://Example.com/B" },
     {},
+    { href: "mailto:ada@example.com" },
     { src: "https://Example.com/Shot.png", alt: "shot", dataStandalone: true },
     { src: "http://Example.com/Light.png", dataDarkSrc: "https://Example.com/Dark.png" },
   ]);

@@ -331,6 +331,8 @@ describe("serializeRenderedMarkdownFragment", () => {
   it.each([
     ["C:\\Users\\me\\", "[C:\\Users\\me\\\\](https://example.com)"],
     ["C:\\app\\[id]\\page.tsx", "[C:\\app\\[id\\]\\page.tsx](https://example.com)"],
+    ["C:\\Users\\me\\ ", "[C:\\Users\\me\\\\](https://example.com)"],
+    ["C:\\work`a", "[C:\\work\\`a](https://example.com)"],
   ])("keeps a drive path label inside its link: %s", (label, expected) => {
     const anchor = new FakeElement("A", [], { href: "https://example.com" }).append(
       new FakeText(label),

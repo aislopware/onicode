@@ -98,6 +98,18 @@ describe("restoring pasted Markdown links from clipboard HTML", () => {
         "Empty, spaced, [fragment](https://example.com#a#b), [mail](mailto:ada@example.com#sig)",
     },
     {
+      case: "an uppercase scheme and angle brackets in the destination",
+      plain: "Mail and Search",
+      html: '<a href="MAILTO:ada@example.com">Mail</a> and <a href="HTTPS://example.com/?q=a&lt;b&gt;">Search</a>',
+      expected: "[Mail](mailto:ada@example.com) and [Search](https://example.com/?q=a%3Cb%3E)",
+    },
+    {
+      case: "backticks in drive path labels",
+      plain: "C:\\work`a and C:\\work`b",
+      html: '<a href="https://example.com/1">C:\\work`a</a> and <a href="https://example.com/2">C:\\work`b</a>',
+      expected: "[C:\\work\\`a](https://example.com/1) and [C:\\work\\`b](https://example.com/2)",
+    },
+    {
       case: "a link after a hidden anchor it implicitly closes",
       plain: "Visible",
       html: '<a href="https://example.com/1" style="display:none">Hidden <a href="https://example.com/2">Visible</a>',

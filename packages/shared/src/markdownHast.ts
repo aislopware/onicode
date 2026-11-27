@@ -60,7 +60,7 @@ const COLOR_SCHEME_MEDIA = /^\(\s*prefers-color-scheme\s*:\s*(dark|light)\s*\)$/
 const FIRST_SRCSET_URL = /^[\t\n\f\r ]*([^\t\n\f\r ]+)/;
 
 function normalizeUrlScheme(url: string): string {
-  return url.replace(/^(?:https?|file):/i, (scheme) => scheme.toLowerCase());
+  return url.replace(/^(?:https?|file|mailto):/i, (scheme) => scheme.toLowerCase());
 }
 
 /**
