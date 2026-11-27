@@ -4367,3 +4367,4 @@ e07c80889e	take	last hunk applied with Onicode's wrapped throw
 6bec332fca	take	HTML_BLOCK_START replaced by HTML_BLOCK_TAG/HTML_STANDALONE_TAG in blockCloser; Onicode's wrapper and comment tracking still key on closesAtBlankLine; autolink case takes upstream's inline-HTML rows and keeps Onicode's trailing line break
 3749a2e1c1	take	applied cleanly on the ported workflow chain; raw workflow_runs insert matches Onicode's table
 8e8e15ac89	take	applied cleanly
+9b4943f91c	take	applied cleanly
