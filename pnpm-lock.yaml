@@ -577,7 +577,7 @@ importers:
         version: 7.5.2(react-native@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)
       '@react-navigation/native-stack':
         specifier: 7.21.1
-        version: 7.21.1(patch_hash=9c599e52aaf2f653faf27e48dd4b11cd99d0b420b5d724e8221787125c518cae)(1293603744432f2060c88cb3af432883)
+        version: 7.21.1(patch_hash=9c599e52aaf2f653faf27e48dd4b11cd99d0b420b5d724e8221787125c518cae)(09a02552b0e79b2e08ede382feb35706)
       '@sentry/react-native':
         specifier: 8.37.0
         version: 8.37.0(548b9c21b67aeb4b6bce09bfbcc704c3)
@@ -735,8 +735,8 @@ importers:
         specifier: ~5.11.1
         version: 5.11.1(react-native@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)
       react-native-screens:
-        specifier: file:deps/react-native-screens-5.0.0-oni.58.tgz
-        version: file:apps/mobile/deps/react-native-screens-5.0.0-oni.58.tgz(react-native@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)
+        specifier: file:deps/react-native-screens-5.0.0-oni.59.tgz
+        version: file:apps/mobile/deps/react-native-screens-5.0.0-oni.59.tgz(react-native@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)
       react-native-svg:
         specifier: 15.16.1
         version: 15.16.1(patch_hash=07ff2773ed31cb71fe7b5e3309916c6d399ab063b091209575cda856bc9c283e)(react-native@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)
@@ -10752,9 +10752,9 @@ packages:
       react: '*'
       react-native: '*'
 
-  react-native-screens@file:apps/mobile/deps/react-native-screens-5.0.0-oni.58.tgz:
-    resolution: {integrity: sha512-wy26VyO6HVRemIUhoUksWfwFP7MGh8ykEWMUgFUGeAi2Gi6x4J/XkBo5GkspMDItNqJPVQV/5YkHsIcdnuG0NQ==, tarball: file:apps/mobile/deps/react-native-screens-5.0.0-oni.58.tgz}
-    version: 5.0.0-oni.58
+  react-native-screens@file:apps/mobile/deps/react-native-screens-5.0.0-oni.59.tgz:
+    resolution: {integrity: sha512-qnjyCX8OrNIho8QmTHxa+fbs2Iu9I5zhnevu0DQkJ+mJDYetrMGDUVCfD0By/IO7xTp41gU/Tt5+oi4Zd0gXKQ==, tarball: file:apps/mobile/deps/react-native-screens-5.0.0-oni.59.tgz}
+    version: 5.0.0-oni.59
     peerDependencies:
       react: '*'
       react-native: '*'
@@ -15204,7 +15204,7 @@ snapshots:
       use-latest-callback: 0.2.6(react@19.3.0)
       use-sync-external-store: 1.7.0(react@19.3.0)
 
-  '@react-navigation/native-stack@7.21.1(patch_hash=9c599e52aaf2f653faf27e48dd4b11cd99d0b420b5d724e8221787125c518cae)(1293603744432f2060c88cb3af432883)':
+  '@react-navigation/native-stack@7.21.1(patch_hash=9c599e52aaf2f653faf27e48dd4b11cd99d0b420b5d724e8221787125c518cae)(09a02552b0e79b2e08ede382feb35706)':
     dependencies:
       '@react-navigation/elements': 2.9.46(@react-navigation/native@7.5.2(react-native@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0))(react-native-safe-area-context@5.11.1(react-native@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0))(react-native@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)
       '@react-navigation/native': 7.5.2(react-native@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)
@@ -15212,7 +15212,7 @@ snapshots:
       react: 19.3.0
       react-native: 0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1)
       react-native-safe-area-context: 5.11.1(react-native@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)
-      react-native-screens: file:apps/mobile/deps/react-native-screens-5.0.0-oni.58.tgz(react-native@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)
+      react-native-screens: file:apps/mobile/deps/react-native-screens-5.0.0-oni.59.tgz(react-native@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)
       sf-symbols-typescript: 2.2.0
     transitivePeerDependencies:
       - '@react-native-masked-view/masked-view'
@@ -20645,7 +20645,7 @@ snapshots:
       react: 19.3.0
       react-native: 0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1)
 
-  react-native-screens@file:apps/mobile/deps/react-native-screens-5.0.0-oni.58.tgz(react-native@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0):
+  react-native-screens@file:apps/mobile/deps/react-native-screens-5.0.0-oni.59.tgz(react-native@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0):
     dependencies:
       react: 19.3.0
       react-freeze: 1.0.4(react@19.3.0)
