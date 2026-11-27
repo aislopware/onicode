@@ -49,12 +49,17 @@ test(
       paired = true;
 
       await screen.getByRole("switch", "Automatically balance load").tap();
-      // Onicode lists each machine's preference inline. The primary machine is listed first.
+      // Onicode folds the per-machine preferences under the section title.
+      await screen.getByRole("button", "Load balancing", { exact: true }).tap();
       await screen.getByRole("combobox", `${ENVIRONMENT_LABEL} load preference`).first().tap();
       await screen.getByRole("option", "Manual only", { exact: true }).tap();
 
       await app.open(draftPath);
-      await screen.getByText("Auto balance", { exact: true }).waitFor({ timeout: 60_000 });
+      // Onicode's compact composer toolbar collapses its context labels to zero width.
+      await screen
+        .getByText("Auto balance", { exact: true })
+        .first()
+        .waitFor({ state: "attached", timeout: 60_000 });
       await screen
         .getByRole("combobox", /^Branch: (From )?remote-base/)
         .first()
