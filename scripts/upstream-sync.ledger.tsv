@@ -4082,3 +4082,4 @@ e057f7a770	take	adopted upstream's one benchmark per surface over Onicode's rend
 efcf9cb5bc	take	taken as is
 3eee3d48f1	take	taken as is
 f8b2fcbee5	skip	only touches infra/relay/ (T3 relay Worker), removed in Onicode
+6b09aea61d	take	imports merged next to Onicode's ./service/ launcher (no ./cloud/); one auto-pull sweep per fetch interval, skipped on constrained hosts
