@@ -4243,3 +4243,4 @@ bf27eb196a	take	Onicode's send hold (holdSendForWorkspaceDefault with its 3 s gi
 d1b4b60d16	take	taken as is
 813972e9d3	take	the singular message gets a new key; its translations copied from upstream into all 10 mobile locales in the old key's place
 a0885a9123	take	taken as is
+37096abc12	take	staleTimeMs 0 as upstream; peekOniProjectFile keeps its own 30s current window
