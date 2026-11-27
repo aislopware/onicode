@@ -4569,3 +4569,4 @@ bd0c128791	take	adapted: tests keep zipFixture (no JSZip); Onicode-only RTF expe
 bcce7efca2	take	clean
 798c7b24eb	take	clean
 e6b74ecb80	take	clean; one label in the selection menu handler, no hook added; row-render test runs in the gate
+bcd85a358a	take	clean merge; iterator-helper .find on Onicode's all() generator (Node 26); test row lands after Onicode's Heading2 docx row
