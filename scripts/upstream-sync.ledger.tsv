@@ -4187,3 +4187,4 @@ d451c500f5	take	taken as is
 59d840c076	take	taken as is
 1d015a3794	take	taken as is
 57b0227d39	take	taken as is
+cd414b81c1	skip	already done: Onicode's FILE_LINK_LABEL_CHAR (d38dda42b2) excludes unescaped [ from file-link labels and still allows balanced nested brackets; covered by 'reads a file link after an unclosed bracket'
