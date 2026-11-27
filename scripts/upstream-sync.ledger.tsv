@@ -4363,3 +4363,4 @@ e07c80889e	take	last hunk applied with Onicode's wrapped throw
 484a0ee34d	take	applied cleanly; new key in all 10 web locales, i18n:check green
 5aa81ac848	take	applied cleanly
 5389ed620c	take	applied cleanly
+8d30a1d30d	take	vite.config entry added after the occupancy entry; pagination test also mocks Onicode's state/filesystem (queries.ts imports it)

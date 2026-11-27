@@ -16,6 +16,7 @@ import type {
   OrchestrationV2ProjectedTurnItem,
   ProjectId,
   ThreadPullRequestLink,
+  VcsListRefsInput,
   VcsListRefsResult,
   VcsRef,
 } from "@onicode/contracts";
@@ -311,12 +312,15 @@ export function useBranches(input: {
   );
 }
 
-export function usePaginatedBranches(target: VcsRefTarget) {
+export function usePaginatedBranches(
+  target: VcsRefTarget & { readonly refKind?: VcsListRefsInput["refKind"] },
+) {
   const resolve = useMessages();
   const query = target.query?.trim() ?? "";
+  const { refKind } = target;
   const targetKey =
     target.environmentId !== null && target.cwd !== null
-      ? JSON.stringify([target.environmentId, target.cwd, query])
+      ? JSON.stringify([target.environmentId, target.cwd, query, refKind])
       : null;
   const [pagination, setPagination] = useState<{
     readonly targetKey: string | null;
@@ -336,12 +340,13 @@ export function usePaginatedBranches(target: VcsRefTarget) {
                 cwd: target.cwd!,
                 ...(query.length > 0 ? { query } : {}),
                 ...(cursor === undefined ? {} : { cursor }),
+                ...(refKind === undefined ? {} : { refKind }),
                 limit: VCS_REF_LIST_LIMIT,
               },
             }),
           )
         : [],
-    [target.environmentId, target.cwd, query, cursors],
+    [target.environmentId, target.cwd, query, refKind, cursors],
   );
   const pagesAtom = useMemo(
     () =>
