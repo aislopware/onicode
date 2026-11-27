@@ -10520,7 +10520,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     };
     // A side chat's "Context from" divider already marks its copied context.
     const activeHandoff =
-      (sideChatFork ? null : portableForkHandoff) ?? providerSwitchHandoff ?? mergeBackHandoff;
+      (sideChatFork ? null : portableForkHandoff) ??
+      providerSwitchHandoff ??
+      mergeBackHandoff ??
+      legacyImportRecoveryHandoff;
     const handoffSourceRuns =
       portableForkHandoff !== null
         ? sourceRun === null
@@ -10561,7 +10564,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                 ? "Fork context"
                 : providerSwitchHandoff !== null
                   ? "Provider handoff"
-                  : "Merge-back context",
+                  : mergeBackHandoff !== null
+                    ? "Merge-back context"
+                    : "Imported context",
             startedAt: now,
             completedAt: now,
             updatedAt: now,
