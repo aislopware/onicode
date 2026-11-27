@@ -1,6 +1,10 @@
 import { decodeString } from "micromark-util-decode-string";
 
-import { FRONTMATTER_MAX_LINES, leadingFrontmatterLength } from "./markdownFrontmatter.ts";
+import {
+  FRONTMATTER_MAX_LINES,
+  leadingFrontmatterLength,
+  maskMarkdownFrontmatter,
+} from "./markdownFrontmatter.ts";
 
 // About one screen of rendered Markdown; parsing costs up to ~40 ms per KB with tables and math.
 const CHUNK_TARGET_CHARS = 4 * 1024;
@@ -386,9 +390,13 @@ function scanMarkdown(
       };
 }
 
-/** Appends shared link definitions after a piece, leaving its own offsets unchanged. */
+/** Prepends shared definitions in document order; source offsets shift by the prefix length. */
 export function withMarkdownDefinitions(text: string, definitions: string): string {
-  return definitions ? `${text}\n\n${definitions}` : text;
+  if (!definitions) return text;
+  const masked = maskMarkdownFrontmatter(text);
+  return masked.startsWith("\uFEFF")
+    ? `\uFEFF${definitions}\n\n${masked.slice(1)}`
+    : `${definitions}\n\n${masked}`;
 }
 
 /**
