@@ -4538,3 +4538,4 @@ f40f78eb5e	take	clean
 3e9a0106ff	take	clean
 15c42f7a67	take	adapted: kept Onicode's lazy chat-link metadata: upstream's render-time useFileMetadata stats every file link in every rendered message over the websocket; MarkdownFileLink now asks once when its context menu opens (executeAtomQuery, same pattern as the terminal link check); test mocks the one-shot query; i18n tails unioned; mobile chat file links have no Download (follow-up), the mobile Files route already downloads
 56dbca3bc5	take	clean
+c2b86cd5e7	take	import conflict only (Onicode keeps its own preview pieces, no SourceFileSurface); filePath logic as upstream
