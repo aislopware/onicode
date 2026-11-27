@@ -65,6 +65,7 @@ import { takeScheduledTaskNewLink } from "./features/settings/scheduled-task-edi
 import {
   pairingFormLinkAction,
   startDevAutoConnect,
+  takeDevConnectionRemoveLink,
   withoutPairingTarget,
 } from "./features/connection/devAutoConnect";
 import { pairingFormLinkPath } from "./features/connection/pairing";
@@ -135,6 +136,8 @@ const linkingConfig = {
 } as const;
 
 function getAppStateFromPath(path: string, options: Parameters<typeof getStateFromPath>[1]) {
+  // No navigation: React Navigation ignores a link that parses to no state.
+  if (takeDevConnectionRemoveLink(path)) return undefined;
   return pipe(
     getStateFromPath(pairingFormLinkPath(path), options),
     (state) => restoreDraftLinkState(state, path),

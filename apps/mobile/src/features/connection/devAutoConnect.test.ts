@@ -18,6 +18,7 @@ const { StackRouter } = requireFromCore("@react-navigation/routers") as {
 
 const harness = vi.hoisted(() => ({
   pair: vi.fn(),
+  forget: vi.fn(),
   goBack: vi.fn(),
   dispatch: vi.fn(),
   columns: false,
@@ -43,6 +44,7 @@ vi.mock("@react-navigation/native", () => ({
 }));
 vi.mock("../../state/use-remote-environment-registry", () => ({
   pairEnvironment: harness.pair,
+  forgetEnvironment: harness.forget,
 }));
 vi.mock("../layout/workspace/workspace-selection-store", () => ({
   workspaceHasColumns: () => harness.columns,
@@ -69,6 +71,7 @@ import {
   devAutoConnectAttemptAtom,
   pairingFormLinkAction,
   startDevAutoConnect,
+  takeDevConnectionRemoveLink,
 } from "./devAutoConnect";
 
 const PAIRING_URL = "http://192.168.1.10:3773/pair#token=abc";
@@ -132,6 +135,19 @@ it("auto-connects in a production bundle only when mobile:metrics built it with 
   startDevAutoConnect(settingsLink({ pairingUrl: PAIRING_URL, autoConnect: "1" }));
   vi.unstubAllEnvs();
   expect(harness.pair).toHaveBeenCalledOnce();
+});
+
+it("a remove link forgets its environment in development and routes as usual in production", () => {
+  vi.stubGlobal("__DEV__", true);
+  expect(takeDevConnectionRemoveLink("connections/remove?environmentId=%20env-1%20")).toBe(true);
+  expect(harness.forget).toHaveBeenCalledExactlyOnceWith("env-1");
+  expect(takeDevConnectionRemoveLink("/connections/remove/?environmentId=")).toBe(true);
+  expect(takeDevConnectionRemoveLink("connections/remove")).toBe(true);
+  expect(takeDevConnectionRemoveLink("connections/removed?environmentId=env-1")).toBe(false);
+  expect(takeDevConnectionRemoveLink("connections/new?environmentId=env-1")).toBe(false);
+  vi.stubGlobal("__DEV__", false);
+  expect(takeDevConnectionRemoveLink("connections/remove?environmentId=env-1")).toBe(false);
+  expect(harness.forget).toHaveBeenCalledOnce();
 });
 
 it("forgets a failed auto-connect once the form is opened again without the flag", async () => {

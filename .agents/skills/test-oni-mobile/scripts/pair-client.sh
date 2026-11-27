@@ -51,3 +51,11 @@ if ! "$agent_device_command" open dev.aislopware.onicode.dev "$deep_link" "$@" \
 fi
 
 echo "Opened the existing Add Environment route with a fresh pairing credential."
+
+# forget-client.sh takes this id to remove the connection at teardown.
+if environment_id="$(curl -fsS --max-time 5 "http://127.0.0.1:$server_port/.well-known/onicode/environment" |
+  node -e 'process.stdout.write(JSON.parse(require("node:fs").readFileSync(0, "utf8")).environmentId)')"; then
+  echo "Environment ID: $environment_id"
+else
+  echo "Could not read the server's environment ID from port $server_port." >&2
+fi

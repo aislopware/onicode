@@ -22,6 +22,7 @@ on:
       - apps/desktop/src/app/DesktopEnvironment.ts
       - apps/server/src/environment/ServerEnvironmentLabel.ts
       - .github/workflows/scenarios.yml
+      - .github/scripts/*-ios-scenario*.sh
   pull_request:
     paths:
       - scripts/scenarios/**
@@ -36,6 +37,7 @@ on:
       - apps/desktop/src/app/DesktopEnvironment.ts
       - apps/server/src/environment/ServerEnvironmentLabel.ts
       - .github/workflows/scenarios.yml
+      - .github/scripts/*-ios-scenario*.sh
 
 permissions:
   contents: read
@@ -196,19 +198,13 @@ jobs:
 
       # A device of its own: the image's simulators repeat names across runtimes. A hosted runner
       # has 7 GB, less than a stock iOS simulator takes, so it boots without the background
-      # services a scenario never touches.
+      # services a scenario never touches. On the self-hosted runner, the first run on a new
+      # runtime also prepares the template later runs clone, which can outlast simslim's 10-minute
+      # boot wait.
       - name: Create a slim simulator
+        timeout-minutes: 40
         run: |
-          # The newest iOS runtime and the first iPhone it supports: not every device type boots on
-          # every runtime.
-          # Runtimes for one device only, such as iOS-27-2-iPhone19-4, are left out.
-          read -r runtime type < <(xcrun simctl list runtimes available -j | jq -er '
-            [.runtimes[] | select(.platform == "iOS" and (.identifier | test("iOS-[0-9-]+$")))]
-            | max_by(.version | split(".") | map(tonumber))
-            | "\(.identifier) \(first(.supportedDeviceTypes[] | select(.productFamily == "iPhone")).identifier)"')
-          udid="$(xcrun simctl create "Scenario iPhone" "$type" "$runtime")"
-          command -v simslim > /dev/null || brew install mobai-app/tap/simslim
-          simslim on "$udid" --except store,web --preserve-boot-state
+          .github/scripts/create-ios-scenario-simulator.sh
           echo "E2E_IOS_DEVICE=Scenario iPhone" >> "$GITHUB_ENV"
 
       # The dev runner builds the resource monitor when the binary is missing, and
