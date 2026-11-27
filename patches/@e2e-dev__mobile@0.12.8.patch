@@ -1,5 +1,72 @@
+diff --git a/dist/device.js b/dist/device.js
+index 819e3a8294724e95a5deb934e443f9615b92f0d9..7e3f0d937147d46c75d05e195b63494f9fe1688d 100644
+--- a/dist/device.js
++++ b/dist/device.js
+@@ -71,7 +71,8 @@ export function createDeviceFixture(surface, context) {
+             await surface.command('device.setAppearance', (client) => client.settings.update({ ...surface.selection(), setting: 'appearance', state: mode }), context.signal);
+         },
+         async setOrientation(orientation) {
+-            await surface.screenCommand('device.setOrientation', (client) => client.command.orientation({ ...surface.selection(), orientation }), context.signal);
++            const input = surface.inputBudget('device.setOrientation', { timeoutMs: context.timeouts.action, signal: context.signal });
++            await surface.screenCommand('device.setOrientation', (client) => input.send(() => client.command.orientation({ ...surface.selection(), orientation })), context.signal);
+         },
+         async fold(pose) {
+             await surface.fold(pose, context.signal);
+@@ -91,7 +92,7 @@ export function createDeviceFixture(surface, context) {
+             await surface.openApp(app, options ?? {}, context.signal);
+         },
+         async openLink(url, options) {
+-            await surface.openLink(linkTarget(url), options?.app, context.signal);
++            await surface.openLink(linkTarget(url), options?.app, context.signal, surface.inputBudget('device.openLink', { timeoutMs: context.timeouts.action, signal: context.signal }));
+         },
+         async closeApp() {
+             await surface.closeApp(context.signal);
+@@ -100,7 +101,8 @@ export function createDeviceFixture(surface, context) {
+             await surface.clearKeychain(context.signal);
+         },
+         async foregroundApp() {
+-            const state = await surface.command('device.foregroundApp', (client) => client.command.appState({}), context.signal);
++            const input = surface.inputBudget('device.foregroundApp', { timeoutMs: context.timeouts.action, signal: context.signal });
++            const state = await surface.command('device.foregroundApp', (client) => input.read(() => client.command.appState({})), context.signal);
+             if ('package' in state)
+                 return { name: state.package, bundleId: state.package };
+             return {
+@@ -109,23 +111,28 @@ export function createDeviceFixture(surface, context) {
+             };
+         },
+         async home() {
+-            await surface.screenCommand('device.home', (client) => client.command.home(surface.selection()), context.signal);
++            const input = surface.inputBudget('device.home', { timeoutMs: context.timeouts.action, signal: context.signal });
++            await surface.screenCommand('device.home', (client) => input.send(() => client.command.home(surface.selection())), context.signal);
+         },
+         async back() {
+-            await surface.screenCommand('device.back', (client) => client.command.back({ ...surface.settleOptions }), context.signal);
++            const input = surface.inputBudget('device.back', { timeoutMs: context.timeouts.action, signal: context.signal });
++            await surface.screenCommand('device.back', (client) => input.send(() => client.command.back({ ...surface.settleOptions })), context.signal);
+         },
+         async alert(action) {
+-            await surface.screenCommand('device.alert', (client) => client.command.alert({ ...surface.selection(), action }), context.signal);
++            const input = surface.inputBudget('device.alert', { timeoutMs: context.timeouts.action, signal: context.signal });
++            await surface.screenCommand('device.alert', (client) => input.send(() => client.command.alert({ ...surface.selection(), action })), context.signal);
+         },
+         async dismissKeyboard() {
+             await surface.dismissKeyboard(context.signal, surface.inputBudget('device.dismissKeyboard', { timeoutMs: context.timeouts.action, signal: context.signal }));
+         },
+         async clipboard() {
+-            const result = await surface.command('device.clipboard', (client) => client.command.clipboard({ ...surface.selection(), action: 'read' }), context.signal);
++            const input = surface.inputBudget('device.clipboard', { timeoutMs: context.timeouts.action, signal: context.signal });
++            const result = await surface.command('device.clipboard', (client) => input.read(() => client.command.clipboard({ ...surface.selection(), action: 'read' })), context.signal);
+             return result.action === 'read' ? result.text : '';
+         },
+         async setClipboard(text) {
+-            await surface.command('device.setClipboard', (client) => client.command.clipboard({ ...surface.selection(), action: 'write', text }), context.signal);
++            const input = surface.inputBudget('device.setClipboard', { timeoutMs: context.timeouts.action, signal: context.signal });
++            await surface.command('device.setClipboard', (client) => input.send(() => client.command.clipboard({ ...surface.selection(), action: 'write', text })), context.signal);
+         },
+     };
+     const action = { kind: 'resource' };
 diff --git a/dist/support.js b/dist/support.js
-index 91d50ca0a3a10f1798f2f3d83e45da56de77351a..4de9c68ea6f04660dff65d8d5679a1c59a7e7df4 100644
+index 91d50ca0a3a10f1798f2f3d83e45da56de77351a..64d4e7643c5b9c482671adc5f4b6aa75474f1a3e 100644
 --- a/dist/support.js
 +++ b/dist/support.js
 @@ -1,4 +1,5 @@
@@ -42,7 +109,7 @@ index 91d50ca0a3a10f1798f2f3d83e45da56de77351a..4de9c68ea6f04660dff65d8d5679a1c5
       * landed, so it is `ACTION_MAY_HAVE_COMMITTED` and the runner never repeats it.
       */
      send(dispatch, holdMs = 0) {
-+        return this.untilRunnerFree(() => this.sendOnce(dispatch, holdMs));
++        return this.untilRunnerFree(() => this.sendOnce(dispatch, holdMs), holdMs + MIN_ANSWER_MS);
 +    }
 +    sendOnce(dispatch, holdMs) {
          const remaining = this.remainingMs();
@@ -52,13 +119,13 @@ index 91d50ca0a3a10f1798f2f3d83e45da56de77351a..4de9c68ea6f04660dff65d8d5679a1c5
       * so the runner never repeats that input.
       */
      read(dispatch) {
-+        return this.untilRunnerFree(() => this.readOnce(dispatch));
++        return this.untilRunnerFree(() => this.readOnce(dispatch), MIN_ANSWER_MS);
 +    }
 +    readOnce(dispatch) {
          const remaining = this.remainingMs();
          if (remaining <= 0)
              return Promise.reject(this.spent());
-@@ -76,6 +106,28 @@ export class InputBudget {
+@@ -76,6 +106,34 @@ export class InputBudget {
              ? this.maybeCommitted()
              : new EngineError('OPERATION_TIMEOUT', `${this.label} timed out before the device answered`, { retryable: false }));
      }
@@ -66,9 +133,10 @@ index 91d50ca0a3a10f1798f2f3d83e45da56de77351a..4de9c68ea6f04660dff65d8d5679a1c5
 +     * Sends a command again, within the budget, while the iOS runner refuses it
 +     * as busy: nothing went out, and the refusal clears once the runner drains
 +     * the command that overran its watchdog. When the budget cannot fit another
-+     * wait, the refusal itself is the failure, so it still names the runner.
++     * wait and the `needMs` an attempt takes, the refusal itself is the
++     * failure, so it still names the runner.
 +     */
-+    async untilRunnerFree(attempt) {
++    async untilRunnerFree(attempt, needMs) {
 +        for (let waitMs = RUNNER_BUSY_FIRST_WAIT_MS;; waitMs = Math.min(waitMs * 2, RUNNER_BUSY_MAX_WAIT_MS)) {
 +            const sent = this.sent;
 +            try {
@@ -78,9 +146,14 @@ index 91d50ca0a3a10f1798f2f3d83e45da56de77351a..4de9c68ea6f04660dff65d8d5679a1c5
 +                if (!isRunnerBusyRefusal(cause))
 +                    throw cause;
 +                this.sent = sent;
-+                if (this.signal.aborted || this.remainingMs() <= waitMs)
++                if (this.signal.aborted || this.remainingMs() <= waitMs + needMs)
 +                    throw cause;
 +                await pause(waitMs, this.signal);
++                if (this.signal.aborted)
++                    throw cancelled(`${this.label} cancelled`);
++                // A timer can fire late: past what the attempt needs, the refusal stays the failure.
++                if (this.remainingMs() <= needMs)
++                    throw cause;
 +            }
 +        }
 +    }
