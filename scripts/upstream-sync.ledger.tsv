@@ -4578,3 +4578,4 @@ f46957a76b	take	clean; OpenCode follows upstream
 3074fc37dc	take	adopted upstream's leading-space resolution; the untrimmed lookup was already Onicode's (second hunk not needed)
 e19b84de74	take	clean
 289dd3f89c	take	clean
+a6e147bbec	take	clean
