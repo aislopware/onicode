@@ -3781,6 +3781,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               type: "provider-session.detach" as const,
               providerSessionId: session.id,
               detail: detachReason,
+              ...(canResumeAcrossInstances && activeProviderThread.providerSessionId === session.id
+                ? { handoffProviderThread: activeProviderThread, handoffRunId: queuedRun.id }
+                : {}),
             },
           })),
           {
@@ -10842,6 +10845,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             type: "provider-session.detach",
             providerSessionId: session.id,
             detail: detachDetail,
+            ...(canResumeAcrossInstances && activeProviderThread.providerSessionId === session.id
+              ? { handoffProviderThread: activeProviderThread, handoffRunId: runId }
+              : {}),
           },
         } satisfies PendingOrchestrationEffectV2,
       ]);
