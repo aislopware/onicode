@@ -82,8 +82,6 @@ export const test = base.extend<{ onicode: MobileOni }>({
             `${SCHEME}://expo-development-client/?url=${metro}&disableOnboarding=1&disableFab=1&disableAutoLaunch=1`,
           );
         await load();
-        // The first load bundles the app; the pairing link only works once it is on screen.
-        if (paired) return;
         // Not the empty state's "Add environment": the simulator's keychain outlives the app, so
         // environments an earlier run saved can still be listed.
         const workspace = screen.getByTestId("adaptive-workspace-layout");
@@ -91,16 +89,24 @@ export const test = base.extend<{ onicode: MobileOni }>({
         // A loaded host can time out the accept of iOS's open-link prompt, and the app then never
         // launches; reads only say it is not running. Open it again instead of waiting that out.
         for (let attempt = 1; attempt < LAUNCH_ATTEMPTS; attempt += 1) {
-          const notLaunched = await workspace
+          const shown = await workspace
             .or(loadFailed)
             .waitFor({ state: "visible", timeout: 45_000 })
             .then(
-              () => false,
-              (error: unknown) => String(error).includes("is not running"),
+              () => true,
+              (error: unknown) => {
+                if (String(error).includes("is not running")) return false;
+                // Still bundling, or a read cut off at the deadline: the next wait tells which.
+                if (error instanceof Error && "code" in error && error.code === "LOCATOR_NOT_FOUND")
+                  return undefined;
+                throw error;
+              },
             );
-          if (!notLaunched) break;
-          await load();
+          if (shown) break;
+          if (shown === false) await load();
         }
+        // The first load bundles the app; the pairing link only works once it is on screen.
+        if (paired) return;
         await expect(workspace.or(loadFailed)).toBeVisible({ timeout: 240_000 });
         // The error stays on screen while another load runs, so only the app tells that one worked.
         for (let attempt = 1; attempt < LOAD_ATTEMPTS; attempt += 1) {

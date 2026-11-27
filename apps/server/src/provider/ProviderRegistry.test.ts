@@ -4649,11 +4649,6 @@ it.layer(
             Layer.succeed(ServerSettingsModule.ServerSettingsService, serverSettings),
           ),
           Layer.provideMerge(ServerSecretStore.layer),
-          Layer.provideMerge(
-            ServerConfig.layerTest(process.cwd(), {
-              prefix: "oni-provider-registry-",
-            }),
-          ),
           Layer.provideMerge(layerTestHttpClient),
           Layer.provideMerge(
             Layer.succeed(
@@ -4661,7 +4656,11 @@ it.layer(
               ProviderEventLoggers.NoOpProviderEventLoggers,
             ),
           ),
-          Layer.provideMerge(ProviderLatestVersions.layer),
+          Layer.provideMerge(Layer.fresh(ProviderLatestVersions.layer)),
+          // Built first so it is released last, after the version lookups that write into it.
+          Layer.provideMerge(
+            ServerConfig.layerTest(process.cwd(), { prefix: "oni-provider-registry-" }),
+          ),
           Layer.provideMerge(McpProviderSessions.layer),
           Layer.provideMerge(ModelManifest.layerTest),
           Layer.provideMerge(ResetCreditCoordinator.layerTest),
@@ -4775,11 +4774,6 @@ it.layer(
             Layer.succeed(ServerSettingsModule.ServerSettingsService, serverSettings),
           ),
           Layer.provideMerge(ServerSecretStore.layer),
-          Layer.provideMerge(
-            ServerConfig.layerTest(process.cwd(), {
-              prefix: "oni-provider-registry-",
-            }),
-          ),
           Layer.provideMerge(layerTestHttpClient),
           Layer.provideMerge(
             Layer.succeed(
@@ -4787,7 +4781,11 @@ it.layer(
               ProviderEventLoggers.NoOpProviderEventLoggers,
             ),
           ),
-          Layer.provideMerge(ProviderLatestVersions.layer),
+          Layer.provideMerge(Layer.fresh(ProviderLatestVersions.layer)),
+          // Built first so it is released last, after the version lookups that write into it.
+          Layer.provideMerge(
+            ServerConfig.layerTest(process.cwd(), { prefix: "oni-provider-registry-" }),
+          ),
           Layer.provideMerge(McpProviderSessions.layer),
           Layer.provideMerge(ModelManifest.layerTest),
           Layer.provideMerge(ResetCreditCoordinator.layerTest),
@@ -4885,9 +4883,6 @@ it.layer(
           Layer.provideMerge(
             Layer.succeed(ServerSettingsModule.ServerSettingsService, serverSettings),
           ),
-          Layer.provideMerge(
-            ServerConfig.layerTest(process.cwd(), { prefix: "oni-provider-registry-" }),
-          ),
           Layer.provideMerge(layerTestHttpClient),
           Layer.provideMerge(
             Layer.succeed(
@@ -4895,7 +4890,11 @@ it.layer(
               ProviderEventLoggers.NoOpProviderEventLoggers,
             ),
           ),
-          Layer.provideMerge(ProviderLatestVersions.layer),
+          Layer.provideMerge(Layer.fresh(ProviderLatestVersions.layer)),
+          // Built first so it is released last, after the version lookups that write into it.
+          Layer.provideMerge(
+            ServerConfig.layerTest(process.cwd(), { prefix: "oni-provider-registry-" }),
+          ),
           Layer.provideMerge(McpProviderSessions.layer),
           Layer.provideMerge(ResetCreditCoordinator.layerTest),
           Layer.provideMerge(layerBackgroundPolicyAlwaysRun),
