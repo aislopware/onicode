@@ -4516,3 +4516,4 @@ aee6cf558d	take	clean; index exists, no migration
 656a1ac2e5	take	clean
 f0a2574793	take	clean
 a86ac01b0a	take	clean; command palette shares settingsSearch.ts; mobile has no settings search
+c5699927ff	take	prepareDirectories guard around Onicode's directory creates (no startupPresentation in Onicode); doctor test imports merged with Onicode's service/bootService path
