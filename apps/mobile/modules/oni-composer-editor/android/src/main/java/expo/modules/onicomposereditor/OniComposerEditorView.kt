@@ -951,8 +951,9 @@ internal class SelectionAwareEditText(
       !payload["fragment"].isNullOrEmpty() ||
         payload["html"]?.contains("data-oni-context-fragment=") == true -> pasteContext(payload)
       pasteImagesOrInterceptedText() -> true
-      isSingleItemClip() && OniComposerClipboard.hasThreadLink(payload["text"].orEmpty()) ->
-        pasteContext(payload)
+      isSingleItemClip() &&
+        (OniComposerClipboard.hasThreadLink(payload["text"].orEmpty()) ||
+          OniComposerClipboard.hasWebLink(payload["html"].orEmpty())) -> pasteContext(payload)
       else -> false
     }
   }

@@ -2,7 +2,7 @@ import type { EnvironmentServerConfig } from "@onicode/client-runtime/connection
 import { scopeThreadRef, scopedThreadKey } from "@onicode/client-runtime/environment";
 import {
   resolveThreadWorkingStartedAt,
-  threadRuntimeCanArchive,
+  threadCanMarkUnread,
 } from "@onicode/client-runtime/state/models";
 import { isShownUnderParent } from "@onicode/client-runtime/state/threads";
 import { backgroundWorkHoldsCompletion } from "@onicode/shared/orchestrationV2PendingBackgroundWork";
@@ -57,7 +57,6 @@ import { isModelPickerOpen, subscribeToModelPickerVisibility } from "../modelPic
 import { shortcutModifierStore } from "../shortcutModifierState";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
-import { canMarkLatestRunUnread } from "./threadActionMenu.logic";
 
 export function shouldNavigateAfterThreadPark(input: {
   readonly threadKey: string;
@@ -641,9 +640,7 @@ export function buildBulkTitleRegenerationContextMenuItem(input: {
 export function selectMarkUnreadThreads<
   T extends Pick<SidebarThreadSummary, "latestRun" | "runtime">,
 >(threads: readonly T[]): T[] {
-  return threads.filter(
-    (thread) => canMarkLatestRunUnread(thread.latestRun) && threadRuntimeCanArchive(thread.runtime),
-  );
+  return threads.filter((thread) => threadCanMarkUnread(thread));
 }
 
 export function buildBulkMarkUnreadContextMenuItem(input: {
@@ -1101,6 +1098,46 @@ export function groupSidebarThreadsByProject<
     folderByProject.get(`${thread.environmentId}:${thread.projectId}`)?.threads.push(thread);
   }
   return folders.filter((folder) => folder.threads.length > 0 || keepEmpty(folder.group));
+}
+
+const SIDEBAR_FOLDER_PREVIEW_COUNT = 6;
+const NO_HIDDEN_FOLDER_THREADS: readonly never[] = [];
+
+/**
+ * What a boring-sidebar folder lists: an open folder previews its first threads until
+ * Show more, a closed one none, and the route thread stays listed either way. The
+ * threads left out feed Show more, the closed folder's count and the header dot.
+ */
+export function sliceSidebarFolderThreads<
+  TThread extends Pick<SidebarThreadSummary, "environmentId" | "id">,
+>(input: {
+  readonly threads: readonly TThread[];
+  readonly collapsed: boolean;
+  readonly showAll: boolean;
+  readonly routeThreadKey: string | null;
+}): {
+  readonly threads: readonly TThread[];
+  readonly hiddenThreads: readonly TThread[];
+  readonly canShowLess: boolean;
+} {
+  const showAll = input.showAll && !input.collapsed;
+  const previewCount = input.collapsed ? 0 : SIDEBAR_FOLDER_PREVIEW_COUNT;
+  const isRouteThread = (thread: TThread) =>
+    scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)) === input.routeThreadKey;
+  const tail = input.threads.slice(previewCount);
+  const hidden = tail.filter((thread) => !isRouteThread(thread));
+  if (showAll || hidden.length === 0) {
+    return {
+      threads: input.threads,
+      hiddenThreads: NO_HIDDEN_FOLDER_THREADS,
+      canShowLess: showAll && hidden.length > 0,
+    };
+  }
+  return {
+    threads: [...input.threads.slice(0, previewCount), ...tail.filter(isRouteThread)],
+    hiddenThreads: hidden,
+    canShowLess: false,
+  };
 }
 
 export type SidebarV2TopStatusKind =

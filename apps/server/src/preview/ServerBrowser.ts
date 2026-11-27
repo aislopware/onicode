@@ -3840,14 +3840,19 @@ const make = Effect.gen(function* () {
               tab.control.controller === viewer.id &&
               typeof message.accept === "boolean"
             ) {
+              // Builds before the sign-in dialog dismiss it without its id.
+              const authChallengeId =
+                typeof message.authChallengeId === "string"
+                  ? message.authChallengeId
+                  : message.accept
+                    ? undefined
+                    : tab.dialog?.authChallengeId;
               await resolveDialog(tab, {
                 accept: message.accept,
                 ...(typeof message.promptText === "string"
                   ? { promptText: message.promptText }
                   : {}),
-                ...(typeof message.authChallengeId === "string"
-                  ? { authChallengeId: message.authChallengeId }
-                  : {}),
+                ...(authChallengeId === undefined ? {} : { authChallengeId }),
                 ...(typeof message.username === "string" ? { username: message.username } : {}),
                 ...(typeof message.password === "string" ? { password: message.password } : {}),
               });

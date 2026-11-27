@@ -1,6 +1,7 @@
 import * as Dialog from "../../components/ui/Dialog";
 import { errorDisplayMessage } from "@onicode/client-runtime/errors";
 import { resolveAssetUrl } from "@onicode/client-runtime/state/assets";
+import { executeAtomQuery } from "@onicode/client-runtime/state/runtime";
 import type { EnvironmentId, ThreadId } from "@onicode/contracts";
 import * as Option from "effect/Option";
 import { useGT } from "gt-react-native";
@@ -9,6 +10,8 @@ import { useEffect, useRef } from "react";
 
 import { downloadAndShareAttachment } from "../../lib/attachmentDownload";
 import { assetEnvironment } from "../../state/assets";
+import { appAtomRegistry } from "../../state/atom-registry";
+import { projectEnvironment } from "../../state/projects";
 import { usePreparedConnection } from "../../state/session";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 import { fileChipShareSource, type FileChipTarget } from "./fileChipMenu";
@@ -36,6 +39,18 @@ export function useFileChipShare(
     requestRef.current = request;
     void (async () => {
       if (httpBaseUrl === null) throw new Error(gt("Reconnect to the environment and try again."));
+      // Most folder links do not end in a separator, so only the host can tell one from a file.
+      if (target.fullPath) {
+        const metadata = await executeAtomQuery(
+          appAtomRegistry,
+          projectEnvironment.fileMetadata({ environmentId, input: { path: target.fullPath } }),
+          { signal: request.signal, reportFailure: false, reportDefect: false },
+        );
+        if (request.signal.aborted) return;
+        if (metadata._tag === "Success" && metadata.value?.kind === "directory") {
+          throw new Error(gt("Only files can be saved or shared, not folders."));
+        }
+      }
       const result = await createUrl(
         { environmentId, input: { resource: source.resource } },
         { signal: request.signal },

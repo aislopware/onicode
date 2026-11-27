@@ -5144,6 +5144,7 @@
   "378c3404c430fc05": "Igual a /side",
   "08aa54cb113f64b1": "Iniciar uma sessão nova",
   "2a6969164260cdee": "Os pull requests não estão disponíveis para este projeto.",
+  "f73d6e04e1100572": "Só é possível salvar ou compartilhar arquivos, não pastas.",
   "a0ce478324829283": "{term, select, mr {Não foi possível vincular este merge request} cr {Não foi possível vincular esta solicitação de alteração} other {Não foi possível vincular este pull request}}",
   "962d13f9565f189b": "{term, select, mr {Não foi possível desvincular este merge request} cr {Não foi possível desvincular esta solicitação de alteração} other {Não foi possível desvincular este pull request}}",
   "0f9053e44ef763ec": "{term, select, mr {Cole a URL de um merge request ou digite 123 / #123 para o repositório desta thread.} cr {Cole a URL de uma solicitação de alteração ou digite 123 / #123 para o repositório desta thread.} other {Cole a URL de um pull request ou digite 123 / #123 para o repositório desta thread.}}",

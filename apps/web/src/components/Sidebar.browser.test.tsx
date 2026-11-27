@@ -307,25 +307,32 @@ function mockSidebarThreads() {
 
 describe("sidebar render isolation", () => {
   // regression: any sidebar render rebuilt the thread list, so every row re-rendered with it
-  it("does not re-render thread rows when the sidebar renders with nothing changed", async () => {
-    using _threads = mockSidebarThreads();
-    const routeReveal = { observedKey: null, pendingKey: null };
-    // The app's GT provider, without which useGT() returns a new function every render.
-    const sidebar = () => (
-      <I18nProvider>
-        <SidebarProvider>
-          <Sidebar routeReveal={routeReveal} />
-        </SidebarProvider>
-      </I18nProvider>
-    );
-    await using screen = await render(sidebar());
-    await expect.element(screen.getByText("Thread 4").first()).toBeInTheDocument();
-    const rowRenders = () => vi.mocked(SortableThreadRow.type).mock.calls.length;
+  it.each([false, true])(
+    "does not re-render thread rows when the sidebar renders with nothing changed (folders: %s)",
+    async (boringSidebarEnabled) => {
+      using stack = new DisposableStack();
+      const previousSettings = getClientSettings();
+      stack.defer(() => __setClientSettingsForTests(previousSettings));
+      __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, boringSidebarEnabled });
+      using _threads = mockSidebarThreads();
+      const routeReveal = { observedKey: null, pendingKey: null };
+      // The app's GT provider, without which useGT() returns a new function every render.
+      const sidebar = () => (
+        <I18nProvider>
+          <SidebarProvider>
+            <Sidebar routeReveal={routeReveal} />
+          </SidebarProvider>
+        </I18nProvider>
+      );
+      await using screen = await render(sidebar());
+      await expect.element(screen.getByText("Thread 4").first()).toBeInTheDocument();
+      const rowRenders = () => vi.mocked(SortableThreadRow.type).mock.calls.length;
 
-    const beforeRender = rowRenders();
-    await screen.rerender(sidebar());
-    expect(rowRenders() - beforeRender).toBe(0);
-  });
+      const beforeRender = rowRenders();
+      await screen.rerender(sidebar());
+      expect(rowRenders() - beforeRender).toBe(0);
+    },
+  );
 
   it("re-renders only the two affected rows when the open thread changes", async () => {
     using threads = mockSidebarThreads();

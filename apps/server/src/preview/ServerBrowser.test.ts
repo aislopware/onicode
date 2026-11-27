@@ -1933,6 +1933,19 @@ it.effect("an HTTP Basic challenge asks for credentials and sends them to Chromi
       expect(yield* Queue.clear(viewer.output)).toContainEqual(
         expect.objectContaining({ _tag: "control", dialog: null }),
       );
+
+      // Mobile builds that predate the sign-in dialog answer it without its id.
+      session.emit("Fetch.authRequired", { ...basicChallenge, requestId: "auth-2" });
+      yield* viewer.input({ type: "dialog", accept: true });
+      expect(session.send).not.toHaveBeenCalledWith(
+        "Fetch.continueWithAuth",
+        expect.objectContaining({ requestId: "auth-2" }),
+      );
+      yield* viewer.input({ type: "dialog", accept: false });
+      expect(session.send).toHaveBeenCalledWith("Fetch.continueWithAuth", {
+        requestId: "auth-2",
+        authChallengeResponse: { response: "CancelAuth" },
+      });
     }),
   ).pipe(Effect.provide(layer)),
 );

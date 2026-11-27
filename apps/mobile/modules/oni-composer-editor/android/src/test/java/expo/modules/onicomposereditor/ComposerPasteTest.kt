@@ -292,6 +292,24 @@ class ComposerPasteTest {
   }
 
   @Test
+  fun richTextLinksReachJsAndPasteAsTextStaysPlain() {
+    val html = "<meta charset=\"utf-8\">Read <a href=\"https://example.com/setup\">Setup guide</a>"
+    clipboard.setPrimaryClip(ClipData.newHtmlText("browser", "Read Setup guide", html))
+    editor.setText("")
+    editor.setSelection(0)
+    var pasted: Map<String, String>? = null
+    editor.pasteContextListener = { pasted = it }
+
+    assertTrue(editor.onTextContextMenuItem(android.R.id.paste))
+    assertEquals(html, pasted?.get("html"))
+    assertEquals("", editor.text.toString())
+
+    editor.pasteContextListener = { error("Paste as Text must drop link destinations") }
+    assertTrue(pasteAsText())
+    assertEquals("Read Setup guide", editor.text.toString())
+  }
+
+  @Test
   fun readOnlyShortcutDoesNotPasteOrEmitAnEvent() {
     clipboard.setPrimaryClip(ClipData.newPlainText("test", "x".repeat(120_001)))
     editor.setText("unchanged")

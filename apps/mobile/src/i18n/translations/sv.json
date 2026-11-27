@@ -5150,6 +5150,7 @@
   "378c3404c430fc05": "Samma som /side",
   "08aa54cb113f64b1": "Starta en ny session",
   "2a6969164260cdee": "Pull requests är inte tillgängliga för det här projektet.",
+  "f73d6e04e1100572": "Bara filer kan sparas eller delas, inte mappar.",
   "a0ce478324829283": "{term, select, mr {Kunde inte länka den här merge requesten} cr {Kunde inte länka den här ändringsbegäran} other {Kunde inte länka den här pull requesten}}",
   "962d13f9565f189b": "{term, select, mr {Kunde inte ta bort länken till den här merge requesten} cr {Kunde inte ta bort länken till den här ändringsbegäran} other {Kunde inte ta bort länken till den här pull requesten}}",
   "0f9053e44ef763ec": "{term, select, mr {Klistra in en URL till en merge request eller ange 123 / #123 för trådens repo.} cr {Klistra in en URL till en ändringsbegäran eller ange 123 / #123 för trådens repo.} other {Klistra in en URL till en pull request eller ange 123 / #123 för trådens repo.}}",

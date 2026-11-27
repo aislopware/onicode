@@ -308,7 +308,12 @@ describe("DesktopConnectionCatalogStore", () => {
         }
         return backups;
       });
-      assert.equal((yield* findBackups).length, 1);
+      const backups = yield* findBackups;
+      assert.equal(backups.length, 1);
+      assert.deepStrictEqual(yield* store.takeResetBackupPath, Option.some(backups[0]!));
+      assert.deepStrictEqual(yield* store.takeResetBackupPath, Option.none());
+      assert.deepStrictEqual(yield* store.get, Option.none());
+      assert.deepStrictEqual(yield* store.takeResetBackupPath, Option.none());
 
       const fresh = '{"schemaVersion":1,"targets":[],"profiles":[]}';
       assert.isTrue(yield* store.set(fresh));

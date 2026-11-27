@@ -18,6 +18,8 @@ import {
 export interface FileChipTarget {
   readonly fullPath?: string;
   readonly relativePath?: string;
+  /** The link ends in a path separator, so it names a folder. */
+  readonly folder?: true;
 }
 
 export function fileChipClipboardPath(
@@ -46,28 +48,26 @@ export function resolveFileChipTarget(
   return {
     ...(fullPath ? { fullPath } : {}),
     ...(relativePath ? { relativePath } : {}),
+    ...(/[\\/]$/.test(presentation.path) ? { folder: true as const } : {}),
   };
 }
 
-function fileChipMetadata(target: FileChipTarget) {
+/**
+ * Any file downloads as an attachment, whatever its type; a folder does not. Use literal resolved
+ * paths so encoded filename characters are not decoded twice.
+ */
+export function fileChipShareSource(target: FileChipTarget, threadId: ThreadId) {
   const path = target.fullPath ?? target.relativePath;
-  if (!path) return null;
+  if (!path || target.folder) return null;
   const name = fileBasename(path);
   const dot = name.lastIndexOf(".");
-  const mimeType = dot < 0 ? null : hostPreviewMimeTypeFromExtension(name.slice(dot));
-  return mimeType ? { path, name, mimeType } : null;
-}
-
-/** Use literal resolved paths so encoded filename characters are not decoded twice. */
-export function fileChipShareSource(target: FileChipTarget, threadId: ThreadId) {
-  const metadata = fileChipMetadata(target);
-  return metadata
-    ? {
-        name: metadata.name,
-        mimeType: metadata.mimeType,
-        resource: { _tag: "media-file" as const, threadId, path: metadata.path },
-      }
-    : null;
+  return {
+    name,
+    mimeType:
+      (dot < 0 ? null : hostPreviewMimeTypeFromExtension(name.slice(dot))) ??
+      "application/octet-stream",
+    resource: { _tag: "media-file" as const, threadId, path, disposition: "attachment" as const },
+  };
 }
 
 export function fileChipMenu(
@@ -82,14 +82,7 @@ export function fileChipMenu(
         ? [{ id: "copy-relative-path", title: resolve(msg("Copy relative path")) }]
         : []),
       { id: "open-file", title: resolve(msg("Open in file viewer")) },
-      ...(fileChipMetadata(target)
-        ? [
-            {
-              id: "save",
-              title: resolve(msg("Save or share")),
-            },
-          ]
-        : []),
+      ...(target.folder ? [] : [{ id: "save", title: resolve(msg("Save or share")) }]),
     ],
   };
 }

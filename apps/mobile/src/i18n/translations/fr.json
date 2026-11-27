@@ -5144,6 +5144,7 @@
   "378c3404c430fc05": "Identique à /side",
   "08aa54cb113f64b1": "Démarrer une nouvelle session",
   "2a6969164260cdee": "Les pull requests ne sont pas disponibles pour ce projet.",
+  "f73d6e04e1100572": "Seuls les fichiers peuvent être enregistrés ou partagés, pas les dossiers.",
   "a0ce478324829283": "{term, select, mr {Impossible d’associer cette merge request} cr {Impossible d’associer cette demande de modification} other {Impossible d’associer cette pull request}}",
   "962d13f9565f189b": "{term, select, mr {Impossible de dissocier cette merge request} cr {Impossible de dissocier cette demande de modification} other {Impossible de dissocier cette pull request}}",
   "0f9053e44ef763ec": "{term, select, mr {Collez l’URL d’une merge request, ou saisissez 123 / #123 pour le dépôt de ce fil.} cr {Collez l’URL d’une demande de modification, ou saisissez 123 / #123 pour le dépôt de ce fil.} other {Collez l’URL d’une pull request, ou saisissez 123 / #123 pour le dépôt de ce fil.}}",

@@ -144,6 +144,24 @@ export function threadRuntimeCanArchive(runtime: ThreadRuntimeSummary | null | u
   );
 }
 
+/**
+ * The server marks unread against the latest run's completion, and a stopped run never reads as
+ * unread, so only a run that finished on its own can be marked unread.
+ */
+export function canMarkLatestRunUnread(
+  run: Pick<ThreadRunSummary, "status" | "completedAt"> | null | undefined,
+): boolean {
+  return run?.completedAt != null && run.status !== "interrupted" && run.status !== "cancelled";
+}
+
+/** Mark unread is offered only once the latest run finished on its own and nothing runs now. */
+export function threadCanMarkUnread(thread: {
+  readonly latestRun: Pick<ThreadRunSummary, "status" | "completedAt"> | null | undefined;
+  readonly runtime: ThreadRuntimeSummary | null | undefined;
+}): boolean {
+  return canMarkLatestRunUnread(thread.latestRun) && threadRuntimeCanArchive(thread.runtime);
+}
+
 function threadRunStatusIsActive(status: ThreadRuntimeSummary["status"]): boolean {
   return (
     status === "preparing" ||

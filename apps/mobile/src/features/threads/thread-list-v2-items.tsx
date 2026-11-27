@@ -25,6 +25,7 @@ import type { EnvironmentThreadSearchMatch } from "@onicode/client-runtime/state
 import {
   formatWorkingDurationLabel,
   resolveThreadWorkingStartedAt,
+  threadCanMarkUnread,
 } from "@onicode/client-runtime/state/models";
 import {
   AuthOrchestrationOperateScope,
@@ -1051,6 +1052,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     [gt, props.autoSettleOptOutSupported, thread.autoSettleDisabledAt],
   );
   const canTurnIntoProject = canTurnThreadIntoProject(thread);
+  const canMarkUnread = threadCanMarkUnread(thread);
   const titleMenuItems = useMemo<MenuAction[]>(
     () => [
       {
@@ -1065,7 +1067,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         },
         m,
       ),
-      ...(thread.latestRun?.completedAt != null && threadCanArchive(thread.runtime)
+      ...(canMarkUnread
         ? [{ id: "mark-unread", title: gt("Mark unread"), image: "envelope.badge" }]
         : []),
       ...(canTurnIntoProject
@@ -1080,11 +1082,11 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         : []),
     ],
     [
+      canMarkUnread,
       canTurnIntoProject,
       gt,
       m,
       props.titleRegenerationSupported,
-      thread.latestRun,
       thread.runtime,
       isRegeneratingTitle,
     ],

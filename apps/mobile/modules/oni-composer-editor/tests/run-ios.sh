@@ -25,6 +25,8 @@ final class EventDispatcher {
 }
 enum OniComposerClipboard {
   static func hasThreadLink(_ text: String) -> Bool { false }
+  static func hasWebLink(_ html: String) -> Bool { false }
+  static func rtfLinks(_ board: UIPasteboard) -> (html: String, text: String)? { nil }
   static func read() -> [String: String] { [:] }
   static func write(text: String, fragment: String) {}
 }

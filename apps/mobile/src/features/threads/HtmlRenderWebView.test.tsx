@@ -87,21 +87,33 @@ it("opens a tapped render image in the image viewer with the page's other images
   expect(harness.injectedJavaScript).toContain("onicode/notifications/open-image");
   const images = [
     { src: "data:image/png;base64,AAAA", name: "settings.png" },
+    { src: "data:image/svg+xml;utf8,<svg/>", name: "chart" },
     { src: "https://assets.test/profile.png", name: "profile.png" },
+    { src: "https://assets.test/logo.SVG?v=2", name: "logo" },
   ];
-  await act(async () =>
-    harness.message?.({
-      nativeEvent: {
-        data: JSON.stringify({
-          jsonrpc: "2.0",
-          method: "onicode/notifications/open-image",
-          params: { src: images[1]!.src, name: images[1]!.name, images, index: 1 },
-        }),
-      },
-    }),
-  );
+  const tap = (index: number) =>
+    act(async () =>
+      harness.message?.({
+        nativeEvent: {
+          data: JSON.stringify({
+            jsonrpc: "2.0",
+            method: "onicode/notifications/open-image",
+            params: { src: images[index]!.src, name: images[index]!.name, images, index },
+          }),
+        },
+      }),
+    );
 
-  const gallery = images.map((image) => ({ kind: "image", uri: image.src, name: image.name }));
+  // Neither native viewer can draw an SVG, so tapping one opens nothing.
+  await tap(1);
+  await tap(3);
+  expect(harness.preview).toBeNull();
+  await tap(2);
+  const gallery = [images[0]!, images[2]!].map((image) => ({
+    kind: "image",
+    uri: image.src,
+    name: image.name,
+  }));
   expect(harness.preview).toEqual({ ...gallery[1], gallery });
   await act(async () => root.unmount());
 });

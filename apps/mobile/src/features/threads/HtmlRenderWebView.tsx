@@ -78,16 +78,23 @@ function parseMessage(data: string): unknown {
   }
 }
 
+// Neither image viewer draws SVG: iOS redraws one only from an on-screen thumbnail, which a render's
+// image is not, and Android's image decoder has no SVG support.
+const SVG_IMAGE = /^(?:data:image\/svg\+xml[;,]|https?:\/\/[^?#]*\.svg(?:[?#]|$))/i;
+
 function imagePreviewSource(message: unknown): FilePreviewSource | null {
   const request = readHtmlRenderImageRequest(message);
   if (request === undefined) return null;
-  const gallery = request.images.map((image) => ({
+  const images = request.images.filter((image) => !SVG_IMAGE.test(image.src));
+  const selected = request.images[request.index];
+  const index = selected === undefined ? -1 : images.indexOf(selected);
+  const gallery = images.map((image) => ({
     kind: "image" as const,
     uri: image.src,
     name: image.name,
   }));
-  const selected = gallery[request.index];
-  return selected ? { ...selected, gallery } : null;
+  const item = gallery[index];
+  return item ? { ...item, gallery } : null;
 }
 
 const withoutFragment = (url: string) => url.split("#", 1)[0];
