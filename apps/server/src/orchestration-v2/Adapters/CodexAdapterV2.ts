@@ -3586,6 +3586,26 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             });
           });
 
+        // A spawned child with no turn yet would stay running. Once its parent is stopped,
+        // emitSubagentProviderTurnStarted interrupts a first turn that starts late.
+        const stopUnstartedSubagents = Effect.fn("CodexAdapterV2.stopUnstartedSubagents")(
+          function* (
+            belongs: (parent: ActiveCodexTurnContext) => boolean,
+            completedAt: DateTime.Utc,
+          ) {
+            const running = Array.from((yield* Ref.get(activeTurns)).values());
+            for (const subagent of (yield* Ref.get(subagentThreads)).values()) {
+              if (!isOrchestrationV2WorkActive(subagent.task.status)) continue;
+              if (!belongs(subagent.parentContext)) continue;
+              if (running.some((context) => context.subagent === subagent)) continue;
+              yield* Ref.update(terminalizedNonCompletedNativeTurns, (current) =>
+                new Set(current).add(subagent.parentContext.nativeTurnId),
+              );
+              yield* emitSubagentTaskUpdate({ subagent, status: "interrupted", completedAt });
+            }
+          },
+        );
+
         // A native child's running item is the line its parent's subagent row shows.
         const reportSubagentProgress =
           /* Provider events include streaming deltas; avoid a span for each update. */
@@ -7553,6 +7573,17 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                     updated.add(turn.nativeTurnId);
                   return updated;
                 });
+                const stopped = yield* Ref.get(terminalizedNonCompletedNativeTurns);
+                yield* stopUnstartedSubagents((parent) => {
+                  for (
+                    let ancestor: ActiveCodexTurnContext | undefined = parent;
+                    ancestor !== undefined;
+                    ancestor = ancestor.subagent?.parentContext
+                  ) {
+                    if (stopped.has(ancestor.nativeTurnId)) return true;
+                  }
+                  return false;
+                }, input.completedAt);
               }
               yield* agentMessageDeltas.flushTurn(input.nativeTurnId);
               yield* reasoningDeltas.flushTurn(input.nativeTurnId);
@@ -8743,7 +8774,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               if (state.running.size > 0 || state.saved.size > 0) return true;
             }
             for (const subagent of (yield* Ref.get(subagentThreads)).values()) {
-              if (subagent.task.status === "running") {
+              if (isOrchestrationV2WorkActive(subagent.task.status)) {
                 return true;
               }
             }
@@ -8768,7 +8799,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             // A spawned child has no turn context until its first turn starts.
             for (const subagent of (yield* Ref.get(subagentThreads)).values()) {
               if (
-                subagent.task.status === "running" &&
+                isOrchestrationV2WorkActive(subagent.task.status) &&
                 turnBelongsToProviderThread(subagent.parentContext, providerThread.id)
               )
                 return true;
@@ -9115,6 +9146,11 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 }
                 yield* client.request("thread/unsubscribe", { threadId: nativeThreadId });
               }
+              const completedAt = yield* DateTime.now;
+              yield* stopUnstartedSubagents(
+                (parent) => turnBelongsToProviderThread(parent, unloadInput.providerThread.id),
+                completedAt,
+              );
               // Unloading stops notifications for this thread, so unknown-outcome commands cannot keep turns pinned.
               yield* turnTerminalizationPermit.withPermits(1)(
                 Effect.gen(function* () {
@@ -9138,7 +9174,6 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               // No turn/completed arrives for an unloaded thread, so a Stop Codex never
               // confirmed would otherwise keep its turn open for the life of the session.
               const interrupting = yield* Ref.get(interruptingNativeTurns);
-              const completedAt = yield* DateTime.now;
               for (const context of (yield* Ref.get(activeTurns)).values()) {
                 if (
                   context.providerThread.id !== unloadInput.providerThread.id ||
@@ -9229,6 +9264,12 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                   (candidate) => candidate !== activeTurn && inLineage(candidate),
                 ),
               ];
+              if (turnInput.requestRuntimeRestart === true) {
+                yield* stopUnstartedSubagents(
+                  (parent) => turnBelongsToProviderThread(parent, turnInput.providerThread.id),
+                  yield* DateTime.now,
+                );
+              }
               if (interruptTargetContexts.length === 0) {
                 if (turnInput.requestRuntimeRestart === true) return;
                 return yield* toProtocolError(
