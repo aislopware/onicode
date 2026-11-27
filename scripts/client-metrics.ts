@@ -520,7 +520,7 @@ const startSeededApp = Effect.fn("clientMetrics.startSeededApp")(function* (
     plan,
     ([name, model, turns]) =>
       Effect.map(thread(`Bench ${name}`, model, turns), (id) => [name, id] as const),
-    { concurrency: 4 },
+    { concurrency: 1 },
   );
   // Its one turn streams for many minutes, so it is still working while every case is measured.
   const working = yield* cli([
