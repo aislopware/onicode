@@ -402,6 +402,10 @@ function* paragraphs(node: XmlNode): Generator<TextPart, void> {
       }
       // A text box that ends the paragraph has already ended its line.
       if (!line.afterBox) yield "\n";
+    } else if (child.name === "blockquote" && child.hasText) {
+      yield LINE_START;
+      yield* paragraphs(child);
+      yield LINE_START;
     } else {
       if (["ol", "ul", "dl"].includes(child.name)) {
         if (!child.hasText) continue;
