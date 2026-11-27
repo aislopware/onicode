@@ -4396,3 +4396,4 @@ f4b252309f	take	applied cleanly
 5596e7490e	take	kept Onicode's text-binary PreviewError around the decode; added only ignoreBOM: start > 0; mobile n.a.
 a4ab2c51e3	take	applied cleanly
 43530f99e7	take	applied cleanly
+7d2db832f7	take	goBack keeps Onicode's isFocused guard beside upstream's saved check; test's useNavigation mock adds isFocused
