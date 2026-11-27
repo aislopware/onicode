@@ -50,6 +50,12 @@ describe("textDirection", () => {
   });
 });
 
+describe("byte order mark", () => {
+  it("does not count a byte order mark as a right-to-left letter", () => {
+    expect(textDirection("\uFEFFHello")).toBe("ltr");
+  });
+});
+
 describe("markdownProseDirection", () => {
   it.each([
     [

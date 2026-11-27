@@ -4274,3 +4274,4 @@ a446449577	take	tests only; kept Onicode's IMPLIED_END/openSibling, which alread
 001fa3e1ba	take	applied cleanly; i18n:generate dropped the two removed keys
 986826178c	take	taken as is
 500d99a5d0	take	applied without HOSTED_LINK
+002ad240ca	take	dropped mobile markdownDocument hunk and test (Onicode's fork owns mobile direction since a5602667eb); web test row uses textDirection since Onicode removed hasRightToLeftLetter; iOS fork gap queued
