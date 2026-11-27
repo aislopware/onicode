@@ -4087,3 +4087,4 @@ f8b2fcbee5	skip	only touches infra/relay/ (T3 relay Worker), removed in Onicode
 1485712d69	skip	already done in Onicode (1a4f3d2b64): PR reply/load-error links route through useOpenLink + anchorOpenHandlers, which also handles middle click; upstream's tests only check click wiring that passes on HEAD
 152342da7d	take	taken as is
 84fe59bb3b	take	taken as is
+fe7d0d0fee	take	altssh mapping added beside Onicode's isProjectPath work-item guard
