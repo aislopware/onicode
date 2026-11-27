@@ -18,7 +18,7 @@ import {
 import { GITHUB_ALERT_MARKER } from "@onicode/shared/markdownGithubAlerts";
 import { absoluteFilePathMatches } from "@onicode/shared/markdownLinks";
 import {
-  rehypeNormalizeLocalEditorLinks,
+  rehypeNormalizeLocalFileLinks,
   rehypePreserveImageSourceMeta,
   sanitizeChatHast,
 } from "@onicode/shared/markdownHast";
@@ -1076,7 +1076,7 @@ function restoreMath(node: Root | Element, math: Map<string, Element>) {
 const addHeadingIds = rehypeHeadingIds();
 const addTextDirection = rehypeTextDirection();
 const preserveImageSourceMeta = rehypePreserveImageSourceMeta();
-const normalizeLocalEditorLinks = rehypeNormalizeLocalEditorLinks();
+const normalizeLocalFileLinks = rehypeNormalizeLocalFileLinks();
 const groupChipPunctuation = rehypeChipPunctuation();
 
 const INSIGHT_OPENING = /^( {0,3})(`?)★ Insight[ \t]+─{3,}\2[ \t]*$/u;
@@ -1355,7 +1355,7 @@ export function wordsHast(text: string, options: WordsHastOptions): Root {
   };
   transform(tree, walk, false, false);
   preserveImageSourceMeta(tree as never);
-  normalizeLocalEditorLinks(tree as never);
+  normalizeLocalFileLinks(tree as never);
   const hast = sanitizeChatHast(tree);
   if (walk.math.size > 0) restoreMath(hast, walk.math);
   if (insights) restorePositions(hast, insights.toOriginal);
