@@ -4675,3 +4675,4 @@ a4d748f5b9	take	Test conflict: upstream's locale test beside Onicode's renamed d
 6e2164ac88	take	Adapted: Physical goes into Onicode's device-row details list; docs rewritten into Onicode's Simlock section (Simlock 0.9.0+, phones subsection); no mobile device panel
 db7cba374e	take	fix(mobile): Changed files rows say 1 addition and 1 deletion (#44376)
 54627d3d3f	take	Adapted: positions plug into Onicode's ChunkedMarkdown (footnote targets kept), notebook line caps and VirtualTablePreview's exact compressed-track top; tests use Onicode's async setup, fflate and filePreview signature
+23425c21aa	take	Adapted: DocumentText VERSION 19 -> 20 so cached ODT text is extracted again
