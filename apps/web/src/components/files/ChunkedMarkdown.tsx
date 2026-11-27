@@ -66,8 +66,21 @@ export function ChunkedMarkdown(props: {
   const more = useMoreCharactersLabel();
   const rootRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<LegendListRef | null>(null);
-  // A linked heading in a piece the list has not mounted, revealed once it mounts.
-  const [pendingHeading, setPendingHeading] = useState<HeadingTarget | null>(null);
+  const positionKey = JSON.stringify([
+    props.threadRef.environmentId,
+    props.threadRef.threadId,
+    props.cwd,
+    props.relativePath,
+  ]);
+  // A linked heading in a piece the list has not mounted, revealed once it mounts. It belongs to
+  // the thread it was clicked in, since the panel keeps this mounted across threads.
+  const [pendingLink, setPendingLink] = useState<{
+    readonly positionKey: string;
+    readonly target: HeadingTarget;
+  } | null>(null);
+  const pendingHeading = pendingLink?.positionKey === positionKey ? pendingLink.target : null;
+  const setPendingHeading = (target: HeadingTarget | null) =>
+    setPendingLink(target === null ? null : { positionKey, target });
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- waits for the virtualized list to mount the piece holding a linked heading
   useEffect(() => {
     const root = rootRef.current;
@@ -77,7 +90,7 @@ export function ChunkedMarkdown(props: {
       const piece = mountedPiece(root, pendingHeading);
       if (piece === null) return;
       pieceHeading(piece, pendingHeading)?.scrollIntoView({ block: "start" });
-      setPendingHeading(null);
+      setPendingLink(null);
     };
     const observer = new MutationObserver(reveal);
     observer.observe(root, { childList: true, subtree: true });
@@ -116,12 +129,6 @@ export function ChunkedMarkdown(props: {
     lines += chunk.lines;
     start += chunk.text.length + 1;
   }
-  const positionKey = JSON.stringify([
-    props.threadRef.environmentId,
-    props.threadRef.threadId,
-    props.cwd,
-    props.relativePath,
-  ]);
   const saved = savedPositions.get(positionKey);
   // The list applies its initial index once, so wait for the saved chunk to stream in.
   const awaitingSaved = props.loading && saved !== undefined && saved.index >= items.length;
