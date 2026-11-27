@@ -59,6 +59,12 @@ vi.mock(import("~/components/files/projectFilesQueryState"), async (importOrigin
   };
 });
 
+// Onicode asks for the settings grant before it offers onicode.json actions to import.
+vi.mock(import("~/state/server"), async (original) => {
+  const { Atom } = await import("effect/reactivity");
+  const allowed = Atom.make(true);
+  return { ...(await original()), projectScriptsPermissionAtom: () => allowed };
+});
 vi.mock(import("~/state/entities"), async (importOriginal) => ({
   ...(await importOriginal()),
   useProject: ((ref: unknown) =>

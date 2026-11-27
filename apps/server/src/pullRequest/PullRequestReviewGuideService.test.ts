@@ -407,7 +407,7 @@ it.each([
     };
     const input = reviewGuideInputFromPullRequest(
       detail("/work/app", "abc123"),
-      { ...activity, reviewThreads: [thread] },
+      { ...activity, reviewThreads: [thread], overviewThreads: [] },
       "abc123",
     );
     assert.strictEqual(input.settledReview, `- file.ts (resolved, ghost): ${prefix}${ending}`);
