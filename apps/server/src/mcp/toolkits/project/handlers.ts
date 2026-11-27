@@ -277,7 +277,7 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
                 text: input.message ?? "",
                 attachments: input.attachments,
               });
-        if (schemaProblem !== null || (input.outputSchema !== undefined && !input.message))
+        if (schemaProblem !== null || (input.outputSchema !== undefined && !input.message?.trim()))
           return yield* new OrchestratorMcpFailure({
             code: "invalid_request",
             message: schemaProblem ?? "outputSchema needs a message that asks for the result.",
@@ -492,7 +492,8 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
           runtimeMode: startedRuntimeMode,
           interactionMode,
           workspaceStrategy: strategy ?? { type: "root" },
-          ...(input.message === undefined && attachments.length === 0
+          // A blank message is no message: clients that fill every optional field send "".
+          ...(!input.message?.trim() && attachments.length === 0
             ? {}
             : {
                 initialMessage: {
