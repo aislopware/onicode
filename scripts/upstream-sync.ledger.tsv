@@ -4375,3 +4375,4 @@ cc29be0f66	take	kept Onicode's synchronous archiveText read (its archive is not 
 663421a7f2	take	installer.nsh: Onicode dropped the channel-name block, so added only Var oniAppWasRunning, a customAppRunningMessages that sets it (electron-builder keeps its default prompts) and upstream's silent relaunch; comment names scripted /S installs, not WinGet; NSIS not compiled locally, needs a Windows packaging run
 6eda4d0bb4	take	test imports keep Onicode's instanceHubs beside hasProviderUsageLimits
 eadd4e7ddc	take	steering test imports keep Onicode's makeProviderFailure and vi; all source hunks merged cleanly on the ported chain
+8994fe6db4	take	applied cleanly
