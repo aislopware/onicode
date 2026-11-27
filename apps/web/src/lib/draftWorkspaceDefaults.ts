@@ -60,11 +60,13 @@ export function readPendingWorkspaceDefault(draftId: DraftId): Promise<void> | n
 export const WORKSPACE_DEFAULT_SEND_WAIT_MS = 3_000;
 
 /**
- * Holds a send from a draft whose onicode.json default has not landed. Resolves once it lands or
- * after a short bound, which gives up on the default so it can no longer move the draft. Null when
- * nothing needs to wait.
+ * Holds a send from a draft whose checkout or onicode.json default has not landed. A checkout holds
+ * until it settles; a default resolves once it lands or after a short bound, which gives up on it so
+ * it can no longer move the draft. Null when nothing needs to wait.
  */
 export function holdSendForWorkspaceDefault(draftId: DraftId): Promise<void> | null {
+  const checkout = pendingCheckouts.get(draftId);
+  if (checkout) return checkout;
   const settled = readPendingWorkspaceDefault(draftId);
   const pending = pendingDefaults.get(draftId);
   if (settled === null || pending === undefined) return null;

@@ -6,7 +6,10 @@ import { userEvent } from "vite-plus/test/browser";
 
 import { act, render } from "../../../test/render";
 import { DraftId, useComposerDraftStore } from "~/composerDraftStore";
-import { readPendingWorkspaceDefault } from "~/lib/draftWorkspaceDefaults";
+import {
+  holdSendForWorkspaceDefault,
+  readPendingWorkspaceDefault,
+} from "~/lib/draftWorkspaceDefaults";
 import { ToastProvider } from "../ui/toast";
 import { usePullRequestActionRunner, usePullRequestHandoffs } from "./usePullRequestActions";
 
@@ -221,6 +224,9 @@ it("moves the draft the user typed into during a checkout onto the checkout", as
   useComposerDraftStore.getState().setPrompt(opened, "Review this pull request");
   // A send from this draft waits for the checkout.
   expect(readPendingWorkspaceDefault(opened)).not.toBeNull();
+  const heldSend = holdSendForWorkspaceDefault(opened);
+  expect(heldSend).not.toBeNull();
+  expect(await Promise.race([heldSend, Promise.resolve("held")])).toBe("held");
   await act(async () => {
     prepared.resolve({
       _tag: "Success",
@@ -234,6 +240,7 @@ it("moves the draft the user typed into during a checkout onto the checkout", as
     await prepared.promise;
   });
   await expect.element(screen.getByRole("dialog", { name: "Checked out" })).toBeVisible();
+  await heldSend;
 
   expect(useComposerDraftStore.getState().getComposerDraft(opened)?.prompt).toBe(
     "Review this pull request",
