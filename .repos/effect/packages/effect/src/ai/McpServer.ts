@@ -97,6 +97,7 @@ import type {
   ServerCapabilities
 } from "./McpSchema.ts"
 import * as AiPrompt from "./Prompt.ts"
+import * as Skill from "./Skill.ts"
 import * as Tool from "./Tool.ts"
 import * as Toolkit from "./Toolkit.ts"
 
@@ -1101,6 +1102,7 @@ export class McpServer extends Context.Service<McpServer, {
    */
   static readonly make = Effect.gen(function*() {
     const internalCore = yield* McpCore.make
+    const toolIndex = new Map<string, number>()
     const tools = Arr.empty<{
       readonly tool: McpTool
       readonly annotations: Context.Context<never>
@@ -1244,18 +1246,20 @@ export class McpServer extends Context.Service<McpServer, {
         return tools
       },
       addTool: Effect.fnUntraced(function*(options) {
-        const existingIndex = tools.findIndex(({ tool }) => tool.name === options.tool.name)
-        if (existingIndex === -1) {
+        const existingIndex = toolIndex.get(options.tool.name)
+        if (existingIndex === undefined) {
+          toolIndex.set(options.tool.name, tools.length)
           tools.push(options)
         } else {
           tools[existingIndex] = options
         }
         const { invoke, visible } = makeInvoke(options.services, globalMiddleware)
+        const title = options.tool.title ?? options.tool.annotations?.title
         yield* internalCore.tools.register({
-          descriptor: new McpTool({
-            ...options.tool,
-            title: options.tool.title ?? options.tool.annotations?.title
-          }),
+          // Reuse a validated descriptor whose title is already resolved.
+          descriptor: options.tool instanceof McpTool && title === options.tool.title
+            ? options.tool
+            : new McpTool({ ...options.tool, title }),
           visible: visible("tools/list", options.tool.name),
           isVisible: isEnabled(options.annotations),
           handle: (call, invocation, beforeHandle) =>
@@ -1537,6 +1541,7 @@ const requestSpanOptions = (
     readonly networkTransport: string | undefined
     readonly sessionId: string | undefined
     readonly recordToolArguments: boolean
+    readonly server: McpServer["Service"]
   }
 ): Tracer.SpanOptionsNoTrace & { readonly name: string } => {
   const params = Predicate.isReadonlyObject(request.payload)
@@ -1553,18 +1558,20 @@ const requestSpanOptions = (
   switch (method) {
     case "tools/call": {
       attributes["gen_ai.operation.name"] = "execute_tool"
-      if (typeof params?.name === "string") {
-        target = params.name
+      const registered = options.server.tools.find(({ tool }) => tool.name === params?.name)
+      if (registered !== undefined) {
+        target = registered.tool.name
         attributes["gen_ai.tool.name"] = target
-      }
-      if (options.recordToolArguments && params?.arguments !== undefined) {
-        attributes["gen_ai.tool.call.arguments"] = Toolkit.stringifyToolArguments(params.arguments)
+        if (options.recordToolArguments && params?.arguments !== undefined) {
+          attributes["gen_ai.tool.call.arguments"] = Toolkit.stringifyToolArguments(params.arguments)
+        }
       }
       break
     }
     case "prompts/get": {
-      if (typeof params?.name === "string") {
-        target = params.name
+      const registered = options.server.prompts.find(({ prompt }) => prompt.name === params?.name)
+      if (registered !== undefined) {
+        target = registered.prompt.name
         attributes["gen_ai.prompt.name"] = target
       }
       break
@@ -1572,8 +1579,9 @@ const requestSpanOptions = (
     case "resources/read":
     case "resources/subscribe":
     case "resources/unsubscribe": {
-      // Resource URIs can be unbounded and sensitive, so they stay out of the span name.
-      if (typeof params?.uri === "string") attributes["mcp.resource.uri"] = params.uri
+      // Resource URIs stay out of span names; only registered static URIs are bounded enough to record.
+      const registered = options.server.resources.find(({ resource }) => resource.uri === params?.uri)
+      if (registered !== undefined) attributes["mcp.resource.uri"] = registered.resource.uri
       break
     }
   }
@@ -1722,11 +1730,12 @@ const normalizeCacheHints = (
  *
  * Each request handled by the server runs in a server span that follows the
  * OpenTelemetry MCP semantic conventions. Spans are named after the JSON-RPC
- * method, with the tool or prompt name appended for `tools/call` and
- * `prompts/get` (for example `tools/call get_weather`). A W3C `traceparent` in
- * `params._meta` becomes the span's parent, and the transport span (such as
- * the HTTP server span) is linked. Tool arguments are recorded only when
- * `Toolkit.RecordToolArguments` is `true`.
+ * method, with the tool or prompt name appended for registered `tools/call`
+ * and `prompts/get` targets (for example `tools/call get_weather`).
+ * `mcp.resource.uri` is recorded only for registered static resources. A W3C
+ * `traceparent` in `params._meta` becomes the span's parent, and the transport
+ * span (such as the HTTP server span) is linked. Tool arguments are recorded
+ * only for registered tools when `Toolkit.RecordToolArguments` is `true`.
  *
  * @stability unstable
  * @category running
@@ -1805,7 +1814,8 @@ const runWithRuntime = Effect.fnUntraced(function*(
         sessionId: isHttp
           ? Context.getOrUndefined(fiber.context, HttpServerRequest.HttpServerRequest)?.headers[MCP_SESSION_ID_HEADER]
           : undefined,
-        recordToolArguments: fiber.getRef(Toolkit.RecordToolArguments)
+        recordToolArguments: fiber.getRef(Toolkit.RecordToolArguments),
+        server
       })
       const ambientParent = Context.getOrUndefined(fiber.context, Tracer.ParentSpan)
       return Effect.flatMap(
@@ -3004,12 +3014,19 @@ const addMcpHttpRoutes = Effect.fnUntraced(function*(
   const router = yield* HttpRouter.HttpRouter
   const allowSessionTermination = options.allowSessionTermination === true &&
     runtime.protocols.some((protocol) => protocol.runtime._tag === "Stateful")
-  const forbidden = Effect.succeed(HttpServerResponse.empty({ status: 403 }))
-  const withAllowedOrigin = (
-    handler: (request: HttpServerRequest.HttpServerRequest) => Effect.Effect<HttpServerResponse.HttpServerResponse>
+  const unsupportedContentType = Effect.succeed(mcpTransportRejection(415, "Content-Type must be application/json"))
+  const notAcceptable = Effect.succeed(
+    mcpTransportRejection(406, "Accept header must include both application/json and text/event-stream")
+  )
+  const withAllowedOrigin = <R>(
+    handler: (
+      request: HttpServerRequest.HttpServerRequest
+    ) => Effect.Effect<HttpServerResponse.HttpServerResponse, never, R>
   ) =>
   (request: HttpServerRequest.HttpServerRequest) =>
-    isAllowedMcpOrigin(request, options.allowedOrigins) ? handler(request) : forbidden
+    isAllowedMcpOrigin(request, options.allowedOrigins)
+      ? handler(request)
+      : Effect.succeed(mcpTransportRejection(403, `Origin '${request.headers["origin"]}' is not allowed`))
   const methodNotAllowedResponse = Effect.succeed(HttpServerResponse.empty({
     status: 405,
     headers: { allow: allowSessionTermination ? "POST, DELETE" : "POST" }
@@ -3025,51 +3042,52 @@ const addMcpHttpRoutes = Effect.fnUntraced(function*(
       ? withAllowedOrigin((request) => runtime.terminateHttpSession(request.headers))
       : methodNotAllowed
   )
-  yield* router.add("POST", options.path, (request) => {
-    if (!isAllowedMcpOrigin(request, options.allowedOrigins)) {
-      return Effect.succeed(HttpServerResponse.empty({ status: 403 }))
-    }
-    if (mcpMediaTypes(request.headers["content-type"])[0] !== "application/json") {
-      return Effect.succeed(HttpServerResponse.empty({ status: 415 }))
-    }
-    const accepted = mcpMediaTypes(request.headers["accept"])
-    if (!accepted.includes("application/json") || !accepted.includes("text/event-stream")) {
-      return Effect.succeed(HttpServerResponse.empty({ status: 406 }))
-    }
-    return Effect.gen(function*() {
-      const parsed = yield* Effect.result(
-        Effect.flatMap(request.text, Schema.decodeEffect(Schema.UnknownFromJsonString))
-      )
-      const admission = runtime.admitHttp(request.headers, parsed)
-      if (admission._tag === "Rejected") {
-        return admission.response
+  yield* router.add(
+    "POST",
+    options.path,
+    withAllowedOrigin((request) => {
+      if (mcpMediaTypes(request.headers["content-type"])[0] !== "application/json") {
+        return unsupportedContentType
       }
-      const toResponse = (response: HttpServerResponse.HttpServerResponse) => {
-        // Completed responses may already contain notifications followed by the result.
-        const hasMultipleMessages = response.body._tag === "Uint8Array" &&
-          response.body.body.subarray(0, -1).includes(10)
-        return admission.isSubscription || response.body._tag === "Stream" || hasMultipleMessages
-          ? toServerSentEvents(response, admission.isSubscription)
-          : response
+      const accepted = mcpMediaTypes(request.headers["accept"])
+      if (!accepted.includes("application/json") || !accepted.includes("text/event-stream")) {
+        return notAcceptable
       }
-      if (admission.acknowledge) {
-        return yield* Effect.catchCause(
-          Effect.map(httpEffect, toResponse),
-          () => Effect.succeed(HttpServerResponse.empty({ status: 202 }))
+      return Effect.gen(function*() {
+        const parsed = yield* Effect.result(
+          Effect.flatMap(request.text, Schema.decodeEffect(Schema.UnknownFromJsonString))
         )
-      }
-      return yield* Effect.flatMap(httpEffect, (response) => {
-        if (response.body._tag !== "Uint8Array" || response.body.body.length > 0) {
-          return Effect.succeed(toResponse(response))
+        const admission = runtime.admitHttp(request.headers, parsed)
+        if (admission._tag === "Rejected") {
+          return admission.response
         }
-        // Only fully cancelled request POSTs may return an empty SSE response.
-        // https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#sending-messages-to-the-server
-        return httpPostResponses.get(request)?.expected === 0
-          ? Effect.succeed(HttpServerResponse.stream(Stream.empty, { contentType: "text/event-stream" }))
-          : Effect.die(new Error("MCP request ended without writing its response"))
+        const toResponse = (response: HttpServerResponse.HttpServerResponse) => {
+          // Completed responses may already contain notifications followed by the result.
+          const hasMultipleMessages = response.body._tag === "Uint8Array" &&
+            response.body.body.subarray(0, -1).includes(10)
+          return admission.isSubscription || response.body._tag === "Stream" || hasMultipleMessages
+            ? toServerSentEvents(response, admission.isSubscription)
+            : response
+        }
+        if (admission.acknowledge) {
+          return yield* Effect.catchCause(
+            Effect.map(httpEffect, toResponse),
+            () => Effect.succeed(HttpServerResponse.empty({ status: 202 }))
+          )
+        }
+        return yield* Effect.flatMap(httpEffect, (response) => {
+          if (response.body._tag !== "Uint8Array" || response.body.body.length > 0) {
+            return Effect.succeed(toResponse(response))
+          }
+          // Only fully cancelled request POSTs may return an empty SSE response.
+          // https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#sending-messages-to-the-server
+          return httpPostResponses.get(request)?.expected === 0
+            ? Effect.succeed(HttpServerResponse.stream(Stream.empty, { contentType: "text/event-stream" }))
+            : Effect.die(new Error("MCP request ended without writing its response"))
+        })
       })
     })
-  })
+  )
 })
 
 const mcpHttpSerialization: RpcSerialization.RpcSerialization["Service"] = (() => {
@@ -3191,6 +3209,9 @@ const isAllowedMcpOrigin = (
   const origin = request.headers["origin"]
   return origin === undefined || (allowedOrigins ?? []).includes(origin)
 }
+
+const mcpTransportRejection = (status: 403 | 406 | 415, message: string): HttpServerResponse.HttpServerResponse =>
+  McpRuntime.jsonRpcError(status, { code: McpSchema.INVALID_REQUEST_ERROR_CODE, message })
 
 const mcpMediaTypes = (header: string | undefined): ReadonlyArray<string> =>
   header === undefined
@@ -3422,6 +3443,9 @@ export const registerToolkit: <Tools extends Record<string, Tool.Any>, Names ext
         if (origin === "parameters" && isParameterValidationError(error)) {
           return Effect.fail(new InvalidParams({ message: error.reason.message }))
         }
+        if (origin === "handler" && isInvalidParams(error)) {
+          return Effect.fail(error)
+        }
         if (origin === "handler" && isDeclaredFailure(error)) {
           return Effect.catchCause(declaredFailureResult(error), internalToolError)
         }
@@ -3430,40 +3454,48 @@ export const registerToolkit: <Tools extends Record<string, Tool.Any>, Names ext
     }
     const content = options?.content
     const mapper = content && Object.hasOwn(content, tool.name) ? content[tool.name as Names] : undefined
-    const outputSchema = mapper ? undefined : yield* Schema.decodeUnknownEffect(McpSchema.ToolOutputJson)(
-      toolJsonSchema(tool.successSchema, false)
-    ).pipe(Effect.orDie)
-    const inputSchema = yield* Schema.decodeUnknownEffect(ToolJson)(
-      rawJsonSchema ?? toolJsonSchema(tool.parametersSchema, strict)
-    ).pipe(
-      Effect.catchTag("SchemaError", (error) =>
+    // Decoding copies a caller-owned raw schema, so later mutation does not change the descriptor.
+    const inputSchema = rawJsonSchema === undefined
+      ? toolJsonSchema(tool.parametersSchema, strict)
+      : yield* Effect.catch(Schema.decodeUnknownEffect(ToolJson)(rawJsonSchema), (cause) =>
         Effect.die(
-          rawJsonSchema !== undefined
-            ? `McpServer cannot register tool '${tool.name}': its raw JSON Schema must have an object root ` +
-              `(type: "object").\n\n${error.message}`
-            : `McpServer cannot register tool '${tool.name}': its parameters must encode to a JSON Schema with an ` +
-              `object root (type: "object"), such as a Schema.Struct. Use Tool.EmptyParams for a tool without ` +
-              `parameters.\n\n${error.message}`
+          `McpServer cannot register tool '${tool.name}': its raw JSON Schema must have an object root ` +
+            `(type: "object").\n\n${cause.message}`
         ))
-    )
+    const title = Context.getOrUndefined(tool.annotations, Tool.Title)
     const readOnlyHint = Context.get(tool.annotations, Tool.Readonly)
-    const mcpTool = new McpTool({
+    const fields = {
       name: tool.name,
+      title,
       description: Tool.getDescription(tool),
-      inputSchema,
-      outputSchema,
+      inputSchema: inputSchema as McpSchema.ToolJson,
+      outputSchema: mapper ? undefined : toolJsonSchema(tool.successSchema, false),
       annotations: {
-        ...(Context.getOption(tool.annotations, Tool.Title).pipe(
-          Option.map((title) => ({ title })),
-          Option.getOrUndefined
-        )),
+        ...(title !== undefined ? { title } : undefined),
         readOnlyHint,
         destructiveHint: Context.getOrUndefined(tool.annotations, Tool.Destructive) ?? !readOnlyHint,
         idempotentHint: Context.get(tool.annotations, Tool.Idempotent),
         openWorldHint: Context.get(tool.annotations, Tool.OpenWorld)
       },
-      _meta: toolMeta
-    })
+      _meta: Predicate.isReadonlyObject(toolMeta) ? { ...toolMeta } : toolMeta
+    }
+    let mcpTool: McpTool
+    if (isValidTool(fields)) {
+      mcpTool = Schema.makeClassTrusted(McpTool, fields)
+    } else {
+      try {
+        mcpTool = new McpTool(fields)
+      } catch (error) {
+        // Name the tool when the input schema lacks an object root; rethrow anything else.
+        yield* Effect.catch(Schema.decodeUnknownEffect(ToolJson)(inputSchema), (cause) =>
+          Effect.die(
+            `McpServer cannot register tool '${tool.name}': its parameters must encode to a JSON Schema with an ` +
+              `object root (type: "object"), such as a Schema.Struct. Use Tool.EmptyParams for a tool without ` +
+              `parameters.\n\n${cause.message}`
+          ))
+        throw error
+      }
+    }
     registrations.push({
       tool: mcpTool,
       annotations,
@@ -3527,10 +3559,49 @@ export const registerToolkit: <Tools extends Record<string, Tool.Any>, Names ext
   }
 })
 
+const isInvalidParams = Schema.is(InvalidParams)
+
 const isParameterValidationError = (
   error: unknown
 ): error is AiError.AiError & { readonly reason: AiError.ToolParameterValidationError } =>
   AiError.isAiError(error) && error.reason._tag === "ToolParameterValidationError"
+
+// Shallow check of the `McpTool` fields `registerToolkit` sets. Passing descriptors
+// skip schema validation; the rest go through the checked constructor.
+const isValidTool = (fields: {
+  readonly name: unknown
+  readonly title: unknown
+  readonly description: unknown
+  readonly inputSchema: unknown
+  readonly outputSchema: unknown
+  readonly annotations: { readonly [x: string]: unknown }
+  readonly _meta: unknown
+}): boolean => {
+  const { annotations, inputSchema } = fields
+  if (!Predicate.isReadonlyObject(inputSchema)) return false
+  const { properties, required } = inputSchema
+  return typeof fields.name === "string" &&
+    (fields.title === undefined || typeof fields.title === "string") &&
+    (fields.description === undefined || typeof fields.description === "string") &&
+    inputSchema.type === "object" &&
+    (properties === undefined || (Predicate.isReadonlyObject(properties) &&
+      Object.values(properties).every((value) => typeof value === "boolean" || Predicate.isReadonlyObject(value)))) &&
+    (required === undefined || (Array.isArray(required) && isStringArray(required))) &&
+    (fields.outputSchema === undefined || Predicate.isReadonlyObject(fields.outputSchema)) &&
+    typeof annotations.readOnlyHint === "boolean" &&
+    typeof annotations.destructiveHint === "boolean" &&
+    typeof annotations.idempotentHint === "boolean" &&
+    typeof annotations.openWorldHint === "boolean" &&
+    (fields._meta === undefined || Predicate.isReadonlyObject(fields._meta))
+}
+
+// Unlike `Array.prototype.every`, this also rejects holes in sparse arrays.
+const isStringArray = (array: ReadonlyArray<unknown>): boolean => {
+  for (let i = 0; i < array.length; i++) {
+    if (typeof array[i] !== "string") return false
+  }
+  return true
+}
 
 // MCP requires an object root. A non-recursive root is compiled inline rather
 // than as a definition; a recursive root keeps its definition and the top-level
@@ -3955,6 +4026,16 @@ export interface SkillOptions {
   readonly annotations?: Context.Context<never> | undefined
 }
 
+/**
+ * Options for registering a {@link Skill.Skill} with {@link registerSkill} or
+ * {@link skill}: {@link SkillOptions} without `files`, which come from the skill.
+ *
+ * @stability unstable
+ * @category models
+ * @since 4.1.6
+ */
+export type SkillRegistration = Omit<SkillOptions, "files">
+
 const skillFileEncoder = new TextEncoder()
 
 // Bytes are copied so that later changes by the caller cannot alter what is
@@ -3968,6 +4049,9 @@ const toSkillSourceFile = (path: string, file: SkillFile): McpSkills.SourceFile 
     mimeType
   }
 }
+
+const toSkillOptions = (skillOrOptions: Skill.Skill | SkillOptions, registration?: SkillRegistration): SkillOptions =>
+  skillOrOptions instanceof Skill.Skill ? { ...registration!, files: Skill.toFiles(skillOrOptions) } : skillOrOptions
 
 /**
  * Registers an Agent Skill under the MCP Skills extension (SEP-2640).
@@ -3996,8 +4080,14 @@ const toSkillSourceFile = (path: string, file: SkillFile): McpSkills.SourceFile 
  * @category handlers
  * @since 4.1.1
  */
-export const registerSkill: (options: SkillOptions) => Effect.Effect<void, Cause.IllegalArgumentError, McpServer> =
-  Effect.fnUntraced(function*(options: SkillOptions) {
+export const registerSkill: {
+  (skill: Skill.Skill, options: SkillRegistration): Effect.Effect<void, Cause.IllegalArgumentError, McpServer>
+  (options: SkillOptions): Effect.Effect<void, Cause.IllegalArgumentError, McpServer>
+} = (skillOrOptions: Skill.Skill | SkillOptions, registration?: SkillRegistration) =>
+  registerSkillFiles(toSkillOptions(skillOrOptions, registration))
+
+const registerSkillFiles: (options: SkillOptions) => Effect.Effect<void, Cause.IllegalArgumentError, McpServer> = Effect
+  .fnUntraced(function*(options: SkillOptions) {
     const files = Object.entries(options.files).map(([path, file]) => toSkillSourceFile(path, file))
     const skill = yield* McpSkills.makeStaticSkill({ uri: options.uri, files }).pipe(
       Effect.provide(Digest.layerWebCrypto)
@@ -4075,8 +4165,11 @@ export const registerSkill: (options: SkillOptions) => Effect.Effect<void, Cause
  * @category layers
  * @since 4.1.1
  */
-export const skill = (options: SkillOptions): Layer.Layer<never, Cause.IllegalArgumentError, McpServer> =>
-  Layer.effectDiscard(registerSkill(options))
+export const skill: {
+  (skill: Skill.Skill, options: SkillRegistration): Layer.Layer<never, Cause.IllegalArgumentError, McpServer>
+  (options: SkillOptions): Layer.Layer<never, Cause.IllegalArgumentError, McpServer>
+} = (skillOrOptions: Skill.Skill | SkillOptions, registration?: SkillRegistration) =>
+  Layer.effectDiscard(registerSkillFiles(toSkillOptions(skillOrOptions, registration)))
 
 /**
  * Registers an MCP prompt from an Effect program.
