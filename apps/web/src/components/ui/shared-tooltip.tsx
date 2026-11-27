@@ -171,7 +171,8 @@ export function SharedTooltipProvider({ children }: { children: ReactNode }) {
         const existingHover = hovered.current.get(anchor);
         if (existingHover) hovered.current.set(anchor, { ...existingHover, content });
         if (pending.current?.anchor === anchor) {
-          pending.current = { ...pending.current, ...content };
+          // Content replaces the old, so a slot the trigger dropped does not linger.
+          pending.current = { ...content, anchor, open: pending.current.open };
         }
         const active = current.current;
         if (!active || active.anchor !== anchor) return;
@@ -187,7 +188,7 @@ export function SharedTooltipProvider({ children }: { children: ReactNode }) {
         ) {
           return;
         }
-        commit({ ...active, ...content });
+        commit({ ...content, anchor, open: active.open });
       },
       hide,
       dismiss(anchor) {

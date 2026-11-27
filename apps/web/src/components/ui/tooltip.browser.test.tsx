@@ -269,17 +269,30 @@ it("keeps another trigger's pending open when a trigger is disabled", async () =
 });
 
 it("shows the shared tooltip and its key chip when keyboard focus lands on a control inside a wrapper", async () => {
-  await using screen = await render(
+  const tree = (shortcut?: string, description?: string) => (
     <SharedTooltipProvider>
-      <SharedTooltipTrigger label="Maximize panel" shortcut="Esc" render={<span />}>
+      <SharedTooltipTrigger
+        label="Maximize panel"
+        shortcut={shortcut}
+        description={description}
+        render={<span />}
+      >
         <button type="button">Maximize</button>
       </SharedTooltipTrigger>
-    </SharedTooltipProvider>,
+    </SharedTooltipProvider>
   );
+  await using screen = await render(tree("Esc", "Fills the window"));
   await userEvent.keyboard("{Tab}");
   await expect.element(screen.getByRole("button", { name: "Maximize" })).toHaveFocus();
   await expect.element(page.getByText("Maximize panel")).toBeVisible();
   await expect.element(page.getByText("Esc", { exact: true })).toBeVisible();
+  await expect.element(page.getByText("Fills the window")).toBeVisible();
+
+  // A chip or note the trigger drops leaves the open tooltip too.
+  await screen.rerender(tree());
+  await expect.element(page.getByText("Esc", { exact: true })).not.toBeInTheDocument();
+  await expect.element(page.getByText("Fills the window")).not.toBeInTheDocument();
+  await expect.element(page.getByText("Maximize panel")).toBeVisible();
 });
 
 it("restores an enclosing shared tooltip when moving off a nested trigger back onto it", async () => {
