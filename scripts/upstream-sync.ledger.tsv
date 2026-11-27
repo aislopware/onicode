@@ -4703,3 +4703,4 @@ f946b0c6db	take	taken as is
 f513ffe6f9	take	adapted: kept Onicode's refined-host match in requireProject across every tracked repository; addressed map keyed by project entry so a tracked repository never readdresses its root; mobile stats keys still host-less (follow-up)
 51f9ca9280	skip	kept Onicode's verbatim startup directory (e3c7b60759): it already opens relative directories with leading spaces, and upstream's trimEnd would bring back the folder-ending-in-a-space bug Onicode fixed
 b9c1337a84	take	taken as is
+40264a28dd	take	adapted: workspace keeps Onicode's keyboard-controller 1.24.0 and pdf-jsi pins; lockfile regenerated
