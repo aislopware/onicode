@@ -4430,3 +4430,4 @@ d034b66f99	take	applied cleanly; every adapter helper it calls exists
 e18c8fc2e5	take	applied cleanly; one web key in all locales, i18n:check green; tablePng is a lazy chunk; mobile n.a.; Electron clipboard image/png checked in the integrated pass
 3c4c16816b	take	applied cleanly
 ce2611312d	take	new it.each placed before Onicode's renamed draft test; source applied cleanly; mobile already says Minutes
+bba8114809	skip	relay infra only (infra/relay); Onicode removed the relay
