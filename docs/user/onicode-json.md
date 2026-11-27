@@ -64,16 +64,16 @@ A new worktree reads `worktreeSubmodules` and `worktreeSparsePatternsPath` from 
 
 Import `onicode.json` scripts, or define your own actions, in the project's **Actions** settings under **Settings → Projects**. Run them from the actions menu, the command palette, or a [keybinding](./keybindings.md) on `script.<id>.run`.
 
-| Field                 | Description                                                                                                                              |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`                | Name shown in the actions menu.                                                                                                          |
-| `command`             | Shell command run in an Onicode terminal at the project root.                                                                            |
-| `icon`                | `"play"` (default), `"test"`, `"lint"`, `"configure"`, `"build"`, or `"debug"`.                                                          |
-| `runOnWorktreeCreate` | Runs after a worktree is created for a new thread. Skipped for worktrees an agent below **Full access** creates, until a person runs it. |
-| `async`               | For `runOnWorktreeCreate` only: `true` (default) starts the agent right away; `false` waits for the script to finish first.              |
-| `stopOnSettle`        | Stops this action's terminal and its child processes when its thread settles.                                                            |
-| `runOnSettle`         | Runs in the thread's worktree each time the thread settles; threads without their own worktree skip it.                                  |
-| `previewUrl`          | Opens this URL in the built-in browser when the script runs (desktop only).                                                              |
-| `autoOpenPreview`     | Opens the browser panel at `previewUrl` as soon as the script starts.                                                                    |
+| Field                 | Description                                                                                                                                                 |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`                | Name shown in the actions menu.                                                                                                                             |
+| `command`             | Shell command run in an Onicode terminal at the project root.                                                                                               |
+| `icon`                | `"play"` (default), `"test"`, `"lint"`, `"configure"`, `"build"`, or `"debug"`.                                                                             |
+| `runOnWorktreeCreate` | Runs after a worktree is created for a new thread. Skipped for worktrees an agent below **Full access** creates, until a person runs it.                    |
+| `async`               | For `runOnWorktreeCreate` only: `true` (default) starts the agent right away; `false` waits for the script to finish first.                                 |
+| `stopOnSettle`        | Stops this action's terminal and its child processes when its thread settles.                                                                               |
+| `runOnSettle`         | Runs in the thread's worktree each time the thread settles; threads without their own worktree skip it. Settle scripts run one at a time across the server. |
+| `previewUrl`          | Opens this URL in the built-in browser when the script runs (desktop only).                                                                                 |
+| `autoOpenPreview`     | Opens the browser panel at `previewUrl` as soon as the script starts.                                                                                       |
 
 In a project with several repositories, only the project folder's `onicode.json` is read; the files inside its repositories are ignored.
