@@ -18,6 +18,47 @@ const state = vi.hoisted(() => ({
   configLoaded: true,
 }));
 
+// The read of onicode.json is a cache: a re-read is the only way to see what is on disk now.
+const oniFile = vi.hoisted(() => ({
+  disk: "",
+  cached: "",
+  listeners: new Set<() => void>(),
+}));
+
+vi.mock(import("~/components/files/projectFilesQueryState"), async (importOriginal) => {
+  const actual = await importOriginal();
+  const { useSyncExternalStore } = await import("react");
+  return {
+    ...actual,
+    useProjectFileQuery: ((_environmentId: unknown, _cwd: string, relativePath: string | null) => {
+      const contents = useSyncExternalStore(
+        (listener) => {
+          oniFile.listeners.add(listener);
+          return () => oniFile.listeners.delete(listener);
+        },
+        () => oniFile.cached,
+      );
+      const refresh = () => {
+        oniFile.cached = oniFile.disk;
+        for (const listener of oniFile.listeners) listener();
+      };
+      const data =
+        relativePath === "onicode.json" && contents !== ""
+          ? { relativePath, contents, byteLength: contents.length, truncated: false }
+          : null;
+      return {
+        data,
+        error: null,
+        isPending: false,
+        readError: null,
+        isNotFile: false,
+        isFile: data !== null,
+        refresh,
+      };
+    }) as never,
+  };
+});
+
 vi.mock(import("~/state/entities"), async (importOriginal) => ({
   ...(await importOriginal()),
   useProject: ((ref: unknown) =>
@@ -137,11 +178,13 @@ function Panel({
   fixture,
   draftEnvMode,
   onMachines = false,
+  withScripts = false,
 }: {
   fixture: ReturnType<typeof setup>;
   /** Renders an unsent draft in this mode instead of a started thread. */
   draftEnvMode?: "local" | "worktree";
   onMachines?: boolean;
+  withScripts?: boolean;
 }) {
   const noop = () => {};
   const scriptResult = async () => ({ ok: true }) as never;
@@ -169,7 +212,7 @@ function Panel({
         worktreePath={draftEnvMode === undefined ? state.folder : null}
         isServerThread={draftEnvMode === undefined}
         activeProjectName={state.workspaceRoot === SCRATCH_ROOT ? "No project" : "plain"}
-        activeProjectScripts={undefined}
+        activeProjectScripts={withScripts ? [] : undefined}
         preferredScriptId={null}
         keybindings={[]}
         availableEditors={[]}
@@ -250,4 +293,25 @@ it("offers no Initialize Git before the server config says where No project live
   await expect
     .element(page.getByRole("button", { name: "Initialize Git" }))
     .not.toBeInTheDocument();
+});
+
+it("lists the onicode.json actions on disk when the actions menu opens again after the file changed", async () => {
+  using fixture = setup({ workspaceRoot: "/work/plain", folder: "/work/plain" });
+  const oniJson = (name: string) =>
+    JSON.stringify({ scripts: [{ name, command: `npm run dev -- --port ${name.slice(-4)}` }] });
+  oniFile.disk = oniJson("Dev 4100");
+  oniFile.cached = oniFile.disk;
+  await using _screen = await render(<Panel fixture={fixture} withScripts />);
+
+  const chooser = page.getByRole("button", { name: "Choose project action" });
+  await chooser.click();
+  await expect.element(page.getByRole("menuitem", { name: /Dev 4100/ })).toBeVisible();
+  await chooser.click();
+  await expect.element(page.getByRole("menu")).not.toBeInTheDocument();
+
+  // A setup hook rewrites this checkout's onicode.json outside Onicode.
+  oniFile.disk = oniJson("Dev 4200");
+
+  await chooser.click();
+  await expect.element(page.getByRole("menuitem", { name: /Dev 4200/ })).toBeVisible();
 });
