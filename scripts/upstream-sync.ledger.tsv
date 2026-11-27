@@ -4262,3 +4262,4 @@ b35358ee07	take	mobile vite list placed after GitConfirmSheet; scenario failed-c
 407087823e	take	taken as is
 79f1432a17	take	plural via gt; kept Onicode's text-muted-foreground class
 ceb3d4584c	take	kept Onicode's revealHighlightedRow and command groups; scroll-top ref read from the revealed row; upstream tests appended with longItems
+cdb6764d75	take	applied to Onicode's resumable splitter by hand (cut needs an unindented #); scenario markdown-reference-after-indented-heading ported as is
