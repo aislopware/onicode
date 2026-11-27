@@ -48,6 +48,7 @@ export async function boundedZip(
     if (entry.name.length > 1024) throw new ZipError({ code: "archive-path-too-long" });
     const chunks: Uint8Array[] = [];
     let length = 0;
+    const xml = entry.name.toLowerCase().endsWith(".xml");
     await entry.read((chunk) => {
       total += chunk.length;
       length += chunk.length;
@@ -59,7 +60,7 @@ export async function boundedZip(
         total >
           Math.max(limits.ratioFloor ?? 0, Math.max(1, bytes.byteLength) * ARCHIVE_MAX_RATIO) ||
         length > entryLimit ||
-        (entry.name.toLowerCase().endsWith(".xml") && length > (limits.xmlLimit ?? 8 * 1024 * 1024))
+        (xml && length > (limits.xmlLimit ?? 8 * 1024 * 1024))
       )
         throw new ZipError({ code: "archive-expanded-too-large" });
       chunks.push(chunk);
