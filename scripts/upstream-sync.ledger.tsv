@@ -4051,3 +4051,4 @@ dc5ae5ce63	take	test builds the ODS from a Map like its neighbours (no JSZip in 
 cecbe8a89a	take	taken as is
 96423cb5e2	take	server keyring dependency dropped (desktop keeps it for ChromiumKeys); lockfile regenerated; Onicode's local Antigravity token-usage readers stay. Removes Antigravity quota windows from Usage → Limits, hub pools and limit routing (Google allows only ACP clients)
 9a3ad0bec2	take	composerEmpty added; Onicode has no isWeb/isDesktop variables
+74b5186f2e	take	taken as is
