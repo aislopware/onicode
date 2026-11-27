@@ -152,6 +152,36 @@ describe("thread links", () => {
     );
   });
 
+  it.each(["\r", "\r\n", "\n"])(
+    "keeps BOM-prefixed thread link examples literal with %j line endings",
+    (eol) => {
+      const link = "<oni-thread://v2/local/t>";
+      for (const fence of ["~~~", "```"]) {
+        const example = [`\uFEFF${fence}`, link, fence].join(eol);
+        expect(replaceThreadLinks(`${example}${eol}${link}`, () => "linked")).toBe(
+          `${example}${eol}linked`,
+        );
+      }
+    },
+  );
+
+  it.each([
+    ["    ", ""],
+    ["\t", ""],
+    [">     ", "> "],
+    ["-     ", ""],
+  ])(
+    "rewrites prose links after an indented code line that looks like a fence (%j)",
+    (indent, prose) => {
+      for (const bom of ["", "\uFEFF"]) {
+        const example = `${bom}${indent}~~~\n${prose.trimEnd()}\n${prose}See `;
+        expect(replaceThreadLinks(`${example}<oni-thread://v2/local/t>`, () => "linked")).toBe(
+          `${example}linked`,
+        );
+      }
+    },
+  );
+
   it("leaves links inside code spans and fences as written", () => {
     const markdown = [
       "Live [old](oni-thread://v1/t1), literal `[old](oni-thread://v1/t1)`.",
