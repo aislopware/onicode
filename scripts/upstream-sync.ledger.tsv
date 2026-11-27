@@ -4238,3 +4238,4 @@ e6789ebdd2	take	taken as is
 a7ead0ea7f	take	parenthesis finder built from Onicode's ESCAPE and PARAGRAPH_END constants like its other tail finders
 e0370221a4	take	taken as is (the next-line expects land in Onicode's tapped-checkbox test)
 109970551e	take	code as is (web palette + mobile add project); scenario ported with ControlOrMeta+k like Onicode's palette scenarios
+d6b3593030	take	taken as is
