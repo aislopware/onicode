@@ -566,94 +566,135 @@ describe("splitMarkdown", () => {
     expect(splitLargeMarkdown(large, 1).length).toBeGreaterThan(1);
   });
 
-  it.each(["", " "])("collects link definitions outside code with fence indent %j", (indent) => {
-    const text = [
-      "[![badge][b]][site]",
-      "",
-      "```md",
-      "[fake]: /not-a-definition",
-      "```",
-      "",
-      "Paragraph",
-      "[inline]: /continues-the-paragraph",
-      "",
-      "[site]: https://example.com",
-      "[b]: https://example.com/badge.svg 'Badge'",
-      "[^n]: note",
-      "[^note]: a footnote",
-      "",
-      '[x]: /url "title" is paragraph text',
-      "",
-      "# Heading",
-      "[h]: /after-heading",
-      "",
-      "---",
-      "[t]: /after-break",
-      "",
-      "===",
-      "[p]: /paragraph-text",
-      "",
-      `${indent}\`\`\`sh`,
-      "npm install",
-      `${indent}\`\`\``,
-      "[fence]: /after-fence",
-      "~~~",
-      "~~~",
-      "Text after a fence",
-      "[q]: /continues-the-paragraph",
-      "",
-      "$$",
-      "x",
-      "$$ trailing",
-      "[math]: /inside-math",
-      "",
-      "<!-->",
-      "```",
-      "-->",
-      "```",
-      "[comment]: /after-a-closed-comment",
-      "```",
-      "[code]: /inside-a-fence-after-a-comment",
-      "```",
-      "",
-      "- ```md",
-      "  ~~~",
-      "  ~~~",
-      "  [list]: /inside-a-list-fence",
-      "  ```",
-      "",
-      // Past the whole-file limit, so the footnote does not keep the file one piece.
-      "filler ".repeat(LARGE_MARKDOWN_CHUNK_MAX_CHARS / 7 + 1),
-    ].join("\n");
-    expect(splitMarkdown(text).definitions).toBe(
-      "[site]: https://example.com\n[b]: https://example.com/badge.svg 'Badge'\n[h]: /after-heading\n[t]: /after-break\n[fence]: /after-fence\n[comment]: /after-a-closed-comment",
-    );
-    const frontmatter = ["---", "title: x", "...", "[fm]: /after-frontmatter", "", "# A"];
-    expect(splitMarkdown(frontmatter.join("\n")).definitions).toBe("[fm]: /after-frontmatter");
-    const unclosed = ["---", ...Array<string>(1000).fill("text"), "[u]: /paragraph-text"];
-    expect(splitMarkdown(unclosed.join("\n")).definitions).toBe("");
-    expect(splitMarkdown("---\n[rule]: /after-leading-rule\n\n# A").definitions).toBe(
-      "[rule]: /after-leading-rule",
-    );
-    const unbalanced = [
-      "[x]: /docs/example)",
-      "[after]: /continues-paragraph",
-      "",
-      "[open]: /docs/example(",
-      "",
-      "[bs]: /docs/example\\\\)",
-      "",
-      "[win]: <C:\\dir\\>",
-      "",
-      "[ctl]: /docs/ex\u0001ample",
-      "",
-      "[balanced]: /docs/example(a(b))",
-      "[escaped]: /docs/example\\)",
-      "[angle]: </docs/example)>",
-    ];
-    expect(splitMarkdown(unbalanced.join("\n")).definitions).toBe(
-      "[balanced]: /docs/example(a(b))\n[escaped]: /docs/example\\)\n[angle]: </docs/example)>",
-    );
+  it.each(["", " ", "  ", "   "])(
+    "collects link definitions outside code with fence indent %j",
+    (indent) => {
+      const text = [
+        "[![badge][b]][site]",
+        "",
+        "```md",
+        "[fake]: /not-a-definition",
+        "```",
+        "",
+        "Paragraph",
+        "[inline]: /continues-the-paragraph",
+        "",
+        "[site]: https://example.com",
+        "[b]: https://example.com/badge.svg 'Badge'",
+        "[^n]: note",
+        "[^note]: a footnote",
+        "",
+        '[x]: /url "title" is paragraph text',
+        "",
+        "# Heading",
+        "[h]: /after-heading",
+        "",
+        "---",
+        "[t]: /after-break",
+        "",
+        "===",
+        "[p]: /paragraph-text",
+        "",
+        `${indent}\`\`\`sh`,
+        "npm install",
+        `${indent}\`\`\``,
+        "[fence]: /after-fence",
+        "~~~",
+        "~~~",
+        "Text after a fence",
+        "[q]: /continues-the-paragraph",
+        "",
+        "$$",
+        "x",
+        "$$ trailing",
+        "[math]: /inside-math",
+        "",
+        "<!-->",
+        "```",
+        "-->",
+        "```",
+        "[comment]: /after-a-closed-comment",
+        "```",
+        "[code]: /inside-a-fence-after-a-comment",
+        "```",
+        "",
+        "- ```md",
+        "  ~~~",
+        "  ~~~",
+        "  [list]: /inside-a-list-fence",
+        "  ```",
+        "",
+        // Past the whole-file limit, so the footnote does not keep the file one piece.
+        "filler ".repeat(LARGE_MARKDOWN_CHUNK_MAX_CHARS / 7 + 1),
+      ].join("\n");
+      expect(splitMarkdown(text).definitions).toBe(
+        "[site]: https://example.com\n[b]: https://example.com/badge.svg 'Badge'\n[h]: /after-heading\n[t]: /after-break\n[fence]: /after-fence\n[comment]: /after-a-closed-comment",
+      );
+      const frontmatter = ["---", "title: x", "...", "[fm]: /after-frontmatter", "", "# A"];
+      expect(splitMarkdown(frontmatter.join("\n")).definitions).toBe("[fm]: /after-frontmatter");
+      const unclosed = ["---", ...Array<string>(1000).fill("text"), "[u]: /paragraph-text"];
+      expect(splitMarkdown(unclosed.join("\n")).definitions).toBe("");
+      expect(splitMarkdown("---\n[rule]: /after-leading-rule\n\n# A").definitions).toBe(
+        "[rule]: /after-leading-rule",
+      );
+      const unbalanced = [
+        "[x]: /docs/example)",
+        "[after]: /continues-paragraph",
+        "",
+        "[open]: /docs/example(",
+        "",
+        "[bs]: /docs/example\\\\)",
+        "",
+        "[win]: <C:\\dir\\>",
+        "",
+        "[ctl]: /docs/ex\u0001ample",
+        "",
+        "[balanced]: /docs/example(a(b))",
+        "[escaped]: /docs/example\\)",
+        "[angle]: </docs/example)>",
+      ];
+      expect(splitMarkdown(unbalanced.join("\n")).definitions).toBe(
+        "[balanced]: /docs/example(a(b))\n[escaped]: /docs/example\\)\n[angle]: </docs/example)>",
+      );
+    },
+  );
+
+  it.each([
+    ["an ordered item whose content starts farther right", "10. Item\n\n", ""],
+    ["an item padded to the next tab stop", "-\tItem\n\n", ""],
+    ["a blockquote that ends the list", "- Item\n> quote\n", ""],
+    ["an HTML comment that ends the list", "- Item\n<!-- note -->\n", ""],
+    ["an HTML block that ends the list", "- Item\n<div>top level</div>\n\n", ""],
+    ["a math block that ends the list", "- Item\n$$\nx\n$$\n", ""],
+    ["an indented thematic break", "  - - -\n", ""],
+    ["an empty list item", "-\n\n", "  "],
+    ["an empty list item with trailing spaces", "-  \n\n", "  "],
+    ["an empty list item followed by dedented prose", "-\nfoo\n", "  "],
+  ])("collects definitions after a fence following %s", (_, beforeFence, definitionIndent) => {
+    const definition = "[ref]: /target";
+    const text = beforeFence + "  ```sh\n  example\n  ```\n" + definitionIndent + definition;
+    expect(splitMarkdown(text).definitions).toBe(definition);
+  });
+
+  it.each([
+    ["nested markers on one line", "- - ```\n    code\n    ```"],
+    ["a line of many nested markers", "- ".repeat(70_000) + "x"],
+    ["a heading in a list item", "- # Heading\n  2. Item\n     ```\n     code\n        ```"],
+    ["a lazy ordered marker", "- outer\n  - inner\n2. lazy\n    ```\n       ```"],
+  ])("collects a list item definition after %s", (_, list) => {
+    const definition = "[ref]: /target";
+    expect(splitMarkdown(`${list}\n\n  ${definition}`).definitions).toBe(definition);
+  });
+
+  it.each([
+    ["after a list fence", ["- Item", "  ```", "  code", "```", "[ref]: /fake", "```"]],
+    ["after a paragraph", ["Paragraph", "2. continuation", "   ```", "[ref]: /fake", "   ```"]],
+    [
+      "in a parent item after a nested item",
+      ["- outer", "  - inner", "    ```", "  ```", "  [ref]: /fake", "  ```"],
+    ],
+  ])("keeps definitions inside a top-level fence %s literal", (_, lines) => {
+    expect(splitMarkdown(lines.join("\n")).definitions).toBe("");
   });
 });
 
@@ -743,6 +784,10 @@ describe("extendMarkdownSplit", () => {
         ...near(omittedDefinition, "[ID]", [0, 5, 12]),
         omittedDefinition.length - 1,
       ],
+    },
+    {
+      name: "a list and an indented fence before a definition",
+      text: "# A\n\n- item\n  - nested\n\n  ```sh\n  [fake]: /x\n  ```\n[ref]: /target\n\n# B\n\nuse [ref]\n\n# C\n",
     },
     { name: "frontmatter", text: frontmatter, reusesFrom: frontmatter.indexOf("\n\n# Heading") },
     { name: "CRLF line ends", text: "# A\r\n\r\ntext\r\n\r\n# B\r\n\r\nmore\r\n" },

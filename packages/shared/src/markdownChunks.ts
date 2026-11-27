@@ -21,7 +21,10 @@ const ATX_HEADING = /^ {0,3}#{1,6}(?:[ \t]|\r?$)/;
 const THEMATIC_BREAK = /^ {0,3}(?:(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,})\r?$/;
 // A column-0 paragraph, quote or table after a blank line closes any open list, quote or table.
 const BLOCK_START = /^[\p{L}\p{N}`[!|>]/u;
-const ORDERED_ITEM = /^\d{1,9}[.)](?:[ \t]|\r?$)/;
+const LIST_ITEM = /^( {0,3}(?:[-*+]|\d{1,9}[.)]))([ \t]+|(?=\r?$))/;
+// Further markers on an item's first line open nested items that start on the same line.
+const NESTED_LIST_MARKERS = /^(?:(?:[-*+]|\d{1,9}[.)])(?:[ \t]+|(?=\r?$)))+/;
+const BLOCK_QUOTE = /^ {0,3}>/;
 const DISPLAY_MATH_OPEN = /^ {0,3}\$\$/;
 // CommonMark HTML blocks of types 1-5 and display math run past blank lines until their closer.
 const SPANNING_BLOCKS: ReadonlyArray<readonly [open: RegExp, close: RegExp]> = [
@@ -46,6 +49,13 @@ const flowParser = unified().use(remarkParse).use(remarkGfm).freeze();
 const HTML_FLOW_MAX_CHARS = 8 * 1024;
 // Parsing is far slower than the line scan, so a whole document shares one budget.
 const HTML_PARSE_BUDGET_CHARS = 16 * 1024;
+
+function indentationColumn(whitespace: string, column = 0): number {
+  for (const character of whitespace) {
+    column += character === "\t" ? 4 - (column % 4) : 1;
+  }
+  return column;
+}
 // A streamed reply rescans its last piece on every append; only the growing flow is new text.
 const htmlFlowStarts = new Map<string, readonly number[]>();
 const HTML_FLOW_CACHE_ENTRIES = 32;
@@ -119,6 +129,18 @@ const COMMENT_START = /^ {0,3}<!--/;
 const INDENTED_CODE = /^(?: {4}|\t)/;
 // A backtick run is whole, so a span never starts inside a longer run.
 const INLINE_CODE = /(?<!`)(`+)(?:[^`]|[^`][\s\S]*?[^`])\1(?!`)/g;
+
+/** Whether `text` opens a block that ends a paragraph and is not one itself. */
+function opensNonParagraph(text: string): boolean {
+  return (
+    ATX_HEADING.test(text) ||
+    THEMATIC_BREAK.test(text) ||
+    BLOCK_QUOTE.test(text) ||
+    FENCE_OPEN.test(text) ||
+    HTML_BLOCK_TAG.test(text) ||
+    SPANNING_BLOCKS.some(([open]) => open.test(text))
+  );
+}
 
 /** Null means the block ends on this line. Undefined means no block opens. */
 function blockCloser(line: string): ((line: string) => boolean) | null | undefined {
@@ -481,6 +503,12 @@ function scanMarkdown(
   let chars = 0;
   let closes: ((line: string) => boolean) | null = null;
   let openedFence = false;
+  // A cut line is outside every list and paragraph, so a resumed scan starts with neither.
+  // The outermost list item's content column; a line indented less is outside every item.
+  let listContentIndent = Infinity;
+  let listMarker = "";
+  let emptyListItem = false;
+  let paragraphOpen = false;
   // A cut needs no open wrapper, so a resumed scan starts with none.
   let openWrappers = 0;
   let wrapperStart = 0;
@@ -503,6 +531,12 @@ function scanMarkdown(
     const line = textLines[index] ?? "";
     const inFrontmatter = offset < frontmatter;
     const blockBefore = closes;
+    const blank = BLANK_LINE.test(line);
+    const whitespace = /^[ \t]*/.exec(line)![0];
+    const indent = indentationColumn(whitespace);
+    if (emptyListItem && (blank || indent < listContentIndent)) listContentIndent = Infinity;
+    emptyListItem = false;
+    const dedented = indent < listContentIndent;
     if (inFrontmatter) {
       // Masked to blank lines, so nothing inside is a cut, a block or a definition.
       openedFence = false;
@@ -521,7 +555,7 @@ function scanMarkdown(
         chars >= targetChars &&
         ((line.startsWith("#") && ATX_HEADING.test(line)) ||
           (afterBlankLine &&
-            ((BLOCK_START.test(line) && !ORDERED_ITEM.test(line)) || WRAPPER_START.test(line))));
+            ((BLOCK_START.test(line) && !LIST_ITEM.test(line)) || WRAPPER_START.test(line))));
       if (cutPoint) {
         const at: MarkdownSplitResume = {
           targetChars,
@@ -584,10 +618,45 @@ function scanMarkdown(
         if (index === flowStart || htmlStarts?.has(index)) closes = closesAtBlankLine;
         else if (index >= parsedThrough) ambiguousHtml = true;
       }
-      // Two or more spaces may put a fence in a list item, which this does not track.
-      openedFence = /^ ?[`~]/.test(line) && FENCE_OPEN.test(line);
+      const afterFence = afterHeading && openedFence && dedented;
+      const fence = FENCE_OPEN.test(line);
+      // Fence tracking ignores lists, so it finds the real end of a fence indented two or more
+      // spaces only when that fence is outside every list item.
+      openedFence = fence && (dedented || /^ ?[`~]/.test(line));
+      const thematicBreak = THEMATIC_BREAK.test(line);
+      const contentColumn = dedented ? 0 : listContentIndent;
+      const canStartBlock = indent - contentColumn <= 3;
+      const content = canStartBlock ? line.slice(whitespace.length) : "";
+      const item = thematicBreak ? null : LIST_ITEM.exec(content);
+      const marker = item?.[1];
+      let itemContent = item ? content.slice(item[0].length) : "";
+      const itemIsEmpty = BLANK_LINE.test(itemContent);
+      const markerKind = marker?.at(-1);
+      const continuesList = dedented && listContentIndent !== Infinity && markerKind === listMarker;
+      const opensItem: boolean =
+        item !== null &&
+        (!paragraphOpen ||
+          continuesList ||
+          (!itemIsEmpty && (!/^\d/.test(marker!) || /^1[.)]$/.test(marker!))));
+      let startsIndentedCode = false;
+      if (item && opensItem) {
+        const markerEnd = indent + item[1]!.length;
+        const paddedColumn = indentationColumn(item[2]!, markerEnd);
+        emptyListItem = dedented && itemIsEmpty;
+        // Empty items and items starting with indented code use one column of padding.
+        startsIndentedCode = paddedColumn - markerEnd > 4;
+        if (dedented) {
+          listContentIndent = itemIsEmpty || startsIndentedCode ? markerEnd + 1 : paddedColumn;
+          listMarker = markerKind!;
+        }
+        itemContent = itemContent.replace(NESTED_LIST_MARKERS, "");
+      } else if (dedented && !blank && (afterBlankLine || afterFence || opensNonParagraph(line))) {
+        // Dedented prose can still be a lazy continuation until a block boundary.
+        listContentIndent = Infinity;
+      }
       // A definition cannot interrupt a paragraph, so it follows a blank line, a heading,
       // a closing code fence or another definition.
+      let startsDefinition = false;
       if (
         !ambiguousHtml &&
         (offset === 0 || afterBlankLine || index === definitionEnd + 1 || afterHeading)
@@ -601,6 +670,7 @@ function scanMarkdown(
           }
         }
         if (definition) {
+          startsDefinition = true;
           definitionEnd = definition.end;
           if (!omittedDefinitions.has(definition.identifier)) {
             if (
@@ -616,6 +686,14 @@ function scanMarkdown(
           }
         }
       }
+      paragraphOpen =
+        !blank &&
+        !startsDefinition &&
+        closes === null &&
+        (canStartBlock || paragraphOpen) &&
+        (item && opensItem
+          ? !BLANK_LINE.test(itemContent) && !startsIndentedCode && !opensNonParagraph(itemContent)
+          : !opensNonParagraph(line));
     }
     // Tags outside comments open and close wrappers on HTML block and comment block lines; a
     // closer may also end a paragraph line, outside code spans. Fences, indented code and other
@@ -647,7 +725,7 @@ function scanMarkdown(
       }
       inCommentBlock = (inCommentBlock || opensComment) && closes !== null;
       // A comment left open runs to the end of its paragraph or HTML block.
-      if (BLANK_LINE.test(line) && !inCommentBlock) commentIn = null;
+      if (blank && !inCommentBlock) commentIn = null;
     }
     pieceLines++;
     chars += line.length + 1;
@@ -671,6 +749,10 @@ function scanMarkdown(
       chars = 0;
       closes = null;
       openedFence = false;
+      listContentIndent = Infinity;
+      listMarker = "";
+      emptyListItem = false;
+      paragraphOpen = false;
       openWrappers = 0;
       wrapperStart = 0;
       commentIn = null;
@@ -679,7 +761,7 @@ function scanMarkdown(
       held = null;
       continue;
     }
-    afterBlankLine = inFrontmatter || BLANK_LINE.test(line);
+    afterBlankLine = inFrontmatter || blank;
     if (afterBlankLine) {
       ambiguousHtml = false;
       resetFlow(index + 1);
