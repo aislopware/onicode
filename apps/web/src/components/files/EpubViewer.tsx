@@ -57,7 +57,7 @@ function ReadingFrame(props: {
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- Change the sandboxed document's reading size without reloading or losing position.
   useEffect(() => {
     if (!fixed)
-      frame.current?.contentDocument?.documentElement.style.setProperty(
+      frame.current?.contentDocument?.documentElement?.style.setProperty(
         "zoom",
         String(props.zoom),
         "important",
