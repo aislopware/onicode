@@ -4596,3 +4596,4 @@ cf87a9586c	take	clean; two handler lines, no hook added
 a9ad9afa09	take	test fixture conflict (Onicode's zipFixture map); same epub:type attributes as upstream
 853318d6ce	take	test import conflict resolved (kept Onicode's OrchestrationV2GetThreadProjectionError beside upstream's imports); code applied as is
 9268aa9b27	take	taken as is (mobile already passes its message resolver)
+4f7c529085	take	code merged into Onicode's Map archive (archive.set); test kept Onicode's zipFixture wordFile (files map) with upstream's svg content type added
