@@ -4301,3 +4301,4 @@ c80bd64514	take	kept Onicode's server|loopback roles; dropped scripts/lib/dev-sh
 694c1be67f	take	lock always taken after dryRun, before prepareFirstStart (Onicode has no dev:web or --share); tests use a temp devServerHome
 b4b94f7a7d	take	taken as is
 fc36e5d435	take	taken as is
+d389f8b3ac	take	test merged by hand: upstream's manifest rows plus Onicode's root SKILL.md (demo-root) path check
