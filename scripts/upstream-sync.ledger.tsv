@@ -4117,3 +4117,4 @@ de3ec23861	take	taken as is
 6378cabd19	take	taken as is
 65585f336a	take	taken as is; controller tests pass (Kotlin unit test not run here)
 21aebbf7d9	take	applied cleanly; Onicode's hasThreadLink (oni-thread://) kept; Robolectric ComposerPasteTest not run here
+c7042abcd1	take	upstream's t3.19 tarball not taken: the inline-icon variant (pingdotgg/enriched-markdown bf8bbaf3..3757a449) was cherry-picked into aislopware/enriched-markdown 1.2.0-oni.28 (884ac07b, tag oni-v1.2.0-oni.28) and repacked; useEnrichedLinkVariants taken as is; deps README updated; native fingerprint changes (device wrap check owed)
