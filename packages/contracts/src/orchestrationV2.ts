@@ -38,6 +38,7 @@ import {
   RunId,
   RuntimeRequestId,
   ScheduledTaskId,
+  NonBlankString,
   ThreadId,
   TrimmedNonEmptyString,
   TurnItemId,
@@ -1841,7 +1842,8 @@ const OrchestrationV2TurnItemBaseFields = {
 } as const;
 
 export const OrchestrationV2FileSearchResult = Schema.Struct({
-  fileName: TrimmedNonEmptyString,
+  // Old clients trim it and reject a blank one, so it stays non-blank.
+  fileName: NonBlankString,
   line: Schema.optional(PositiveInt),
   column: Schema.optional(PositiveInt),
   preview: Schema.optional(Schema.String),
