@@ -42,17 +42,18 @@ export function useThreadIntentPrefetch(threadRef: ScopedThreadRef) {
   );
   return {
     onPointerEnter: (event: React.PointerEvent) => {
+      // A held row stays held while the pointer is back on it.
+      clearTimeout(timer.current);
+      if (release.current !== null) return;
       if (
-        !prefetchesOnHover({
+        prefetchesOnHover({
           pointerType: event.pointerType,
           environmentId: threadRef.environmentId,
           localEnvironmentId: appAtomRegistry.get(localEnvironmentIdAtom),
         })
       ) {
-        return;
+        timer.current = setTimeout(start, INTENT_DELAY_MS);
       }
-      clearTimeout(timer.current);
-      timer.current = setTimeout(start, release.current === null ? INTENT_DELAY_MS : 0);
     },
     onPointerLeave: () => {
       clearTimeout(timer.current);

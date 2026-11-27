@@ -87,4 +87,8 @@ describe("workflows.get across versions", () => {
     expect(decodeOlderSteps(encoded).steps[0]?.kind).toBe("wait");
     expect(decodeDetail(encoded).steps).toEqual([queued]);
   });
+
+  it("reads a queue step from a server that sent the kind as it is", () => {
+    expect(decodeDetail({ ...encoded, steps: [queued] }).steps).toEqual([queued]);
+  });
 });
