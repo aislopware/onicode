@@ -4400,3 +4400,4 @@ a4ab2c51e3	take	applied cleanly
 fd1694cdd3	take	applied cleanly
 dcee01cbfd	take	applied cleanly; scenario ported, typechecked
 beb24ffed8	take	took hasNonCatalogModels; kept wave 3's customApiEndpoint gate so a first-party probe stays complete and claudeModelsOfferedByReport sticks
+1dba8e21bc	take	source merged cleanly; scenario adapted: environment id read in Node via environmentId(app.baseUrl), since the desktop renderer routes by hash
