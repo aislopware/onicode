@@ -4101,3 +4101,4 @@ fbb6526db2	take	taken as is
 c1b3254791	take	kept Onicode's leadingFrontmatterLength scanner (ffcff8727f), which already stops at the first closing fence; upstream fixes its LEADING_FRONTMATTER regex, which Onicode doesn't use; took only the test row
 bed9141ec2	take	kept Onicode's minted canonical-base gate (b165b86970) as belowBase and took upstream's outsideBase/previewEntry rule on top: a dependency whose base no longer matches is now denied instead of falling back to the root-relative check
 32e130c76d	take	taken as is
+a8f708de96	take	taken as is
