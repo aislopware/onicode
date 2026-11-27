@@ -510,7 +510,7 @@ const makeContextHandoffService = Effect.fn("orchestrationV2.ContextHandoffServi
                 new ContextHandoffPrepareError({
                   threadId: input.threadId,
                   targetRunId: input.targetRunId,
-                  fromProviderThreadIds: [],
+                  fromProviderThreadIds: Array.from(input.fromProviderThreadIds ?? []),
                   toProviderThreadId: input.toProviderThreadId,
                   cause,
                 }),
@@ -530,7 +530,7 @@ const makeContextHandoffService = Effect.fn("orchestrationV2.ContextHandoffServi
           transferId: null,
           threadId: input.threadId,
           targetRunId: input.targetRunId,
-          fromProviderThreadIds: input.fromProviderThreadIds ?? [],
+          fromProviderThreadIds: Array.from(input.fromProviderThreadIds ?? []),
           toProviderThreadId: input.toProviderThreadId,
           coveredRunOrdinals: { from: 1, to: 1 },
           strategy: "manual_context",

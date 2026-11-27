@@ -3499,7 +3499,7 @@ const resolveClaudeRollbackResumeSessionAt = Effect.fn(
       }
 
       // Only compaction can be omitted without dropping a retained user prompt.
-      if (target.message !== undefined && isCompactionCommandMessage(target.message)) {
+      if (target.message !== undefined && claudeCompactsSession(target.message)) {
         const earlierTurn = input.providerThreadTurns
           .filter((turn) => turn.ordinal < target.providerTurn.ordinal)
           .toSorted((left, right) => left.ordinal - right.ordinal)
@@ -5699,6 +5699,17 @@ const CLAUDE_UNSUPPORTED_VERSION_ERROR =
   /^API Error: 400 Claude Code (\d+\.\d+\.\d+) does not support this model; version (\d+\.\d+\.\d+) or newer is required\./;
 
 const MAX_REMEMBERED_CLAUDE_MODEL_LEDGERS = 512;
+
+/** Claude Code runs `/compact <instructions>` as its own compaction too. */
+function claudeCompactsSession(message: {
+  readonly text: string;
+  readonly attachments?: ReadonlyArray<unknown> | undefined;
+}): boolean {
+  return (
+    isCompactionCommandMessage({ role: "user", ...message }) ||
+    ((message.attachments?.length ?? 0) === 0 && /^\/compact\s/i.test(message.text.trim()))
+  );
+}
 
 // Claude Code restores a resumed session's model ledger from this version on; earlier ones
 // restart it at zero per process (the claude_idle_resume recording, 2.1.111).
@@ -13831,7 +13842,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           if (
             message.type === "assistant" &&
             "local_command_source" in message &&
-            isCompactionCommandMessage({ role: "user", ...context.input.message })
+            claudeCompactsSession(context.input.message)
           ) {
             return;
           }

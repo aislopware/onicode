@@ -1539,6 +1539,8 @@ describe("orchestration v2 provider switching", () => {
     scenario:
       | "first-send"
       | "after-failed-switch"
+      | "compact-after-switch"
+      | "other-after-failed-switch"
       | "resume-fails"
       | "edit-first-turn"
       | "edit-first-turn-then-switch"
@@ -1608,6 +1610,14 @@ describe("orchestration v2 provider switching", () => {
           ...(scenario === "edit-first-turn-then-switch"
             ? {}
             : { failedRunOrdinals: new Set([1]) }),
+        }),
+        makeTestAdapter({
+          instanceId: GROK_MODEL_SELECTION.instanceId,
+          driver: GROK_DRIVER,
+          capabilities: AcpProviderCapabilitiesV2,
+          modelSelection: GROK_MODEL_SELECTION,
+          responseByRunOrdinal: {},
+          capturedTurns,
         }),
       ]);
       yield* Effect.gen(function* () {
@@ -1680,6 +1690,27 @@ describe("orchestration v2 provider switching", () => {
                 activeProviderThreadId: migratedFromV1 ? null : providerThread.id,
               },
             },
+            // AgentSessionImporter writes each message's row alongside its turn item.
+            {
+              id: EventId.make("imported-native:user-message"),
+              type: "message.updated",
+              threadId,
+              occurredAt: at,
+              payload: {
+                createdBy: "user",
+                creationSource: "server",
+                id: MessageId.make("imported-native:user"),
+                threadId,
+                runId: null,
+                nodeId: null,
+                role: "user",
+                text: "Remember the code word PELICAN.",
+                attachments: [],
+                streaming: false,
+                createdAt: at,
+                updatedAt: at,
+              },
+            },
             {
               id: EventId.make("imported-native:user"),
               type: "turn-item.updated",
@@ -1728,7 +1759,11 @@ describe("orchestration v2 provider switching", () => {
                 ]),
           ],
         });
-        const send = (ordinal: number, modelSelection: ModelSelection) =>
+        const send = (
+          ordinal: number,
+          modelSelection: ModelSelection,
+          text = "What was the code word?",
+        ) =>
           Effect.gen(function* () {
             yield* orchestrator.dispatch({
               type: "message.dispatch",
@@ -1737,7 +1772,7 @@ describe("orchestration v2 provider switching", () => {
               messageId: MessageId.make(`imported-native:${ordinal}`),
               createdBy: "user",
               creationSource: "web",
-              text: "What was the code word?",
+              text,
               attachments: [],
               modelSelection,
               dispatchMode: { type: "start_immediately" },
@@ -1754,6 +1789,46 @@ describe("orchestration v2 provider switching", () => {
             yield* worker.drain();
           });
         if (scenario === "after-failed-switch") yield* send(1, CODEX_MODEL_SELECTION);
+        if (scenario === "other-after-failed-switch") {
+          yield* send(1, CODEX_MODEL_SELECTION);
+          yield* send(2, GROK_MODEL_SELECTION);
+          const switched = yield* orchestrator.getThreadProjection(threadId);
+          const grokRun = switched.runs[1];
+          assert.equal(grokRun?.status, "completed");
+          const grokTurn = (yield* Ref.get(capturedTurns)).findLast(
+            (turn) => turn.driver === GROK_DRIVER,
+          );
+          assert.include(grokTurn?.text ?? "", "Remember the code word PELICAN.");
+          // The import came from the imported session, not the switch that failed in between.
+          assert.deepEqual(
+            switched.contextHandoffs
+              .filter(
+                (handoff) =>
+                  handoff.strategy === "manual_context" && handoff.targetRunId === grokRun?.id,
+              )
+              .map((handoff) => handoff.fromProviderThreadIds),
+            [[providerThread.id]],
+          );
+          return;
+        }
+        if (scenario === "compact-after-switch") {
+          yield* send(1, CODEX_MODEL_SELECTION, "/compact");
+          const compacted = yield* orchestrator.getThreadProjection(threadId);
+          // The import reaches Codex only with a prompt, so there is nothing to compact yet.
+          assert.isEmpty(yield* Ref.get(capturedTurns));
+          assert.equal(compacted.runs[0]?.status, "failed");
+          assert.deepEqual(
+            compacted.turnItems
+              .filter((item) => item.runId === compacted.runs[0]?.id)
+              .map((item) => [item.type, item.status]),
+            [
+              ["handoff", "completed"],
+              ["user_message", "completed"],
+              ["compaction", "failed"],
+            ],
+          );
+          return;
+        }
         if (editsFirstTurn) {
           yield* send(1, CLAUDE_MODEL_SELECTION);
           const baseline = (yield* orchestrator.getThreadProjection(threadId)).checkpoints.find(
@@ -1871,6 +1946,12 @@ describe("orchestration v2 provider switching", () => {
   );
   it.live("returns to an imported native session without resending its history", () =>
     importedNativeSessionScenario("after-failed-switch"),
+  );
+  it.live("names an imported session as the source after a failed switch in between", () =>
+    importedNativeSessionScenario("other-after-failed-switch"),
+  );
+  it.live("compacts nothing on switching away from an imported native session", () =>
+    importedNativeSessionScenario("compact-after-switch"),
   );
   it.live("recovers an imported native session's history when its resume fails", () =>
     importedNativeSessionScenario("resume-fails"),
@@ -2613,10 +2694,16 @@ describe("orchestration v2 provider switching", () => {
             yield* awaitSettled(2);
             const compacted = yield* orchestrator.getThreadProjection(threadId);
             assert.equal(compacted.runs.at(-1)?.status, "failed");
-            const failure = compacted.turnItems.findLast((item) => item.type === "error");
-            assert.include(
-              failure?.type === "error" ? failure.failure.message : "",
-              "Nothing to compact yet",
+            const run2 = compacted.runs.at(-1)!.id;
+            assert.deepEqual(
+              compacted.turnItems
+                .filter((item) => item.runId === run2)
+                .map((item) => [item.type, item.status]),
+              [
+                ["handoff", "completed"],
+                ["user_message", "completed"],
+                ["compaction", "failed"],
+              ],
             );
             assert.lengthOf(yield* Ref.get(capturedTurns), 1);
 
@@ -7820,21 +7907,13 @@ describe("orchestration v2 provider switching", () => {
           // Compacting the fork's empty native session would summarize nothing.
           assert.isEmpty(yield* forkTurns());
           assert.equal(compacted.runs.at(-1)?.status, "failed");
-          if (name === "native-fork-fallback") {
-            const failure = compacted.turnItems.findLast((item) => item.type === "error");
-            assert.include(
-              failure?.type === "error" ? failure.failure.message : "",
-              "Nothing to compact yet",
-            );
-          } else {
-            // Shown as a failed compaction, like a provider's own, not as a thread error.
-            assert.isTrue(
-              compacted.turnItems.some(
-                (item) => item.type === "compaction" && item.status === "failed",
-              ),
-            );
-            assert.isFalse(compacted.turnItems.some((item) => item.type === "error"));
-          }
+          // Shown as a failed compaction, like a provider's own, not as a thread error.
+          assert.isTrue(
+            compacted.turnItems.some(
+              (item) => item.type === "compaction" && item.status === "failed",
+            ),
+          );
+          assert.isFalse(compacted.turnItems.some((item) => item.type === "error"));
 
           yield* send(forkThreadId, "next", "Continue", CLAUDE_MODEL_SELECTION);
           yield* settle(forkThreadId);

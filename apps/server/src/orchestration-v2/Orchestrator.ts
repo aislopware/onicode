@@ -146,6 +146,7 @@ import {
 import { CommandReceiptStoreV2, type CommandReceiptV2 } from "./CommandReceiptStore.ts";
 import {
   ContextHandoffServiceV2,
+  nativeSessionHoldsImportedHistory,
   readForkHistoryItems,
   readInheritedHandoffItems,
   visibleConversationItems,
@@ -593,16 +594,33 @@ export class OrchestratorV2 extends Context.Service<OrchestratorV2, Orchestrator
   "onicode/orchestration-v2/Orchestrator/OrchestratorV2",
 ) {}
 
-/** The messages queued ahead of a queued run, in queue order. */
 /** An import has no runs to name its source, so its handoff names the provider thread that held it. */
 function legacyImportSource(
-  threadModelSelection: ModelSelection,
-  source: OrchestrationV2ProviderThread | undefined,
+  projection: Pick<
+    OrchestrationV2ThreadProjection,
+    "thread" | "providerThreads" | "contextHandoffs" | "runs"
+  >,
+  active: OrchestrationV2ProviderThread | undefined,
   targetProviderThreadId: OrchestrationV2ProviderThread["id"],
 ) {
-  if (source === undefined || source.id === targetProviderThreadId) {
+  const holders = projection.providerThreads.filter(
+    (candidate) =>
+      candidate.id !== targetProviderThreadId &&
+      nativeSessionHoldsImportedHistory(projection, candidate),
+  );
+  // Prefer the session imported with the history over a switch that was handed a copy and failed.
+  const source =
+    holders.find(
+      (candidate) =>
+        !projection.contextHandoffs.some(
+          (handoff) =>
+            handoff.strategy === "manual_context" && handoff.toProviderThreadId === candidate.id,
+        ),
+    ) ?? holders.find((candidate) => candidate.id === active?.id);
+  if (source === undefined) {
     return { providerThreadIds: [], instanceIds: [], modelSelections: [] };
   }
+  const threadModelSelection = projection.thread.modelSelection;
   return {
     providerThreadIds: [source.id],
     instanceIds: [source.providerInstanceId],
@@ -612,6 +630,7 @@ function legacyImportSource(
   };
 }
 
+/** The messages queued ahead of a queued run, in queue order. */
 function messagesQueuedAhead(
   projection: Pick<OrchestrationV2ThreadProjection, "runs">,
   runId: RunId,
@@ -3389,7 +3408,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                 ),
               );
       const importSource = legacyImportSource(
-        projection.thread.modelSelection,
+        projection,
         activeProviderThread,
         queuedProviderThread.id,
       );
@@ -10235,7 +10254,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               ),
             );
     const importSource = legacyImportSource(
-      projection.thread.modelSelection,
+      projection,
       activeProviderThread,
       ensuredProviderThread.id,
     );
