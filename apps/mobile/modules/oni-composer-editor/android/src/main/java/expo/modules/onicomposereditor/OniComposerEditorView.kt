@@ -951,9 +951,11 @@ internal class SelectionAwareEditText(
       !payload["fragment"].isNullOrEmpty() ||
         payload["html"]?.contains("data-oni-context-fragment=") == true -> pasteContext(payload)
       pasteImagesOrInterceptedText() -> true
+      // JS restores links onto the plain text, so a clip without one pastes natively.
       isSingleItemClip() &&
         (OniComposerClipboard.hasThreadLink(payload["text"].orEmpty()) ||
-          OniComposerClipboard.hasWebLink(payload["html"].orEmpty())) -> pasteContext(payload)
+          (!payload["text"].isNullOrEmpty() &&
+            OniComposerClipboard.hasWebLink(payload["html"].orEmpty()))) -> pasteContext(payload)
       else -> false
     }
   }

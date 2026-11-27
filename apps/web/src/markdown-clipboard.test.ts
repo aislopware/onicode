@@ -327,6 +327,23 @@ describe("serializeRenderedMarkdownFragment", () => {
     ).toEqual([["a", href, label]]);
   });
 
+  // The renderer shows escapes in a drive path as written, so only the link's shape round trips.
+  it.each([
+    ["C:\\Users\\me\\", "[C:\\Users\\me\\\\](https://example.com)"],
+    ["C:\\app\\[id]\\page.tsx", "[C:\\app\\[id\\]\\page.tsx](https://example.com)"],
+  ])("keeps a drive path label inside its link: %s", (label, expected) => {
+    const anchor = new FakeElement("A", [], { href: "https://example.com" }).append(
+      new FakeText(label),
+    );
+    const copied = serializeRenderedMarkdownFragment(asNode(new FakeElement("DIV").append(anchor)));
+    expect(copied).toBe(expected);
+    expect(
+      readUserBack(copied).children.map((child) =>
+        child.type === "element" ? [child.tagName, child.properties.href] : [child.type],
+      ),
+    ).toEqual([["a", "https://example.com"]]);
+  });
+
   it("copies alert and insight callouts as their Markdown instead of the rendered label", () => {
     // The shape ChatMarkdown renders for `> [!WARNING]\n> Back up first.`.
     const callout = new FakeElement("DIV", [], {
