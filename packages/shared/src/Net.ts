@@ -7,6 +7,7 @@ import * as Context from "effect/Context";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 
+import * as HostProcess from "./HostProcess.ts";
 import { isWildcardHost, listensOnLoopback, normalizeHostname } from "./hostClassification.ts";
 
 const WILDCARD_PORT_ATTEMPTS = 8;
@@ -159,17 +160,31 @@ export const make = () => {
     );
   });
 
-  // macOS lets a wildcard bind share a port with a listener on one interface address, so
-  // probe those addresses for a listener the bind alone would not reveal.
-  const hasInterfaceListener = (port: number): Effect.Effect<boolean> =>
-    Effect.forEach(
+  // Outside Linux a wildcard bind can share a port with a listener on one interface address, which
+  // a bind to that exact address still reports. "::" and "" are dual-stack, so they check IPv4 too.
+  const hasInterfaceListener = Effect.fn("Net.hasInterfaceListener")(function* (
+    port: number,
+    wildcardHost: string,
+  ): Effect.fn.Return<boolean> {
+    if ((yield* HostProcess.Platform) === "linux") return false;
+    const free = yield* Effect.forEach(
       Object.values(NodeOS.networkInterfaces())
         .flatMap((entries) => entries ?? [])
-        .filter((entry) => !entry.internal && (entry.family === "IPv4" || entry.scopeid === 0))
+        .filter(
+          (entry) =>
+            !entry.internal &&
+            (entry.family === "IPv4" || (wildcardHost !== "0.0.0.0" && entry.scopeid === 0)),
+        )
         .map((entry) => entry.address),
-      (address) => hasListenerOnHost(port, address),
+      // Only EADDRINUSE counts; an odd interface error must not mark every port taken.
+      (address) =>
+        probeListenOnHost(port, address).pipe(
+          Effect.catchTags({ NetListenError: () => Effect.succeed(true) }),
+        ),
       { concurrency: "unbounded" },
-    ).pipe(Effect.map((listening) => listening.includes(true)));
+    );
+    return free.includes(false);
+  });
 
   const isPortAvailableForHost = Effect.fn("Net.isPortAvailableForHost")(function* (
     port: number,
@@ -232,7 +247,7 @@ export const make = () => {
         (yield* isPortAvailableForHost(preferred, host)) &&
         (wildcardHost === undefined ||
           ((yield* canListenOnHost(preferred, wildcardHost)) &&
-            !(yield* hasInterfaceListener(preferred))))
+            !(yield* hasInterfaceListener(preferred, wildcardHost))))
       ) {
         return preferred;
       }
@@ -243,7 +258,10 @@ export const make = () => {
       // A wildcard bind can succeed while another address family owns the localhost port.
       for (let attempt = 0; attempt < WILDCARD_PORT_ATTEMPTS; attempt += 1) {
         const port = yield* reserveLoopbackPort(wildcardHost);
-        if ((yield* isPortAvailableOnLoopback(port)) && !(yield* hasInterfaceListener(port))) {
+        if (
+          (yield* isPortAvailableOnLoopback(port)) &&
+          !(yield* hasInterfaceListener(port, wildcardHost))
+        ) {
           return port;
         }
       }
