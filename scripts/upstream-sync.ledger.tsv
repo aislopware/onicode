@@ -4141,3 +4141,4 @@ f839ab4041	take	figcaption joined Onicode's blockquote branch (after its text-bo
 a03c43363b	take	kept Onicode's existing user pages (upstream's pass reintroduces removed surfaces and drops unintuitive details); adopted upstream's onboarding index and new guides, rewritten for Onicode: README index, onicode-json.md (no t3 schema), cli.md (only binCli commands), diagnostics, diffs, subagents, providers-grok, browser; unverifiable claims dropped
 f727a75b59	take	import merged beside Onicode's carryFanoutSelections; retargetDraftWorkspace uses only helpers Onicode has (read-only shelf reads, hook order untouched); mobile new-task flow has no counterpart (follow-up)
 4c8a324e8f	take	kept Onicode's markdownLinks escape handling (4cef77e10c: any CommonMark ASCII-punctuation escape, a superset of upstream's \" and \' rule); took only upstream's test rows, which pass
+72559e12fa	take	taken as is
