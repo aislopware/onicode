@@ -4042,3 +4042,4 @@ e242ed0e1a	take	kept Onicode's banner text; only the condition changed
 cbc3057f59	take	kept Onicode's stricter workEntryViewedImagePath and frame styles; adopted the pending loading frame (inProgress becomes pending) and the pending props; scenario ported to desktop
 09385a33ce	take	taken as is
 03c0b31315	skip	already done: Onicode reads a SKILL.md only in child/manifest folders, and its 'scans an automatic root's children and ignores a SKILL.md in the root' test covers all four roots
+60eed627d0	take	kept Onicode's PullRequestTimelineTab (already routes through useOpenLink); only the test ported
