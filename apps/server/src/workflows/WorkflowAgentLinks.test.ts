@@ -254,9 +254,9 @@ it.effect("waits in pieces, rides out a dropped route, and returns the output an
     assert.equal(waits.length, 3);
     // A peer waits 45 s at most, so a longer piece would come back early.
     assert.isTrue(waits.every((call) => Number(call.arguments.timeoutMs) <= 45_000));
-    // The reply is read from the start, not by how a peer pages a read without a cursor.
+    // The reply is read from the newest page, not by how a peer pages a read without a cursor.
     const reads = there.calls.filter((call) => call.tool === "oni_thread_read");
-    assert.equal(reads[1]?.arguments.afterPosition, -1);
+    assert.equal(reads[1]?.arguments.beforePosition, Number.MAX_SAFE_INTEGER);
   }),
 );
 
@@ -272,11 +272,11 @@ it.effect("a turn a restart continued there is followed to its continuation's re
           ],
           items: [],
         },
-        // An older peer refuses a read from -1, and reads from the start without a cursor.
+        // An older peer refuses a read back from the end, and reads from the start without one.
         new OrchestratorMcpFailure({
           code: "invalid_request",
           message:
-            "Invalid parameters for tool 'oni_thread_read': Expected a value >= 0, got -1\n  at [\"afterPosition\"]",
+            "Invalid parameters for tool 'oni_thread_read': Unknown argument \"beforePosition\". Accepted arguments: threadId, afterPosition, limit.",
         }),
         {
           recentRuns: [],
@@ -303,9 +303,101 @@ it.effect("a turn a restart continued there is followed to its continuation's re
     });
     const reads = there.calls.filter((call) => call.tool === "oni_thread_read");
     assert.deepStrictEqual(
-      reads.slice(1).map((call) => call.arguments.afterPosition),
-      [-1, undefined],
+      reads.slice(1).map((call) => [call.arguments.beforePosition, call.arguments.afterPosition]),
+      [
+        [Number.MAX_SAFE_INTEGER, undefined],
+        [undefined, undefined],
+      ],
     );
+  }),
+);
+
+const assistant = (runId: string, text: string) => ({
+  type: "assistant_message",
+  runId,
+  text,
+  textTruncated: false,
+});
+
+it.effect("the reply is read back from the newest page, and from the start on an older peer", () =>
+  Effect.gen(function* () {
+    const there = peer({
+      oni_thread_wait: [{ ...waited, timedOut: false, output: { head: "abc" } }],
+      oni_thread_read: [
+        run("completed"),
+        // Later turns fill the newest page; the step's reply is on the page before it.
+        { recentRuns: [], earlierPosition: 200, items: [assistant("turn-2", "later")] },
+        {
+          recentRuns: [],
+          earlierPosition: 100,
+          items: [assistant("turn-1", "draft"), assistant("turn-1", "final")],
+        },
+      ],
+    });
+    const result = yield* Effect.provide(
+      Effect.flatMap(WorkflowAgentLinks.make, (links) =>
+        links.result({ threadId: "thread-1", turnId: "turn-1" }, "env-b"),
+      ),
+      there.layer,
+    );
+    assert.equal(result.reply, "final");
+    // Pages older than the reply are never asked for.
+    assert.deepStrictEqual(
+      there.calls
+        .filter((call) => call.tool === "oni_thread_read")
+        .slice(1)
+        .map((call) => call.arguments.beforePosition),
+      [Number.MAX_SAFE_INTEGER, 200],
+    );
+
+    // A peer that predates the cursor ignores it and pages forward from the start.
+    const older = peer({
+      oni_thread_wait: [{ ...waited, timedOut: false, output: { head: "abc" } }],
+      oni_thread_read: [
+        run("completed"),
+        { recentRuns: [], hasMore: true, nextPosition: 99, items: [assistant("turn-1", "a")] },
+        { recentRuns: [], hasMore: false, nextPosition: 150, items: [assistant("turn-1", "b")] },
+      ],
+    });
+    const fromStart = yield* Effect.provide(
+      Effect.flatMap(WorkflowAgentLinks.make, (links) =>
+        links.result({ threadId: "thread-1", turnId: "turn-1" }, "env-b"),
+      ),
+      older.layer,
+    );
+    assert.equal(fromStart.reply, "b");
+    assert.deepStrictEqual(
+      older.calls
+        .filter((call) => call.tool === "oni_thread_read")
+        .slice(2)
+        .map((call) => call.arguments.afterPosition),
+      [99],
+    );
+  }),
+);
+
+it.effect("a peer that answers the same page again fails the reply instead of asking forever", () =>
+  Effect.gen(function* () {
+    const stuck = (page: Record<string, unknown>) => ({
+      recentRuns: [],
+      ...page,
+      items: [assistant("turn-0", "other")],
+    });
+    // Read back from the end, and forward on a peer that predates reading back.
+    for (const page of [{ earlierPosition: 100 }, { hasMore: true, nextPosition: 100 }]) {
+      const there = peer({
+        oni_thread_wait: [{ ...waited, timedOut: false, output: { head: "abc" } }],
+        oni_thread_read: [run("completed"), ...Array.from({ length: 4 }, () => stuck(page))],
+      });
+      const error = yield* Effect.provide(
+        Effect.flatMap(WorkflowAgentLinks.make, (links) =>
+          links.result({ threadId: "thread-1", turnId: "turn-1" }, "env-b"),
+        ),
+        there.layer,
+      ).pipe(Effect.flip);
+      assert.match(error.reason, /answered the same page of thread thread-1 again/);
+      assert.isTrue(there.calls.filter((call) => call.tool === "oni_thread_read").length <= 3);
+    }
   }),
 );
 

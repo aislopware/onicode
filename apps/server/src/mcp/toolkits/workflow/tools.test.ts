@@ -12,3 +12,22 @@ it("keeps exact wait names, store keys and channels", () => {
   expect(decode({ action: "signal", workflow: "w", channel: "review " }).channel).toBe("review ");
   expect(() => decode({ action: "signal", workflow: "w", channel: " " })).toThrow();
 });
+
+it("shows agents a queue step as a queue step, not the wire's wait", () => {
+  const encode = Schema.encodeSync(WorkflowToolkit.tools.oni_workflow.successSchema);
+  const step = {
+    name: "pool reviewers",
+    kind: "queue",
+    status: "running",
+    attempts: 1,
+    detail: null,
+    threadId: null,
+    environmentId: null,
+    result: null,
+    said: null,
+    ahead: 2,
+    startedAt: "2026-11-27T00:00:00.000Z",
+    endedAt: null,
+  } as const;
+  expect(encode({ steps: [step] }).steps).toEqual([step]);
+});

@@ -162,6 +162,8 @@ function setup(input: {
   state.workspaceRoot = input.workspaceRoot;
   state.folder = input.folder;
   state.pullRequests = input.pullRequests ?? [];
+  oniFile.disk = "";
+  oniFile.cached = "";
   useRightPanelStore.setState({ threadPanelVisibilityByThreadKey: {} });
   const anchor = document.createElement("div");
   document.body.append(anchor);
