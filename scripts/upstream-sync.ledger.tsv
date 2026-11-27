@@ -4512,3 +4512,4 @@ b312bc3c9b	take	kept Onicode's hit-strip wheel target (compositor reason holds),
 d3aa2dd496	take	kept Onicode's per-session toolResults (epoch, capture opt-in) and added upstream's withinByteLimit to it; analytics wrapper hunk not taken (Onicode has no analytics); screenshot recovery taken; tests register a capturing session as Onicode requires
 aee6cf558d	take	clean; index exists, no migration
 1d90fe89f7	take	passive rescans only from RunFinalizationService (skip within 60 s or while a native scan runs); WorkspaceFileSystem write path stays a full refresh
+7b5c7463d9	take	clean
