@@ -110,7 +110,7 @@ function AlertDialogFooter({
   return (
     <div
       className={cn(
-        "flex flex-col-reverse gap-2 px-5 sm:flex-row sm:justify-end sm:rounded-b-[calc(var(--radius-xl)-1px)]",
+        "flex flex-col-reverse gap-2 px-5 sm:flex-row sm:flex-wrap sm:justify-end sm:rounded-b-[calc(var(--radius-xl)-1px)]",
         variant === "default" && "border-t bg-muted py-3",
         variant === "bare" && "pb-4",
         className,
