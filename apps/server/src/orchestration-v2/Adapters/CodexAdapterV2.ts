@@ -2569,6 +2569,15 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
         );
         /** Completed by thread/closed after this connection unsubscribes from the native thread. */
         const threadClosings = new Map<string, Deferred.Deferred<void>>();
+        // Codex keeps a loaded thread's config overrides across an in-place thread/resume, and
+        // fails every turn once one names a stdio MCP server the config no longer defines.
+        const pinnedStdioMcpServers = new Map<string, ReadonlySet<string>>();
+        const pinStdioMcpServers = (nativeThreadId: string, names: ReadonlyArray<string>) => {
+          pinnedStdioMcpServers.set(
+            nativeThreadId,
+            new Set([...(pinnedStdioMcpServers.get(nativeThreadId) ?? []), ...names]),
+          );
+        };
         /** Codex acceptForSession covers only the exact command or patch, not future commands. */
         const sessionApprovals = new Map<
           string,
@@ -6120,6 +6129,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           Effect.gen(function* () {
             const closing = threadClosings.get(payload.threadId);
             threadClosings.delete(payload.threadId);
+            pinnedStdioMcpServers.delete(payload.threadId);
             if (closing !== undefined) yield* Deferred.succeed(closing, undefined);
           }).pipe(
             Effect.andThen(
@@ -8495,6 +8505,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
         // one it is still unloading after thread/unsubscribe until it emits thread/closed.
         const resumeNativeThread = Effect.fn("CodexAdapterV2.resumeNativeThread")(function* (
           threadId: string,
+          stdioMcpServers: ReadonlyArray<string>,
           params: Record<string, unknown>,
         ) {
           const resume = client.raw.request("thread/resume", { threadId, ...params });
@@ -8517,8 +8528,30 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 return Effect.fail(cause);
               },
             }),
+            Effect.tap(() => Effect.sync(() => pinStdioMcpServers(threadId, stdioMcpServers))),
           );
         });
+
+        /** Completes once the native thread is unloaded; Codex refuses a resume until then. */
+        const unsubscribeNativeThread = Effect.fn("CodexAdapterV2.unsubscribeNativeThread")(
+          function* (nativeThreadId: string) {
+            // A resume may already wait on the pending entry; replacing it would strand that wait.
+            const pending = threadClosings.get(nativeThreadId);
+            const closing = pending ?? Deferred.makeUnsafe<void>();
+            threadClosings.set(nativeThreadId, closing);
+            const { status } = yield* client.request("thread/unsubscribe", {
+              threadId: nativeThreadId,
+            });
+            if (status === "notLoaded" || (status === "notSubscribed" && pending === undefined)) {
+              if (threadClosings.get(nativeThreadId) === closing) {
+                threadClosings.delete(nativeThreadId);
+              }
+              pinnedStdioMcpServers.delete(nativeThreadId);
+              yield* Deferred.succeed(closing, undefined);
+            }
+            return closing;
+          },
+        );
 
         const startNativeTurn = Effect.fn("CodexAdapterV2.startNativeTurn")(
           function* (
@@ -8533,15 +8566,37 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             }
             const mcpSession = yield* mcpSessions.read(turnInput.threadId);
             const models = adapterOptions.models === undefined ? [] : yield* adapterOptions.models;
-            const configuredReasoningSummary = yield* client
+            const config = yield* client
               .request("config/read", { cwd: turnInput.runtimePolicy.cwd, includeLayers: false })
               .pipe(
-                Effect.map((response) => response.config.model_reasoning_summary ?? undefined),
+                Effect.map((response) => response.config),
                 Effect.catch(() =>
                   Effect.logDebug("Codex config read failed.").pipe(Effect.as(undefined)),
                 ),
                 withAppServerDeadline("config/read"),
               );
+            const configuredReasoningSummary = config?.model_reasoning_summary ?? undefined;
+            const stdioMcpServers =
+              config === undefined ? undefined : codexStdioMcpServerNames(config.mcp_servers);
+            const pinned = pinnedStdioMcpServers.get(threadId);
+            if (
+              stdioMcpServers !== undefined &&
+              pinned !== undefined &&
+              [...pinned].some((name) => !stdioMcpServers.includes(name))
+            ) {
+              // Only a fresh load drops the removed server's override. Like withLoadedThread,
+              // resume with the thread's saved model and cwd.
+              yield* unsubscribeNativeThread(threadId);
+              pinnedStdioMcpServers.delete(threadId);
+              yield* resumeNativeThread(threadId, stdioMcpServers, {
+                excludeTurns: true,
+                ...codexThreadRuntimeParams({
+                  threadId: turnInput.threadId,
+                  mcpSession,
+                  stdioMcpServers,
+                }),
+              }).pipe(withAppServerDeadline("thread/resume"));
+            }
             const turnStartParams = yield* buildCodexTurnStartParams({
               cyberAccess: codexCyberAccess(models, turnInput.modelSelection.model),
               nativeThreadId: threadId,
@@ -8803,7 +8858,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                   ]),
                 ),
                 Effect.flatMap(([mcpSession, stdioMcpServers]) =>
-                  resumeNativeThread(threadId, {
+                  resumeNativeThread(threadId, stdioMcpServers, {
                     excludeTurns: true,
                     ...codexThreadRuntimeParams({
                       threadId: providerThread.appThreadId,
@@ -9008,7 +9063,12 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                       ? { threadSource: "subagent" }
                       : {}),
                   })
-                  .pipe(withAppServerDeadline("thread/start")),
+                  .pipe(
+                    withAppServerDeadline("thread/start"),
+                    Effect.tap((response) =>
+                      Effect.sync(() => pinStdioMcpServers(response.thread.id, stdioMcpServers)),
+                    ),
+                  ),
               ),
               Effect.tap((response) => {
                 appThreadByNativeThread.set(response.thread.id, threadInput.threadId);
@@ -9039,12 +9099,13 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               const nativeThreadId = yield* getNativeThreadId(threadInput.providerThread);
               const appThreadId = threadInput.threadId ?? threadInput.providerThread.appThreadId;
               if (appThreadId != null) appThreadByNativeThread.set(nativeThreadId, appThreadId);
-              const resume = resumeNativeThread(nativeThreadId, {
+              const stdioMcpServers = yield* readStdioMcpServers(threadInput.runtimePolicy?.cwd);
+              const resume = resumeNativeThread(nativeThreadId, stdioMcpServers, {
                 excludeTurns: true,
                 ...codexThreadRuntimeParams({
                   threadId: appThreadId,
                   mcpSession: yield* readMcpSession(appThreadId),
-                  stdioMcpServers: yield* readStdioMcpServers(threadInput.runtimePolicy?.cwd),
+                  stdioMcpServers,
                   ...(threadInput.modelSelection === undefined
                     ? {}
                     : { modelSelection: threadInput.modelSelection }),
@@ -9325,25 +9386,10 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               // unarchives it on the next turn.
               if (unloadInput.archive === true) {
                 yield* client.request("thread/archive", { threadId: nativeThreadId });
+                pinnedStdioMcpServers.delete(nativeThreadId);
               } else {
-                // A resume may already wait on the pending entry; replacing it would strand that wait.
-                const pending = threadClosings.get(nativeThreadId);
-                const closing = pending ?? Deferred.makeUnsafe<void>();
-                threadClosings.set(nativeThreadId, closing);
-                const { status } = yield* client.request("thread/unsubscribe", {
-                  threadId: nativeThreadId,
-                });
-                if (
-                  status === "notLoaded" ||
-                  (status === "notSubscribed" && pending === undefined)
-                ) {
-                  if (threadClosings.get(nativeThreadId) === closing) {
-                    threadClosings.delete(nativeThreadId);
-                  }
-                  yield* Deferred.succeed(closing, undefined);
-                } else if (unloadInput.awaitClosed === true) {
-                  yield* Deferred.await(closing);
-                }
+                const closing = yield* unsubscribeNativeThread(nativeThreadId);
+                if (unloadInput.awaitClosed === true) yield* Deferred.await(closing);
               }
               // Unloading stops notifications for this thread, so unknown-outcome commands cannot keep turns pinned.
               yield* turnTerminalizationPermit.withPermits(1)(
@@ -10137,12 +10183,13 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               // thread/revert requires the thread loaded in this app-server; resume after restart or idle release.
               // Like withLoadedThread, resume with the thread's saved model and cwd, not the session's.
               if (!loaded) {
-                yield* resumeNativeThread(threadId, {
+                const stdioMcpServers = yield* readStdioMcpServers(cwd);
+                yield* resumeNativeThread(threadId, stdioMcpServers, {
                   excludeTurns: true,
                   ...codexThreadRuntimeParams({
                     threadId: threadInput.providerThread.appThreadId,
                     mcpSession: yield* readMcpSession(threadInput.providerThread.appThreadId),
-                    stdioMcpServers: yield* readStdioMcpServers(cwd),
+                    stdioMcpServers,
                   }),
                 });
               }
@@ -10194,6 +10241,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               yield* rejectIfRetired;
               const threadId = yield* getNativeThreadId(threadInput.sourceProviderThread);
               const boundary = yield* resolveCodexForkBoundary(threadInput);
+              const stdioMcpServers = yield* readStdioMcpServers(threadInput.runtimePolicy?.cwd);
               const forkRequest = client.request("thread/fork", {
                 threadId,
                 excludeTurns: true,
@@ -10201,7 +10249,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 ...codexThreadRuntimeParams({
                   threadId: threadInput.targetThreadId,
                   mcpSession: yield* mcpSessions.read(threadInput.targetThreadId),
-                  stdioMcpServers: yield* readStdioMcpServers(threadInput.runtimePolicy?.cwd),
+                  stdioMcpServers,
                   ...(threadInput.modelSelection === undefined
                     ? {}
                     : { modelSelection: threadInput.modelSelection }),
@@ -10237,6 +10285,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                     }),
                 ),
               );
+              pinStdioMcpServers(response.thread.id, stdioMcpServers);
               let forkedThread = response.thread;
               if (boundary.rollbackTurnCount > 0) {
                 const { historyMode } = yield* ensureInitialized.pipe(
