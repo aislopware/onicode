@@ -4408,3 +4408,4 @@ d8193acc38	take	applied cleanly on the ported document worker chain
 3ebc46f867	take	hand-ported into Onicode's resumable scanMarkdown: upstream's definition helpers verbatim, definitionEnd local index (skips cut/closer/definition tests inside a run), resume keeps afterDefinition and gains omittedDefinitions (snapshotted at cuts and held cuts); kept a one-line-definition fast path so a streaming definition run is not remark-parsed on every append (measured 200-definition stream: 1.3-2.5 ms -> 0.12 ms per append, main 0.08 ms; matches remark on 46k generated lines); extend-matches-split rows for a wrapped label and an omitted oversized definition; scenario ported, typechecked
 f22d01bf77	take	applied cleanly on the ported ACP chain
 da36859cbe	take	applied cleanly; visual, captures in the integrated pass
+09d75fda77	take	applied cleanly
