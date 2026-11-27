@@ -4273,3 +4273,4 @@ a446449577	take	tests only; kept Onicode's IMPLIED_END/openSibling, which alread
 8bf40d6c61	take	adopted upstream's buildAcpStandardToolTurnItem with Onicode's image paths and completionWake as an input (false for child transcripts); kept Onicode's pendingBackgroundWork (identical to upstream's sessionHasPendingBackgroundWork); exit-time carryover drop stops transcript followers
 001fa3e1ba	take	applied cleanly; i18n:generate dropped the two removed keys
 986826178c	take	taken as is
+500d99a5d0	take	applied without HOSTED_LINK
