@@ -1,8 +1,11 @@
 import { useEffect, useRef, type RefObject } from "react";
 
 import { isCommandPaletteOpen } from "../commandPaletteBus";
-import { shouldRedirectInputToComposer } from "../components/chat/composerFocusRedirect";
-import { isInSideChatPane } from "../lib/sideChatPane";
+import {
+  hasFloatingLayerOver,
+  shouldRedirectInputToComposer,
+} from "../components/chat/composerFocusRedirect";
+import { isInSideChatPane, SIDE_CHAT_PANE_SELECTOR } from "../lib/sideChatPane";
 import { getTerminalFocusOwner } from "../lib/terminalFocus";
 
 function isFrozenComposerTarget(target: Element, form: HTMLFormElement | null) {
@@ -34,16 +37,19 @@ export function useDictationSubmissionShortcut(input: {
       if (getTerminalFocusOwner() !== null) return;
       const target = event.target;
       if (!(target instanceof Element)) return;
-      if (
-        target !== document.body &&
-        target !== document.documentElement &&
-        (isInSideChatPane(target) !== latest.current.background ||
-          (!isFrozenComposerTarget(target, latest.current.formRef.current) &&
-            // Focus parked on the chat itself, such as the timeline, belongs to the composer.
-            !shouldRedirectInputToComposer(event)))
-      )
-        return;
-      latest.current.onKeyDown(event);
+      const { background, formRef } = latest.current;
+      // Focus on the page itself belongs to the main chat; a side chat needs focus in its pane.
+      const owned =
+        target === document.body || target === document.documentElement
+          ? !background && !hasFloatingLayerOver()
+          : isInSideChatPane(target) === background &&
+            (isFrozenComposerTarget(target, formRef.current) ||
+              // Focus parked on the chat itself, such as the timeline, belongs to the composer.
+              shouldRedirectInputToComposer(
+                event,
+                background ? target.closest(SIDE_CHAT_PANE_SELECTOR) : null,
+              ));
+      if (owned) latest.current.onKeyDown(event);
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);

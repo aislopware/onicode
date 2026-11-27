@@ -261,10 +261,10 @@ const make = Effect.gen(function* () {
     const wanted = api.standalone.credential.fields ?? [];
     // A client from before the tracker had fields sends the token alone; replacing a saved
     // account's token keeps the fields it was saved with.
-    const fields =
-      input.fields === undefined && !addAccount && wanted.length > 0
-        ? yield* storedFields(api, input.accountId ?? null)
-        : input.fields;
+    const reusesSavedFields = input.fields === undefined && !addAccount && wanted.length > 0;
+    const fields = reusesSavedFields
+      ? yield* storedFields(api, input.accountId ?? null)
+      : input.fields;
     const missing = wanted.filter((field) => fields?.[field.key] === undefined);
     if (missing.length > 0) {
       const name = api.standalone.displayName;
@@ -307,6 +307,17 @@ const make = Effect.gen(function* () {
                 ),
             )
           : yield* requireAccount(api.kind, input.accountId);
+        // The saved fields were read before the probe; another client may have changed them since.
+        if (reusesSavedFields) {
+          const current = yield* storedFields(api, accountId);
+          if (wanted.some((field) => current?.[field.key] !== credential.fields[field.key])) {
+            return yield* new IssueTrackerConnectionError({
+              tracker: input.tracker,
+              reason: "failed",
+              detail: `This ${api.standalone.displayName} account changed while connecting. Try again.`,
+            });
+          }
+        }
         if (yield* heldElsewhere(api, accountId, credential)) {
           return yield* new IssueTrackerConnectionError({
             tracker: input.tracker,
