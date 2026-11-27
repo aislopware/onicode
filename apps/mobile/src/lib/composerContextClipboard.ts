@@ -77,8 +77,8 @@ export function writeComposerContextClipboard(
 }
 
 // `[label](url)` as copyLinksAs: 'markdown' and Copy as Markdown write it: `\` before `\[]` in the
-// label, and a destination in `<...>` escaping `\<>`, or bare escaping `\()`. Only Copy as Markdown
-// writes an image's `!`; any other `!` before a link is the text's own.
+// label, and a destination in `<...>` escaping `\<>`, or bare escaping `\()`. Messages render context
+// references as links, never images, so a `!` before one is the text's own.
 const COPIED_MARKDOWN_LINK =
   /(!?)\[((?:\\.|[^\\[\]])*)\]\((?:<((?:\\.|[^\\<>])*)>|((?:\\.|[^\\\s()<>])+))\)/g;
 const unescapeMarkdown = (text: string) => text.replace(/\\(.)/g, "$1");
@@ -124,7 +124,7 @@ export function copiedComposerContextText(
       if (reference !== undefined) {
         hasContext = true;
         changed = true;
-        return format === "markdown" && reference.startsWith("!") ? reference : bang + reference;
+        return bang + reference;
       }
       if (format === "markdown" || !linkUrls.has(href)) return link;
       changed = true;

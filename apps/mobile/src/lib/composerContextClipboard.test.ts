@@ -402,7 +402,7 @@ describe("mobile context clipboard copies", () => {
       ],
     };
     const references = `See ${formatComposerContextReference(image)} and ${formatComposerContextReference(terminal)}`;
-    // copyLinksAs: 'markdown' escapes brackets and drops the image's `!`; Copy as Markdown keeps both.
+    // copyLinksAs: 'markdown' escapes the brackets in a label.
     const copy =
       "See [Check\\[out\\]](oni-context://v1/image/image-source) and [the build](<oni-context://v1/terminal/terminal-source>), [docs \\[v2\\]](https://x.dev).";
     const cases: ReadonlyArray<
@@ -433,9 +433,9 @@ describe("mobile context clipboard copies", () => {
         { text: `Look!${formatComposerContextReference(image)}`, hasContext: true },
       ],
       [
-        "![Check\\[out\\]](oni-context://v1/image/image-source)",
+        "Look![Checkout](oni-context://v1/image/image-source)",
         "markdown",
-        { text: formatComposerContextReference(image), hasContext: true },
+        { text: `Look!${formatComposerContextReference(image)}`, hasContext: true },
       ],
       // Inline code that reads like a link is not one of the message's links.
       ["Fix [docs](https://example.com)", "plain", null],
