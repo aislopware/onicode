@@ -4558,3 +4558,4 @@ a62266d842	take	adapted: test draws /splash-logo.png (Onicode's public dir has n
 37534874ea	take	clean
 f7d8d3a89c	take	clean; mobile does not apply theme CSS
 658bbaf6f6	take	adapted: test archive built with zipFixture (Onicode has no JSZip)
+c53d40ff83	take	clean
