@@ -3938,3 +3938,4 @@ ef4a1643ed	skip	telemetry only: Onicode removed AnalyticsService, relay tracing 
 79be5ad616	take	kept Onicode's slot refunds and shared importBytes/decodedBytes budget (same fix already on main; upstream's second decompression budget doubles bytes read per scan); took upstream's 100-unreadable-sessions test, which passes
 c5d6aa19de	take	kept Onicode's last-wins topLevelCwd assignment, gated off for Pi
 80659c54a3	take	taken as is
+5ebb275c2b	take	taken as is
