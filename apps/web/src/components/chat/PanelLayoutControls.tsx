@@ -14,7 +14,7 @@ import type { ThreadPanelPresentation } from "../../rightPanelLayout";
 import { PopoverCreateHandle, PopoverTrigger } from "../ui/popover";
 import { useMobileSidebarSheetMounted } from "../ui/sidebar";
 import { Toggle } from "../ui/toggle";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 
 /** Matches the right inset of `ThreadPanelHeaderControl`. */
 const THREAD_PANEL_HEADER_INSET_PX = 12;
@@ -72,18 +72,18 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
     </Toggle>
   );
   const threadPanelControl = (
-    <Tooltip>
-      <TooltipTrigger render={<span className="flex shrink-0" data-thread-panel-toggle />}>
-        {threadPanelPresentation === "popover" ? (
-          <PopoverTrigger handle={threadPanelPopoverHandle} render={threadPanelToggle} />
-        ) : (
-          threadPanelToggle
-        )}
-      </TooltipTrigger>
-      <TooltipPopup side="bottom" shortcut={threadPanelShortcutLabel}>
-        {gt("Toggle thread details")}
-      </TooltipPopup>
-    </Tooltip>
+    <SharedTooltipTrigger
+      render={<span className="flex shrink-0" data-thread-panel-toggle />}
+      label={gt("Toggle thread details")}
+      shortcut={threadPanelShortcutLabel}
+      side="bottom"
+    >
+      {threadPanelPresentation === "popover" ? (
+        <PopoverTrigger handle={threadPanelPopoverHandle} render={threadPanelToggle} />
+      ) : (
+        threadPanelToggle
+      )}
+    </SharedTooltipTrigger>
   );
 
   return (
@@ -93,57 +93,52 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
     >
       {showThreadPanelControl ? threadPanelControl : null}
       {showTerminalControl ? (
-        <Tooltip>
-          {/* aria-disabled, not disabled: focus still reaches it, so the reason below is readable. */}
-          <TooltipTrigger
-            render={
-              <Toggle
-                className="shrink-0 [-webkit-app-region:no-drag]"
-                pressed={terminalOpen}
-                onPressedChange={terminalAvailable ? onToggleTerminal : undefined}
-                aria-label={gt("Toggle terminal drawer")}
-                variant="ghost"
-                size="sm"
-                aria-disabled={!terminalAvailable}
-              />
-            }
-          >
-            <PanelBottomIcon className="size-4" />
-          </TooltipTrigger>
-          <TooltipPopup side="bottom" shortcut={terminalAvailable ? terminalShortcutLabel : null}>
-            {terminalAvailable
-              ? gt("Toggle terminal drawer")
-              : gt("Terminal drawer is unavailable")}
-          </TooltipPopup>
-        </Tooltip>
+        // aria-disabled, not disabled: focus still reaches it, so the reason below is readable.
+        <SharedTooltipTrigger
+          render={
+            <Toggle
+              className="shrink-0 [-webkit-app-region:no-drag]"
+              pressed={terminalOpen}
+              onPressedChange={terminalAvailable ? onToggleTerminal : undefined}
+              aria-label={gt("Toggle terminal drawer")}
+              variant="ghost"
+              size="sm"
+              aria-disabled={!terminalAvailable}
+            />
+          }
+          label={
+            terminalAvailable ? gt("Toggle terminal drawer") : gt("Terminal drawer is unavailable")
+          }
+          shortcut={terminalAvailable ? terminalShortcutLabel : null}
+          side="bottom"
+        >
+          <PanelBottomIcon className="size-4" />
+        </SharedTooltipTrigger>
       ) : null}
       {showRightPanelControl ? (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Toggle
-                className="shrink-0 [-webkit-app-region:no-drag]"
-                pressed={rightPanelOpen}
-                onPressedChange={rightPanelAvailable ? onToggleRightPanel : undefined}
-                aria-label={gt("Toggle right panel")}
-                data-right-panel-toggle
-                variant="ghost"
-                size="sm"
-                aria-disabled={!rightPanelAvailable}
-              />
-            }
-          >
-            <PanelRightIcon className="size-4" />
-          </TooltipTrigger>
-          <TooltipPopup
-            side="bottom"
-            shortcut={rightPanelAvailable ? rightPanelShortcutLabel : null}
-          >
-            {rightPanelAvailable
+        <SharedTooltipTrigger
+          render={
+            <Toggle
+              className="shrink-0 [-webkit-app-region:no-drag]"
+              pressed={rightPanelOpen}
+              onPressedChange={rightPanelAvailable ? onToggleRightPanel : undefined}
+              aria-label={gt("Toggle right panel")}
+              data-right-panel-toggle
+              variant="ghost"
+              size="sm"
+              aria-disabled={!rightPanelAvailable}
+            />
+          }
+          label={
+            rightPanelAvailable
               ? gt("Toggle right panel")
-              : (rightPanelUnavailableLabel ?? gt("Right panel is unavailable"))}
-          </TooltipPopup>
-        </Tooltip>
+              : (rightPanelUnavailableLabel ?? gt("Right panel is unavailable"))
+          }
+          shortcut={rightPanelAvailable ? rightPanelShortcutLabel : null}
+          side="bottom"
+        >
+          <PanelRightIcon className="size-4" />
+        </SharedTooltipTrigger>
       ) : null}
     </div>
   );
@@ -159,27 +154,22 @@ export const RightPanelMaximizeControl = memo(function RightPanelMaximizeControl
   const gt = useGT();
   const label = maximized ? gt("Restore panel size") : gt("Maximize panel");
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Toggle
-            className="shrink-0 [-webkit-app-region:no-drag]"
-            pressed={maximized}
-            onPressedChange={onToggle}
-            aria-label={label}
-            variant="ghost"
-            size="sm"
-          >
-            {maximized ? (
-              <Minimize2Icon className="size-4" />
-            ) : (
-              <Maximize2Icon className="size-4" />
-            )}
-          </Toggle>
-        }
-      />
-      <TooltipPopup side="bottom">{label}</TooltipPopup>
-    </Tooltip>
+    <SharedTooltipTrigger
+      render={
+        <Toggle
+          className="shrink-0 [-webkit-app-region:no-drag]"
+          pressed={maximized}
+          onPressedChange={onToggle}
+          aria-label={label}
+          variant="ghost"
+          size="sm"
+        >
+          {maximized ? <Minimize2Icon className="size-4" /> : <Maximize2Icon className="size-4" />}
+        </Toggle>
+      }
+      label={label}
+      side="bottom"
+    />
   );
 });
 

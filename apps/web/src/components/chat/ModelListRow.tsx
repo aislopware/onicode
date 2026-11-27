@@ -187,6 +187,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
     return row;
   }
 
+  // Base UI's tooltip: the shared trigger stays shut on a disabled row, and this one explains why.
   return (
     <Tooltip>
       <TooltipTrigger render={row} />

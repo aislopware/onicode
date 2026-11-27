@@ -61,7 +61,7 @@ import {
 import { announce } from "~/lib/announce";
 import { cn } from "~/lib/utils";
 import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
-import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 import { InlineButton } from "../ui/button";
 import {
   isProviderInstancePickerReady,
@@ -220,14 +220,15 @@ function SectionHeader(props: { row: Extract<ListRow, { kind: "header" }> }) {
   );
   if (!lockedOut) return header;
   return (
-    <Tooltip>
-      <TooltipTrigger render={header} />
-      <TooltipPopup side="left" align="center">
-        {gt("{provider} is unavailable in this thread. Start a new thread to switch providers.", {
-          provider: props.row.label,
-        })}
-      </TooltipPopup>
-    </Tooltip>
+    <SharedTooltipTrigger
+      render={header}
+      side="left"
+      align="center"
+      label={gt(
+        "{provider} is unavailable in this thread. Start a new thread to switch providers.",
+        { provider: props.row.label },
+      )}
+    />
   );
 }
 
@@ -979,7 +980,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   };
 
   return (
-    <TooltipProvider delay={0}>
+    <>
       <WindowKeyDownListener onKeyDown={onWindowKeyDown} />
       <div
         ref={pickerContentRef}
@@ -1265,6 +1266,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
           </div>
         )}
       </div>
-    </TooltipProvider>
+    </>
   );
 });

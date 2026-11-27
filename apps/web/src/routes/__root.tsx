@@ -40,6 +40,7 @@ import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { PrimaryAuthErrorSurface } from "../components/auth/PrimaryAuthErrorSurface";
 import { Button } from "../components/ui/button";
 import { StandalonePage, StandalonePageHeader } from "../components/ui/standalone-page";
+import { SharedTooltipProvider } from "../components/ui/shared-tooltip";
 import { AnchoredToastProvider, ToastProvider } from "../components/ui/toast";
 import { TooltipProvider } from "../components/ui/tooltip";
 import { TruncationTooltip } from "../components/ui/truncation-tooltip";
@@ -126,9 +127,12 @@ function RootRouteView() {
   return (
     <ToastProvider>
       <AnchoredToastProvider>
-        {/* One group for the app: after the first tooltip, its neighbours open at once. */}
+        {/* One group for the app, and one shared tooltip for the triggers that opt in: mounting a
+            tooltip per trigger made opening a thread, panel or message pay for tooltips nobody hovers. */}
         <TooltipProvider>
-          <RootRouteBranch />
+          <SharedTooltipProvider>
+            <RootRouteBranch />
+          </SharedTooltipProvider>
         </TooltipProvider>
         <TruncationTooltip />
       </AnchoredToastProvider>

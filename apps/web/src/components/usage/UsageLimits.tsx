@@ -38,10 +38,10 @@ import {
   AlertDialogTitle,
 } from "../ui/alert-dialog";
 import { Button } from "../ui/button";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { UsageLimitsPooled } from "./UsageLimitsPooled";
 import { formatResetsIn, resetCreditChoices } from "@onicode/shared/usageLimitsCopy";
 import { PROVIDER_PRESENTATION } from "./usageProviders";
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 
 const PACE: Record<LimitPace, { readonly label: string; readonly icon: typeof GaugeIcon }> = {
   ahead: {
@@ -66,20 +66,18 @@ export function PaceIcon({ pace }: { readonly pace: LimitPace }) {
   const Icon = PACE[pace].icon;
   const m = useMessages();
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <span
-            role="img"
-            aria-label={m(PACE[pace].label)}
-            className="inline-flex text-muted-foreground"
-          />
-        }
-      >
-        <Icon className="size-3.5" aria-hidden />
-      </TooltipTrigger>
-      <TooltipPopup side="top">{m(PACE[pace].label)}</TooltipPopup>
-    </Tooltip>
+    <SharedTooltipTrigger
+      render={
+        <span
+          role="img"
+          aria-label={m(PACE[pace].label)}
+          className="inline-flex text-muted-foreground"
+        />
+      }
+      label={m(PACE[pace].label)}
+    >
+      <Icon className="size-3.5" aria-hidden />
+    </SharedTooltipTrigger>
   );
 }
 
@@ -160,62 +158,58 @@ function WindowBar({
           });
 
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
+    <SharedTooltipTrigger
+      render={
+        <div
+          ref={barRef}
+          role="img"
+          aria-label={summary}
+          tabIndex={0}
+          className="relative h-6 cursor-default rounded-full outline-none focus-visible:outline-ring-inset"
+        />
+      }
+      label={
+        timeLeft !== null
+          ? gt("{remaining}% left · {timeLeft}% of the window left", { remaining, timeLeft })
+          : gt("{remaining}% left", { remaining })
+      }
+      description={
+        timeLeft !== null || resetsAt ? (
+          <>
+            {timeLeft !== null ? (
+              <div>
+                <T>The line is where even spending would be.</T>
+              </div>
+            ) : null}
+            {resetsAt ? (
+              <div>
+                {resetsIn
+                  ? gt("Resets {resetsAt} · {resetsIn}", { resetsAt, resetsIn })
+                  : gt("Resets {resetsAt}", { resetsAt })}
+              </div>
+            ) : null}
+          </>
+        ) : undefined
+      }
+    >
+      {/* Clip both layers so the gap exposes even a translucent composer surface. */}
+      <div className="absolute inset-0" style={paceMark?.gap}>
+        <div className="absolute inset-x-0 inset-y-1.5 rounded-full bg-muted" />
+        {remaining > 0 ? (
           <div
-            ref={barRef}
-            role="img"
-            aria-label={summary}
-            tabIndex={0}
-            className="relative h-6 cursor-default rounded-full outline-none focus-visible:outline-ring-inset"
-          />
-        }
-      >
-        {/* Clip both layers so the gap exposes even a translucent composer surface. */}
-        <div className="absolute inset-0" style={paceMark?.gap}>
-          <div className="absolute inset-x-0 inset-y-1.5 rounded-full bg-muted" />
-          {remaining > 0 ? (
-            <div
-              className="absolute inset-y-1.5 left-0 rounded-full"
-              style={{ width: `${remaining}%`, backgroundColor: color }}
-            />
-          ) : null}
-        </div>
-        {paceMark ? (
-          <span
-            aria-hidden
-            className="absolute inset-y-1 w-0.5 -translate-x-1/2 rounded-full bg-foreground"
-            style={paceMark.tick}
+            className="absolute inset-y-1.5 left-0 rounded-full"
+            style={{ width: `${remaining}%`, backgroundColor: color }}
           />
         ) : null}
-      </TooltipTrigger>
-      <TooltipPopup
-        side="top"
-        description={
-          timeLeft !== null || resetsAt ? (
-            <>
-              {timeLeft !== null ? (
-                <div>
-                  <T>The line is where even spending would be.</T>
-                </div>
-              ) : null}
-              {resetsAt ? (
-                <div>
-                  {resetsIn
-                    ? gt("Resets {resetsAt} · {resetsIn}", { resetsAt, resetsIn })
-                    : gt("Resets {resetsAt}", { resetsAt })}
-                </div>
-              ) : null}
-            </>
-          ) : undefined
-        }
-      >
-        {timeLeft !== null
-          ? gt("{remaining}% left · {timeLeft}% of the window left", { remaining, timeLeft })
-          : gt("{remaining}% left", { remaining })}
-      </TooltipPopup>
-    </Tooltip>
+      </div>
+      {paceMark ? (
+        <span
+          aria-hidden
+          className="absolute inset-y-1 w-0.5 -translate-x-1/2 rounded-full bg-foreground"
+          style={paceMark.tick}
+        />
+      ) : null}
+    </SharedTooltipTrigger>
   );
 }
 

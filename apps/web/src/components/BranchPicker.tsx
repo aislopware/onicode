@@ -18,7 +18,7 @@ import {
   ComboboxPopup,
   ComboboxStatus,
 } from "./ui/combobox";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
+import { SharedTooltipTrigger } from "./ui/shared-tooltip";
 import { isImeKeyDown } from "../lib/imeKeyDown";
 
 export function BranchPicker({
@@ -159,37 +159,35 @@ export function BranchPicker({
             </ComboboxListVirtualized>
           </div>
           {originControl ? (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <label
-                    htmlFor={startFromOriginSwitchId}
-                    className="flex cursor-pointer items-center justify-between gap-3 border-t border-border px-3 py-2 text-xs"
-                  >
-                    <span className="flex min-w-0 items-center gap-1.5 font-medium text-muted-foreground">
-                      <RefreshIcon aria-hidden="true" className="size-3 shrink-0" />
-                      <span className="truncate">
-                        <T>Start from remote</T>
-                      </span>
+            <SharedTooltipTrigger
+              render={
+                <label
+                  htmlFor={startFromOriginSwitchId}
+                  className="flex cursor-pointer items-center justify-between gap-3 border-t border-border px-3 py-2 text-xs"
+                >
+                  <span className="flex min-w-0 items-center gap-1.5 font-medium text-muted-foreground">
+                    <RefreshIcon aria-hidden="true" className="size-3 shrink-0" />
+                    <span className="truncate">
+                      <T>Start from remote</T>
                     </span>
-                    <Switch
-                      id={startFromOriginSwitchId}
-                      checked={originControl.checked}
-                      size="sm"
-                      aria-label={gt("Start worktree from remote")}
-                      onCheckedChange={(checked) => originControl.onCheckedChange(Boolean(checked))}
-                    />
-                  </label>
-                }
-              />
-              <TooltipPopup side="top">
+                  </span>
+                  <Switch
+                    id={startFromOriginSwitchId}
+                    checked={originControl.checked}
+                    size="sm"
+                    aria-label={gt("Start worktree from remote")}
+                    onCheckedChange={(checked) => originControl.onCheckedChange(Boolean(checked))}
+                  />
+                </label>
+              }
+              label={
                 <T>
                   Uses the latest commit of the base branch’s tracked remote branch, even if its
                   name differs. Otherwise uses the same-named branch on origin. Uses your local
                   branch if that remote branch is missing.
                 </T>
-              </TooltipPopup>
-            </Tooltip>
+              }
+            />
           ) : null}
           {notice ? <ComboboxStatus>{notice}</ComboboxStatus> : null}
           {statusText ? <ComboboxStatus>{statusText}</ComboboxStatus> : null}

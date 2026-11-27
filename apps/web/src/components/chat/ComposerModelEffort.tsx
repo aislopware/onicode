@@ -15,7 +15,6 @@ import { msg, useGT, useMessages } from "gt-react";
 import { m, type MessageResolver } from "~/i18n/messages";
 import { cn } from "~/lib/utils";
 import { Switch } from "../ui/switch";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { ComposerControlSize } from "./ComposerControl";
 import type { RuntimeModeOption } from "./ComposerFooterControls";
 import { EffortGlyph, FastBolt, resolveEffortGlyph } from "./EffortGlyph";
@@ -26,6 +25,7 @@ import {
   ULTRATHINK_IN_BODY_NOTE,
   useTraitsSelection,
 } from "./TraitsPicker";
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 
 type SelectDescriptor = Extract<ProviderOptionDescriptor, { type: "select" }>;
 type BooleanDescriptor = Extract<ProviderOptionDescriptor, { type: "boolean" }>;
@@ -227,10 +227,9 @@ function LevelSegment(props: {
   );
   if (!hint) return <button {...segmentProps}>{content}</button>;
   return (
-    <Tooltip>
-      <TooltipTrigger render={<button {...segmentProps} />}>{content}</TooltipTrigger>
-      <TooltipPopup side="top">{hint}</TooltipPopup>
-    </Tooltip>
+    <SharedTooltipTrigger render={<button {...segmentProps} />} label={hint}>
+      {content}
+    </SharedTooltipTrigger>
   );
 }
 
@@ -328,27 +327,25 @@ function EffortSlider(props: {
         <Slider.Track className="relative mx-2.5 h-6 flex-1">
           <span aria-hidden="true" className="pointer-events-none absolute inset-0">
             {props.choices.map((choice, index) => (
-              <Tooltip key={choice.id}>
-                <TooltipTrigger
-                  render={
-                    <span
-                      className="pointer-events-auto absolute top-1/2 flex size-4 -translate-1/2 items-center justify-center group-data-dragging/effort:pointer-events-none"
-                      style={{ left: `${(index / last) * 100}%` }}
-                    />
-                  }
-                >
-                  {/* The fill covers the stops it has passed. */}
+              <SharedTooltipTrigger
+                key={choice.id}
+                render={
                   <span
-                    className={cn(
-                      "h-2 w-px bg-foreground/20 transition-opacity duration-150",
-                      index <= shown && "opacity-0",
-                    )}
+                    className="pointer-events-auto absolute top-1/2 flex size-4 -translate-1/2 items-center justify-center group-data-dragging/effort:pointer-events-none"
+                    style={{ left: `${(index / last) * 100}%` }}
                   />
-                </TooltipTrigger>
-                <TooltipPopup side="top" description={choice.description || undefined}>
-                  {levelName(choice)}
-                </TooltipPopup>
-              </Tooltip>
+                }
+                label={levelName(choice)}
+                description={choice.description || undefined}
+              >
+                {/* The fill covers the stops it has passed. */}
+                <span
+                  className={cn(
+                    "h-2 w-px bg-foreground/20 transition-opacity duration-150",
+                    index <= shown && "opacity-0",
+                  )}
+                />
+              </SharedTooltipTrigger>
             ))}
           </span>
           <Slider.Thumb
@@ -733,37 +730,36 @@ export function ComposerPickerFooter(props: {
           const checked = option.mode === props.runtimeMode;
           const unavailable = option.disabledReason !== undefined;
           return (
-            <Tooltip key={option.mode}>
-              <TooltipTrigger
-                render={
-                  <button
-                    type="button"
-                    role="radio"
-                    aria-checked={checked}
-                    data-checked={checked || undefined}
-                    aria-label={option.label}
-                    aria-describedby={`${descriptionId}-${option.mode}`}
-                    // Not `disabled`: a mode the policy rules out still shows why on hover.
-                    aria-disabled={unavailable || undefined}
-                    tabIndex={checked ? 0 : -1}
-                    className={cn(
-                      SEGMENT,
-                      "w-7 px-0 aria-disabled:cursor-not-allowed aria-disabled:opacity-55",
-                    )}
-                    onPointerEnter={() => setPreviewMode(option.mode)}
-                    onPointerLeave={() => setPreviewMode(null)}
-                    onFocus={() => setPreviewMode(option.mode)}
-                    onBlur={() => setPreviewMode(null)}
-                    onClick={() => {
-                      if (!unavailable && !checked) props.onRuntimeModeChange(option.mode);
-                    }}
-                  />
-                }
-              >
-                <OptionIcon aria-hidden="true" className="size-3.5" />
-              </TooltipTrigger>
-              <TooltipPopup side="top">{option.disabledReason ?? option.description}</TooltipPopup>
-            </Tooltip>
+            <SharedTooltipTrigger
+              key={option.mode}
+              render={
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={checked}
+                  data-checked={checked || undefined}
+                  aria-label={option.label}
+                  aria-describedby={`${descriptionId}-${option.mode}`}
+                  // Not `disabled`: a mode the policy rules out still shows why on hover.
+                  aria-disabled={unavailable || undefined}
+                  tabIndex={checked ? 0 : -1}
+                  className={cn(
+                    SEGMENT,
+                    "w-7 px-0 aria-disabled:cursor-not-allowed aria-disabled:opacity-55",
+                  )}
+                  onPointerEnter={() => setPreviewMode(option.mode)}
+                  onPointerLeave={() => setPreviewMode(null)}
+                  onFocus={() => setPreviewMode(option.mode)}
+                  onBlur={() => setPreviewMode(null)}
+                  onClick={() => {
+                    if (!unavailable && !checked) props.onRuntimeModeChange(option.mode);
+                  }}
+                />
+              }
+              label={option.disabledReason ?? option.description}
+            >
+              <OptionIcon aria-hidden="true" className="size-3.5" />
+            </SharedTooltipTrigger>
           );
         })}
       </div>
