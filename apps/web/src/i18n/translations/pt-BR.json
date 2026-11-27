@@ -634,7 +634,7 @@
   "28d9a7709f6be166": "As versões não foram verificadas. Reconecte o host e verifique as versões.",
   "bb86986ccd77751a": "Atualização pendente. As ferramentas necessárias serão instaladas automaticamente no próximo uso. O host precisa de acesso à rede; uma instalação antiga não é usada como alternativa.",
   "27120a57b27c8f12": "As ferramentas necessárias são instaladas automaticamente quando preciso. Verificar as versões não instala nem inicia nada.",
-  "d02c8c685d539b9d": "O servidor Onicode deste ambiente escolhe as versões das ferramentas de dispositivo para si e para seus hosts SSH. Atualize esse servidor para receber versões mais novas; atualizar só o navegador ou o app móvel não atualiza um servidor remoto.",
+  "0bc20927f0b44b73": "O servidor Onicode deste ambiente escolhe as versões das ferramentas de dispositivo para si e para seus hosts SSH. Atualize esse servidor para receber versões mais novas; atualizar só o app para desktop ou o app móvel não atualiza um servidor remoto.",
   "63691126fe3aa03a": "O ambiente não está conectado.",
   "dd11e659d73b7de1": "Este ambiente não está conectado.",
   "4d1af6290bb51794": "{shortLabel} criado",

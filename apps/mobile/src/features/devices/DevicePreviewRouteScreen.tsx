@@ -305,7 +305,10 @@ export function DevicePreviewScreen({
             id: "shutdown-all",
             title:
               pendingAction === "shutdown-all" ? gt("Shutting down…") : gt("Shut down all devices"),
-            subtitle: gt("{count} running, in any thread", { count: stoppable.length }),
+            subtitle: gt(
+              "{count, plural, one {{count} running, in any thread} other {{count} running, in any thread}}",
+              { count: stoppable.length },
+            ),
             icon: "power",
             disabled: pendingAction !== null,
             onPress: () => void shutDownAllDevices(),

@@ -2125,6 +2125,24 @@ describe("mobile composer drafts", () => {
       startFromOrigin: true,
       explicit: true,
     });
+
+    // A picked local checkout follows the new project's current branch.
+    updateComposerDraftSettings(key, {
+      workspaceSelection: {
+        mode: "local",
+        branch: "feature/b",
+        worktreePath: "/old-machine/repo",
+        explicit: true,
+      },
+    });
+    retargetNewTaskDraft(key, to);
+    expect(getComposerDraftSnapshot(key).workspaceSelection).toEqual({
+      mode: "local",
+      branch: null,
+      worktreePath: null,
+      followsCurrentCheckout: true,
+      explicit: true,
+    });
   });
 
   it("retargets a saved new-task draft only after drafts load", async () => {

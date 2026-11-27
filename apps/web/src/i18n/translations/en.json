@@ -634,7 +634,7 @@
   "28d9a7709f6be166": "Versions have not been checked. Reconnect the host and check versions.",
   "bb86986ccd77751a": "Update pending. Required tools will install automatically when next used. The host needs network access; an older install is not used as a fallback.",
   "27120a57b27c8f12": "Required tools are installed automatically when needed. Checking versions does not install or start anything.",
-  "d02c8c685d539b9d": "This environment's Onicode server chooses device tool versions for itself and its SSH hosts. Update that server to receive newer tool versions; updating only your browser or mobile app does not update a remote server.",
+  "0bc20927f0b44b73": "This environment's Onicode server chooses device tool versions for itself and its SSH hosts. Update that server to receive newer tool versions; updating only your desktop or mobile app does not update a remote server.",
   "63691126fe3aa03a": "The environment is not connected.",
   "dd11e659d73b7de1": "This environment is not connected.",
   "4d1af6290bb51794": "Created {shortLabel}",
