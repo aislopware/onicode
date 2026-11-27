@@ -3895,3 +3895,4 @@ e7a2d9fcea	take	taken as is
 f46f17e46f	take	kept Onicode's button size scale (hairline pass); compact/xs already had gap-1.5, applied only micro gap-1.5
 66a4d99d1d	take	taken as is
 b294e1096a	skip	kept Onicode's enriched-markdown fork (oni.27 from aislopware main): same software-mansion base 3a2c1ade as t3.19, Onicode syncs from the original upstream
+b530e1f304	take	applied to Onicode's react-native-keyboard-controller@1.24.0 patch (upstream patches 1.23.0)

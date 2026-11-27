@@ -135,9 +135,9 @@ index 0b78ff3..9600d6c 100644
    const totalPadding = (0, _reanimated.useDerivedValue)(() => Math.min(layout.value.height, Math.max(blankSpace.value, padding.value + extraContentPadding.value)));
  
 +  // iOS applies the destination contentInset and contentOffset together at
-+  // keyboard-animation start. Keep that native target behavior, but report
-+  // the presentation height so virtualized-list layout follows the keyboard.
-+  const reportedPadding = (0, _reanimated.useDerivedValue)(() => _reactNative.Platform.OS === "ios" ? Math.min(layout.value.height, Math.max(blankSpace.value, currentHeight.value + extraContentPadding.value)) : totalPadding.value);
++  // keyboard-animation start. Report the presentation height only while it is larger
++  // (closing): a smaller one sends end-following short of the native end, so it bounces.
++  const reportedPadding = (0, _reanimated.useDerivedValue)(() => _reactNative.Platform.OS === "ios" ? Math.max(totalPadding.value, Math.min(layout.value.height, Math.max(blankSpace.value, currentHeight.value + extraContentPadding.value))) : totalPadding.value);
 +
 +  // Mirror the effective bottom padding (keyboard + composer + blank floor)
 +  // to the consumer - a virtualized list needs it in its own scroll math or
@@ -448,9 +448,9 @@ index e0c8391..724c62e 100644
    const totalPadding = useDerivedValue(() => Math.min(layout.value.height, Math.max(blankSpace.value, padding.value + extraContentPadding.value)));
  
 +  // iOS applies the destination contentInset and contentOffset together at
-+  // keyboard-animation start. Keep that native target behavior, but report
-+  // the presentation height so virtualized-list layout follows the keyboard.
-+  const reportedPadding = useDerivedValue(() => Platform.OS === "ios" ? Math.min(layout.value.height, Math.max(blankSpace.value, currentHeight.value + extraContentPadding.value)) : totalPadding.value);
++  // keyboard-animation start. Report the presentation height only while it is larger
++  // (closing): a smaller one sends end-following short of the native end, so it bounces.
++  const reportedPadding = useDerivedValue(() => Platform.OS === "ios" ? Math.max(totalPadding.value, Math.min(layout.value.height, Math.max(blankSpace.value, currentHeight.value + extraContentPadding.value))) : totalPadding.value);
 +
 +  // Mirror the effective bottom padding (keyboard + composer + blank floor)
 +  // to the consumer - a virtualized list needs it in its own scroll math or
@@ -842,15 +842,15 @@ index 935bc71..5306506 100644
 -    const indicatorPadding = useDerivedValue(
 -      () => padding.value + extraContentPadding.value,
 +    // iOS applies the destination contentInset and contentOffset together at
-+    // keyboard-animation start. Keep that native target behavior, but report
-+    // the presentation height so virtualized-list layout follows the keyboard.
++    // keyboard-animation start. Report the presentation height only while it is larger
++    // (closing): a smaller one sends end-following short of the native end, so it bounces.
 +    const reportedPadding = useDerivedValue(() =>
 +      Platform.OS === "ios"
-+        ? Math.min(
-+            layout.value.height,
-+            Math.max(
-+              blankSpace.value,
-+              currentHeight.value + extraContentPadding.value,
++        ? Math.max(
++            totalPadding.value,
++            Math.min(
++              layout.value.height,
++              Math.max(blankSpace.value, currentHeight.value + extraContentPadding.value),
 +            ),
 +          )
 +        : totalPadding.value,
