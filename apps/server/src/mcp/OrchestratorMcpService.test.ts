@@ -3051,6 +3051,45 @@ describe("OrchestratorMcpService provider resolution", () => {
           { type: "worktree", baseRef: "HEAD", startFromOrigin: false },
         );
 
+        // A parent in a layout-only task folder gets a layout-only child, not every default repository.
+        const layoutOnlyParent = yield* runDelegate({
+          requestId: "worktree-non-git-layout-only-parent",
+          worktreePath: "/worktrees/several-repos/feature-layout-only",
+          branch: "feature/layout-only",
+          taskFolders: {
+            plan: ({ repositories }) =>
+              Effect.succeed({
+                projectId,
+                projectRoot: workspaceRoot,
+                projectIsRepository: false,
+                hasWorktreeLayout: true,
+                anchor: workspaceRoot,
+                repositories: repositories === undefined ? twoRepos : [],
+                trackedRepositories: twoRepos.map((repo) => repo.path),
+              }),
+            find: () =>
+              Effect.succeed({
+                root: "/worktrees/several-repos/feature-layout-only",
+                projectId,
+                projectRoot: workspaceRoot,
+                anchor: workspaceRoot,
+                projectPath: "/worktrees/several-repos/feature-layout-only",
+                projectIsWorktree: false,
+                repositories: [],
+              }),
+          },
+        });
+        assert.isTrue(Result.isSuccess(layoutOnlyParent.result));
+        assert.deepEqual(
+          (layoutOnlyParent.commands[0] as { workspaceStrategy?: unknown }).workspaceStrategy,
+          {
+            type: "worktree",
+            baseRef: "feature/layout-only",
+            startFromOrigin: false,
+            repositories: [],
+          },
+        );
+
         // Git-root project that also tracks sub-repositories inherits the parent task folder's repositories.
         const gitRootCommit = "b".repeat(40);
         const gitRootTaskFolderParent = yield* runDelegate({

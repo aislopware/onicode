@@ -307,6 +307,12 @@ it("stashes the side chat's prompt when Mod+S is pressed inside its portaled pop
       <div id="stash-main-pane">
         <textarea id="stash-main-composer" aria-label="Main chat composer" />
         <Harness input={mainInput} />
+        <Popover open>
+          <PopoverTrigger>Branch</PopoverTrigger>
+          <PopoverPopup>
+            <input aria-label="Search branches" />
+          </PopoverPopup>
+        </Popover>
       </div>
       <BackgroundThreadContext value>
         <div data-side-chat-pane="stash-side-portal-thread">
@@ -323,9 +329,11 @@ it("stashes the side chat's prompt when Mod+S is pressed inside its portaled pop
   );
 
   await expect.element(page.getByLabelText("Search models")).toBeVisible();
+  await expect.element(page.getByLabelText("Search branches")).toBeVisible();
   const mainComposer = screen.getByLabelText("Main chat composer").element();
   const searchInput = page.getByLabelText("Search models").element() as HTMLInputElement;
   expect(isInSideChatPane(mainComposer)).toBe(false);
+  expect(isInSideChatPane(page.getByLabelText("Search branches").element())).toBe(false);
   expect(isInSideChatPane(searchInput)).toBe(true);
   expect(searchInput.closest("[data-side-chat-pane]")).toBeNull();
   searchInput.focus();

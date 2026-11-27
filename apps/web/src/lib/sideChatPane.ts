@@ -17,7 +17,13 @@ import { getClientSettings } from "../hooks/useSettings";
 import { linkedThreadRouteParams } from "../linkedThreadSurface";
 import { rightPanelHostRef, useRightPanelStore } from "../rightPanelStore";
 
+const SIDE_CHAT_PANE_SELECTOR = "[data-side-chat-pane]";
 const FLOATING_PORTAL_SELECTOR = "[data-base-ui-portal]";
+
+const matching = (root: Element, selector: string) => [
+  ...(root.matches(selector) ? [root] : []),
+  ...root.querySelectorAll(selector),
+];
 
 /**
  * Whether an event started in the side chat pane (`data-side-chat-pane`), including
@@ -25,33 +31,44 @@ const FLOATING_PORTAL_SELECTOR = "[data-base-ui-portal]";
  */
 export function isInSideChatPane(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;
-  if (target.closest("[data-side-chat-pane]") !== null) return true;
+  if (target.closest(SIDE_CHAT_PANE_SELECTOR) !== null) return true;
   if (target.closest(FLOATING_PORTAL_SELECTOR) === null) return false;
   const doc = target.ownerDocument;
-  if (doc.querySelector("[data-side-chat-pane]") === null) return false;
+  // Runs on every key press in a popover: one walk of the document finds the only subtrees an
+  // owner counts in, and each chain of ancestors is looked up in those with one selector.
+  const roots = [
+    ...doc.querySelectorAll(`${SIDE_CHAT_PANE_SELECTOR}, ${FLOATING_PORTAL_SELECTOR}`),
+  ];
+  const panes = roots.filter((root) => root.matches(SIDE_CHAT_PANE_SELECTOR));
+  if (panes.length === 0) return false;
+  const portals = roots.filter((root) => !root.matches(SIDE_CHAT_PANE_SELECTOR));
   const visited = new Set<Element>();
   const pending: Element[] = [target];
   while (pending.length > 0) {
-    const start = pending.pop()!;
+    const named = new Map<string, Element[]>();
     for (
-      let el: Element | null = start;
+      let el: Element | null = pending.pop()!;
       el && el !== doc.body && el !== doc.documentElement;
       el = el.parentElement
     ) {
       if (visited.has(el)) break;
       visited.add(el);
-      if (!el.id) continue;
-      const id = CSS.escape(el.id);
-      for (const owner of doc.querySelectorAll(`[aria-owns~="${id}"], [aria-controls~="${id}"]`)) {
-        if (owner.closest("[data-side-chat-pane]") !== null) return true;
-        if (
-          !el.contains(owner) &&
-          !visited.has(owner) &&
-          owner.closest(FLOATING_PORTAL_SELECTOR) !== null
-        ) {
-          pending.push(owner);
-        }
-      }
+      if (el.id) named.set(el.id, [...(named.get(el.id) ?? []), el]);
+    }
+    if (named.size === 0) continue;
+    const selector = [...named.keys()]
+      .map((id) => `[aria-owns~="${CSS.escape(id)}"], [aria-controls~="${CSS.escape(id)}"]`)
+      .join(", ");
+    if (panes.some((pane) => pane.matches(selector) || pane.querySelector(selector) !== null)) {
+      return true;
+    }
+    for (const owner of portals.flatMap((portal) => matching(portal, selector))) {
+      if (visited.has(owner)) continue;
+      const ids = [owner.getAttribute("aria-owns"), owner.getAttribute("aria-controls")]
+        .join(" ")
+        .split(/[\t\n\f\r ]+/);
+      // An owner inside the element it names would only lead back up this chain.
+      if (ids.some((id) => named.get(id)?.some((el) => !el.contains(owner)))) pending.push(owner);
     }
   }
   return false;

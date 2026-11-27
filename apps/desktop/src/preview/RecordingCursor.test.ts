@@ -19,3 +19,32 @@ it("adopts a constructed stylesheet without injecting style elements or inline s
   expect(document.querySelector("[data-onicode-recording-cursor]")).toBeNull();
   expect(document.querySelector("[data-onicode-recording-agent-cursor]")).toBeNull();
 });
+
+it("keeps the cursors hidden, inert and fixed against a more specific page rule", () => {
+  const page = document.createElement("style");
+  page.textContent =
+    "html > div[aria-hidden] { display: flex; pointer-events: auto; position: absolute; }";
+  document.head.append(page);
+  using _page = { [Symbol.dispose]: () => page.remove() };
+  const recording = installRecordingCursor(document, window);
+  using _recording = { [Symbol.dispose]: () => recording.dispose() };
+  const human = document.querySelector<HTMLElement>("[data-onicode-recording-cursor]")!;
+  const agent = document.querySelector<HTMLElement>("[data-onicode-recording-agent-cursor]")!;
+  const drawn = (element: HTMLElement) => {
+    const style = getComputedStyle(element);
+    return [style.display, style.pointerEvents, style.position];
+  };
+
+  expect([drawn(human), drawn(agent)]).toEqual([
+    ["none", "none", "fixed"],
+    ["none", "none", "fixed"],
+  ]);
+  recording.setController("human", { x: 4, y: 4 });
+  recording.move({ x: 8, y: 8 });
+  expect([drawn(human), drawn(agent)]).toEqual([
+    ["block", "none", "fixed"],
+    ["block", "none", "fixed"],
+  ]);
+  recording.setController("agent");
+  expect(drawn(human)).toEqual(["none", "none", "fixed"]);
+});

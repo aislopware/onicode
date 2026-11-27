@@ -3116,7 +3116,9 @@ const make = Effect.gen(function* () {
             startFromOrigin: false,
             ...(inherited.length > 0
               ? { repositories: selectedPlan.repositories.map(({ path }) => ({ path })) }
-              : {}),
+              : parentInProjectTaskFolder && taskPlan.hasWorktreeLayout
+                ? { repositories: [] }
+                : {}),
           };
         } else {
           const base = yield* gitDriver

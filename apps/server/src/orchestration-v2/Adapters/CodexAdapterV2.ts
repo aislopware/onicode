@@ -3206,7 +3206,6 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           status: "interrupted" | "failed" | "cancelled",
           completedAt: DateTime.Utc,
           only?: ReadonlySet<string>,
-          sessionScoped = false,
         ) {
           const items = (yield* Ref.get(runningCommandItemsByTurn)).get(nativeTurnId);
           if (items === undefined || items.size === 0) {
@@ -3265,13 +3264,11 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               type: "node.updated",
               driver: CODEX_PROVIDER,
               node,
-              ...(sessionScoped ? { sessionScoped: true } : {}),
             });
             yield* emitProviderEvent({
               type: "turn_item.updated",
               driver: CODEX_PROVIDER,
               turnItem,
-              ...(sessionScoped ? { sessionScoped: true } : {}),
             });
           }
         });
@@ -3372,13 +3369,14 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                   }
                 }
                 if (exited.size === 0) return;
+                // Queued behind the command's earlier updates so its position stays in order; the
+                // run-stream guard keeps it from clobbering a late result written session-scoped.
                 yield* terminalizeRunningCommandItems(
                   context,
                   nativeTurnId,
                   "cancelled",
                   yield* DateTime.now,
                   exited,
-                  true,
                 );
                 // Keep the settled context: a late item/completed still routes its result and wake.
                 for (const itemId of exited) yield* clearRunningCommandItem(nativeTurnId, itemId);
@@ -8755,12 +8753,9 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               ...(yield* Ref.get(activeTurns)).values(),
               ...(yield* Ref.get(settledTurns)).values(),
             ];
-            const roots = contexts.filter(
-              (context) => context.providerThread.id === providerThread.id,
-            );
             for (const context of contexts) {
-              if (!roots.some((root) => context === root || isDescendantCodexTurn(context, root)))
-                continue;
+              // By ancestry: a settled subagent turn outlives a root turn that had no work left.
+              if (!turnBelongsToProviderThread(context, providerThread.id)) continue;
               if (yield* turnHasRetainedBackgroundWork(context.nativeTurnId)) return true;
               if (
                 context.subagent !== null &&
@@ -9196,8 +9191,8 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                   (candidate) => candidate.providerTurnId === turnInput.providerTurnId,
                 ) ??
                 (turnInput.requestRuntimeRestart === true
-                  ? settledTurnContexts.find(
-                      (candidate) => candidate.providerThread.id === turnInput.providerThread.id,
+                  ? settledTurnContexts.find((candidate) =>
+                      turnBelongsToProviderThread(candidate, turnInput.providerThread.id),
                     )
                   : undefined);
               const lineageRoots = Array.from(
@@ -9220,7 +9215,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                   (candidate) =>
                     candidate !== activeTurn &&
                     ((turnInput.requestRuntimeRestart === true &&
-                      candidate.providerThread.id === turnInput.providerThread.id) ||
+                      turnBelongsToProviderThread(candidate, turnInput.providerThread.id)) ||
                       inLineage(candidate)),
                 ),
               ];

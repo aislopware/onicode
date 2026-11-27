@@ -7936,7 +7936,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         ),
         [
           ["running", false],
-          ["cancelled", true],
+          ["cancelled", false],
           ["completed", true],
         ],
       );
@@ -7948,7 +7948,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         ),
         [
           ["running", false],
-          ["cancelled", true],
+          ["cancelled", false],
           ["completed", true],
         ],
       );
@@ -7976,13 +7976,17 @@ describe("CodexAdapterV2 post-settle continuation", () => {
     "unload",
     "archive",
     "interrupt",
+    "interrupt (subagent)",
   ] as const)("releases settled turns pinned by unknown-outcome commands on %s", (cleanup) =>
     Effect.gen(function* () {
-      const subagent = cleanup === "thread/closed (subagent)";
-      const closedThread = cleanup === "thread/closed" || subagent;
+      const subagent = cleanup.endsWith("(subagent)");
+      const closedThread = cleanup.startsWith("thread/closed");
+      const interrupt = cleanup.startsWith("interrupt");
       const commandThreadId = subagent ? "native-codex-bg-child-thread" : BG_NATIVE_THREAD;
       const commandTurnId = subagent ? "native-codex-bg-child-turn" : BG_NATIVE_TURN;
-      const scenarioSuffix = subagent ? "thread-closed-subagent" : cleanup;
+      const scenarioSuffix = subagent
+        ? `${closedThread ? "thread-closed" : "interrupt"}-subagent`
+        : cleanup;
       const probeItemId = "call-codex-bg-settled-probe";
       const fence = (
         id: number,
@@ -8116,8 +8120,10 @@ describe("CodexAdapterV2 post-settle continuation", () => {
                 },
               ]
             : [];
-      const probeFenceId = cleanup === "interrupt" ? 5 : 6;
+      const probeFenceId = interrupt ? 5 : 6;
       const cancelled = yield* Deferred.make<void>();
+      const pendingWhileChecked: Array<boolean> = [];
+      let pendingAfterRoot: Effect.Effect<boolean> = Effect.succeed(false);
       const harness = yield* makeCodexReplayHarness(
         makeCodexReplayTranscript({
           scenario: `codex-bg-unknown-cleanup-${scenarioSuffix}`,
@@ -8172,6 +8178,18 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           event.turnItem.status === "cancelled"
             ? Deferred.succeed(cancelled, undefined)
             : Effect.void,
+        undefined,
+        undefined,
+        // After the root turn settles, the command still runs until its terminal is found gone.
+        (entry) =>
+          entry.label === "list-background-terminals" && entry.type === "emit_inbound"
+            ? Effect.suspend(() => pendingAfterRoot).pipe(
+                Effect.tap((pending) => Effect.sync(() => pendingWhileChecked.push(pending))),
+              )
+            : Effect.void,
+      );
+      pendingAfterRoot = harness.firstTerminal.pipe(
+        Effect.andThen(harness.runtime.hasPendingBackgroundWorkForThread!(harness.providerThread)),
       );
       yield* harness.runtime.startTurn(
         makeCodexTestTurnInput({
@@ -8184,6 +8202,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
       );
       yield* harness.firstTerminal;
       yield* Deferred.await(cancelled);
+      assert.deepEqual(pendingWhileChecked, [true]);
       const terminal = harness.terminalEvents()[0]!;
       if (closedThread) {
         yield* harness.runtime.applyThreadTitle!({
