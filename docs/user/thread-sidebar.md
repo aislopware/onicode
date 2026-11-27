@@ -5,6 +5,16 @@ need a separate branch and working directory. Threads in the same checkout share
 branch, so Onicode refuses to switch it to another branch, commit on a new branch, or
 pull, while one of them is working. Commands an agent runs can still change the branch.
 
+## Resize or hide the sidebar
+
+On web and desktop, drag the sidebar's right edge to resize it. Continue left past its minimum
+width to preview hiding it, then release to keep it hidden. Dragging back right before releasing
+shows it again and continues resizing.
+
+Move the mouse to the middle of the left window edge to find a handle. Drag it right or click
+it to show the sidebar again. Dragging back to the edge before releasing hides the preview
+and leaves it hidden. The sidebar toggle and shortcut still keep it open.
+
 ## Start a thread
 
 On desktop, **New thread** opens the project picker when you have more than one

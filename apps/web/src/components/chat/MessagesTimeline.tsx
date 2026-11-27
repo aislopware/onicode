@@ -88,7 +88,7 @@ import {
   resolveTimelineMinimapCurrentIndex,
   isTimelineMinimapTurnVisible,
   resolveTimelineMinimapVisibleRange,
-  resolveTimelineMinimapHitStripWidth,
+  resolveTimelineMinimapHitStrip,
   TIMELINE_MINIMAP_TARGET_OFFSET,
   timelineTurnFoldRunIdsByEntryId,
   liveAnswerPreview,
@@ -920,13 +920,13 @@ const ConversationTimeline = memo(function ConversationTimeline({
           ...(alwaysRenderIndices.length === 0 ? {} : { indices: alwaysRenderIndices }),
           ...(alwaysRenderKeys.length === 0 ? {} : { keys: alwaysRenderKeys }),
         };
-  const [minimapHitStripWidth, setMinimapHitStripWidth] = useState(0);
+  const [minimapHitStrip, setMinimapHitStrip] = useState({ left: 0, width: 0 });
   const [minimapCurrentIndex, setMinimapCurrentIndex] = useState<number | null>(null);
   const [minimapAtEnd, setMinimapAtEnd] = useState(false);
   // What the minimap setters last asked for; state read here lags refreshes made before a commit.
   const minimapRequested = useRef({
     hasPersistentGutter: false,
-    hitStripWidth: 0,
+    hitStrip: { left: 0, width: 0 },
     currentIndex: null as number | null,
     atEnd: false,
   });
@@ -1104,10 +1104,13 @@ const ConversationTimeline = memo(function ConversationTimeline({
       requested.hasPersistentGutter = nextHasPersistentGutter;
       setMinimapHasPersistentGutter(nextHasPersistentGutter);
     }
-    const nextHitStripWidth = resolveTimelineMinimapHitStripWidth(viewportWidth, contentWidth);
-    if (nextHitStripWidth !== requested.hitStripWidth) {
-      requested.hitStripWidth = nextHitStripWidth;
-      setMinimapHitStripWidth(nextHitStripWidth);
+    const nextHitStrip = resolveTimelineMinimapHitStrip(viewportWidth, contentWidth);
+    if (
+      nextHitStrip.left !== requested.hitStrip.left ||
+      nextHitStrip.width !== requested.hitStrip.width
+    ) {
+      requested.hitStrip = nextHitStrip;
+      setMinimapHitStrip(nextHitStrip);
     }
   });
   // Rows added, removed or rewrapped (chat width) change the content size,
@@ -1581,7 +1584,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
             <TimelineMinimap
               items={minimapItems}
               hasPersistentGutter={minimapHasPersistentGutter}
-              hitStripWidth={minimapHitStripWidth}
+              hitStrip={minimapHitStrip}
               currentIndex={minimapCurrentIndex}
               atEnd={minimapAtEnd}
               stripMap={minimapStripMap}

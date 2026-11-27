@@ -3890,3 +3890,4 @@ b6869fad67	take	feat(terminal): Add keybindings for cycling through terminals (#
 4065801a00	take	fix(web): pressing the Usage shortcut again closes Usage (#30459)
 39a8d1f33e	take	fix(scenarios): editor and no-model shims run on Windows (#42533)
 7e0d1cb9ba	take	fix(web): Link PR dialog stops duplicate Enter submits and locks input (#42548)
+801b32f3a6	take	kept Onicode's minimap request-ref (no setState per measure) with upstream's left/width hit strip; kept Onicode's narrowed rail transition-[left,right,translate] over transition-all
