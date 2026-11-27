@@ -845,6 +845,47 @@ const codePage = (value: number) =>
 
 const makeRtfDecoder = (label: string) => new TextDecoder(label, { ignoreBOM: true });
 
+const MAX_RTF_DEPTH = 128;
+
+function rtfGroupEnd(source: string, start: number, outerDepth: number) {
+  // Match group boundaries without counting escaped braces or braces in binary data.
+  const structure = /[{}]|\\(?:(bin)(?![a-z])(-?\d+)? ?|[\\{}])/gi;
+  structure.lastIndex = start;
+  let depth = outerDepth + 1;
+  let token: RegExpExecArray | null;
+  while (depth <= MAX_RTF_DEPTH && (token = structure.exec(source))) {
+    if (token[0] === "{") depth++;
+    else if (token[0] === "}") {
+      if (--depth === outerDepth) return structure.lastIndex;
+    } else if (token[1] === "bin") {
+      const size = Number(token[2]);
+      if (!Number.isSafeInteger(size) || size < 0) return;
+      structure.lastIndex += size;
+    }
+  }
+}
+
+function rtfUnicodeDestination(
+  source: string,
+  start: number,
+  outerDepth: number,
+  verifiedThrough: number,
+) {
+  const ansiStart = /[\r\n]*\{/y;
+  ansiStart.lastIndex = start;
+  if (!ansiStart.test(source)) return;
+  const ansiEnd = rtfGroupEnd(source, ansiStart.lastIndex, outerDepth);
+  if (ansiEnd === undefined) return;
+
+  const unicodeStart = /[\r\n]*\{[\r\n]*\\\*[\r\n]*\\ud(?![a-zA-Z]|-?\d) ?/y;
+  unicodeStart.lastIndex = ansiEnd;
+  if (!unicodeStart.test(source)) return;
+  const body = unicodeStart.lastIndex;
+  // An enclosing group already checked for balance also proves its nested groups close.
+  const end = body < verifiedThrough ? verifiedThrough : rtfGroupEnd(source, body, outerDepth);
+  if (end !== undefined) return { body, end };
+}
+
 function* rtf(source: string): Generator<string, void> {
   if (!source.startsWith("{\\rtf")) throw new Error("Invalid RTF document");
   let state = {
@@ -858,6 +899,10 @@ function* rtf(source: string): Generator<string, void> {
     decoder: makeRtfDecoder("windows-1252"),
   };
   const stack: Array<typeof state> = [];
+  const openGroup = () => {
+    stack.push({ ...state });
+    if (stack.length > MAX_RTF_DEPTH) throw new Truncation("RTF depth limit");
+  };
   // A font's \cpg, else its \fcharset, not the document code page, encodes its bytes. \cpg0 is
   // the system default, so \fcharset decides; a \cpg inside \fontfile names the font file.
   const fontCodePages = new Map<number, typeof state.decoder>();
@@ -912,6 +957,7 @@ function* rtf(source: string): Generator<string, void> {
     ["-", ""],
   ]);
   let fallback = 0;
+  let verifiedThrough = 0;
   for (let i = 0; i < source.length; i++) {
     const char = source[i]!;
     if (char === "{" || char === "}") {
@@ -919,8 +965,7 @@ function* rtf(source: string): Generator<string, void> {
       fallback = 0;
     }
     if (char === "{") {
-      stack.push({ ...state });
-      if (stack.length > 128) throw new Truncation("RTF depth limit");
+      openGroup();
     } else if (char === "}") state = stack.pop() ?? state;
     else if (char === "\\") {
       const rest = source.slice(i + 1, i + 80);
@@ -944,6 +989,15 @@ function* rtf(source: string): Generator<string, void> {
           continue;
         }
         yield* flushBytes();
+        if (control === "upr") {
+          const unicode = rtfUnicodeDestination(source, i + 1, stack.length, verifiedThrough);
+          if (unicode) {
+            openGroup();
+            verifiedThrough = unicode.end;
+            i = unicode.body - 1;
+          }
+          continue;
+        }
         if (
           [
             "fonttbl",
