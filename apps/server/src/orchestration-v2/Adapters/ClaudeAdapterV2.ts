@@ -150,6 +150,8 @@ import {
 } from "@onicode/contracts";
 
 import { FILE_HEADERS_ONLY, formatPatch, structuredPatch } from "diff";
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- A synchronous digest inside the pure note filter.
+import * as NodeCrypto from "node:crypto";
 import * as Cause from "effect/Cause";
 import * as Predicate from "effect/Predicate";
 import * as Clock from "effect/Clock";
@@ -3709,12 +3711,31 @@ const reserveClaudePdfBudget = (
       }).pipe(Effect.andThen(persist)),
   );
 
+type ClaudeAppContext = NonNullable<ProviderAdapter.ProviderAdapterV2TurnInput["appContext"]>;
+
+// Digests keep the persisted record of delivered notes small; notes can be 16 KiB each.
+const claudeAppContextDigests = (appContext: ClaudeAppContext): ReadonlyMap<string, string> =>
+  new Map(
+    appContext.map((entry) => [
+      entry.key,
+      NodeCrypto.createHash("sha256").update(entry.text).digest("base64url"),
+    ]),
+  );
+
+const unseenClaudeAppContext = (
+  appContext: ClaudeAppContext,
+  seen: ReadonlyMap<string, string> | undefined,
+): ClaudeAppContext => {
+  const digests = claudeAppContextDigests(appContext);
+  return appContext.filter((entry) => seen?.get(entry.key) !== digests.get(entry.key));
+};
+
 // MCP app notes are app-written, so they go as quoted user input like Codex's untrusted context.
 // A slash command runs only when it opens a plain-text prompt; its note waits for the next turn.
 // Returns `message` itself when it adds nothing.
 const withClaudeAppContext = (
   message: SDKUserMessage,
-  appContext: NonNullable<ProviderAdapter.ProviderAdapterV2TurnInput["appContext"]>,
+  appContext: ClaudeAppContext,
   reservation: Effect.Success<ReturnType<typeof reserveClaudePdfBudget>>,
 ): SDKUserMessage => {
   const { content, role } = message.message;
@@ -3725,10 +3746,13 @@ const withClaudeAppContext = (
   ) {
     return message;
   }
-  const contextBlocks = appContext.map((entry) => ({
-    type: "text" as const,
-    text: `<external_${entry.key}>${entry.text}</external_${entry.key}>`,
-  }));
+  const contextBlocks = appContext.map((entry) => {
+    const updatedAt = entry.updatedAt === undefined ? "" : ` updated_at="${entry.updatedAt}"`;
+    return {
+      type: "text" as const,
+      text: `<external_${entry.key}${updatedAt}>${entry.text}</external_${entry.key}>`,
+    };
+  });
   const bytes = Buffer.byteLength(encodeClaudeJson(contextBlocks));
   reservation.budget.pending.bytes += bytes;
   reservation.bytes += bytes;
@@ -6861,7 +6885,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         // Sessions Claude Code reported gone on resume; resumeThread fails them into a fresh session.
         const missingNativeThreads = new Set<string>();
         const pdfBudgets = new Map<string, ReturnType<typeof makeClaudeAttachmentBudget>>();
-        // MCP app notes already in each native session's history, by key. Cleared when it compacts.
+        // Digests of MCP app notes already in each native session's history, by key. Cleared when it
+        // compacts; persisted in native metadata so a restarted server does not resend them.
         const deliveredAppContext = new Map<string, ReadonlyMap<string, string>>();
         // The history lost the notes pending steers sent, so a drop has none to take back.
         const forgetSteerNotes = (context: ActiveClaudeTurnContext) => {
@@ -6875,11 +6900,11 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         // Records an offer's notes on top of the history as it stands when Claude takes the offer.
         const recordAppContextOffer = (
           context: ActiveClaudeTurnContext,
-          sent: NonNullable<ProviderAdapter.ProviderAdapterV2TurnInput["appContext"]>,
+          sent: ClaudeAppContext,
         ) => {
           context.appContextOffered = new Map([
             ...(context.appContextOffered ?? deliveredAppContext.get(context.nativeThreadId) ?? []),
-            ...sent.map((entry) => [entry.key, entry.text] as const),
+            ...claudeAppContextDigests(sent),
           ]);
           context.appContextSentKeys = new Set([
             ...(context.appContextSentKeys ?? []),
@@ -7302,13 +7327,24 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           const budget = pdfBudgets.get(nativeThreadId);
           const hasAppliedTitle = appliedSessionTitles.has(nativeThreadId);
           const recordedTitle = providerThread.nativeMetadata?.title;
-          if (budget === undefined && !hasAppliedTitle && recordedTitle === undefined) {
+          const delivered = deliveredAppContext.get(nativeThreadId);
+          if (
+            budget === undefined &&
+            !hasAppliedTitle &&
+            recordedTitle === undefined &&
+            delivered === undefined
+          ) {
             return providerThread;
           }
+          const { claudeDeliveredAppContext: _recorded, ...nativeMetadata } =
+            providerThread.nativeMetadata ?? {};
           return {
             ...providerThread,
             nativeMetadata: {
-              ...providerThread.nativeMetadata,
+              ...(delivered === undefined ? providerThread.nativeMetadata : nativeMetadata),
+              ...(delivered === undefined || delivered.size === 0
+                ? {}
+                : { claudeDeliveredAppContext: Object.fromEntries(delivered) }),
               ...(budget === undefined
                 ? {}
                 : {
@@ -12541,7 +12577,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
 
           // Every trigger discards the conversation, so reset whatever the trigger is.
           if (message.type === "conversation_reset") {
-            deliveredAppContext.delete(context.nativeThreadId);
+            deliveredAppContext.set(context.nativeThreadId, new Map());
             context.appContextOffered = undefined;
             forgetSteerNotes(context);
             if (context.streamUsage !== null) context.streamUsage.usage = null;
@@ -12626,7 +12662,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               budget.compacting = null;
               yield* persistAttachmentBudget(context.nativeThreadId);
             }
-            deliveredAppContext.delete(context.nativeThreadId);
+            deliveredAppContext.set(context.nativeThreadId, new Map());
             context.appContextOffered = undefined;
             forgetSteerNotes(context);
             if (context.streamUsage !== null) context.streamUsage.usage = null;
@@ -15187,6 +15223,12 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               const used = turnInput.providerThread.nativeMetadata?.claudeAttachmentBudget;
               pdfBudgets.set(nativeThreadId, makeClaudeAttachmentBudget(used));
             }
+            if (!deliveredAppContext.has(nativeThreadId)) {
+              const recorded = turnInput.providerThread.nativeMetadata?.claudeDeliveredAppContext;
+              if (recorded !== undefined) {
+                deliveredAppContext.set(nativeThreadId, new Map(Object.entries(recorded)));
+              }
+            }
             if (!appliedSessionTitles.has(nativeThreadId)) {
               const recordedTitle = turnInput.providerThread.nativeMetadata?.title;
               if (recordedTitle !== undefined && recordedTitle !== null) {
@@ -15210,8 +15252,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               turnInput.message.text,
               compileClaudeModelSelection(turnInput.modelSelection, modelCatalog).promptEffort,
             );
-            const unsentAppContext = (turnInput.appContext ?? []).filter(
-              (entry) => deliveredAppContext.get(nativeThreadId)?.get(entry.key) !== entry.text,
+            const unsentAppContext = unseenClaudeAppContext(
+              turnInput.appContext ?? [],
+              deliveredAppContext.get(nativeThreadId),
             );
             let appContextSent = false;
             const userMessage =
@@ -15826,8 +15869,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             // the steer waited above. Notes the prompt or an earlier steer carried are not resent.
             const seenAppContext =
               currentTurn.appContextOffered ?? deliveredAppContext.get(currentTurn.nativeThreadId);
-            const unsentAppContext = (turnInput.appContext ?? []).filter(
-              (entry) => seenAppContext?.get(entry.key) !== entry.text,
+            const unsentAppContext = unseenClaudeAppContext(
+              turnInput.appContext ?? [],
+              seenAppContext,
             );
             const userMessage = withClaudeAppContext(
               steerMessage,
@@ -15845,9 +15889,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 pendingSteer.appContextBefore =
                   currentTurn.appContextOffered ??
                   deliveredAppContext.get(currentTurn.nativeThreadId);
-                pendingSteer.appContextSent = new Map(
-                  unsentAppContext.map((entry) => [entry.key, entry.text] as const),
-                );
+                pendingSteer.appContextSent = claudeAppContextDigests(unsentAppContext);
                 pendingSteer.appContextFrom = new Map(
                   unsentAppContext.flatMap((entry) => {
                     const writer = currentTurn.appContextWriters?.get(entry.key);
@@ -16893,7 +16935,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               const nativeThreadId = yield* getNativeThreadId(rollbackInput.providerThread);
               yield* closeLiveQueryForNativeThread(nativeThreadId);
               // The rewound history may no longer hold the turns that carried app notes.
-              deliveredAppContext.delete(nativeThreadId);
+              deliveredAppContext.set(nativeThreadId, new Map());
               const now = yield* DateTime.now;
               const resumeSessionAt = yield* resolveClaudeRollbackResumeSessionAt(rollbackInput);
 
@@ -16922,9 +16964,14 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 };
               }
 
+              const { claudeDeliveredAppContext: _delivered, ...nativeMetadata } =
+                rollbackInput.providerThread.nativeMetadata ?? {};
               return {
                 providerThread: {
                   ...rollbackInput.providerThread,
+                  ...(rollbackInput.providerThread.nativeMetadata === null
+                    ? {}
+                    : { nativeMetadata }),
                   providerSessionId: input.providerSessionId,
                   nativeConversationHeadRef:
                     resumeSessionAt === null

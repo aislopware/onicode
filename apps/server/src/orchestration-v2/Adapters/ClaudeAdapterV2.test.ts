@@ -8930,6 +8930,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           ),
       });
       type Note = { readonly key: string; readonly text: string };
+      const noteSetAt = "2026-11-23T14:02:17.000Z";
       const runTurn = Effect.fnUntraced(function* (
         ordinal: number,
         note: string,
@@ -8949,7 +8950,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             attachments: [],
             ...(modelSelection === undefined ? {} : { modelSelection }),
           }),
-          appContext: [{ key: "mcp_app_item-1", text: note }, ...extra],
+          appContext: [{ key: "mcp_app_item-1", text: note, updatedAt: noteSetAt }, ...extra],
         });
         return lastOffered(offered);
       });
@@ -9048,7 +9049,11 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       yield* compact("00000000-0000-4000-8000-000000038284");
       yield* finishTurn(4);
       // Compaction summarizes the note away, so the next turn carries it again.
-      assert.include(yield* runTurn(5, "Created Jira issue PROJ-43"), "PROJ-43");
+      // The resent note says when it was set, so it does not read as news.
+      assert.include(
+        yield* runTurn(5, "Created Jira issue PROJ-43"),
+        `<external_mcp_app_item-1 updated_at="${noteSetAt}">Created Jira issue PROJ-43`,
+      );
       yield* finishTurn(5);
       // A stopped turn's prompt can stay in Claude's history while its last steer is dropped
       // unread, so no note the turn sent counts as delivered.
@@ -9170,6 +9175,66 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       yield* compact("00000000-0000-4000-8000-000000038286");
       yield* Deferred.succeed(release, undefined);
       assert.include(yield* Fiber.join(steering), "PROJ-43");
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
+  );
+
+  // regression: #42982 a server restart resent every stored note to a session that already had it
+  it.effect("does not resend an MCP app note Claude already has after the adapter restarts", () =>
+    Effect.gen(function* () {
+      const note = "Slack draft card: the message was sent.";
+      const startTurn = Effect.fnUntraced(function* (
+        harness: Effect.Success<ReturnType<typeof makeWakeHarnessWithOptions>>,
+        providerThread: OrchestrationV2ProviderThread,
+        ordinal: number,
+      ) {
+        yield* harness.runtime.startTurn({
+          ...makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread,
+            now: yield* DateTime.now,
+            attemptId: RunAttemptId.make(`mcp-app-restart-${ordinal}`),
+            providerTurnOrdinal: ordinal,
+            text: "Anything new?",
+            attachments: [],
+          }),
+          appContext: [{ key: "mcp_app_item-1", text: note }],
+        });
+        const content = harness.offeredMessages.at(-1)?.message.content;
+        return typeof content === "string"
+          ? content
+          : (content ?? []).map((block) => (block.type === "text" ? block.text : "")).join("\n");
+      });
+
+      const before = yield* makeWakeHarnessWithOptions({
+        close: (sdkMessages) => Queue.shutdown(sdkMessages),
+        freshQueueOnReopen: true,
+      });
+      assert.include(yield* startTurn(before, before.providerThread, 0), note);
+      yield* before.offerAndWait(
+        makeResultFrame({ uuid: "mcp-app-restart-result-0", result: "Done." }),
+      );
+      yield* Queue.take(before.terminalReceipts);
+      const persisted = before.events
+        .filter((event) => event.type === "provider_thread.updated")
+        .at(-1)?.providerThread;
+      assert.isDefined(persisted);
+
+      // A new adapter resumes the same native session, whose history already holds the note.
+      const after = yield* makeWakeHarnessWithOptions({
+        close: (sdkMessages) => Queue.shutdown(sdkMessages),
+        freshQueueOnReopen: true,
+      });
+      assert.notInclude(yield* startTurn(after, persisted!, 1), note);
     }).pipe(
       Effect.scoped,
       Effect.provide(
