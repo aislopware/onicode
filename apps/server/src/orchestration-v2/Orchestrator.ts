@@ -600,23 +600,19 @@ function legacyImportSource(
     OrchestrationV2ThreadProjection,
     "thread" | "providerThreads" | "contextHandoffs" | "runs"
   >,
-  active: OrchestrationV2ProviderThread | undefined,
   targetProviderThreadId: OrchestrationV2ProviderThread["id"],
 ) {
-  const holders = projection.providerThreads.filter(
+  // Only the session imported with the history; a switch handed a copy has no run that completed.
+  const source = projection.providerThreads.find(
     (candidate) =>
       candidate.id !== targetProviderThreadId &&
-      nativeSessionHoldsImportedHistory(projection, candidate),
+      candidate.ownerNodeId === null &&
+      nativeSessionHoldsImportedHistory(projection, candidate) &&
+      !projection.contextHandoffs.some(
+        (handoff) =>
+          handoff.strategy === "manual_context" && handoff.toProviderThreadId === candidate.id,
+      ),
   );
-  // Prefer the session imported with the history over a switch that was handed a copy and failed.
-  const source =
-    holders.find(
-      (candidate) =>
-        !projection.contextHandoffs.some(
-          (handoff) =>
-            handoff.strategy === "manual_context" && handoff.toProviderThreadId === candidate.id,
-        ),
-    ) ?? holders.find((candidate) => candidate.id === active?.id);
   if (source === undefined) {
     return { providerThreadIds: [], instanceIds: [], modelSelections: [] };
   }
@@ -3407,11 +3403,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                     }),
                 ),
               );
-      const importSource = legacyImportSource(
-        projection,
-        activeProviderThread,
-        queuedProviderThread.id,
-      );
+      const importSource = legacyImportSource(projection, queuedProviderThread.id);
       const legacyImportRecoveryHandoff =
         latestCompletedRun === undefined && needsFullContext && legacyImportItems.length > 0
           ? yield* contextHandoffService
@@ -10253,11 +10245,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                   }),
               ),
             );
-    const importSource = legacyImportSource(
-      projection,
-      activeProviderThread,
-      ensuredProviderThread.id,
-    );
+    const importSource = legacyImportSource(projection, ensuredProviderThread.id);
     const legacyImportRecoveryHandoff =
       isProviderSwitch &&
       !canResumeAcrossInstances &&

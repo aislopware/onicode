@@ -2657,17 +2657,21 @@ describe("orchestration v2 provider switching", () => {
     }),
   );
 
-  it.live("compacts nothing in a replacement session that lacks the thread's history", () =>
+  it.live.each([
+    { name: "rewinding", capabilities: ClaudeProviderCapabilitiesV2 },
+    // Without rollback, a session that lacks kept turns is replaced again on the next prompt.
+    { name: "non-rewinding", capabilities: AcpProviderCapabilitiesV2 },
+  ])("compacts nothing instead of opening an empty $name session", ({ name, capabilities }) =>
     Effect.gen(function* () {
       const capturedTurns = yield* Ref.make<ReadonlyArray<CapturedTurn>>([]);
       const failResumeOnce = yield* Ref.make(false);
       yield* unverifiedReplacementHarness(
-        "replacement-compact",
+        `replacement-compact-${name}`,
         [
           makeTestAdapter({
             instanceId: CLAUDE_MODEL_SELECTION.instanceId,
             driver: CLAUDE_DRIVER,
-            capabilities: ClaudeProviderCapabilitiesV2,
+            capabilities,
             modelSelection: CLAUDE_MODEL_SELECTION,
             responseByRunOrdinal: {},
             capturedTurns,
@@ -2684,7 +2688,7 @@ describe("orchestration v2 provider switching", () => {
             if (providerSessionId == null) return yield* Effect.die("Expected a provider session.");
             yield* orchestrator.dispatch({
               type: "provider-session.detach",
-              commandId: CommandId.make("replacement-compact:detach"),
+              commandId: CommandId.make(`replacement-compact-${name}:detach`),
               threadId,
               providerSessionId,
             });
@@ -2700,19 +2704,27 @@ describe("orchestration v2 provider switching", () => {
                 .filter((item) => item.runId === run2)
                 .map((item) => [item.type, item.status]),
               [
-                ["handoff", "completed"],
                 ["user_message", "completed"],
                 ["compaction", "failed"],
               ],
             );
             assert.lengthOf(yield* Ref.get(capturedTurns), 1);
 
+            // The session is still lost, so the next prompt opens the replacement.
+            yield* Ref.set(failResumeOnce, true);
             yield* dispatchRequest(3, CLAUDE_MODEL_SELECTION);
             yield* awaitSettled(3);
             const turns = yield* Ref.get(capturedTurns);
             assert.lengthOf(turns, 2);
             assert.notEqual(turns[1]!.nativeThreadId, turns[0]!.nativeThreadId);
             assert.include(turns[1]!.text, "Request 1");
+            // One recovery, carried by the prompt that opened the replacement.
+            const recovered = yield* orchestrator.getThreadProjection(threadId);
+            assert.lengthOf(
+              recovered.turnItems.filter((item) => item.type === "handoff"),
+              1,
+            );
+            assert.equal(turns[1]!.text.split("Request 1").length - 1, 1);
           }),
       );
     }),

@@ -2382,6 +2382,11 @@ export const layer: Layer.Layer<
           modelSelection: run.modelSelection,
           runtimePolicy: resolvedRuntimePolicy,
         });
+        // A replacement would hold none of the history; the next prompt opens it with the history.
+        if (compaction && session.injectHistory === undefined) {
+          yield* settleEmptyCompaction({ ...providerThread, status: "error" });
+          return undefined;
+        }
         const replacement = yield* loadFromProvider(
           session.ensureThread({
             threadId: projection.thread.id,

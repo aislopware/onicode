@@ -12020,6 +12020,14 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       const semanticError = yield* rollbackTo(turnsAcrossSilent).pipe(Effect.flip);
       assert.instanceOf(semanticError, ProviderAdapter.ProviderAdapterRollbackThreadError);
       const pastSilentTurn = yield* rollbackTo(turnsAcrossSilent, "/compact");
+      const pastInstructedCompact = yield* rollbackTo(
+        turnsAcrossSilent,
+        "/compact keep the errors",
+      );
+      assert.equal(
+        pastInstructedCompact.providerThread.nativeConversationHeadRef?.nativeId,
+        earlierCursor,
+      );
       assert.equal(
         pastSilentTurn.providerThread.nativeConversationHeadRef?.nativeId,
         earlierCursor,
