@@ -67,7 +67,7 @@ describe("HtmlRender", () => {
       const directory = yield* fileSystem.makeTempDirectoryScoped({ prefix: "oni-html-images-" });
       const png = path.join(directory, "shot.png");
       const svg = path.join(directory, "logo.svg");
-      const commented = `<!-- <img src="/oni-missing/shot.png"> -->`;
+      const commented = `<!-- 📸\r\n<img src="/oni-missing/shot.png"> -->`;
       yield* fileSystem.writeFile(png, PNG_BYTES);
       yield* fileSystem.writeFileString(svg, "<svg/>");
       const kept = [
