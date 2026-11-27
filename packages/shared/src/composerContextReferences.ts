@@ -10,6 +10,10 @@ import {
   type ThreadContextRecord,
 } from "@onicode/contracts";
 
+import type { Nodes } from "mdast";
+import remarkParse from "remark-parse";
+import { unified } from "unified";
+
 import { expandAssistantCitationsForProvider } from "./assistantCitations.ts";
 import { replaceThreadLinks, threadLinkCandidates } from "./threadLinks.ts";
 
@@ -155,12 +159,62 @@ export interface ComposerContextReferenceOccurrence {
   end: number;
 }
 
+const markdownParser = unified().use(remarkParse);
+const FENCE_OPENER = /^(?:`{3,}|~{3,})/;
+const FENCE_CLOSER = /^[ \t>]*(`{3,}|~{3,})[ \t]*$/;
+
+// Parsed rather than matched: a fence ends with its list item or blockquote, and a four-space
+// indent is not one. Only closed fences count: chips are appended at the end of the prompt, and
+// an unclosed fence above them would run to the end and silently drop their context.
+type FenceRange = { readonly start: number; readonly end: number };
+// Several composer readers parse the same text in one edit; keep the last parse.
+let lastFenceText: string | undefined;
+let lastFenceRanges: ReadonlyArray<FenceRange> = [];
+
+function fencedCodeRanges(markdown: string): ReadonlyArray<FenceRange> {
+  if (!markdown.includes("```") && !markdown.includes("~~~")) return [];
+  if (markdown === lastFenceText) return lastFenceRanges;
+  const ranges: Array<FenceRange> = [];
+  const visit = (node: Nodes) => {
+    if (node.type === "code") {
+      const start = node.position?.start.offset;
+      const end = node.position?.end.offset;
+      if (start === undefined || end === undefined) return;
+      const source = markdown.slice(start, end);
+      const opener = FENCE_OPENER.exec(source)?.[0];
+      const lastLineStart = Math.max(source.lastIndexOf("\n"), source.lastIndexOf("\r")) + 1;
+      const closer = FENCE_CLOSER.exec(source.slice(lastLineStart))?.[1];
+      if (
+        opener !== undefined &&
+        lastLineStart > 0 &&
+        closer !== undefined &&
+        closer[0] === opener[0] &&
+        closer.length >= opener.length
+      ) {
+        ranges.push({ start, end });
+      }
+    } else if ("children" in node) {
+      for (const child of node.children) visit(child);
+    }
+  };
+  visit(markdownParser.parse(markdown));
+  lastFenceText = markdown;
+  lastFenceRanges = ranges;
+  return ranges;
+}
+
 export function collectComposerContextReferences(
   text: string,
 ): ComposerContextReferenceOccurrence[] {
   const occurrences: ComposerContextReferenceOccurrence[] = [];
   if (!text.includes("](oni-context:")) return occurrences;
+  const fences = fencedCodeRanges(text);
+  let fenceIndex = 0;
   for (const match of text.matchAll(CONTEXT_LINK)) {
+    const start = match.index;
+    const end = start + match[0].length;
+    while (fenceIndex < fences.length && fences[fenceIndex]!.end <= start) fenceIndex += 1;
+    if (fences[fenceIndex] !== undefined && end > fences[fenceIndex]!.start) continue;
     const parsed = parseComposerContextHref(match[3]!);
     if (!parsed) continue;
     occurrences.push({
@@ -168,8 +222,8 @@ export function collectComposerContextReferences(
       label: sanitizeComposerContextLabel(match[2]!, parsed.kind),
       image: match[1] === "!",
       source: match[0],
-      start: match.index,
-      end: match.index + match[0].length,
+      start,
+      end,
     });
   }
   return occurrences;
