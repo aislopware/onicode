@@ -4729,3 +4729,4 @@ e4bc443510	take	taken as is
 146a77d178	take	adapted: Onicode's 105_TurnStartReadIndexes (upstream 100); kept the [/$]* skill GLOB and added json_valid, which also covers 112 and 116; test at 104 with the 116 legacy index
 b70db32d72	take	adapted: DocumentText VERSION 20 -> 21 (also covers ce56dfe956's notebook text)
 7791f327e2	take	taken as is
+ce56dfe956	take	taken as is (shared notebookOutput under @onicode/shared; DocumentText bump done with b70db32d72)
