@@ -4517,3 +4517,4 @@ aee6cf558d	take	clean; index exists, no migration
 f0a2574793	take	clean
 a86ac01b0a	take	clean; command palette shares settingsSearch.ts; mobile has no settings search
 c5699927ff	take	prepareDirectories guard around Onicode's directory creates (no startupPresentation in Onicode); doctor test imports merged with Onicode's service/bootService path
+88107272ff	take	canMarkLatestRunUnread used by Onicode's selectMarkUnreadThreads helper (upstream's inline Sidebar filter dropped; no guest-share line), Sidebar.tsx and useThreadActionMenu; hook order unchanged, row-render test green; added an interrupted-run row
