@@ -2,13 +2,13 @@ import UIKit
 
 final class TerminalTextSelectionViewController: UIViewController {
   private let text: String
-  private let fontSize: CGFloat
+  private let font: UIFont
   private let labels: [String: String]
 
-  init(text: String, fontSize: CGFloat, labels: [String: String]) {
+  init(text: String, font: UIFont, labels: [String: String]) {
     self.text = text
     self.labels = labels
-    self.fontSize = fontSize
+    self.font = font
     super.init(nibName: nil, bundle: nil)
   }
 
@@ -35,7 +35,7 @@ final class TerminalTextSelectionViewController: UIViewController {
 
     let textView = UITextView()
     textView.text = text
-    textView.font = .monospacedSystemFont(ofSize: max(fontSize, 14), weight: .regular)
+    textView.font = font
     textView.textColor = .label
     textView.backgroundColor = .systemBackground
     textView.isEditable = false

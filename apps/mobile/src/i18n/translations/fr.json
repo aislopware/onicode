@@ -3,7 +3,6 @@
   "59c888898cca0a57": "Votre organisation n’autorise pas les agents externes sur cet environnement.",
   "a80458a4ad02acde": "Cet appareil ne peut pas accorder cet accès. Choisissez un niveau inférieur.",
   "a256081b5ce634fd": "Impossible de créer l’accès de l’agent. Réessayez.",
-  "035aab5e99159bd8": "{count, plural, one {… {hidden} caractère au milieu n’est pas affiché.} other {… {hidden} caractères au milieu ne sont pas affichés.}} Le texte se termine par :",
   "4bcfa3b976a421cf": "Discussion annexe",
   "23be753133ae6950": "Fil",
   "0001ae5846061bb6": "Fil sur {machine}",
@@ -33,6 +32,7 @@
   "eebc538e25b09fe2": "La politique de {organization} n’autorise pas l’import des cookies du navigateur.",
   "986b0873f913a840": "La politique de {organization} n’autorise pas les tâches par webhook.",
   "7642a133db05f164": "La stratégie de {organization} n’autorise pas l’ouverture des serveurs locaux de cette machine sur d’autres appareils.",
+  "e0856d6a402ad821": "La politique de {organization} n’autorise pas les commandes de disposition des worktrees des projets.",
   "39f6771b49f9b3b6": "Utiliser la valeur par défaut",
   "45bb0e90e1c42046": "À votre retour",
   "d8fa0a55446bbb0d": "Avant l’expiration du cache (bêta)",
@@ -455,6 +455,7 @@
   "834ca879c14c167b": "En cours",
   "582d6df7dfab86fb": "En pause",
   "ea6583ce92507ee3": "En veille",
+  "7150557773b3818b": "En file d’attente",
   "7ea8cb8af281ce93": "En attente",
   "1347868f2523140e": "Terminée",
   "57d76c4614054271": "Arrêtée",
@@ -466,6 +467,7 @@
   "d3890f4eb1508781": "Exécute ses propres étapes",
   "3e7ced10c9482af0": "{step} est en cours",
   "237e1bcb1cf1bdec": "En veille à {step}",
+  "efbeb3993ee2c3f5": "En attente de {pool}",
   "3f7b17ac5a20c8d2": "Exécute {run}",
   "0306f5f324b8aaa5": "{count} exécutions en cours",
   "e8fd779b84a202a2": "En attente",
@@ -846,6 +848,7 @@
   "3f0b962160edbe6d": "Impossible de synchroniser le fil.",
   "752b4d69669b0019": "Impossible de charger l’activité antérieure.",
   "44de9731d5b8eb38": "L’historique de travail a changé. Réessayez de le charger.",
+  "6ea901338c803e3e": "Impossible d’utiliser le crédit de réinitialisation.",
   "c0ea8898cd494336": "Impossible de vérifier l’accès de cette connexion aux diagnostics et à l’utilisation.",
   "953b6473de4b9ad6": "Cette connexion n’a pas accès aux diagnostics et à l’utilisation.",
   "8c68febc86a3f651": "Mise à jour de {provider}…",
@@ -1250,8 +1253,8 @@
   "bb34eaf6ddc55a72": "Ce compte n’a pas de limites d’abonnement.",
   "42a2622893a6bced": "Impossible de lire les limites.",
   "4897e228d3185c96": "Aucune limite signalée.",
-  "e27d2cb964df5dd5": "{source} : aucun compte signalé.",
   "161135f0aea4d1ca": "{source} : aucun compte Codex, Claude ou Grok. Ignorés : {providers}.",
+  "e27d2cb964df5dd5": "{source} : aucun compte signalé.",
   "1b503134018285f4": "{days} j {hours} h",
   "fc7f69efcfa6fa32": "Aucun crédit de réinitialisation en réserve",
   "be7fd67c538a99a0": "{count} en réserve · expire dans {expires}",
@@ -1475,6 +1478,7 @@
   "b994adb6050417c2": "Modèle {provider} indisponible",
   "587c7245ff60b79f": "Configurez {provider} sur le web ou le bureau, ou choisissez un autre modèle.",
   "6d84c8851d691303": "Le serveur n’a pas renvoyé de PDF. Vérifiez la connexion et réessayez.",
+  "20283eb1dd6119f9": "{count, plural, one {{count} pièce jointe} other {{count} pièces jointes}}",
   "082c5effa2a3e4ab": "Autorisez {app} à ajouter des photos dans Réglages.",
   "3f143ed3bf34b9b0": "Photos n’a pas pu enregistrer cette image.",
   "06379558d82cc6dd": "L’image n’est plus disponible.",
@@ -1623,7 +1627,6 @@
   "992f89224a4e8f78": "Ouverture de la feuille de partage…",
   "20d0dc27ac27d5b4": "Partager",
   "a0e89e8db116bfd5": "Enregistrer ou partager",
-  "20283eb1dd6119f9": "{count, plural, one {{count} pièce jointe} other {{count} pièces jointes}}",
   "7280baf7517dad1c": "Échec du chargement des refs.",
   "567c0fed6ab8efc1": "Cette connexion ne peut pas rechercher dans les fichiers de l’hôte.",
   "bb2392ace5755e54": "La connexion a été interrompue avant la fin.",
@@ -2427,6 +2430,7 @@
   "a6eeff30440d26a2": "Ticket {key}",
   "c0e2d952114e7d59": "par {author}",
   "2195cdd7774c1c23": "auteur inconnu",
+  "4276743ee60a3c62": "{count, plural, one {{count} commentaire} other {{count} commentaires}}",
   "217e1e7b60469736": "État du ticket, {state}",
   "5fd6c9c736b80b62": "État du ticket",
   "a749275f1ad66618": "Auteur inconnu",
@@ -3087,7 +3091,6 @@
   "fa9012d7acfe1205": "Résoudre les conflits",
   "6e45b380d5850b5c": "Suivre la {term, select, mr {MR} cr {demande de modification} other {PR}}",
   "77c61ac22770f619": "Vidéo",
-  "4276743ee60a3c62": "{count, plural, one {{count} commentaire} other {{count} commentaires}}",
   "a5b611e6548652c1": "Ancienne ligne {line}",
   "e4bc1643eb024e23": "Ligne {line}",
   "b29eea552b16d20a": "{count, plural, one {{count} commentaire · Touchez pour ouvrir} other {{count} commentaires · Touchez pour ouvrir}}",
@@ -4433,15 +4436,6 @@
     },
     " a été fermée"
   ],
-  "705cf2b2ee4e0e42": [
-    "L’app ",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " a quitté sa page et a été arrêtée"
-  ],
   "796b81c4875c4feb": [
     "L’app ",
     {
@@ -4456,6 +4450,15 @@
       "v": "v"
     },
     " plus récent sur cet environnement. Mettez à jour le serveur pour l’utiliser."
+  ],
+  "705cf2b2ee4e0e42": [
+    "L’app ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " a quitté sa page et a été arrêtée"
   ],
   "5ef18e4d39b398bf": [
     "Impossible de charger l’app ",
@@ -4594,6 +4597,7 @@
   "1d160d4ad1e53219": "Autoriser une fois",
   "fb7f5d610fdf9a08": "Autoriser pour la session",
   "d13cbdad4a0e38e9": "Refuser",
+  "035aab5e99159bd8": "{count, plural, one {… {hidden} caractère au milieu n’est pas affiché.} other {… {hidden} caractères au milieu ne sont pas affichés.}} Le texte se termine par :",
   "3554fbab5a8480ce": "Approbation requise",
   "a5060e6a344b5097": "Le processus du fournisseur pour cette demande n’est plus disponible. Interrompez ou redémarrez l’exécution pour continuer.",
   "72eea7fa7943b0d7": "Cette connexion ne peut pas répondre aux approbations.",
@@ -4733,12 +4737,12 @@
   "1b30548ce8e56b75": "Modifier la tâche",
   "2269639b96d04225": "Impossible de démarrer la tâche",
   "63163a401eaea6cc": "Votre prompt a été conservé dans le brouillon du projet.",
+  "5536ab75119ee3f9": "Impossible de mettre à jour le fil",
+  "04c7bba52daa6f53": "Impossible de mettre à jour l’objectif",
   "55b562c00e37321b": "Impossible de forcer l’arrêt de l’agent",
   "ede15a83eedec569": "Tour arrêté ; l’agent est encore en train de s’arrêter",
   "f360accf1ccac178": "Tour arrêté ; le processus de l’agent continue de tourner",
   "72e41eb83e88cefa": "{count, plural, =0 {Il est partagé avec d’autres fils en cours. Arrêtez-les pour le libérer.} one {Il est partagé avec {count} fil en cours. Arrêtez-le pour le libérer.} other {Il est partagé avec {count} fils en cours. Arrêtez-les pour le libérer.}}",
-  "5536ab75119ee3f9": "Impossible de mettre à jour le fil",
-  "04c7bba52daa6f53": "Impossible de mettre à jour l’objectif",
   "7161c775bd96511c": "Arrêt…",
   "e734a8e4a58a3835": "Arrêter",
   "0ce0ab7586e91607": "Arrêter le travail en arrière-plan",
@@ -5023,6 +5027,7 @@
   "306a6f95ad9d52f7": "Non envoyées",
   "11276ab6c58b7a25": "Ouvre le brouillon dans la zone de saisie de nouvelle tâche. Balayez vers la gauche pour le supprimer.",
   "99950f3a28d425fa": "Envoyée dès que l’environnement se reconnecte. Ouvre la tâche pour la modifier. Balayez vers la gauche pour la supprimer.",
+  "d71048f4fb9cf44a": "En attente de synchronisation",
   "be451f475c514b37": "Ignorer la notification Réveillé",
   "54ccc22be28a985d": "Personnalisé…",
   "bdd8716a3d6f1a53": "Organiser les fils…",
@@ -5076,6 +5081,7 @@
   "5a2d803b3ea43f18": "Limite d’utilisation atteinte.",
   "d5365c5e28a18442": "{summary} : {message}",
   "bff5692f10fc10b0": "Appuyez longuement pour copier.",
+  "1a1beecff68a6e61": "Vérifier le compte Google",
   "a1984c617f973156": "{preview}, échec de l’appel d’outil",
   "38574c0d1e49b278": "{preview}, connecté",
   "fd0d04d5a6627f70": "Ouvre le fil de cet agent. Appuyez longuement pour copier.",
@@ -5276,7 +5282,6 @@
   "1a92fa2f744401bc": "Rien à réinitialiser pour le moment.",
   "fff9b7f838279ee3": "Plus aucun crédit de réinitialisation.",
   "cea3cf346788481d": "Ce crédit a déjà été utilisé.",
-  "6ea901338c803e3e": "Impossible d’utiliser le crédit de réinitialisation.",
   "8864ac914d8205e8": "Utiliser un crédit de réinitialisation ?",
   "e32c2c7e61a16f4b": "Utiliser le crédit",
   "b58a90dc5356f80a": "réinitialisation maintenant",
@@ -5378,6 +5383,8 @@
   "cd5d90cbbfae32f6": "Enregistrement {time}",
   "6236e2f587bc4eb4": "Transcription",
   "4e430d5ea01c249b": "Impossible d’envoyer la réponse",
+  "a3c43735e1a81498": "Raison pour {title}",
+  "bfad234f016cfa3f": "Pourquoi, en une phrase. Elle accompagne la réponse que vous choisissez.",
   "e721a8b98f44d5f7": "Demander d’abord à l’agent",
   "e39f89c909df4db0": "Impossible de reprendre l’exécution",
   "28c9dd162825c117": "Annuler cette exécution ?",
@@ -5404,6 +5411,14 @@
       "v": "v"
     }
   ],
+  "e114d37b32ab0dc7": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " nécessite une raison."
+  ],
   "9de4e24c9273b496": "Cette connexion peut lire les exécutions, mais pas y répondre.",
   "6dac41769b114edf": [
     {
@@ -5419,21 +5434,62 @@
       "v": "v"
     }
   ],
+  "46d614fa7b4bf1e5": "Exécutions de workflow",
   "204e2afe64cae32b": "En cours",
   "abd6c3f4734b9f97": "Échec",
   "59a3213338779c6e": "Terminé",
   "5a3b1fe78182d8dc": "A répondu {choice}",
   "b17bd06e3b1ec0d2": "A répondu {choice} : {reason}",
+  "99451a5d2d40440f": "Retirée par {by}.",
+  "3ee30a50b70fffab": "Retirée par {by} : {reason}",
   "89102905bf09b0e8": "Suivre en direct",
   "eea0013efc9e4339": "Transcription",
   "ba8337dca3232880": "Ouvrir l’exécution",
+  "235902a19e95833b": [
+    "par vous,",
+    " ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
+  "3759768c5d342c22": [
+    "répondue",
+    " ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
+  "8afa4fbe16f95bcf": [
+    "par ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    ",",
+    " ",
+    {
+      "i": 2,
+      "k": "_gt_value_2",
+      "v": "v"
+    }
+  ],
   "cab70ed0237438ef": "Chargement de l’étape…",
   "30a5be40eb956663": "en cours",
   "edc8f6e9720f4eda": "en veille",
   "0684698b49273da5": "en attente",
+  "0398ca6c1d24b92d": "en attente, le prochain",
+  "0af6d5ffd5166214": "{count, plural, one {en attente, {count} devant} other {en attente, {count} devant}}",
   "063173aa16052cb9": "en cours",
   "3ba4cf953dd20f22": "échec",
+  "0f93532dd76391fc": "Vous avez répondu {choice}",
+  "7e1fd2eb570a372b": "{who} a répondu {choice}",
   "e777db2880f53a46": "personne n’a répondu",
+  "201490988858b511": "retirée par {by}",
   "34f59bbbead0b97f": "{names} et {count} de plus",
   "ac1556f6ce89a5ea": "{count} en parallèle",
   "e197c4963bacc746": "{count} en cours",
@@ -5446,12 +5502,15 @@
   "f25af5332ffc3734": "Rien n’attend votre réponse.",
   "c3f0119b8d6231f8": "Rien n’est en cours.",
   "33028dfc1229eaa6": "Aucune exécution pour l’instant.",
+  "e4d1316c85ed7066": "Aucune question de ce type ne vous attend.",
   "156ff7b625287a1e": "Masquer les éléments ignorés",
   "69b985b97ab45e6b": "Afficher {count} ignorés",
   "8f6589c9e0ac5d4e": "Aucun environnement connecté",
   "744127f8dfad7d22": "Connectez un environnement pour voir ses exécutions de workflow.",
   "b9aae2f7cdb1a379": "Aucune exécution de workflow pour l’instant",
   "ace8fc1c643cf9f6": "Un workflow réunit agents, code, planifications et questions qui vous sont posées en une seule exécution qui survit aux redémarrages. Écrivez-en un sur votre ordinateur, dans Workflows, puis Définitions.",
+  "fc9c3a00cfc18b55": "Tous les types",
+  "45a94c724845ec1d": "Autres",
   "fceb81aa6685fb47": "Discussions",
   "ab94a098e562cedc": "Fermer la barre de navigation",
   "f2d004982f8d8538": "Réduire la barre de navigation",
@@ -5707,7 +5766,13 @@
   "c95f71b09b6a1b77": "{size} pt",
   "bf29303038cb6705": "Coupure des mots",
   "2aba3a08e7d6bc35": "Terminal",
+  "068d11f809c530d4": "Système",
+  "0677b40d0e3d6718": "DM Sans",
+  "985e41da9877b95a": "MesloLGS NF",
+  "fdb76b85a4c28193": "Inclut les symboles Nerd Font",
   "77d16b9b4b86c88f": "Texte",
+  "d3e95bb2b4934bbf": "Police",
+  "e6d2dc99ef49d071": "Police à chasse fixe",
   "eeca51fe648d9317": "Afficher les formules",
   "e148604db412abfb": "Bosquet",
   "3b06efe927b51386": "Océan",
@@ -5730,64 +5795,5 @@
   "ad208e3e32c85029": "Tout masquer",
   "3328503592789bed": "Zen",
   "856812e7e1fc445e": "Appels d’outils dans la discussion",
-  "8d545d54c0a9e950": "Masque les commandes, modifications et recherches lancées par les agents. Masquer les réussis garde les échecs. Zen n’affiche que les réponses finales. Les approbations, questions et erreurs s’affichent toujours.",
-  "e0856d6a402ad821": "La politique de {organization} n’autorise pas les commandes de disposition des worktrees des projets.",
-  "fc9c3a00cfc18b55": "Tous les types",
-  "e4d1316c85ed7066": "Aucune question de ce type ne vous attend.",
-  "45a94c724845ec1d": "Autres",
-  "d71048f4fb9cf44a": "En attente de synchronisation",
-  "a3c43735e1a81498": "Raison pour {title}",
-  "bfad234f016cfa3f": "Pourquoi, en une phrase. Elle accompagne la réponse que vous choisissez.",
-  "e114d37b32ab0dc7": [
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " nécessite une raison."
-  ],
-  "235902a19e95833b": [
-    "par vous,",
-    " ",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    }
-  ],
-  "3759768c5d342c22": [
-    "répondue",
-    " ",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    }
-  ],
-  "8afa4fbe16f95bcf": [
-    "par ",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    ",",
-    " ",
-    {
-      "i": 2,
-      "k": "_gt_value_2",
-      "v": "v"
-    }
-  ],
-  "0f93532dd76391fc": "Vous avez répondu {choice}",
-  "7e1fd2eb570a372b": "{who} a répondu {choice}",
-  "1a1beecff68a6e61": "Vérifier le compte Google",
-  "99451a5d2d40440f": "Retirée par {by}.",
-  "3ee30a50b70fffab": "Retirée par {by} : {reason}",
-  "201490988858b511": "retirée par {by}",
-  "7150557773b3818b": "En file d’attente",
-  "efbeb3993ee2c3f5": "En attente de {pool}",
-  "0398ca6c1d24b92d": "en attente, le prochain",
-  "0af6d5ffd5166214": "{count, plural, one {en attente, {count} devant} other {en attente, {count} devant}}",
-  "46d614fa7b4bf1e5": "Exécutions de workflow"
+  "8d545d54c0a9e950": "Masque les commandes, modifications et recherches lancées par les agents. Masquer les réussis garde les échecs. Zen n’affiche que les réponses finales. Les approbations, questions et erreurs s’affichent toujours."
 }

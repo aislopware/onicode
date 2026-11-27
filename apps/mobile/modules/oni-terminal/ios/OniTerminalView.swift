@@ -248,8 +248,18 @@ public final class OniTerminalView: ExpoView, UITextFieldDelegate, UIEditMenuInt
   var fontSize: CGFloat = 10 {
     didSet {
       guard oldValue != fontSize else { return }
-      inputField.font = UIFont.monospacedSystemFont(ofSize: max(fontSize, 13), weight: .regular)
+      inputField.font = terminalMonoFont(family: fontFamily, size: max(fontSize, 13))
       canvas.fontSize = fontSize
+      emitResize()
+    }
+  }
+
+  /// A React Native family name; `ui-monospace` selects the system monospace font.
+  var fontFamily: String = "ui-monospace" {
+    didSet {
+      guard oldValue != fontFamily else { return }
+      inputField.font = terminalMonoFont(family: fontFamily, size: max(fontSize, 13))
+      canvas.fontFamily = fontFamily
       emitResize()
     }
   }
@@ -321,7 +331,7 @@ public final class OniTerminalView: ExpoView, UITextFieldDelegate, UIEditMenuInt
     inputField.backgroundColor = UIColor.clear
     inputField.textColor = UIColor.clear
     inputField.tintColor = UIColor.clear
-    inputField.font = UIFont.monospacedSystemFont(ofSize: max(fontSize, 13), weight: .regular)
+    inputField.font = terminalMonoFont(family: fontFamily, size: max(fontSize, 13))
     inputField.placeholder = ""
     inputField.autocorrectionType = .no
     inputField.autocapitalizationType = .none
@@ -674,7 +684,8 @@ public final class OniTerminalView: ExpoView, UITextFieldDelegate, UIEditMenuInt
     else { return }
 
     inputField.resignFirstResponder()
-    let controller = TerminalTextSelectionViewController(text: text, fontSize: fontSize, labels: labels)
+    let controller = TerminalTextSelectionViewController(
+      text: text, font: terminalMonoFont(family: fontFamily, size: max(fontSize, 14)), labels: labels)
     let navigation = UINavigationController(rootViewController: controller)
     navigation.modalPresentationStyle = .pageSheet
     presenter.present(navigation, animated: !UIAccessibility.isReduceMotionEnabled)
@@ -761,4 +772,11 @@ public final class OniTerminalView: ExpoView, UITextFieldDelegate, UIEditMenuInt
     guard let text = UIPasteboard.general.string, !text.isEmpty else { return }
     onPaste(["text": text])
   }
+}
+
+func terminalMonoFont(family: String, size: CGFloat) -> UIFont {
+  if family != "ui-monospace", let font = UIFont(name: family, size: size) {
+    return font
+  }
+  return .monospacedSystemFont(ofSize: size, weight: .regular)
 }

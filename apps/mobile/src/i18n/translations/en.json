@@ -3,7 +3,6 @@
   "59c888898cca0a57": "Your organization does not allow outside agents on this environment.",
   "a80458a4ad02acde": "This device cannot grant that access. Choose a lower level.",
   "a256081b5ce634fd": "Could not create the agent's access. Try again.",
-  "035aab5e99159bd8": "{count, plural, one {… {hidden} character in the middle is not shown.} other {… {hidden} characters in the middle are not shown.}} The text ends with:",
   "4bcfa3b976a421cf": "Side chat",
   "23be753133ae6950": "Thread",
   "0001ae5846061bb6": "Thread on {machine}",
@@ -33,6 +32,7 @@
   "eebc538e25b09fe2": "{organization}'s policy does not allow importing browser cookies.",
   "986b0873f913a840": "{organization}'s policy does not allow webhook tasks.",
   "7642a133db05f164": "{organization}'s policy does not allow opening this machine's local servers on other devices.",
+  "e0856d6a402ad821": "{organization}'s policy does not allow project worktree layout commands.",
   "39f6771b49f9b3b6": "Use default",
   "45bb0e90e1c42046": "When you return",
   "d8fa0a55446bbb0d": "Before the cache expires (beta)",
@@ -455,6 +455,7 @@
   "834ca879c14c167b": "Working",
   "582d6df7dfab86fb": "Paused",
   "ea6583ce92507ee3": "Sleeping",
+  "7150557773b3818b": "Queued",
   "7ea8cb8af281ce93": "Waiting",
   "1347868f2523140e": "Done",
   "57d76c4614054271": "Stopped",
@@ -466,6 +467,7 @@
   "d3890f4eb1508781": "Running its own steps",
   "3e7ced10c9482af0": "{step} is working",
   "237e1bcb1cf1bdec": "Sleeping at {step}",
+  "efbeb3993ee2c3f5": "Queued for {pool}",
   "3f7b17ac5a20c8d2": "Runs {run}",
   "0306f5f324b8aaa5": "{count} runs under way",
   "e8fd779b84a202a2": "Waiting",
@@ -846,6 +848,7 @@
   "3f0b962160edbe6d": "Could not synchronize the thread.",
   "752b4d69669b0019": "Could not load earlier activity.",
   "44de9731d5b8eb38": "Work history changed. Retry loading it.",
+  "6ea901338c803e3e": "Could not use the reset credit.",
   "c0ea8898cd494336": "Could not check this connection's access to diagnostics and usage.",
   "953b6473de4b9ad6": "This connection does not have access to diagnostics and usage.",
   "8c68febc86a3f651": "Updating {provider}…",
@@ -1250,8 +1253,8 @@
   "bb34eaf6ddc55a72": "This account has no subscription limits.",
   "42a2622893a6bced": "Could not read limits.",
   "4897e228d3185c96": "No limits reported.",
-  "e27d2cb964df5dd5": "{source}: No accounts reported.",
   "161135f0aea4d1ca": "{source}: No Codex, Claude, or Grok accounts. Skipped {providers}.",
+  "e27d2cb964df5dd5": "{source}: No accounts reported.",
   "1b503134018285f4": "{days}d {hours}h",
   "fc7f69efcfa6fa32": "No reset credits banked",
   "be7fd67c538a99a0": "{count} banked · expires in {expires}",
@@ -1475,6 +1478,7 @@
   "b994adb6050417c2": "{provider} model unavailable",
   "587c7245ff60b79f": "Set up {provider} on web or desktop, or choose another model.",
   "6d84c8851d691303": "The server did not return a PDF. Check the connection and try again.",
+  "20283eb1dd6119f9": "{count, plural, one {{count} attachment} other {{count} attachments}}",
   "082c5effa2a3e4ab": "Allow {app} to add photos in Settings.",
   "3f143ed3bf34b9b0": "Photos could not save this image.",
   "06379558d82cc6dd": "The image is no longer available.",
@@ -1623,7 +1627,6 @@
   "992f89224a4e8f78": "Opening share sheet…",
   "20d0dc27ac27d5b4": "Share",
   "a0e89e8db116bfd5": "Save or share",
-  "20283eb1dd6119f9": "{count, plural, one {{count} attachment} other {{count} attachments}}",
   "7280baf7517dad1c": "Failed to load refs.",
   "567c0fed6ab8efc1": "This connection cannot search host files.",
   "bb2392ace5755e54": "The connection dropped before this finished.",
@@ -2427,6 +2430,7 @@
   "a6eeff30440d26a2": "Issue {key}",
   "c0e2d952114e7d59": "by {author}",
   "2195cdd7774c1c23": "unknown author",
+  "4276743ee60a3c62": "{count, plural, one {{count} comment} other {{count} comments}}",
   "217e1e7b60469736": "Issue state, {state}",
   "5fd6c9c736b80b62": "Issue state",
   "a749275f1ad66618": "Unknown author",
@@ -3093,7 +3097,6 @@
   "fa9012d7acfe1205": "Resolve conflicts",
   "6e45b380d5850b5c": "Watch {term, select, mr {MR} cr {change request} other {PR}}",
   "77c61ac22770f619": "Video",
-  "4276743ee60a3c62": "{count, plural, one {{count} comment} other {{count} comments}}",
   "a5b611e6548652c1": "Old line {line}",
   "e4bc1643eb024e23": "Line {line}",
   "b29eea552b16d20a": "{count, plural, one {{count} comment · Tap to open} other {{count} comments · Tap to open}}",
@@ -4440,15 +4443,6 @@
     },
     " app was closed"
   ],
-  "705cf2b2ee4e0e42": [
-    "The ",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " app left its page and was stopped"
-  ],
   "796b81c4875c4feb": [
     "The ",
     {
@@ -4463,6 +4457,15 @@
       "v": "v"
     },
     " server on this environment. Update the server to use it."
+  ],
+  "705cf2b2ee4e0e42": [
+    "The ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " app left its page and was stopped"
   ],
   "5ef18e4d39b398bf": [
     "Unable to load the ",
@@ -4602,6 +4605,7 @@
   "1d160d4ad1e53219": "Allow once",
   "fb7f5d610fdf9a08": "Allow session",
   "d13cbdad4a0e38e9": "Decline",
+  "035aab5e99159bd8": "{count, plural, one {… {hidden} character in the middle is not shown.} other {… {hidden} characters in the middle are not shown.}} The text ends with:",
   "3554fbab5a8480ce": "Approval needed",
   "a5060e6a344b5097": "The provider process for this request is no longer available. Interrupt or restart the run to continue.",
   "72eea7fa7943b0d7": "This connection cannot respond to approvals.",
@@ -4741,12 +4745,12 @@
   "1b30548ce8e56b75": "Edit task",
   "2269639b96d04225": "Could not start task",
   "63163a401eaea6cc": "Your prompt was kept in the project draft.",
+  "5536ab75119ee3f9": "Could not update thread",
+  "04c7bba52daa6f53": "Could not update goal",
   "55b562c00e37321b": "Could not force stop the agent",
   "ede15a83eedec569": "Turn stopped; the agent is still shutting down",
   "f360accf1ccac178": "Turn stopped; the agent process kept running",
   "72e41eb83e88cefa": "{count, plural, =0 {It is shared with other working threads. Stop those to free it.} one {It is shared with {count} working thread. Stop that thread to free it.} other {It is shared with {count} working threads. Stop those to free it.}}",
-  "5536ab75119ee3f9": "Could not update thread",
-  "04c7bba52daa6f53": "Could not update goal",
   "7161c775bd96511c": "Stopping…",
   "e734a8e4a58a3835": "Stop",
   "0ce0ab7586e91607": "Stop background work",
@@ -5031,6 +5035,7 @@
   "306a6f95ad9d52f7": "Unsent",
   "11276ab6c58b7a25": "Opens the draft in the new task composer. Swipe left to discard.",
   "99950f3a28d425fa": "Sends when the environment reconnects. Opens the task for editing. Swipe left to delete.",
+  "d71048f4fb9cf44a": "Waiting to sync",
   "be451f475c514b37": "Dismiss Woke notification",
   "54ccc22be28a985d": "Custom…",
   "bdd8716a3d6f1a53": "Arrange threads…",
@@ -5084,6 +5089,7 @@
   "5a2d803b3ea43f18": "Usage limit reached.",
   "d5365c5e28a18442": "{summary}: {message}",
   "bff5692f10fc10b0": "Long press to copy.",
+  "1a1beecff68a6e61": "Verify Google account",
   "a1984c617f973156": "{preview}, tool call failed",
   "38574c0d1e49b278": "{preview}, signed in",
   "fd0d04d5a6627f70": "Opens this agent's thread. Long press to copy.",
@@ -5284,7 +5290,6 @@
   "1a92fa2f744401bc": "Nothing to reset right now.",
   "fff9b7f838279ee3": "No reset credit left.",
   "cea3cf346788481d": "That credit was already redeemed.",
-  "6ea901338c803e3e": "Could not use the reset credit.",
   "8864ac914d8205e8": "Use a reset credit?",
   "e32c2c7e61a16f4b": "Use credit",
   "b58a90dc5356f80a": "resets now",
@@ -5386,6 +5391,8 @@
   "cd5d90cbbfae32f6": "Recording {time}",
   "6236e2f587bc4eb4": "Transcribing",
   "4e430d5ea01c249b": "Could not send the answer",
+  "a3c43735e1a81498": "Reason for {title}",
+  "bfad234f016cfa3f": "Why, in a sentence. It goes with whichever answer you pick.",
   "e721a8b98f44d5f7": "Ask the agent first",
   "e39f89c909df4db0": "Could not resume the run",
   "28c9dd162825c117": "Cancel this run?",
@@ -5412,6 +5419,14 @@
       "v": "v"
     }
   ],
+  "e114d37b32ab0dc7": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " needs a reason."
+  ],
   "9de4e24c9273b496": "This connection can read runs but not answer them.",
   "6dac41769b114edf": [
     {
@@ -5427,21 +5442,62 @@
       "v": "v"
     }
   ],
+  "46d614fa7b4bf1e5": "Workflow runs",
   "204e2afe64cae32b": "Working",
   "abd6c3f4734b9f97": "Failed",
   "59a3213338779c6e": "Done",
   "5a3b1fe78182d8dc": "Answered {choice}",
   "b17bd06e3b1ec0d2": "Answered {choice}: {reason}",
+  "99451a5d2d40440f": "Withdrawn by {by}.",
+  "3ee30a50b70fffab": "Withdrawn by {by}: {reason}",
   "89102905bf09b0e8": "Watch live",
   "eea0013efc9e4339": "Transcript",
   "ba8337dca3232880": "Open run",
+  "235902a19e95833b": [
+    "by you,",
+    " ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
+  "3759768c5d342c22": [
+    "answered",
+    " ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
+  "8afa4fbe16f95bcf": [
+    "by ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    ",",
+    " ",
+    {
+      "i": 2,
+      "k": "_gt_value_2",
+      "v": "v"
+    }
+  ],
   "cab70ed0237438ef": "Loading the step…",
   "30a5be40eb956663": "working",
   "edc8f6e9720f4eda": "sleeping",
   "0684698b49273da5": "waiting",
+  "0398ca6c1d24b92d": "queued, next in line",
+  "0af6d5ffd5166214": "{count, plural, one {queued, {count} ahead} other {queued, {count} ahead}}",
   "063173aa16052cb9": "under way",
   "3ba4cf953dd20f22": "failed",
+  "0f93532dd76391fc": "You answered {choice}",
+  "7e1fd2eb570a372b": "{who} answered {choice}",
   "e777db2880f53a46": "nobody answered",
+  "201490988858b511": "withdrawn by {by}",
   "34f59bbbead0b97f": "{names} and {count} more",
   "ac1556f6ce89a5ea": "{count} in parallel",
   "e197c4963bacc746": "{count} running",
@@ -5454,12 +5510,15 @@
   "f25af5332ffc3734": "Nothing waits on you.",
   "c3f0119b8d6231f8": "Nothing is running.",
   "33028dfc1229eaa6": "No runs yet.",
+  "e4d1316c85ed7066": "No questions of this kind wait on you.",
   "156ff7b625287a1e": "Hide skipped",
   "69b985b97ab45e6b": "Show {count} skipped",
   "8f6589c9e0ac5d4e": "No environment connected",
   "744127f8dfad7d22": "Connect an environment to see its workflow runs.",
   "b9aae2f7cdb1a379": "No workflow runs yet",
   "ace8fc1c643cf9f6": "A workflow ties agents, code, schedules and questions to you into one run that survives restarts. Write one on your computer, under Workflows, then Definitions.",
+  "fc9c3a00cfc18b55": "All kinds",
+  "45a94c724845ec1d": "Other",
   "fceb81aa6685fb47": "Chats",
   "ab94a098e562cedc": "Close navigation rail",
   "f2d004982f8d8538": "Collapse navigation rail",
@@ -5715,7 +5774,13 @@
   "c95f71b09b6a1b77": "{size} pt",
   "bf29303038cb6705": "Word break",
   "2aba3a08e7d6bc35": "Terminal",
+  "068d11f809c530d4": "System",
+  "0677b40d0e3d6718": "DM Sans",
+  "985e41da9877b95a": "MesloLGS NF",
+  "fdb76b85a4c28193": "Includes Nerd Font symbols",
   "77d16b9b4b86c88f": "Text",
+  "d3e95bb2b4934bbf": "Font",
+  "e6d2dc99ef49d071": "Monospace font",
   "eeca51fe648d9317": "Render math",
   "e148604db412abfb": "Grove",
   "3b06efe927b51386": "Ocean",
@@ -5738,64 +5803,5 @@
   "ad208e3e32c85029": "Hide all",
   "3328503592789bed": "Zen",
   "856812e7e1fc445e": "Tool calls in chat",
-  "8d545d54c0a9e950": "Hide the commands, edits, and searches agents run. Hide successful keeps failures. Zen shows only final answers. Approvals, questions, and errors always show.",
-  "e0856d6a402ad821": "{organization}'s policy does not allow project worktree layout commands.",
-  "fc9c3a00cfc18b55": "All kinds",
-  "e4d1316c85ed7066": "No questions of this kind wait on you.",
-  "45a94c724845ec1d": "Other",
-  "d71048f4fb9cf44a": "Waiting to sync",
-  "a3c43735e1a81498": "Reason for {title}",
-  "bfad234f016cfa3f": "Why, in a sentence. It goes with whichever answer you pick.",
-  "e114d37b32ab0dc7": [
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " needs a reason."
-  ],
-  "235902a19e95833b": [
-    "by you,",
-    " ",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    }
-  ],
-  "3759768c5d342c22": [
-    "answered",
-    " ",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    }
-  ],
-  "8afa4fbe16f95bcf": [
-    "by ",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    ",",
-    " ",
-    {
-      "i": 2,
-      "k": "_gt_value_2",
-      "v": "v"
-    }
-  ],
-  "0f93532dd76391fc": "You answered {choice}",
-  "7e1fd2eb570a372b": "{who} answered {choice}",
-  "1a1beecff68a6e61": "Verify Google account",
-  "99451a5d2d40440f": "Withdrawn by {by}.",
-  "3ee30a50b70fffab": "Withdrawn by {by}: {reason}",
-  "201490988858b511": "withdrawn by {by}",
-  "7150557773b3818b": "Queued",
-  "efbeb3993ee2c3f5": "Queued for {pool}",
-  "0398ca6c1d24b92d": "queued, next in line",
-  "0af6d5ffd5166214": "{count, plural, one {queued, {count} ahead} other {queued, {count} ahead}}",
-  "46d614fa7b4bf1e5": "Workflow runs"
+  "8d545d54c0a9e950": "Hide the commands, edits, and searches agents run. Hide successful keeps failures. Zen shows only final answers. Approvals, questions, and errors always show."
 }

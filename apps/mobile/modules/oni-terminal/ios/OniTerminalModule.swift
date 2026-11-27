@@ -32,6 +32,10 @@ public class OniTerminalModule: Module {
         view.fontSize = CGFloat(fontSize)
       }
 
+      Prop("fontFamily") { (view: OniTerminalView, fontFamily: String) in
+        view.fontFamily = fontFamily
+      }
+
       Prop("focusRequest") { (view: OniTerminalView, focusRequest: Double) in
         view.focusRequest = focusRequest
       }
