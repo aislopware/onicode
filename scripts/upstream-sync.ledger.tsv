@@ -3989,3 +3989,4 @@ e849afabb4	take	taken as is
 f7ec366acd	take	taken as is
 1c3f0ee88f	skip	removed surface: only touches the relay ManagedEndpointRuntime, which Onicode removed
 c991a91ec6	take	code page added to Onicode's rtfCodePage; scenario ported to desktop (ControlOrMeta+p)
+e6738fd8bc	take	kept Onicode's withWorkspaceLease(fileSystem, path, cwd, ...) and added the snapshot map; new fields optional and opt-in, old mobile unaffected
