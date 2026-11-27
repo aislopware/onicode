@@ -1,6 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off -- Pure synchronous hashing keeps page matching bounded without a runtime dependency.
 import * as NodeCrypto from "node:crypto";
-import type { ThreadId } from "@onicode/contracts";
+import type { ProviderApprovalPushHooks, ProviderInstanceId, ThreadId } from "@onicode/contracts";
 import type { HtmlRenderReference } from "@onicode/shared/htmlRender";
 import { resolveOniMcpToolId } from "@onicode/shared/oniMcpToolPresentation";
 import * as Context from "effect/Context";
@@ -10,10 +10,13 @@ import * as Predicate from "effect/Predicate";
 import * as Ref from "effect/Ref";
 
 import type { McpProviderSessionConfig } from "./mcpSession.ts";
+import { randomUuidV4 } from "./randomUuid.ts";
 
 // Other providers may never consume these references.
 const MAX_KEPT_HTML_RENDERS = 64;
 const MAX_KEPT_TOOL_RESULTS = 64;
+// A request whose call never comes back for its answer stays until the session ends.
+const MAX_KEPT_APPROVAL_REQUESTS = 8;
 
 // Antigravity truncates long HTML arguments to a marked tail of at most 8,000 characters.
 const BOUNDED_TEXT_MARKER = "[Earlier output truncated]\n\n";
@@ -34,6 +37,21 @@ interface KeptToolResult {
   readonly inputHash: string;
   readonly outputJson: string;
   readonly output: Record<string, unknown>;
+}
+
+/** What one of Onicode's own MCP tools is asking the person behind a thread to approve. */
+export interface OniApprovalRequest {
+  /** The whole question, as the provider's client hands it on. */
+  readonly message: string;
+  readonly pushHooks?: ProviderApprovalPushHooks | undefined;
+  /** What an answer is given for; an answer to another state does not count for this request. */
+  readonly state?: string | undefined;
+}
+
+/** A request Onicode is waiting on, and what the person answered once an adapter has shown it. */
+export interface KeptApprovalRequest extends OniApprovalRequest {
+  readonly id: string;
+  readonly approved?: boolean | undefined;
 }
 
 interface ToolResults {
@@ -113,6 +131,37 @@ export class McpProviderSessions extends Context.Service<
       reported?: Record<string, unknown>,
     ) => Effect.Effect<Record<string, unknown> | undefined>;
     readonly clearToolResults: (threadId: ThreadId) => Effect.Effect<void>;
+    // The provider's client hands an adapter a server name and the message. This is how the
+    // adapter learns a request is Onicode's own, and what it names, from Onicode: kept from when
+    // Onicode asks until it has the answer. Recording returns the request's own id, and only that
+    // id forgets it: two calls may ask the same thing at once, and one may outlive its session.
+    readonly recordApprovalRequest: (
+      threadId: ThreadId,
+      request: OniApprovalRequest,
+    ) => Effect.Effect<string>;
+    readonly findApprovalRequest: (
+      threadId: ThreadId,
+      message: string,
+    ) => Effect.Effect<KeptApprovalRequest | undefined>;
+    readonly forgetApprovalRequest: (threadId: ThreadId, id: string) => Effect.Effect<void>;
+    // An adapter that shows Onicode's own requests says so for its provider instance and passes
+    // on each answer the person gave in the app. It is handed the message and no id, so the answer
+    // counts for every request of the thread asking `message` that has none yet. For those
+    // instances that answer, not the client's reply, is what Onicode goes by.
+    readonly showsApprovalRequests: (providerInstanceId: ProviderInstanceId) => Effect.Effect<void>;
+    readonly areApprovalRequestsShown: (
+      providerInstanceId: ProviderInstanceId,
+    ) => Effect.Effect<boolean>;
+    readonly answerApprovalRequests: (
+      threadId: ThreadId,
+      message: string,
+      approved: boolean,
+    ) => Effect.Effect<void>;
+    // Ends the request and returns it as it was, with the person's answer if one was given.
+    readonly takeApprovalRequest: (
+      threadId: ThreadId,
+      id: string,
+    ) => Effect.Effect<KeptApprovalRequest | undefined>;
   }
 >()("@onicode/provider-core/server/McpProviderSessions") {}
 
@@ -210,6 +259,24 @@ const make = Effect.gen(function* () {
   // One Ref, so a late result cannot land between a session's removal and its results'.
   const sessions = yield* Ref.make<ReadonlyMap<ThreadId, ProviderSession>>(new Map());
   const htmlRenders = yield* Ref.make(new Map<ThreadId, ReadonlyArray<KeptHtmlRender>>());
+  const approvalRequests = yield* Ref.make(new Map<ThreadId, ReadonlyArray<KeptApprovalRequest>>());
+  const approvalRequestsShownBy = yield* Ref.make<ReadonlySet<ProviderInstanceId>>(new Set());
+  const withoutThread = <A>(kept: ReadonlyMap<ThreadId, A>, threadId: ThreadId) => {
+    const next = new Map(kept);
+    next.delete(threadId);
+    return next;
+  };
+  const takeApprovalRequest = (threadId: ThreadId, id: string) =>
+    Ref.modify(approvalRequests, (current) => {
+      const kept = current.get(threadId);
+      const taken = kept?.find((candidate) => candidate.id === id);
+      if (kept === undefined || taken === undefined) return [undefined, current];
+      const rest = kept.filter((candidate) => candidate !== taken);
+      return [
+        taken,
+        rest.length === 0 ? withoutThread(current, threadId) : new Map(current).set(threadId, rest),
+      ];
+    });
   return McpProviderSessions.of({
     set: Effect.fn("McpProviderSessions.set")(function* (config) {
       const current = yield* Ref.get(sessions);
@@ -219,6 +286,7 @@ const make = Effect.gen(function* () {
           next.delete(config.threadId);
           return next;
         });
+        yield* Ref.update(approvalRequests, (kept) => withoutThread(kept, config.threadId));
       }
       yield* Ref.update(sessions, (current) => {
         const existing = current.get(config.threadId);
@@ -247,6 +315,7 @@ const make = Effect.gen(function* () {
             return next;
           }),
         ),
+        Effect.andThen(Ref.update(approvalRequests, (kept) => withoutThread(kept, threadId))),
       );
     }),
     recordHtmlRender: Effect.fn("McpProviderSessions.recordHtmlRender")(
@@ -359,6 +428,64 @@ const make = Effect.gen(function* () {
         updateToolResults(current, threadId, ({ epoch }) => ({ epoch: epoch + 1, kept: [] })),
       );
     }),
+    recordApprovalRequest: Effect.fn("McpProviderSessions.recordApprovalRequest")(
+      function (threadId, request) {
+        return randomUuidV4.pipe(
+          Effect.tap((id) =>
+            Ref.update(approvalRequests, (current) =>
+              new Map(current).set(
+                threadId,
+                [...(current.get(threadId) ?? []), { ...request, id }].slice(
+                  -MAX_KEPT_APPROVAL_REQUESTS,
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    ),
+    findApprovalRequest: Effect.fn("McpProviderSessions.findApprovalRequest")(
+      function (threadId, message) {
+        return Ref.get(approvalRequests).pipe(
+          Effect.map((current) => current.get(threadId)?.find((kept) => kept.message === message)),
+        );
+      },
+    ),
+    forgetApprovalRequest: Effect.fn("McpProviderSessions.forgetApprovalRequest")(
+      function (threadId, id) {
+        return Effect.asVoid(takeApprovalRequest(threadId, id));
+      },
+    ),
+    showsApprovalRequests: Effect.fn("McpProviderSessions.showsApprovalRequests")(
+      function (providerInstanceId) {
+        return Ref.update(approvalRequestsShownBy, (current) =>
+          new Set(current).add(providerInstanceId),
+        );
+      },
+    ),
+    areApprovalRequestsShown: Effect.fn("McpProviderSessions.areApprovalRequestsShown")(
+      function (providerInstanceId) {
+        return Ref.get(approvalRequestsShownBy).pipe(
+          Effect.map((current) => current.has(providerInstanceId)),
+        );
+      },
+    ),
+    answerApprovalRequests: Effect.fn("McpProviderSessions.answerApprovalRequests")(
+      function (threadId, message, approved) {
+        return Ref.update(approvalRequests, (current) => {
+          const kept = current.get(threadId);
+          // A request's first answer stands.
+          const waits = (request: KeptApprovalRequest) =>
+            request.message === message && request.approved === undefined;
+          if (kept === undefined || !kept.some(waits)) return current;
+          return new Map(current).set(
+            threadId,
+            kept.map((request) => (waits(request) ? { ...request, approved } : request)),
+          );
+        });
+      },
+    ),
+    takeApprovalRequest: Effect.fn("McpProviderSessions.takeApprovalRequest")(takeApprovalRequest),
   });
 });
 

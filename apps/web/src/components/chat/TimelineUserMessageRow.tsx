@@ -76,7 +76,6 @@ import { MessageCopyButton } from "./MessageCopyButton";
 import { promptLinkFor } from "../promptLinks/copyPromptLink";
 import { PierreEntryIcon } from "./PierreEntryIcon";
 import { formatBytes } from "../../lib/formatBytes";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   asKnownContextRecord,
   resolveUserMessageContext,
@@ -111,6 +110,7 @@ import {
   resolvePreviewAnnotationImage,
   userMessageFileLabel,
 } from "./TimelineUserMessageRow.logic";
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 
 // Drawn inside the media so dark screenshots keep an edge on the dark background.
 const MEDIA_EDGE_CLASS_NAME =
@@ -183,25 +183,25 @@ function UserFileCard({
           >
             {identity}
           </button>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  size="icon-xs"
-                  variant="ghost-muted"
-                  aria-label={gt("Download {label}", { label })}
-                  onClick={() => ctx.onFileDownload(file)}
-                />
-              }
-            >
-              <DownloadIcon />
-            </TooltipTrigger>
-            <TooltipPopup side="top">
-              <T>
-                Download <Var>{label}</Var>
-              </T>
-            </TooltipPopup>
-          </Tooltip>
+          <SharedTooltipTrigger
+            render={
+              <Button
+                size="icon-xs"
+                variant="ghost-muted"
+                aria-label={gt("Download {label}", { label })}
+                onClick={() => ctx.onFileDownload(file)}
+              />
+            }
+            label={
+              <>
+                <T>
+                  Download <Var>{label}</Var>
+                </T>
+              </>
+            }
+          >
+            <DownloadIcon />
+          </SharedTooltipTrigger>
         </>
       )}
     </div>
@@ -863,20 +863,18 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           <T>Open thread</T>
         </InlineButton>
       ) : null}
-      <Tooltip>
-        <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>
-          {formatDayAwareTimestamp(
-            row.message.createdAt,
-            ctx.timestampFormat,
-            undefined,
-            undefined,
-            m,
-          )}
-        </TooltipTrigger>
-        <TooltipPopup>
-          {formatChatTimestampTooltip(row.message.createdAt, ctx.timestampFormat, m)}
-        </TooltipPopup>
-      </Tooltip>
+      <SharedTooltipTrigger
+        render={<p className="text-muted-foreground text-xs tabular-nums" />}
+        label={formatChatTimestampTooltip(row.message.createdAt, ctx.timestampFormat, m)}
+      >
+        {formatDayAwareTimestamp(
+          row.message.createdAt,
+          ctx.timestampFormat,
+          undefined,
+          undefined,
+          m,
+        )}
+      </SharedTooltipTrigger>
       <div className={cn("flex items-center gap-0.5", floatActions && "flex-wrap justify-end")}>
         {typeof revertTurnCount === "number" && (
           <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />
@@ -1049,25 +1047,25 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                           {fileIdentity}
                           <EyeIcon className="size-4 shrink-0" />
                         </button>
-                        <Tooltip>
-                          <TooltipTrigger
-                            render={
-                              <Button
-                                size="icon-xs"
-                                variant="ghost-muted"
-                                aria-label={gt("Download {label}", { label })}
-                                onClick={() => ctx.onFileDownload(file)}
-                              />
-                            }
-                          >
-                            <DownloadIcon />
-                          </TooltipTrigger>
-                          <TooltipPopup side="top">
-                            <T>
-                              Download <Var>{label}</Var>
-                            </T>
-                          </TooltipPopup>
-                        </Tooltip>
+                        <SharedTooltipTrigger
+                          render={
+                            <Button
+                              size="icon-xs"
+                              variant="ghost-muted"
+                              aria-label={gt("Download {label}", { label })}
+                              onClick={() => ctx.onFileDownload(file)}
+                            />
+                          }
+                          label={
+                            <>
+                              <T>
+                                Download <Var>{label}</Var>
+                              </T>
+                            </>
+                          }
+                        >
+                          <DownloadIcon />
+                        </SharedTooltipTrigger>
                       </div>
                     );
                   }
@@ -1151,20 +1149,10 @@ function UserMessageIntentMarker({
       className="me-1 flex h-4 items-center justify-end gap-1 text-xs leading-none text-muted-foreground"
       data-user-message-intent={intent}
     >
-      <Tooltip>
-        <TooltipTrigger render={<span className="flex items-center gap-1" />}>
-          <Redo2Icon aria-hidden="true" className="size-3" />
-          <span aria-hidden={unread}>
-            {gt("Steer", { $context: "noun, a message that steers the running turn" })}
-          </span>
-          {unread ? (
-            <span className="sr-only">
-              {sentNow ? gt("Steer · sending now") : gt("Steer · waiting to be read")}
-            </span>
-          ) : null}
-        </TooltipTrigger>
-        <TooltipPopup side="top">
-          {unread
+      <SharedTooltipTrigger
+        render={<span className="flex items-center gap-1" />}
+        label={
+          unread
             ? sentNow
               ? gt("Making room for the agent to read this now.")
               : gt(
@@ -1172,9 +1160,19 @@ function UserMessageIntentMarker({
                 )
             : intent === "promoted_queued_to_steer"
               ? gt("Originally queued, then promoted to steer the active turn")
-              : gt("Steered the active turn")}
-        </TooltipPopup>
-      </Tooltip>
+              : gt("Steered the active turn")
+        }
+      >
+        <Redo2Icon aria-hidden="true" className="size-3" />
+        <span aria-hidden={unread}>
+          {gt("Steer", { $context: "noun, a message that steers the running turn" })}
+        </span>
+        {unread ? (
+          <span className="sr-only">
+            {sentNow ? gt("Steer · sending now") : gt("Steer · waiting to be read")}
+          </span>
+        ) : null}
+      </SharedTooltipTrigger>
       {/* Like a queued row: Send now while it can act, otherwise the wait it is in. */}
       {!unread ? null : !sentNow && ctx.canOperateThread && ctx.threadRef !== null ? (
         <SendSteerNowButton threadRef={ctx.threadRef} messageId={messageId} />
@@ -1233,35 +1231,35 @@ function SendSteerNowButton({
   };
 
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            type="button"
-            size="xs"
-            variant="ghost-muted"
-            // The marker row stays h-4 so the timeline doesn't shift when the steer is read.
-            className="-my-1"
-            disabled={sending}
-            onClick={() => void send()}
-          />
-        }
-      >
-        <ArrowUpIcon />
-        {gt("Send now")}
-      </TooltipTrigger>
-      <TooltipPopup side="top">
-        <div>
-          {gt("Send now")}
-          {shortcutLabel ? ` (${shortcutLabel})` : ""}
-        </div>
-        <div>
-          {gt(
-            "Moves running commands and subagents to the background, or stops the current step, so the agent reads this now.",
-          )}
-        </div>
-      </TooltipPopup>
-    </Tooltip>
+    <SharedTooltipTrigger
+      render={
+        <Button
+          type="button"
+          size="xs"
+          variant="ghost-muted"
+          // The marker row stays h-4 so the timeline doesn't shift when the steer is read.
+          className="-my-1"
+          disabled={sending}
+          onClick={() => void send()}
+        />
+      }
+      label={
+        <>
+          <div>
+            {gt("Send now")}
+            {shortcutLabel ? ` (${shortcutLabel})` : ""}
+          </div>
+          <div>
+            {gt(
+              "Moves running commands and subagents to the background, or stops the current step, so the agent reads this now.",
+            )}
+          </div>
+        </>
+      }
+    >
+      <ArrowUpIcon />
+      {gt("Send now")}
+    </SharedTooltipTrigger>
   );
 }
 
@@ -1277,25 +1275,25 @@ function RevertUserMessageButton({
   const gt = useGT();
 
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            type="button"
-            size="xs"
-            variant="ghost"
-            disabled={activity.isRevertingCheckpoint || activity.isWorking}
-            onClick={() => ctx.onRevertToTurnCount(turnCount, messageId)}
-            aria-label={gt("Edit from here")}
-          />
-        }
-      >
-        <PencilIcon className="size-3" />
-      </TooltipTrigger>
-      <TooltipPopup side="top">
-        <T>Edit from here</T>
-      </TooltipPopup>
-    </Tooltip>
+    <SharedTooltipTrigger
+      render={
+        <Button
+          type="button"
+          size="xs"
+          variant="ghost"
+          disabled={activity.isRevertingCheckpoint || activity.isWorking}
+          onClick={() => ctx.onRevertToTurnCount(turnCount, messageId)}
+          aria-label={gt("Edit from here")}
+        />
+      }
+      label={
+        <>
+          <T>Edit from here</T>
+        </>
+      }
+    >
+      <PencilIcon className="size-3" />
+    </SharedTooltipTrigger>
   );
 }
 

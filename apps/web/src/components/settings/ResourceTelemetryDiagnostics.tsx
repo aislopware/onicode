@@ -54,7 +54,6 @@ import { useRelativeTimeState } from "../../hooks/useRelativeTimeState";
 import { Button } from "../ui/button";
 import { ScrollArea } from "../ui/scroll-area";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
 import {
   formatCpuTime,
@@ -66,6 +65,7 @@ import {
   visibleResourceTelemetryProcesses,
 } from "./ResourceTelemetryDiagnostics.logic";
 import { SettingsSection } from "./settingsLayout";
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 
 const HISTORY_WINDOWS = [
   { label: "5m", windowMs: 5 * 60_000, bucketMs: 15_000 },
@@ -443,38 +443,38 @@ function ResourceHistoryChart({
             minimumVisiblePercent: 1,
           });
           return (
-            <Tooltip key={DateTime.formatIso(bucket.startedAt)}>
-              <TooltipTrigger
-                render={
-                  <div
-                    role="img"
-                    aria-label={readings.join(", ")}
-                    tabIndex={index === 0 ? 0 : -1}
-                    className="grid h-full min-w-1 flex-1 grid-cols-3 items-end gap-px rounded-sm outline-none focus-visible:outline-ring-inset"
-                  >
-                    <span
-                      className="block rounded-t-sm bg-foreground/65"
-                      style={{ height: `${cpuHeight}%` }}
-                    />
-                    <span
-                      className="block rounded-t-sm bg-info/70"
-                      style={{ height: `${readHeight}%` }}
-                    />
-                    <span
-                      className="block rounded-t-sm bg-warning/80"
-                      style={{ height: `${writeHeight}%` }}
-                    />
-                  </div>
-                }
-              />
-              <TooltipPopup side="top" className="text-left">
+            <SharedTooltipTrigger
+              key={DateTime.formatIso(bucket.startedAt)}
+              render={
+                <div
+                  role="img"
+                  aria-label={readings.join(", ")}
+                  tabIndex={index === 0 ? 0 : -1}
+                  className="grid h-full min-w-1 flex-1 grid-cols-3 items-end gap-px rounded-sm outline-none focus-visible:outline-ring-inset"
+                >
+                  <span
+                    className="block rounded-t-sm bg-foreground/65"
+                    style={{ height: `${cpuHeight}%` }}
+                  />
+                  <span
+                    className="block rounded-t-sm bg-info/70"
+                    style={{ height: `${readHeight}%` }}
+                  />
+                  <span
+                    className="block rounded-t-sm bg-warning/80"
+                    style={{ height: `${writeHeight}%` }}
+                  />
+                </div>
+              }
+              label={
                 <div className="space-y-0.5">
                   {readings.map((reading) => (
                     <div key={reading}>{reading}</div>
                   ))}
                 </div>
-              </TooltipPopup>
-            </Tooltip>
+              }
+              className="text-left"
+            />
           );
         })}
       </div>
@@ -516,14 +516,11 @@ function ProcessTreeName({
         <span className="size-5" aria-hidden />
       )}
       <span className={cn("size-1.5 rounded-full", categoryDotClass(process.category))} />
-      <Tooltip>
-        <TooltipTrigger
-          render={<span className="min-w-0 truncate font-medium text-foreground">{name}</span>}
-        />
-        <TooltipPopup side="top" variant="code">
-          {process.command || process.name}
-        </TooltipPopup>
-      </Tooltip>
+      <SharedTooltipTrigger
+        render={<span className="min-w-0 truncate font-medium text-foreground">{name}</span>}
+        label={process.command || process.name}
+        variant="code"
+      />
     </div>
   );
 }
@@ -684,12 +681,10 @@ function ProcessTable({
                   {formatBytes(process.ioReadBytes)}
                 </td>
                 <td className="px-3 py-2 text-right font-mono tabular-nums text-muted-foreground">
-                  <Tooltip>
-                    <TooltipTrigger render={<span>{formatBytes(process.ioWriteBytes)}</span>} />
-                    <TooltipPopup side="top">
-                      {ioSemanticsLabel(process.ioSemantics, messages)}
-                    </TooltipPopup>
-                  </Tooltip>
+                  <SharedTooltipTrigger
+                    render={<span>{formatBytes(process.ioWriteBytes)}</span>}
+                    label={ioSemanticsLabel(process.ioSemantics, messages)}
+                  />
                 </td>
                 <td className="px-3 py-2 text-right font-mono tabular-nums text-muted-foreground">
                   {process.identity.pid}
@@ -779,18 +774,15 @@ function HistoryProcessTable({
             {processes.map((process) => (
               <tr key={processIdentityKey(process)} className="hover:bg-accent/60">
                 <td className="px-4 py-2 sm:pl-5">
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <span className="block truncate font-medium text-foreground">
-                          {process.name || process.command}
-                        </span>
-                      }
-                    />
-                    <TooltipPopup side="top" variant="code">
-                      {process.command || process.name}
-                    </TooltipPopup>
-                  </Tooltip>
+                  <SharedTooltipTrigger
+                    render={
+                      <span className="block truncate font-medium text-foreground">
+                        {process.name || process.command}
+                      </span>
+                    }
+                    label={process.command || process.name}
+                    variant="code"
+                  />
                 </td>
                 <td className="truncate px-3 py-2 text-2xs text-muted-foreground">
                   {categoryLabel(process.category, messages)}
@@ -1080,24 +1072,24 @@ function ResourceTelemetryDiagnosticsBody({
               <SourceStatusBadge label={gt("Native")} status={snapshot.health.native.status} />
             ) : null}
             <LastSampleLabel sampledAt={snapshot?.readAt ?? null} />
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    size="icon-micro"
-                    variant="ghost"
-                    disabled={telemetry.isPending}
-                    onClick={telemetry.refresh}
-                    aria-label={gt("Refresh resource telemetry")}
-                  >
-                    <RefreshIcon size="xs" refreshing={telemetry.isPending} />
-                  </Button>
-                }
-              />
-              <TooltipPopup side="top">
-                <T>Refresh telemetry snapshot</T>
-              </TooltipPopup>
-            </Tooltip>
+            <SharedTooltipTrigger
+              render={
+                <Button
+                  size="icon-micro"
+                  variant="ghost"
+                  disabled={telemetry.isPending}
+                  onClick={telemetry.refresh}
+                  aria-label={gt("Refresh resource telemetry")}
+                >
+                  <RefreshIcon size="xs" refreshing={telemetry.isPending} />
+                </Button>
+              }
+              label={
+                <>
+                  <T>Refresh telemetry snapshot</T>
+                </>
+              }
+            />
           </div>
         }
       >

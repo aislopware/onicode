@@ -63,10 +63,10 @@ import {
   useSidebar,
   useSidebarVisibility,
 } from "./ui/sidebar";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { registerCommands, registerMenuAction } from "../shortcuts/dispatcher";
 import { resolveThreadRouteRef } from "../threadRoutes";
+import { SharedTooltipTrigger } from "./ui/shared-tooltip";
 
 const MACOS_TRAFFIC_LIGHTS_LEFT_INSET = "var(--desktop-window-controls-inset, 90px)";
 
@@ -394,20 +394,18 @@ function SidebarControl({ showSidebar }: { readonly showSidebar: boolean }) {
       data-sidebar-control=""
     >
       {showSidebar ? (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <SidebarTrigger
-                variant={onStageBackdrop ? "scenery" : "ghost"}
-                className="pointer-events-auto"
-                aria-label={gt("Toggle main sidebar")}
-              />
-            }
-          />
-          <TooltipPopup side="bottom" shortcut={shortcutLabel}>
-            {gt("Toggle main sidebar")}
-          </TooltipPopup>
-        </Tooltip>
+        <SharedTooltipTrigger
+          render={
+            <SidebarTrigger
+              variant={onStageBackdrop ? "scenery" : "ghost"}
+              className="pointer-events-auto"
+              aria-label={gt("Toggle main sidebar")}
+            />
+          }
+          label={gt("Toggle main sidebar")}
+          shortcut={shortcutLabel}
+          side="bottom"
+        />
       ) : null}
     </div>
   );

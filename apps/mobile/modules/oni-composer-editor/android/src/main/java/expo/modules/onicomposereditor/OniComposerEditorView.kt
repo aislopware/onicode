@@ -943,7 +943,8 @@ internal class SelectionAwareEditText(
   private fun pasteContextOrImages(): Boolean {
     val payload = OniComposerClipboard.read(context)
     return when {
-      payload["html"]?.contains("data-oni-context-fragment=") == true -> pasteContext(payload)
+      !payload["fragment"].isNullOrEmpty() ||
+        payload["html"]?.contains("data-oni-context-fragment=") == true -> pasteContext(payload)
       pasteImagesOrInterceptedText() -> true
       isSingleItemClip() && OniComposerClipboard.hasThreadLink(payload["text"].orEmpty()) ->
         pasteContext(payload)

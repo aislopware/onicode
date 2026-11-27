@@ -3,6 +3,7 @@ import "./src/features/development/render-counter-entry";
 import "./src/features/development/behavior-probe-entry";
 // Before any GT module initializes: GT validates locales with Intl APIs that Hermes lacks.
 import "./src/i18n/intl-polyfills";
+import "./src/features/files/text-decoder-polyfill";
 import { registerRootComponent } from "expo";
 import "react-native-gesture-handler";
 import { LogBox } from "react-native";

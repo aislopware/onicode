@@ -34,7 +34,7 @@ import { EnvironmentRow, environmentTransportLabel } from "./EnvironmentRow";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
 import { Switch } from "../ui/switch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 import { Button } from "../ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "../ui/empty";
 import {
@@ -226,30 +226,24 @@ export function SavedBackendListRow({
       dimmed={!enabled}
       subtitle={
         <span className="flex min-w-0 items-center gap-1">
-          <Tooltip>
-            {/* The status can change while the tooltip is open, and base-ui only
-                re-measures the popup when the trigger's payload changes. */}
-            <TooltipTrigger
-              payload={`${statusTooltip}\n${statusUpdateTooltip ?? ""}`}
-              render={
-                <span
-                  className={cn(
-                    "min-w-0 truncate",
-                    enabled &&
-                      status.tone === "error" &&
-                      !resumingServerUpdate &&
-                      !diagnosis &&
-                      "text-destructive",
-                  )}
-                />
-              }
-            >
-              {subtitleText}
-            </TooltipTrigger>
-            <TooltipPopup side="top" description={statusUpdateTooltip}>
-              {statusTooltip}
-            </TooltipPopup>
-          </Tooltip>
+          <SharedTooltipTrigger
+            render={
+              <span
+                className={cn(
+                  "min-w-0 truncate",
+                  enabled &&
+                    status.tone === "error" &&
+                    !resumingServerUpdate &&
+                    !diagnosis &&
+                    "text-destructive",
+                )}
+              />
+            }
+            label={statusTooltip}
+            description={statusUpdateTooltip}
+          >
+            {subtitleText}
+          </SharedTooltipTrigger>
           <span aria-hidden className="shrink-0">
             ·
           </span>
@@ -364,49 +358,43 @@ export function SavedBackendListRow({
         />
       ) : null}
       {remoteDesktopAvailable ? (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                type="button"
-                variant="ghost-muted"
-                size="icon-xs"
-                aria-label={`Open remote desktop for ${environment.label}`}
-                onClick={() =>
-                  void navigate({
-                    to: "/remote-desktop/$environmentId",
-                    params: { environmentId },
-                  })
-                }
-              />
-            }
-          >
-            <MonitorIcon className="size-3.5" />
-          </TooltipTrigger>
-          <TooltipPopup side="top">Open remote desktop</TooltipPopup>
-        </Tooltip>
-      ) : null}
-      <Tooltip>
-        <TooltipTrigger
+        <SharedTooltipTrigger
           render={
-            <Switch
-              size="sm"
-              checked={enabled}
-              disabled={isRemoving && !blocked}
-              readOnly={blocked}
-              aria-label={
-                enabled
-                  ? gt("Switch off {label}", { label: environment.label })
-                  : gt("Switch on {label}", { label: environment.label })
+            <Button
+              type="button"
+              variant="ghost-muted"
+              size="icon-xs"
+              aria-label={`Open remote desktop for ${environment.label}`}
+              onClick={() =>
+                void navigate({
+                  to: "/remote-desktop/$environmentId",
+                  params: { environmentId },
+                })
               }
-              onCheckedChange={(checked) => onSetEnabled(environmentId, checked)}
             />
           }
-        />
-        <TooltipPopup side="top">
-          {blocked ? gt("Client not supported") : enabled ? gt("Switch off") : gt("Switch on")}
-        </TooltipPopup>
-      </Tooltip>
+          label="Open remote desktop"
+        >
+          <MonitorIcon className="size-3.5" />
+        </SharedTooltipTrigger>
+      ) : null}
+      <SharedTooltipTrigger
+        render={
+          <Switch
+            size="sm"
+            checked={enabled}
+            disabled={isRemoving && !blocked}
+            readOnly={blocked}
+            aria-label={
+              enabled
+                ? gt("Switch off {label}", { label: environment.label })
+                : gt("Switch on {label}", { label: environment.label })
+            }
+            onCheckedChange={(checked) => onSetEnabled(environmentId, checked)}
+          />
+        }
+        label={blocked ? gt("Client not supported") : enabled ? gt("Switch off") : gt("Switch on")}
+      />
       <Menu>
         <MenuTrigger
           render={

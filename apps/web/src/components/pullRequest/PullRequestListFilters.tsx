@@ -237,6 +237,7 @@ function PullRequestFilterRadioGroup<Value extends string>({
           </MenuRadioItem>
         );
         if (!option.unavailable) return item;
+        // Base UI's tooltip: the shared one stays shut on a disabled item, and this explains it.
         return (
           <Tooltip key={option.value}>
             <TooltipTrigger render={item} />

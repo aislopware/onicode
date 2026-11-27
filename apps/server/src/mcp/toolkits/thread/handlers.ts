@@ -248,7 +248,15 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
             Effect.map((project) => Option.getOrUndefined(project)?.workspaceRoot),
             Effect.orElseSucceed(() => undefined),
           ));
-        const modelSelection = yield* OrchestrationMcp.validateModelSelection(requested, cwd);
+        const modelSelection = yield* OrchestrationMcp.validateModelSelection(requested, cwd, {
+          agentMode: {
+            callerRuntimeMode: (yield* readCaller()).limits.runtimeMode,
+            held:
+              thread.modelSelection.instanceId === requested.instanceId
+                ? thread.modelSelection.options
+                : undefined,
+          },
+        });
         const type = modelSelectionCommandType(thread.providerInstanceId, modelSelection);
         const result = yield* threads
           .dispatch({ type, threadId: thread.id, commandId: yield* newCommandId(), modelSelection })

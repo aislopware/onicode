@@ -27,7 +27,7 @@ import {
 import { GlobalVoiceInputIndicator } from "./chat/GlobalVoiceInputIndicator";
 import { Button } from "./ui/button";
 import { DialogBackdrop } from "./ui/dialog";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
+import { SharedTooltipTrigger } from "./ui/shared-tooltip";
 
 // Settings and Usage are sibling routes, so a modal that mounts while another is mounted
 // replaces it (Usage opened from Settings) and returns to what that one opened from.
@@ -269,20 +269,18 @@ function blurFocusedWithin(container: HTMLElement | null) {
 export function AppRouteModalClose() {
   const gt = useGT();
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <DialogPrimitive.Close
-            aria-label={gt("Close")}
-            render={<Button size="icon-sm" variant="ghost" />}
-          />
-        }
-      >
-        <XIcon />
-      </TooltipTrigger>
-      <TooltipPopup side="bottom" shortcut="Esc">
-        {gt("Close")}
-      </TooltipPopup>
-    </Tooltip>
+    <SharedTooltipTrigger
+      render={
+        <DialogPrimitive.Close
+          aria-label={gt("Close")}
+          render={<Button size="icon-sm" variant="ghost" />}
+        />
+      }
+      label={gt("Close")}
+      shortcut="Esc"
+      side="bottom"
+    >
+      <XIcon />
+    </SharedTooltipTrigger>
   );
 }

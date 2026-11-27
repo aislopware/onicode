@@ -156,6 +156,12 @@ To show Claude task lists in the desktop app, add
 **Environment** section in **Settings > Providers**. Each update shows as a Tasks
 row in the thread; open it to see every step.
 
+## Auto mode
+
+**Auto** on a Claude thread is Claude Code's own auto mode. `disableAutoMode` in Claude's managed,
+user, or project settings turns it off: Onicode then shows **Auto** as unavailable in that project,
+and a thread already set to it asks about each action. See [Permission modes](permission-modes.md).
+
 ## Sign in to an MCP server
 
 When an MCP server you added to Claude needs you to sign in, the thread shows a notice with

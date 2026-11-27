@@ -34,6 +34,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import type { DraftSessionState } from "../../composerDraftStore";
 import { loadBalancingSendWarning } from "./composerSend.logic";
 import { carryFanoutSelections } from "./draftFanoutSelections";
+import { retargetDraftWorkspace } from "../../lib/retargetDraftWorkspace";
 import { seedDraftModelSelection } from "../../lib/seedDraftModelSelection";
 
 interface DraftEnvironmentRoutingInput {
@@ -312,18 +313,20 @@ export function useDraftEnvironmentRouting(input: DraftEnvironmentRoutingInput) 
       }
       carryFanoutSelections(currentDraft, target.environmentId);
       const projectRef = scopeProjectRef(target.environmentId, project.id);
+      const workspace = retargetDraftWorkspace(currentDraft, projectRef);
       if (activeProjectIsScratch) {
         setLogicalProjectDraftThreadId(
           deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings),
           projectRef,
           draftId,
-          { environmentSelection: "manual", loadBalancedEnvironmentId: null },
+          { environmentSelection: "manual", loadBalancedEnvironmentId: null, ...workspace },
         );
       } else {
         setDraftThreadContext(draftId, {
           projectRef,
           environmentSelection: "manual",
           loadBalancedEnvironmentId: null,
+          ...workspace,
         });
       }
       seedDraftModelSelection(draftId, projectRef);

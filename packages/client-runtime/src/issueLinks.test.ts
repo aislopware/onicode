@@ -9,6 +9,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
   createIssueLinkResolver,
+  mayContainStandaloneIssueLink,
   resolveIssueLinkTarget,
   withProjectIssueHost,
 } from "./issueLinks.ts";
@@ -248,5 +249,15 @@ describe("createIssueLinkResolver", () => {
       key: "3",
     });
     expect(issueBindings).toHaveBeenCalledTimes(projects.length);
+  });
+});
+
+describe("mayContainStandaloneIssueLink", () => {
+  it.each([
+    ["[issue](https://linear.app/acme/issue/WEB-17)", true],
+    ["[issue](https://LINEAR.APP/acme/issue/WEB-17)", true],
+    ["[issue](https://github.com/acme/web/issues/7)", false],
+  ])("classifies %s as %s", (text, expected) => {
+    expect(mayContainStandaloneIssueLink(text)).toBe(expected);
   });
 });

@@ -35,7 +35,7 @@ import {
   snapShotAccessibilityDetails,
 } from "./SnapShotAttachmentDetails";
 import { MiddleTruncate } from "../ui/middle-truncate";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 import {
   ZoomableImage,
   zoomableImageFit,
@@ -293,28 +293,27 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
               </span>
             </span>
             {accessibilityDetails && item.source ? (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      aria-label={contentsLabel}
-                      aria-pressed={showingAccessibilityDetails}
-                      onClick={() =>
-                        setAccessibilityDetailsSrc(showingAccessibilityDetails ? null : item.src)
-                      }
-                      size="icon-sm"
-                      variant="media-ghost"
-                    />
-                  }
-                >
-                  {showingAccessibilityDetails ? (
-                    <ImageIcon aria-hidden="true" />
-                  ) : (
-                    <TextIcon aria-hidden="true" />
-                  )}
-                </TooltipTrigger>
-                <TooltipPopup side="bottom">{contentsLabel}</TooltipPopup>
-              </Tooltip>
+              <SharedTooltipTrigger
+                render={
+                  <Button
+                    aria-label={contentsLabel}
+                    aria-pressed={showingAccessibilityDetails}
+                    onClick={() =>
+                      setAccessibilityDetailsSrc(showingAccessibilityDetails ? null : item.src)
+                    }
+                    size="icon-sm"
+                    variant="media-ghost"
+                  />
+                }
+                label={contentsLabel}
+                side="bottom"
+              >
+                {showingAccessibilityDetails ? (
+                  <ImageIcon aria-hidden="true" />
+                ) : (
+                  <TextIcon aria-hidden="true" />
+                )}
+              </SharedTooltipTrigger>
             ) : item.source ? (
               <SnapShotContentsButton source={item.source} side="bottom" variant="media" />
             ) : null}

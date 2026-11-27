@@ -19,6 +19,10 @@ import {
 } from "@onicode/shared/markdownChunks";
 
 const ESTIMATED_LINE_PX = 24;
+const MAX_SAVED_POSITIONS = 100;
+
+/** Reading positions outlive the preview, which unmounts when the file or thread changes. */
+const savedPositions = new Map<string, { readonly index: number; readonly viewOffset: number }>();
 
 interface ChunkItem {
   readonly index: number;
@@ -62,8 +66,21 @@ export function ChunkedMarkdown(props: {
   const more = useMoreCharactersLabel();
   const rootRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<LegendListRef | null>(null);
-  // A linked heading in a piece the list has not mounted, revealed once it mounts.
-  const [pendingHeading, setPendingHeading] = useState<HeadingTarget | null>(null);
+  const positionKey = JSON.stringify([
+    props.threadRef.environmentId,
+    props.threadRef.threadId,
+    props.cwd,
+    props.relativePath,
+  ]);
+  // A linked heading in a piece the list has not mounted, revealed once it mounts. It belongs to
+  // the thread it was clicked in, since the panel keeps this mounted across threads.
+  const [pendingLink, setPendingLink] = useState<{
+    readonly positionKey: string;
+    readonly target: HeadingTarget;
+  } | null>(null);
+  const pendingHeading = pendingLink?.positionKey === positionKey ? pendingLink.target : null;
+  const setPendingHeading = (target: HeadingTarget | null) =>
+    setPendingLink(target === null ? null : { positionKey, target });
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- waits for the virtualized list to mount the piece holding a linked heading
   useEffect(() => {
     const root = rootRef.current;
@@ -73,7 +90,7 @@ export function ChunkedMarkdown(props: {
       const piece = mountedPiece(root, pendingHeading);
       if (piece === null) return;
       pieceHeading(piece, pendingHeading)?.scrollIntoView({ block: "start" });
-      setPendingHeading(null);
+      setPendingLink(null);
     };
     const observer = new MutationObserver(reveal);
     observer.observe(root, { childList: true, subtree: true });
@@ -112,6 +129,15 @@ export function ChunkedMarkdown(props: {
     lines += chunk.lines;
     start += chunk.text.length + 1;
   }
+  const saved = savedPositions.get(positionKey);
+  // The list applies its initial index once, so wait for the saved chunk to stream in.
+  const awaitingSaved = props.loading && saved !== undefined && saved.index >= items.length;
+  const spinner = (
+    <div className="flex justify-center py-4">
+      <Spinner size="md" tone="muted" />
+    </div>
+  );
+  if (awaitingSaved) return spinner;
   return (
     <div
       ref={rootRef}
@@ -134,8 +160,28 @@ export function ChunkedMarkdown(props: {
       }}
     >
       <LegendList<ChunkItem>
+        // The panel keeps this mounted across threads; the initial index only applies on mount.
+        key={positionKey}
         ref={listRef}
         data={items}
+        {...(saved && {
+          initialScrollIndex: {
+            index: Math.min(saved.index, Math.max(items.length - 1, 0)),
+            viewOffset: saved.viewOffset,
+          },
+        })}
+        onScroll={() => {
+          const list = listRef.current?.getState();
+          if (!list) return;
+          savedPositions.delete(positionKey);
+          savedPositions.set(positionKey, {
+            index: list.start,
+            viewOffset: list.positionAtIndex(list.start) - list.scroll,
+          });
+          if (savedPositions.size > MAX_SAVED_POSITIONS) {
+            savedPositions.delete(savedPositions.keys().next().value!);
+          }
+        }}
         extraData={props.definitions}
         keyExtractor={(item) => String(item.index)}
         estimatedItemSize={(lines / Math.max(items.length, 1)) * ESTIMATED_LINE_PX}
@@ -143,13 +189,7 @@ export function ChunkedMarkdown(props: {
         recycleItems={false}
         className="h-full scrollbar-gutter-both"
         contentContainerClassName="py-5"
-        ListFooterComponent={
-          props.loading ? (
-            <div className="flex justify-center py-4">
-              <Spinner size="md" tone="muted" />
-            </div>
-          ) : null
-        }
+        ListFooterComponent={props.loading ? spinner : null}
         renderItem={({ item }) => (
           <div className="pb-5" data-markdown-piece={item.index}>
             {item.chunk.text.length > LARGE_MARKDOWN_CHUNK_MAX_CHARS ? (

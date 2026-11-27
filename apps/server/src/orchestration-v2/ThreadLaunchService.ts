@@ -62,12 +62,14 @@ import * as ServerSettings from "../serverSettings.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import * as CommandReceiptStore from "./CommandReceiptStore.ts";
 import * as EventSink from "./EventSink.ts";
+import * as ProjectionStore from "./ProjectionStore.ts";
 import * as IdAllocator from "@onicode/provider-core/server/IdAllocator";
 import type * as Orchestrator from "./Orchestrator.ts";
 import { makeProviderFailure } from "@onicode/provider-core/server/failure";
 import { randomUuidV4 } from "@onicode/provider-core/server/randomUuid";
 import { DispatchModeLimit } from "./DispatchModeLimit.ts";
 import * as ThreadManagement from "./ThreadManagementService.ts";
+import { isWithinRoot } from "../workspace/KnownWorkspaces.ts";
 import * as TaskFolders from "../workspace/TaskFolders.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 
@@ -304,6 +306,7 @@ const make = Effect.gen(function* () {
   const eventSink = yield* EventSink.EventSinkV2;
   const managedFolders = yield* ManagedProjectFolders.ManagedProjectFolders;
   const taskFolders = yield* TaskFolders.TaskFolders;
+  const projections = yield* ProjectionStore.ProjectionStoreV2;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   // A project-folder launch that names no branch records the folder's checkout, as the composer does.
@@ -593,10 +596,26 @@ const make = Effect.gen(function* () {
       : null;
   });
 
+  const worktreeIsShared = Effect.fn("ThreadLaunchService.worktreeIsShared")(function* (
+    root: string,
+    owner: ThreadId,
+  ) {
+    const realPath = (target: string) =>
+      fileSystem.realPath(target).pipe(Effect.orElseSucceed(() => path.resolve(target)));
+    const checkoutRoot = yield* realPath(root);
+    const bindings = yield* projections.getThreadWorktreePaths({ includeArchived: true });
+    for (const binding of bindings) {
+      if (binding.threadId === owner) continue;
+      if (isWithinRoot(path, yield* realPath(binding.worktreePath), checkoutRoot)) return true;
+    }
+    return false;
+  });
+
   const prepareInBackground = Effect.fn("ThreadLaunchService.prepareInBackground")(function* (
     input: PreparationInput,
     threadId: ThreadId,
     runId: RunId | null,
+    releaseWorkspace: Effect.Effect<void>,
   ) {
     const project = yield* projects.getById(input.projectId).pipe(
       Effect.mapError(mapError(input, "resolve-project", threadId)),
@@ -616,7 +635,7 @@ const make = Effect.gen(function* () {
     let createdTaskFolder: string | null = null;
     let setupTerminalId: string | null = null;
     let workspaceRecorded = false;
-    let runReleased = false;
+    let workspaceReleased = false;
     // Stop background renames before forgetting worktrees; completed renames record them again.
     let branchRename: Fiber.Fiber<unknown> | null = null;
     let stopBranchName: Effect.Effect<void> = Effect.void;
@@ -949,9 +968,18 @@ const make = Effect.gen(function* () {
             branch,
             worktreePath,
           })
-          .pipe(Effect.mapError(mapError(input, "update-thread", threadId)));
+          .pipe(
+            Effect.mapError(mapError(input, "update-thread", threadId)),
+            Effect.tap(() =>
+              Effect.sync(() => {
+                workspaceRecorded = true;
+              }),
+            ),
+            Effect.uninterruptible,
+          );
+      } else {
+        workspaceRecorded = true;
       }
-      workspaceRecorded = true;
 
       if (
         reused === undefined &&
@@ -1160,24 +1188,20 @@ const make = Effect.gen(function* () {
       if (branchRename !== null) yield* Fiber.join(branchRename);
       yield* setupTracker.markUncancellable(threadId);
       yield* setupTracker.stageStatus(threadId, "agent", "running");
-      if (runId !== null) {
-        yield* threads
-          .dispatch({
-            type: "prepared-run.release",
-            commandId: CommandId.make(`${input.commandId}:release`),
-            threadId,
-            runId,
-          })
-          .pipe(
-            Effect.mapError(mapError(input, "release-run", threadId)),
-            Effect.tap(() =>
-              Effect.sync(() => {
-                runReleased = true;
-              }),
-            ),
-            Effect.uninterruptible,
-          );
-      }
+      yield* Effect.gen(function* () {
+        if (runId !== null) {
+          yield* threads
+            .dispatch({
+              type: "prepared-run.release",
+              commandId: CommandId.make(`${input.commandId}:release`),
+              threadId,
+              runId,
+            })
+            .pipe(Effect.mapError(mapError(input, "release-run", threadId)));
+        }
+        workspaceReleased = true;
+        yield* releaseWorkspace;
+      }).pipe(Effect.uninterruptible);
       yield* setupTracker.stageStatus(threadId, "agent", "done");
       yield* awaitAsyncSetup;
       yield* setupTracker.finish(threadId, "done");
@@ -1199,67 +1223,83 @@ const make = Effect.gen(function* () {
           if (
             tracked &&
             createdWorktreePath &&
-            ((cancelled && !runReleased) || !workspaceRecorded)
+            ((cancelled && !workspaceReleased) || !workspaceRecorded)
           ) {
             if (branchRename !== null) yield* Fiber.interrupt(branchRename);
             yield* stopBranchName;
             const removedPath = createdWorktreePath;
             const removedBranch = createdBranch;
             const removedTaskFolder = createdTaskFolder;
-            // Forget worktrees only after removal succeeds; failed removals must not reuse partially written checkouts.
-            yield* Effect.suspend((): Effect.Effect<void, GitCommandError | TaskFolderError> =>
-              removedTaskFolder === null
-                ? git
-                    .removeWorktree({ cwd: project.workspaceRoot, path: removedPath, force: true })
-                    .pipe(
-                      Effect.andThen(
-                        removedBranch === null
-                          ? Effect.void
-                          : git
-                              .deleteLocalBranch({
-                                cwd: project.workspaceRoot,
-                                refName: removedBranch,
-                                force: true,
-                              })
-                              .pipe(Effect.ignoreCause({ log: true })),
-                      ),
-                    )
-                : // The lease a repository being added holds: removal waits for it to land.
-                  withWorkspaceLease(
-                    fileSystem,
-                    path,
-                    removedPath,
-                    taskFolders.remove({
-                      root: removedTaskFolder,
-                      force: true,
-                      forget: true,
-                      projectCommands: projectCommandsNow,
-                      deleteBranch: removedBranch ?? undefined,
-                    }),
-                  ).pipe(
-                    Effect.flatMap(({ kept }) =>
-                      kept.length === 0
-                        ? Effect.void
-                        : Effect.fail(
-                            new TaskFolderError({
-                              operation: "remove",
-                              detail: `Kept ${kept.map((entry) => entry.path).join(", ")}.`,
-                            }),
-                          ),
+            // False when another thread now uses the checkout, which then stays.
+            const remove = Effect.suspend(
+              (): Effect.Effect<
+                boolean,
+                | GitCommandError
+                | TaskFolderError
+                | Effect.Error<ReturnType<typeof worktreeIsShared>>
+              > =>
+                removedTaskFolder === null
+                  ? git
+                      .removeWorktree({
+                        cwd: project.workspaceRoot,
+                        path: removedPath,
+                        force: true,
+                      })
+                      .pipe(
+                        Effect.andThen(
+                          removedBranch === null
+                            ? Effect.void
+                            : git
+                                .deleteLocalBranch({
+                                  cwd: project.workspaceRoot,
+                                  refName: removedBranch,
+                                  force: true,
+                                })
+                                .pipe(Effect.ignoreCause({ log: true })),
+                        ),
+                        Effect.as(true),
+                      )
+                  : // The lease a repository being added holds: removal waits for it to land.
+                    withWorkspaceLease(
+                      fileSystem,
+                      path,
+                      removedPath,
+                      Effect.gen(function* () {
+                        // Checked under the lease, since a launch can bind a repository inside
+                        // the folder while removal waits for it.
+                        if (yield* worktreeIsShared(removedTaskFolder, threadId)) return false;
+                        const { kept } = yield* taskFolders.remove({
+                          root: removedTaskFolder,
+                          force: true,
+                          forget: true,
+                          projectCommands: projectCommandsNow,
+                          deleteBranch: removedBranch ?? undefined,
+                        });
+                        if (kept.length === 0) return true;
+                        return yield* new TaskFolderError({
+                          operation: "remove",
+                          detail: `Kept ${kept.map((entry) => entry.path).join(", ")}.`,
+                        });
+                      }),
                     ),
-                  ),
-            ).pipe(
-              Effect.andThen(
-                threads
-                  .dispatch({
-                    type: "thread.metadata.update",
-                    commandId: CommandId.make(`${input.commandId}:cancel-workspace`),
-                    threadId,
-                    worktreePath: null,
-                    branch: null,
-                  })
-                  .pipe(Effect.ignore),
-              ),
+            );
+            yield* Effect.gen(function* () {
+              if (removedTaskFolder === null && (yield* worktreeIsShared(removedPath, threadId))) {
+                return;
+              }
+              // Keep the binding if removal fails so a retry can find the checkout.
+              if (!(yield* remove)) return;
+              yield* threads
+                .dispatch({
+                  type: "thread.metadata.update",
+                  commandId: CommandId.make(`${input.commandId}:cancel-workspace`),
+                  threadId,
+                  expectedWorktreePath: workspaceRecorded ? removedPath : null,
+                  worktreePath: null,
+                  branch: null,
+                })
+                .pipe(Effect.ignore);
+            }).pipe(
               Effect.catchCause((removeCause) =>
                 Effect.logWarning("Failed to remove an abandoned thread worktree", {
                   commandId: input.commandId,
@@ -1374,7 +1414,13 @@ const make = Effect.gen(function* () {
     runId: RunId | null,
   ) {
     const preparation = Effect.gen(function* () {
-      const prepare = prepareInBackground(input, threadId, runId);
+      const prepare = Effect.acquireUseRelease(
+        input.workspaceStrategy.type === "worktree"
+          ? setupTracker.holdWorkspace(threadId)
+          : Effect.succeed(Effect.void),
+        (release) => prepareInBackground(input, threadId, runId, release),
+        (release) => release,
+      );
       if (
         runId === null ||
         (input.workspaceStrategy.type !== "worktree" && input.reusedWorktree === undefined)

@@ -297,6 +297,8 @@ it("keeps a focused inspector registered across renders and updates its content"
         NavigationContext: navigationContext,
         NavigationRouteContext: routeContext,
       };
+    if (name === "./workspace-presentation-context")
+      return { WorkspaceVisibleRouteContext: React.createContext(null) };
     return {};
   };
   new Function("require", "exports", compiled.code)(load, exports);

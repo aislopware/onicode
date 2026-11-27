@@ -10,11 +10,13 @@ import {
   makeProcessDescendantPoll,
   makeSharedProcessDescendantPoll,
   parseProcessTable,
+  readNativeProcessTable,
+  type ProcessIdentityRow,
   type ProcessTableRow,
 } from "./processDescendants.ts";
 
 describe("processDescendants", () => {
-  it("parses ps rows with multi-word lstart timestamps and drops malformed lines", () => {
+  it("parses UTC ps lstart timestamps to epoch seconds and drops malformed lines", () => {
     const rows = parseProcessTable(
       [
         "  78661   1234  78661 Mon Nov 23 17:00:00 2026",
@@ -26,10 +28,26 @@ describe("processDescendants", () => {
     );
 
     expect(rows).toEqual([
-      { pid: 78661, ppid: 1234, pgid: 78661, started: "Mon Nov 23 17:00:00 2026" },
-      { pid: 81100, ppid: 78661, pgid: 81100, started: "Mon Nov 23 17:00:05 2026" },
+      { pid: 78661, ppid: 1234, pgid: 78661, startTimeSeconds: 1_795_453_200 },
+      { pid: 81100, ppid: 78661, pgid: 81100, startTimeSeconds: 1_795_453_205 },
     ]);
   });
+
+  it.effect("reads the native table in epoch seconds and falls back to ps without identities", () =>
+    Effect.gen(function* () {
+      const ps: ReadonlyArray<ProcessTableRow> = [
+        { pid: 1000, ppid: 10, pgid: 1000, startTimeSeconds: 1 },
+      ];
+      const fallback = Effect.succeed(ps);
+      const read = (native: Effect.Effect<ReadonlyArray<ProcessIdentityRow>, string>) =>
+        readNativeProcessTable(native, fallback);
+      const native = { pid: 1100, ppid: 1000, pgid: 1100, startTimeMicros: 2_500_000 };
+      expect(yield* read(Effect.succeed([native]))).toEqual([{ ...native, startTimeSeconds: 2 }]);
+      expect(yield* read(Effect.succeed([{ pid: 1100, ppid: 1000 }]))).toBe(ps);
+      expect(yield* read(Effect.succeed([]))).toBe(ps);
+      expect(yield* read(Effect.fail("unavailable"))).toBe(ps);
+    }),
+  );
 
   it("signals the negative process group for group leaders, exact pid otherwise, and skips invalid pids", () => {
     const sent: Array<readonly [number, NodeJS.Signals]> = [];
@@ -38,26 +56,11 @@ describe("processDescendants", () => {
       if (pid === 81102) throw Object.assign(new Error("ESRCH"), { code: "ESRCH" });
     };
 
-    killProcessDescendant(
-      { pid: 81100, ppid: 1, pgid: 81100, started: "Mon Nov 23 17:00:05 2026" },
-      signal,
-    );
-    killProcessDescendant(
-      { pid: 81101, ppid: 1, pgid: 81100, started: "Mon Nov 23 17:00:06 2026" },
-      signal,
-    );
-    killProcessDescendant(
-      { pid: 81102, ppid: 1, pgid: 78661, started: "Mon Nov 23 17:00:07 2026" },
-      signal,
-    );
-    killProcessDescendant(
-      { pid: 1, ppid: 0, pgid: 1, started: "Mon Nov 23 17:00:00 2026" },
-      signal,
-    );
-    killProcessDescendant(
-      { pid: 0, ppid: 0, pgid: 0, started: "Mon Nov 23 17:00:00 2026" },
-      signal,
-    );
+    killProcessDescendant({ pid: 81100, ppid: 1, pgid: 81100, startTimeSeconds: 5 }, signal);
+    killProcessDescendant({ pid: 81101, ppid: 1, pgid: 81100, startTimeSeconds: 6 }, signal);
+    killProcessDescendant({ pid: 81102, ppid: 1, pgid: 78661, startTimeSeconds: 7 }, signal);
+    killProcessDescendant({ pid: 1, ppid: 0, pgid: 1, startTimeSeconds: 0 }, signal);
+    killProcessDescendant({ pid: 0, ppid: 0, pgid: 0, startTimeSeconds: 0 }, signal);
 
     expect(sent).toEqual([
       [-81100, "SIGKILL"],
@@ -68,8 +71,8 @@ describe("processDescendants", () => {
 
   it.effect("ignores refresh after leftovers so a reused root pid cannot be adopted", () => {
     let table: ReadonlyArray<ProcessTableRow> = [
-      { pid: 1000, ppid: 10, pgid: 1000, started: "Mon Nov 23 17:00:00 2026" },
-      { pid: 1100, ppid: 1000, pgid: 1100, started: "Mon Nov 23 17:00:01 2026" },
+      { pid: 1000, ppid: 10, pgid: 1000, startTimeSeconds: 0 },
+      { pid: 1100, ppid: 1000, pgid: 1100, startTimeSeconds: 1 },
     ];
     let reads = 0;
     const tracker = makeProcessDescendantPoll(
@@ -81,13 +84,13 @@ describe("processDescendants", () => {
 
     return Effect.gen(function* () {
       yield* tracker.refresh;
-      table = [{ pid: 1100, ppid: 1, pgid: 1100, started: "Mon Nov 23 17:00:01 2026" }];
+      table = [{ pid: 1100, ppid: 1, pgid: 1100, startTimeSeconds: 1 }];
       expect((yield* tracker.leftovers).map((row) => row.pid)).toEqual([1100]);
       const readsAfterLeftovers = reads;
 
       table = [
-        { pid: 1000, ppid: 10, pgid: 1000, started: "Mon Nov 23 17:00:09 2026" },
-        { pid: 1200, ppid: 1000, pgid: 1200, started: "Mon Nov 23 17:00:10 2026" },
+        { pid: 1000, ppid: 10, pgid: 1000, startTimeSeconds: 9 },
+        { pid: 1200, ppid: 1000, pgid: 1200, startTimeSeconds: 10 },
       ];
       yield* tracker.refresh;
       expect(reads).toBe(readsAfterLeftovers);
@@ -101,7 +104,7 @@ describe("processDescendants", () => {
       const poll = makeSharedProcessDescendantPoll(
         Clock.currentTimeMillis.pipe(
           Effect.tap((now) => Queue.offer(readAt, now)),
-          Effect.as([{ pid: 1000, ppid: 10, pgid: 1000, started: "Mon Nov 23 17:00:00 2026" }]),
+          Effect.as([{ pid: 1000, ppid: 10, pgid: 1000, startTimeSeconds: 0 }]),
         ),
         yield* FiberSet.makeRuntime(),
       );

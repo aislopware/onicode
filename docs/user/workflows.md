@@ -46,7 +46,7 @@ Dot-files and subfolders are ignored. Keep shared helpers in a subfolder and res
 
 ```sh
 onicode workflow start <name> --input '<json>' --key <key>
-onicode workflow list [--status paused] [--tag <tag>]
+onicode workflow list [--status paused] [--tag <tag>] [--subject <url or id>]
 onicode workflow show <run>
 onicode workflow resume <run>
 onicode workflow cancel <run> [--reason '<why>']
@@ -107,6 +107,18 @@ yield *
 The app asks for the reason before it sends a choice that requires one, and `onicode workflow signal` refuses that choice without a `reason`. Links open in your browser and are part of `onicode workflow questions --json`. The answer also records when it was given and who sent it (`answeredAt`, `answeredBy`): the device's name as **Connections** lists it, the tool that sent it, or for `onicode workflow signal` run by an agent, that agent's thread. What a signal's own value says for these is ignored; a signal sent before its question opens answers it as whoever sent it, at the time it was received. The run shows both on the question's step, and says **You** only in the session that gave the answer; every other session, even another one on the same device, sees that device's name.
 
 `tags([...])` labels a run for `onicode workflow list --tag backlog`, whether or not it waits on anyone.
+
+## What a run is about
+
+A run can name the one thing it is about with `subject(...)`: an issue or pull request a trigger or listing gave it, `{ threadId }`, or a web address. Calling it again replaces the subject, and `start(workflow, payload, { key, subject })` gives a new run one from the start. A project cannot be a subject, and an issue or pull request built by hand needs its `projectId` and `host`.
+
+```ts
+const { workflow, subject, Issue } = Onicode;
+
+workflow("triage", { version: 1, payload: Issue }, (issue) => subject(issue));
+```
+
+The run lists, **Needs you** included, show the subject under the run and open it beside the run. An issue's or pull request's own view lists the runs about it. `onicode workflow list --subject <url>` finds runs by their subject's web address, or by a thread id, and a step finds them with `runs({ subject })`. The subject is only a label with a link: nothing watches it.
 
 ## Limit how much runs at once
 

@@ -1,3 +1,4 @@
+import { strToU8, zipSync } from "fflate";
 import { expect, it, vi } from "vite-plus/test";
 
 import {
@@ -104,6 +105,40 @@ it.each([ARCHIVE_ENTRY_MAX_BYTES, ARCHIVE_ENTRY_MAX_BYTES + 1])(
         message: "archive-entry-unavailable",
       });
     } finally {
+      vi.unstubAllGlobals();
+    }
+  },
+);
+
+it.each(["Asia/Tokyo", "America/Chicago"])(
+  "shows ZIP modified times as the archived wall-clock time in %s",
+  async (timeZone) => {
+    // fflate writes the local parts of these dates as the entries' DOS wall-clock fields.
+    const bytes = zipSync(
+      {
+        "evening.txt": [strToU8("a"), { mtime: new Date(2026, 10, 25, 20, 0) }],
+        "night.txt": [strToU8("b"), { mtime: new Date(2026, 10, 25, 1, 30) }],
+      },
+      { level: 0 },
+    ).buffer;
+    const previous = process.env.TZ;
+    process.env.TZ = timeZone;
+    try {
+      const request = await startWorker();
+      const result = await request({ type: "open", kind: "archive", name: "times.zip", bytes });
+      if (result.type !== "archive") throw new Error("Expected archive");
+      expect(
+        result.entries.map(({ modified }) => {
+          const date = new Date(modified!);
+          return [date.toLocaleDateString("en-US"), date.getHours(), date.getMinutes()];
+        }),
+      ).toEqual([
+        ["11/25/2026", 20, 0],
+        ["11/25/2026", 1, 30],
+      ]);
+    } finally {
+      if (previous === undefined) delete process.env.TZ;
+      else process.env.TZ = previous;
       vi.unstubAllGlobals();
     }
   },

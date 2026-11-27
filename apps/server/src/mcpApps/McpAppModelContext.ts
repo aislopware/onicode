@@ -19,6 +19,8 @@ export interface McpAppModelContextEntry {
   readonly server: string;
   readonly tool: string;
   readonly text: string;
+  /** ISO time the app last set the note. */
+  readonly updatedAt: string;
 }
 
 export class McpAppModelContext extends Context.Service<
@@ -61,6 +63,7 @@ export const forProvider = Effect.fn("McpAppModelContext.forProvider")(function*
     // the context in.
     key: `mcp_app_${entry.itemId.replace(/[^\w.-]/g, "_")}`,
     text: entry.text,
+    updatedAt: entry.updatedAt,
   }));
 });
 
@@ -141,7 +144,8 @@ export const layer = Layer.effect(
             -- Mirrors conversationRuns: the run starts afresh even before its session is known.
             AND (b.ordinal NOT IN (SELECT ordinal FROM scheduled) OR b.run_id = ${runId})
         )
-        SELECT context.item_id AS "itemId", context.server, context.tool, context.text
+        SELECT context.item_id AS "itemId", context.server, context.tool, context.text,
+          context.updated_at AS "updatedAt"
         FROM mcp_app_model_context AS context
         CROSS JOIN target
         CROSS JOIN boundary

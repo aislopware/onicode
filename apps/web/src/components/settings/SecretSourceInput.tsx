@@ -23,9 +23,9 @@ import { Button } from "../ui/button";
 import { DraftInput } from "../ui/draft-input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Spinner } from "../ui/spinner";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { SecretInput } from "./SecretInput";
 import { classifySecretProvider } from "./SecretProviderDialog.logic";
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 
 export interface SecretSource {
   readonly id: SecretProviderId;
@@ -175,37 +175,35 @@ function SecretCheckButton(props: {
           : state.detail;
   const unavailable = props.disabled === true || !canCheck || state?.status === "checking";
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            type="button"
-            size="icon-micro"
-            variant="ghost-muted"
-            aria-disabled={unavailable || undefined}
-            onClick={unavailable ? undefined : () => void run()}
-            aria-label={
-              state?.status === "failed"
-                ? gt("{label} failed: {detail}", { label: props.label, detail: state.detail })
-                : state?.status === "resolved"
-                  ? gt("{label} resolved", { label: props.label })
-                  : props.label
-            }
-          >
-            {state?.status === "checking" ? (
-              <Spinner />
-            ) : state?.status === "resolved" ? (
-              <CheckIcon className="text-success-foreground" />
-            ) : state?.status === "failed" ? (
-              <AlertTriangleIcon className="text-destructive" />
-            ) : (
-              <RefreshCwIcon />
-            )}
-          </Button>
-        }
-      />
-      <TooltipPopup side="top">{description}</TooltipPopup>
-    </Tooltip>
+    <SharedTooltipTrigger
+      render={
+        <Button
+          type="button"
+          size="icon-micro"
+          variant="ghost-muted"
+          aria-disabled={unavailable || undefined}
+          onClick={unavailable ? undefined : () => void run()}
+          aria-label={
+            state?.status === "failed"
+              ? gt("{label} failed: {detail}", { label: props.label, detail: state.detail })
+              : state?.status === "resolved"
+                ? gt("{label} resolved", { label: props.label })
+                : props.label
+          }
+        >
+          {state?.status === "checking" ? (
+            <Spinner />
+          ) : state?.status === "resolved" ? (
+            <CheckIcon className="text-success-foreground" />
+          ) : state?.status === "failed" ? (
+            <AlertTriangleIcon className="text-destructive" />
+          ) : (
+            <RefreshCwIcon />
+          )}
+        </Button>
+      }
+      label={description}
+    />
   );
 }
 

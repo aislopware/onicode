@@ -7,7 +7,7 @@ import {
   ANCHORED_COPY_TOAST_TIMEOUT_MS,
   showAnchoredCopyErrorToast,
 } from "../ui/anchoredCopyToast";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 
 export const MessageCopyButton = memo(function MessageCopyButton({
   text,
@@ -36,27 +36,25 @@ export const MessageCopyButton = memo(function MessageCopyButton({
   });
 
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            aria-label={label}
-            // aria-disabled, not disabled: disabling the focused button drops focus to the page.
-            aria-disabled={isCopied || undefined}
-            onClick={() => {
-              if (!isCopied) copyToClipboard(text);
-            }}
-            ref={ref}
-            type="button"
-            size={size}
-            variant={variant === "ghost" ? "ghost-muted" : variant}
-            className={className}
-          />
-        }
-      >
-        {isCopied ? <CheckIcon className="size-3 text-primary" /> : <Icon className="size-3" />}
-      </TooltipTrigger>
-      <TooltipPopup>{label}</TooltipPopup>
-    </Tooltip>
+    <SharedTooltipTrigger
+      render={
+        <Button
+          aria-label={label}
+          // aria-disabled, not disabled: disabling the focused button drops focus to the page.
+          aria-disabled={isCopied || undefined}
+          onClick={() => {
+            if (!isCopied) copyToClipboard(text);
+          }}
+          ref={ref}
+          type="button"
+          size={size}
+          variant={variant === "ghost" ? "ghost-muted" : variant}
+          className={className}
+        />
+      }
+      label={label}
+    >
+      {isCopied ? <CheckIcon className="size-3 text-primary" /> : <Icon className="size-3" />}
+    </SharedTooltipTrigger>
   );
 });

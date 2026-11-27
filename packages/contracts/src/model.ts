@@ -29,6 +29,8 @@ export const SelectProviderOptionDescriptor = Schema.Struct({
   promptInjectedValues: Schema.optional(Schema.Array(TrimmedNonEmptyString)),
   /** Marks the reasoning control when its id is an agent's own, such as an ACP `thought_level`. */
   role: Schema.optional(Schema.Literal("reasoning")),
+  /** Marks the agent's own session mode; not a `role`, which shipped clients decode strictly. */
+  agentMode: Schema.optional(Schema.Literal(true)),
 });
 export type SelectProviderOptionDescriptor = typeof SelectProviderOptionDescriptor.Type;
 
@@ -36,6 +38,8 @@ export const BooleanProviderOptionDescriptor = Schema.Struct({
   ...ProviderOptionDescriptorBase,
   type: Schema.Literal("boolean"),
   currentValue: Schema.optional(Schema.Boolean),
+  /** Marks the agent's own session mode, which can skip approvals. */
+  agentMode: Schema.optional(Schema.Literal(true)),
 });
 export type BooleanProviderOptionDescriptor = typeof BooleanProviderOptionDescriptor.Type;
 

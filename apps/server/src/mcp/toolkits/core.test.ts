@@ -1138,6 +1138,93 @@ it.effect("oni_thread_configure refuses a model or option its provider does not 
   );
 });
 
+it.effect("only a full-access client may change a thread's own agent mode", () =>
+  Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    const picks: Array<unknown> = [];
+    const configure = (access: "approval-required" | "full-access", mode: string) =>
+      server
+        .callTool({
+          name: "oni_thread_configure",
+          arguments: {
+            threadId: "agent-thread",
+            modelSelection: {
+              instanceId: "acp-agent",
+              model: "default",
+              options: [{ id: "_oni/session-mode", value: mode }],
+            },
+          },
+        })
+        .pipe(
+          Effect.provideService(McpInvocationContext.McpInvocationContext, clientScope(access)),
+          Effect.provideService(McpSchema.McpServerClient, client),
+          Effect.provideService(
+            ThreadManagement.ThreadManagementService,
+            ThreadManagement.ThreadManagementService.of({
+              getThreadShell: () =>
+                Effect.succeed({
+                  id: ThreadId.make("agent-thread"),
+                  projectId: "project",
+                  runtimeMode: "approval-required",
+                  interactionMode: "default",
+                  deletedAt: null,
+                } as never),
+              getProjectThreadRecords: () =>
+                Effect.succeed({
+                  thread: {
+                    id: ThreadId.make("agent-thread"),
+                    projectId: "project",
+                    providerInstanceId: "acp-agent",
+                    modelSelection: {
+                      instanceId: "acp-agent",
+                      model: "default",
+                      options: [{ id: "_oni/session-mode", value: "ask" }],
+                    },
+                    runtimeMode: "approval-required",
+                    interactionMode: "default",
+                    deletedAt: null,
+                  },
+                } as never),
+              dispatch: (command: { readonly modelSelection?: unknown }) =>
+                Effect.sync(() => {
+                  picks.push(command.modelSelection);
+                  return { sequence: 7 } as never;
+                }),
+            } as never),
+          ),
+        );
+
+    expect(declaredFailure(yield* configure("approval-required", "yolo"))).toMatchObject({
+      code: "runtime_mode_escalation_denied",
+    });
+    expect(picks).toEqual([]);
+
+    // The mode the thread already runs in can be sent again.
+    expect((yield* configure("approval-required", "ask")).isError).toBe(false);
+    expect((yield* configure("full-access", "yolo")).isError).toBe(false);
+    expect(picks).toHaveLength(2);
+  }).pipe(
+    Effect.provide(
+      McpHttpServer.layerThreadToolkit.pipe(
+        Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
+        Layer.provide(NodeCrypto.layer),
+        Layer.provide(
+          Layer.mock(ProviderRegistry.ProviderRegistry)({ getProviders: Effect.succeed([]) }),
+        ),
+        Layer.provide(
+          Layer.mock(ProjectService.ProjectService)({ getById: () => Effect.succeedNone }),
+        ),
+        Layer.provide(Layer.mock(ThreadManagement.ThreadManagementService)({})),
+        Layer.provide(Layer.mock(ThreadSearch.ThreadSearch)({})),
+        Layer.provide(Layer.mock(ScheduledTaskService.ScheduledTaskService)({})),
+        Layer.provide(Layer.mock(PeerForwarding.PeerForwarding)({})),
+        Layer.provide(Layer.mock(PeerLinkRequests.PeerLinkRequests)({})),
+        Layer.provide(Layer.mock(PeerLinks.PeerLinks)({})),
+      ),
+    ),
+  ),
+);
+
 it.effect("hides act-as-caller tools from a client caller", () =>
   Effect.gen(function* () {
     const server = yield* McpServer.McpServer;

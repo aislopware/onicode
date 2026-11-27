@@ -1,7 +1,10 @@
+import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 
 import { signalProcessGroup } from "./processGroup.ts";
@@ -10,11 +13,20 @@ export interface ProcessTableRow {
   readonly pid: number;
   readonly ppid: number;
   readonly pgid: number;
-  readonly started: string;
+  readonly startTimeSeconds: number;
+  readonly startTimeMicros?: number;
+}
+
+/** A native process table row; identity fields are optional so an older monitor reads as missing. */
+export interface ProcessIdentityRow {
+  readonly pid: number;
+  readonly ppid: number;
+  readonly pgid?: number;
+  readonly startTimeMicros?: number;
 }
 
 export interface ProcessDescendantTracker {
-  readonly tracked: ReadonlyMap<string, ProcessTableRow>;
+  readonly tracked: ReadonlyMap<number, ProcessTableRow>;
   readonly refresh: Effect.Effect<void>;
   /** Polls this root process from now until its turn settles. */
   readonly work: () => void;
@@ -30,7 +42,7 @@ export interface ProcessDescendantPoll {
 }
 
 export interface SharedProcessDescendantTracker {
-  readonly tracked: ReadonlyMap<string, ProcessTableRow>;
+  readonly tracked: ReadonlyMap<number, ProcessTableRow>;
   readonly refresh: Effect.Effect<void>;
   readonly work: () => void;
   /** Polls this root process at the slower cadence until it works or settles. */
@@ -55,24 +67,60 @@ const DEFAULT_POLL_INTERVAL = "1 second";
 const DEFAULT_WATCH_INTERVAL = "10 seconds";
 
 export const PROCESS_TABLE_PS_ARGS = ["-A", "-o", "pid=,ppid=,pgid=,lstart="] as const;
+// `parseProcessTable` reads `lstart` as an English date in UTC.
+export const PROCESS_TABLE_PS_ENV = { LC_ALL: "C", TZ: "UTC0" } as const;
 
-/** Parses `ps -A -o pid=,ppid=,pgid=,lstart=`; pid plus start time tells a process from a reused pid. */
+const isProcessTableRow = Schema.is(
+  Schema.Struct({
+    pid: Schema.Int,
+    ppid: Schema.Int,
+    pgid: Schema.Int,
+    startTimeSeconds: Schema.Int,
+  }),
+);
+
+/** Parses the C-locale, UTC output of `ps -A -o pid=,ppid=,pgid=,lstart=`. */
 export function parseProcessTable(table: string): ReadonlyArray<ProcessTableRow> {
   return table.split("\n").flatMap((line) => {
     const [pid, ppid, pgid, ...started] = line.trim().split(/\s+/);
+    const start = DateTime.make(started.join(" ") + " GMT");
+    if (Option.isNone(start)) return [];
     const row = {
       pid: Number(pid),
       ppid: Number(ppid),
       pgid: Number(pgid),
-      started: started.join(" "),
+      startTimeSeconds: DateTime.toEpochSeconds(start.value),
     };
-    return Number.isSafeInteger(row.pid) &&
-      Number.isSafeInteger(row.ppid) &&
-      Number.isSafeInteger(row.pgid) &&
-      row.started
-      ? [row]
-      : [];
+    return isProcessTableRow(row) ? [row] : [];
   });
+}
+
+/**
+ * Reads the table from a native monitor, falling back to `ps` when the monitor fails, returns
+ * nothing, or lacks a row's group or start time. Both use epoch seconds, so a monitor restart
+ * keeps tracked orphans.
+ */
+export function readNativeProcessTable<E>(
+  native: Effect.Effect<ReadonlyArray<ProcessIdentityRow>, E>,
+  fallback: Effect.Effect<ReadonlyArray<ProcessTableRow>>,
+): Effect.Effect<ReadonlyArray<ProcessTableRow>> {
+  return native.pipe(
+    Effect.flatMap((rows) => {
+      const table: Array<ProcessTableRow> = [];
+      for (const { pid, ppid, pgid, startTimeMicros } of rows) {
+        if (pgid === undefined || startTimeMicros === undefined) return fallback;
+        table.push({
+          pid,
+          ppid,
+          pgid,
+          startTimeSeconds: Math.floor(startTimeMicros / 1_000_000),
+          startTimeMicros,
+        });
+      }
+      return table.length === 0 ? fallback : Effect.succeed(table);
+    }),
+    Effect.catch(() => fallback),
+  );
 }
 
 const defaultSignalProcess = (pid: number, signal: NodeJS.Signals): void => {
@@ -92,11 +140,19 @@ export function killProcessDescendant(
   } catch {}
 }
 
+function indexProcessTable(rows: ReadonlyArray<ProcessTableRow>) {
+  return {
+    byPid: new Map(rows.map((row) => [row.pid, row] as const)),
+    children: Map.groupBy(rows, (row) => row.ppid),
+  };
+}
+
+type ProcessTable = ReturnType<typeof indexProcessTable>;
+
 function processDescendants(
-  rows: ReadonlyArray<ProcessTableRow>,
+  { children }: ProcessTable,
   rootPids: ReadonlyArray<number>,
 ): ReadonlyArray<ProcessTableRow> {
-  const children = Map.groupBy(rows, (row) => row.ppid);
   const found: Array<ProcessTableRow> = [];
   const seen = new Set<number>(rootPids);
   const pending = [...rootPids];
@@ -111,25 +167,35 @@ function processDescendants(
   return found;
 }
 
-const processIdentity = (row: ProcessTableRow) => `${row.pid} ${row.started}`;
-
-/** What one root process started, by pid and start time, recorded from each process table read while it runs. */
+/** What one root process started, validated by pid and start time on every successful read. */
 function makeProcessDescendantTracker(rootPid: number) {
-  const tracked = new Map<string, ProcessTableRow>();
+  const tracked = new Map<number, ProcessTableRow>();
   // After exit the root's pid may belong to an unrelated process, so only tracked jobs are roots.
-  const record = (rows: ReadonlyArray<ProcessTableRow>, rootRunning: boolean) => {
-    const running = new Set(rows.map(processIdentity));
-    // `ps -A` lists itself, so no rows is a failed read.
-    if (rows.length === 0) return running;
+  const record = (table: ProcessTable, rootRunning: boolean) => {
+    // `ps -A` lists itself, so an empty table is a failed read. Keep what was tracked for a later one.
+    if (table.byPid.size === 0) return;
     const roots = rootRunning ? [rootPid] : [];
-    for (const [key, row] of tracked) {
-      if (running.has(key)) roots.push(row.pid);
-      else tracked.delete(key);
+    for (const [pid, row] of tracked) {
+      const current = table.byPid.get(pid);
+      if (
+        current?.startTimeSeconds === row.startTimeSeconds &&
+        (current.startTimeMicros === undefined ||
+          row.startTimeMicros === undefined ||
+          current.startTimeMicros === row.startTimeMicros)
+      ) {
+        roots.push(pid);
+        // Preserve the finer identity across an intervening ps fallback.
+        tracked.set(
+          pid,
+          current.startTimeMicros === undefined && row.startTimeMicros !== undefined
+            ? { ...current, startTimeMicros: row.startTimeMicros }
+            : current,
+        );
+      } else tracked.delete(pid);
     }
-    for (const row of processDescendants(rows, roots)) tracked.set(processIdentity(row), row);
-    return running;
+    for (const row of processDescendants(table, roots)) tracked.set(row.pid, row);
   };
-  return { tracked: tracked as ReadonlyMap<string, ProcessTableRow>, record };
+  return { tracked: tracked as ReadonlyMap<number, ProcessTableRow>, record };
 }
 
 /**
@@ -144,8 +210,9 @@ export function makeProcessDescendantPoll(
   // Polls, session closes and exits read one at a time, so each table is newer than all recorded,
   // and a pid and start time it no longer lists never run again.
   const reading = Semaphore.makeUnsafe(1);
-  const read = <A>(apply: (rows: ReadonlyArray<ProcessTableRow>) => A) =>
-    reading.withPermits(1)(readProcessTable.pipe(Effect.map(apply)));
+  const indexedTable = readProcessTable.pipe(Effect.map(indexProcessTable));
+  const read = <A>(apply: (table: ProcessTable) => A) =>
+    reading.withPermits(1)(indexedTable.pipe(Effect.map(apply)));
   return {
     // A table read before a process started may list an older process under its pid, so a poll
     // records only into the processes working when its read began.
@@ -156,10 +223,10 @@ export function makeProcessDescendantPoll(
             .withPermits(1)(
               Effect.suspend(() => {
                 const working = [...live];
-                return readProcessTable.pipe(
-                  Effect.map((rows) => {
+                return indexedTable.pipe(
+                  Effect.map((table) => {
                     for (const tracker of working)
-                      if (live.has(tracker)) tracker.record(rows, true);
+                      if (live.has(tracker)) tracker.record(table, true);
                   }),
                 );
               }),
@@ -172,8 +239,8 @@ export function makeProcessDescendantPoll(
       const refresh = Effect.suspend(() =>
         exited
           ? Effect.void
-          : read((rows) => {
-              if (!exited) tracker.record(rows, true);
+          : read((table) => {
+              if (!exited) tracker.record(table, true);
             }),
       );
       return {
@@ -191,11 +258,9 @@ export function makeProcessDescendantPoll(
           live.delete(tracker);
         }).pipe(
           Effect.andThen(
-            read((rows) => {
-              const running = tracker.record(rows, false);
-              return [...tracker.tracked.values()].filter((row) =>
-                running.has(processIdentity(row)),
-              );
+            read((table) => {
+              tracker.record(table, false);
+              return table.byPid.size === 0 ? [] : [...tracker.tracked.values()];
             }),
           ),
         ),

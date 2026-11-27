@@ -35,6 +35,7 @@ import { windowsSystem32Path } from "@onicode/shared/windowsSystem";
 
 import {
   PROCESS_TABLE_PS_ARGS,
+  PROCESS_TABLE_PS_ENV,
   makeSharedProcessDescendantPoll,
   parseProcessTable,
   type ProcessTableRow,
@@ -183,6 +184,7 @@ export interface AcpSessionRuntimeOptions {
   readonly onTermination?: (error: EffectAcpErrors.AcpError) => Effect.Effect<void>;
   readonly onOutgoingResponseFailure?: EffectAcpClient.AcpClientOptions["onOutgoingResponseFailure"];
   readonly onOutgoingResponse?: EffectAcpClient.AcpClientOptions["onOutgoingResponse"];
+  readonly onUndecodableNotification?: EffectAcpClient.AcpClientOptions["onUndecodableNotification"];
   /** Unadvertised model IDs accepted by the config option; the agent validates them. */
   readonly customModels?: ReadonlyArray<string>;
 }
@@ -1105,6 +1107,8 @@ const readDarwinProcessTable = (
     Effect.gen(function* () {
       const child = yield* spawner.spawn(
         ChildProcess.make("ps", [...PROCESS_TABLE_PS_ARGS], {
+          env: PROCESS_TABLE_PS_ENV,
+          extendEnv: true,
           stderr: "ignore",
           forceKillAfter: "1 second",
         }),
@@ -1924,6 +1928,9 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
         ? { onOutgoingResponseFailure: options.onOutgoingResponseFailure }
         : {}),
       ...(options.onOutgoingResponse ? { onOutgoingResponse: options.onOutgoingResponse } : {}),
+      ...(options.onUndecodableNotification
+        ? { onUndecodableNotification: options.onUndecodableNotification }
+        : {}),
     }),
   ).pipe(Effect.provideService(Scope.Scope, runtimeScope));
 

@@ -51,6 +51,7 @@ import { Button, InlineButton } from "../ui/button";
 import { toastManager } from "../ui/toast";
 import { m } from "../../i18n/messages";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 import type { TimestampFormat } from "@onicode/contracts/settings";
 import { TimelineRowTimestamp } from "./TimelineRowParts";
 import { FoldedMessageHeader, useScheduledTaskTitle } from "./TimelineUserMessageRow";
@@ -335,36 +336,35 @@ export function QueuedRunsControl({
                   </Tooltip>
                 ) : item.canSend && !isEditing ? (
                   <>
-                    <Tooltip>
-                      <TooltipTrigger render={<span className="flex shrink-0" />}>
-                        <Button
-                          size="xs"
-                          variant="ghost-muted"
-                          disabled={item.runId === null || busyRunId !== null}
-                          onClick={() => {
-                            if (item.runId !== null) {
-                              void sendQueuedMessage(item.runId);
-                            }
-                          }}
-                        >
-                          <ArrowUpIcon />
-                          <T>Send now</T>
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipPopup
-                        shortcut={
-                          item.runId === steerTarget?.run.id ? props.steerShortcutLabel : null
-                        }
-                      >
-                        {workflow?.canSendNow
+                    <SharedTooltipTrigger
+                      render={<span className="flex shrink-0" />}
+                      label={
+                        workflow?.canSendNow
                           ? gt("Start a turn with this message")
                           : workflow?.promoteSkipsCompaction
                             ? gt("Skip compaction and send this message")
                             : commandMovesFirst
                               ? gt("Move this command to the front of the queue")
-                              : gt("Send into the current turn")}
-                      </TooltipPopup>
-                    </Tooltip>
+                              : gt("Send into the current turn")
+                      }
+                      shortcut={
+                        item.runId === steerTarget?.run.id ? props.steerShortcutLabel : null
+                      }
+                    >
+                      <Button
+                        size="xs"
+                        variant="ghost-muted"
+                        disabled={item.runId === null || busyRunId !== null}
+                        onClick={() => {
+                          if (item.runId !== null) {
+                            void sendQueuedMessage(item.runId);
+                          }
+                        }}
+                      >
+                        <ArrowUpIcon />
+                        <T>Send now</T>
+                      </Button>
+                    </SharedTooltipTrigger>
                   </>
                 ) : null}
                 {item.pending ? (
@@ -424,26 +424,26 @@ export function QueuedRunsControl({
                         {props.editBlockedReason ?? gt("Edit in the composer")}
                       </TooltipPopup>
                     </Tooltip>
-                    <Tooltip>
-                      <TooltipTrigger
-                        render={
-                          <Button
-                            size="icon-xs"
-                            variant="ghost-muted"
-                            aria-label={gt("Remove queued message")}
-                            disabled={item.runId === null || busyRunId !== null}
-                            onClick={() => {
-                              if (item.runId !== null) void remove(item.runId);
-                            }}
-                          />
-                        }
-                      >
-                        <XIcon />
-                      </TooltipTrigger>
-                      <TooltipPopup>
-                        <T>Remove from queue</T>
-                      </TooltipPopup>
-                    </Tooltip>
+                    <SharedTooltipTrigger
+                      render={
+                        <Button
+                          size="icon-xs"
+                          variant="ghost-muted"
+                          aria-label={gt("Remove queued message")}
+                          disabled={item.runId === null || busyRunId !== null}
+                          onClick={() => {
+                            if (item.runId !== null) void remove(item.runId);
+                          }}
+                        />
+                      }
+                      label={
+                        <>
+                          <T>Remove from queue</T>
+                        </>
+                      }
+                    >
+                      <XIcon />
+                    </SharedTooltipTrigger>
                   </>
                 )}
               </QueuedMessage>

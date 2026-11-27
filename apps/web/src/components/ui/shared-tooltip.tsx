@@ -1,5 +1,6 @@
 import {
   cloneElement,
+  isValidElement,
   createContext,
   use,
   useEffect,
@@ -13,6 +14,8 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 
+import { cn } from "~/lib/utils";
+
 import {
   TOOLTIP_DELAY_MS,
   TOOLTIP_WARM_MS,
@@ -22,9 +25,8 @@ import {
   useTooltipScrollTracker,
 } from "./tooltip";
 
-// The app's tooltip timing: open after a rest, reopen at once right after another closed.
-const OPEN_DELAY_MS = TOOLTIP_DELAY_MS;
-const REOPEN_WINDOW_MS = TOOLTIP_WARM_MS;
+// The app's tooltip timing (open after a rest, reopen at once right after another closed) is read
+// where it is used: ./tooltip is still loading here when lib/utils' imports reach this module.
 // Time to travel from the trigger into a hoverable popup.
 const CLOSE_GRACE_MS = 100;
 
@@ -33,7 +35,12 @@ interface SharedTooltipContent {
   /** Comparable key that changes whenever `render()` output changes while open. */
   readonly contentKey?: unknown;
   readonly side?: "top" | "bottom" | "left" | "right";
+  readonly align?: "start" | "center" | "end";
+  readonly sideOffset?: number;
   readonly variant?: "default" | "glass" | "code";
+  readonly className?: string;
+  readonly shortcut?: string | null | undefined;
+  readonly description?: ReactNode;
 }
 
 interface SharedTooltipState extends SharedTooltipContent {
@@ -41,7 +48,14 @@ interface SharedTooltipState extends SharedTooltipContent {
   readonly open: boolean;
 }
 
+interface HoveredTrigger {
+  readonly content: SharedTooltipContent;
+  readonly onHover: () => void;
+}
+
 interface SharedTooltipApi {
+  hover(anchor: HTMLElement, content: SharedTooltipContent, onHover: () => void): void;
+  leave(anchor: HTMLElement, relatedTarget: EventTarget | null): void;
   show(anchor: HTMLElement, content: SharedTooltipContent, immediate: boolean): void;
   refresh(anchor: HTMLElement, content: SharedTooltipContent): void;
   hide(anchor: HTMLElement): void;
@@ -76,6 +90,7 @@ export function SharedTooltipProvider({ children }: { children: ReactNode }) {
   const pending = useRef<SharedTooltipState | null>(null);
   const lastClosedAt = useRef(0);
   const current = useRef<SharedTooltipState | null>(null);
+  const hovered = useRef<WeakMap<HTMLElement, HoveredTrigger>>(new WeakMap());
 
   const commit = (next: SharedTooltipState | null) => {
     current.current = next;
@@ -86,13 +101,26 @@ export function SharedTooltipProvider({ children }: { children: ReactNode }) {
     timer.current = null;
     pending.current = null;
   };
-  const [api] = useState<SharedTooltipApi>(() => ({
-    show(anchor, content, immediate) {
+  const findHoveredAncestor = (
+    relatedTarget: EventTarget | null,
+  ): [HTMLElement, HoveredTrigger] | null => {
+    let node: Node | null = relatedTarget instanceof Node ? relatedTarget : null;
+    while (node) {
+      if (node instanceof HTMLElement) {
+        const entry = hovered.current.get(node);
+        if (entry) return [node, entry];
+      }
+      node = node.parentNode;
+    }
+    return null;
+  };
+  const [api] = useState<SharedTooltipApi>(() => {
+    const show: SharedTooltipApi["show"] = (anchor, content, immediate) => {
       clearTimer();
       // A Root that mounts open skips Base UI's mount transition, so the popup would slide in from (0,0).
       if (!current.current) flushSync(() => commit({ ...content, anchor, open: false }));
       const open = current.current?.open === true;
-      const reopen = performance.now() - lastClosedAt.current < REOPEN_WINDOW_MS;
+      const reopen = performance.now() - lastClosedAt.current < TOOLTIP_WARM_MS;
       if (immediate || open || reopen) {
         commit({ ...content, anchor, open: true });
         return;
@@ -102,50 +130,85 @@ export function SharedTooltipProvider({ children }: { children: ReactNode }) {
         const next = pending.current;
         pending.current = null;
         if (next) commit(next);
-      }, OPEN_DELAY_MS);
-    },
-    refresh(anchor, content) {
+      }, TOOLTIP_DELAY_MS);
+    };
+    const hover: SharedTooltipApi["hover"] = (anchor, content, onHover) => {
+      hovered.current.set(anchor, { content, onHover });
+      show(anchor, content, false);
+      onHover();
+    };
+    const hide: SharedTooltipApi["hide"] = (anchor) => {
       if (pending.current?.anchor === anchor) {
-        pending.current = { ...pending.current, ...content };
-      }
-      const active = current.current;
-      if (!active || active.anchor !== anchor) return;
-      if (
-        active.contentKey === content.contentKey &&
-        active.side === content.side &&
-        active.variant === content.variant
-      ) {
-        return;
-      }
-      commit({ ...active, ...content });
-    },
-    hide(anchor) {
-      if (current.current && current.current.anchor !== anchor) {
         clearTimer();
         return;
       }
+      if (current.current?.anchor !== anchor || !current.current.open) return;
       clearTimer();
       timer.current = setTimeout(() => {
         if (current.current?.open) lastClosedAt.current = performance.now();
         if (current.current) commit({ ...current.current, open: false });
       }, CLOSE_GRACE_MS);
-    },
-    dismiss(anchor) {
-      clearTimer();
-      if (current.current?.anchor !== anchor) return;
-      if (current.current.open) lastClosedAt.current = 0;
-      commit({ ...current.current, open: false });
-    },
-    release(anchor) {
-      if (pending.current?.anchor === anchor) clearTimer();
-      if (current.current?.anchor === anchor && current.current.open) {
+    };
+    return {
+      hover,
+      leave(anchor, relatedTarget) {
+        hovered.current.delete(anchor);
+        const isOwnActive = current.current?.anchor === anchor && current.current.open;
+        const isOwnPending = pending.current?.anchor === anchor;
+        if (isOwnActive || isOwnPending) {
+          // Moving back onto an enclosing trigger fires no pointerenter there, so restore it here.
+          const ancestor = findHoveredAncestor(relatedTarget);
+          if (ancestor) {
+            const [parentAnchor, parentEntry] = ancestor;
+            hover(parentAnchor, parentEntry.content, parentEntry.onHover);
+            return;
+          }
+        }
+        hide(anchor);
+      },
+      show,
+      refresh(anchor, content) {
+        const existingHover = hovered.current.get(anchor);
+        if (existingHover) hovered.current.set(anchor, { ...existingHover, content });
+        if (pending.current?.anchor === anchor) {
+          // Content replaces the old, so a slot the trigger dropped does not linger.
+          pending.current = { ...content, anchor, open: pending.current.open };
+        }
+        const active = current.current;
+        if (!active || active.anchor !== anchor) return;
+        if (
+          active.contentKey === content.contentKey &&
+          active.side === content.side &&
+          active.align === content.align &&
+          active.sideOffset === content.sideOffset &&
+          active.variant === content.variant &&
+          active.className === content.className &&
+          active.shortcut === content.shortcut &&
+          active.description === content.description
+        ) {
+          return;
+        }
+        commit({ ...content, anchor, open: active.open });
+      },
+      hide,
+      dismiss(anchor) {
+        clearTimer();
+        if (current.current?.anchor !== anchor) return;
+        if (current.current.open) lastClosedAt.current = 0;
         commit({ ...current.current, open: false });
-      }
-    },
-    holdOpen() {
-      clearTimer();
-    },
-  }));
+      },
+      release(anchor) {
+        hovered.current.delete(anchor);
+        if (pending.current?.anchor === anchor) clearTimer();
+        if (current.current?.anchor === anchor && current.current.open) {
+          commit({ ...current.current, open: false });
+        }
+      },
+      holdOpen() {
+        clearTimer();
+      },
+    };
+  });
 
   const activeAnchor = state?.open ? state.anchor : null;
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- links the active trigger DOM element to the shared tooltip popup via aria-describedby
@@ -169,8 +232,12 @@ export function SharedTooltipProvider({ children }: { children: ReactNode }) {
             id={popupId}
             anchor={state.anchor}
             side={state.side ?? "top"}
+            align={state.align ?? "center"}
+            sideOffset={state.sideOffset ?? 4}
             variant={state.variant ?? "default"}
-            className="pointer-events-auto"
+            className={cn("pointer-events-auto", state.className)}
+            shortcut={state.shortcut}
+            description={state.description}
             onMouseEnter={() => api.holdOpen()}
             onMouseLeave={() => api.hide(state.anchor)}
           >
@@ -190,15 +257,24 @@ export interface SharedTooltipTriggerProps {
   onPointerDown: (event: PointerEvent<HTMLElement>) => void;
 }
 
-/** Props that show `content` on the shared tooltip, or null outside a SharedTooltipProvider. */
-export function useSharedTooltip(content: SharedTooltipContent): SharedTooltipTriggerProps | null {
+/**
+ * Props that show `content` on the shared tooltip, or null outside a SharedTooltipProvider.
+ * A disabled trigger opens nothing, and closes the tooltip if it was showing.
+ */
+export function useSharedTooltip(
+  content: SharedTooltipContent,
+  enabled = true,
+): SharedTooltipTriggerProps | null {
   const api = use(SharedTooltipContext);
   const scrollTracker = useTooltipScrollTracker();
   const anchorRef = useRef<HTMLElement | null>(null);
-  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- refreshes an open shared tooltip when its trigger's label changes
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- refreshes an open shared tooltip when its trigger's label changes, and closes it when the trigger is disabled
   useEffect(() => {
-    if (api && anchorRef.current) api.refresh(anchorRef.current, content);
-  }, [api, content]);
+    if (!api || !anchorRef.current) return;
+    if (enabled) api.refresh(anchorRef.current, content);
+    // Only this trigger's own pending open or popup; another trigger's must survive.
+    else api.release(anchorRef.current);
+  }, [api, content, enabled]);
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- a removed trigger fires no pointerleave, so it must close the popup anchored to it
   useEffect(
     () => () => {
@@ -210,17 +286,20 @@ export function useSharedTooltip(content: SharedTooltipContent): SharedTooltipTr
   return {
     // Touch never opens it, as Base UI's mouseOnly trigger; taps also send compatibility mouse events.
     onPointerEnter: (event) => {
-      if (event.pointerType === "touch") return;
+      if (event.pointerType === "touch" || !enabled) return;
       const trigger = event.currentTarget;
       anchorRef.current = trigger;
-      api.show(trigger, content, false);
       // Scrolling the timeline closes it, as it does a TooltipTrigger's.
-      scrollTracker?.hover(trigger, api, () => api.dismiss(trigger));
+      api.hover(trigger, content, () =>
+        scrollTracker?.hover(trigger, api, () => api.dismiss(trigger)),
+      );
     },
-    onPointerLeave: (event) => api.hide(event.currentTarget),
+    onPointerLeave: (event) => api.leave(event.currentTarget, event.relatedTarget),
     // Keyboard focus shows it at once, as Base UI does.
     onFocus: (event) => {
-      if (event.currentTarget.matches(":focus-visible")) {
+      // A wrapper's handler sees focus bubble from the control inside it, so check the focused element.
+      const focused = event.target instanceof Element ? event.target : event.currentTarget;
+      if (enabled && focused.matches(":focus-visible")) {
         anchorRef.current = event.currentTarget;
         api.show(event.currentTarget, content, true);
       }
@@ -255,31 +334,68 @@ export function withSharedTooltip<Props>(
     : cloneElement(element, merged as Partial<Props>, children);
 }
 
+// A disabled control gets no pointer events, so its tooltip is unreachable anyway; treating it as a
+// disabled trigger also closes a tooltip that was open when the control became disabled.
+function renderedDisabled(element: ReactElement): boolean {
+  const props = element.props as { disabled?: unknown; render?: unknown };
+  if (props.disabled === true) return true;
+  return isValidElement(props.render) && renderedDisabled(props.render);
+}
+
 /** A tooltip on `render`: the shared one inside a SharedTooltipProvider, Base UI's otherwise. */
 export function SharedTooltipTrigger({
   render,
   children,
   label,
   side = "top",
+  align,
+  sideOffset,
   variant,
+  className,
+  shortcut,
+  description,
+  disabled = false,
 }: {
   render: ReactElement;
   children?: ReactNode;
   label: ReactNode;
   side?: SharedTooltipContent["side"];
+  align?: SharedTooltipContent["align"];
+  sideOffset?: SharedTooltipContent["sideOffset"];
   variant?: SharedTooltipContent["variant"];
+  className?: SharedTooltipContent["className"];
+  shortcut?: SharedTooltipContent["shortcut"];
+  description?: SharedTooltipContent["description"];
+  disabled?: boolean | undefined;
 }) {
-  const tooltip = useSharedTooltip({
-    render: () => label,
-    contentKey: label,
-    side,
-    ...(variant ? { variant } : {}),
-  });
+  const inactive = disabled === true || renderedDisabled(render);
+  const tooltip = useSharedTooltip(
+    {
+      render: () => label,
+      contentKey: label,
+      side,
+      ...(align ? { align } : {}),
+      ...(sideOffset === undefined ? {} : { sideOffset }),
+      ...(variant ? { variant } : {}),
+      ...(className ? { className } : {}),
+      ...(shortcut ? { shortcut } : {}),
+      ...(description === undefined ? {} : { description }),
+    },
+    !inactive,
+  );
   if (tooltip) return withSharedTooltip(render, tooltip, children);
   return (
-    <Tooltip>
+    <Tooltip disabled={inactive}>
       <TooltipTrigger render={render}>{children}</TooltipTrigger>
-      <TooltipPopup side={side} {...(variant ? { variant } : {})}>
+      <TooltipPopup
+        side={side}
+        {...(align ? { align } : {})}
+        {...(sideOffset === undefined ? {} : { sideOffset })}
+        {...(variant ? { variant } : {})}
+        {...(className ? { className } : {})}
+        shortcut={shortcut}
+        description={description}
+      >
         {label}
       </TooltipPopup>
     </Tooltip>

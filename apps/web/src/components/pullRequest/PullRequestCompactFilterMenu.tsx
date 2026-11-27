@@ -84,6 +84,7 @@ export function PullRequestCompactFilterMenu<Value extends string>({
             return option.unavailable === undefined ? (
               item
             ) : (
+              // Base UI's tooltip: the shared one stays shut on a disabled item, and this explains it.
               <Tooltip key={option.value}>
                 <TooltipTrigger render={item} />
                 <TooltipPopup side="right">{option.unavailable}</TooltipPopup>

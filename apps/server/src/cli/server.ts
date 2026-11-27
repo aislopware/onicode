@@ -78,7 +78,7 @@ const { autoBootstrapProjectFromCwd: _, ...serveCommandFlags } = sharedServerCom
 export const serveCommand = Command.make("serve", serveCommandFlags).pipe(
   Command.withShortDescription("Run Onicode in this terminal without adding a project."),
   Command.withDescription(
-    "Run Onicode in this terminal and print pairing details, without adding the current directory as a project. The background service runs this. To set up access from your other devices, run `onicode up`.",
+    "Run Onicode in this terminal and print pairing details, without adding the current directory as a project. The background service runs this too, without printing them: pair with `onicode pair`. To set up access from your other devices, run `onicode up`.",
   ),
   Command.withHandler((flags) =>
     runServerCommand(

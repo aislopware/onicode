@@ -4050,3 +4050,152 @@ cbc3057f59	take	kept Onicode's stricter workEntryViewedImagePath and frame style
 dc5ae5ce63	take	test builds the ODS from a Map like its neighbours (no JSZip in Onicode)
 cecbe8a89a	take	taken as is
 96423cb5e2	take	server keyring dependency dropped (desktop keeps it for ChromiumKeys); lockfile regenerated; Onicode's local Antigravity token-usage readers stay. Removes Antigravity quota windows from Usage → Limits, hub pools and limit routing (Google allows only ACP clients)
+9a3ad0bec2	take	composerEmpty added; Onicode has no isWeb/isDesktop variables
+74b5186f2e	take	taken as is
+605980d397	take	kept Onicode's canvas Escape handler: same fix, also swallows key-repeat; took the details-panel Escape; dropped the Safari focus shim and its test (Electron is Chromium)
+8987ba39d4	take	migration 119_WorkflowRunSubject renumbered to 128; client URL parsing uses parseUrl (RN URL may lack canParse); WorkflowRunsAbout after Onicode's LinkedThreads; MCP tool list budget re-measured (66348)
+c4d0e05d96	take	Onicode's source:refs/heads push calls get pushes: true; McpHttpServer wraps client input inside withToolSpans (no analytics); kept Onicode's isCodexOniMcpServer; kept Onicode's per-session ToolResults in McpProviderSessions; only Claude and Codex call showsApprovalRequests, other providers follow upstream (client answers or hooks off with a note)
+82f22ef115	take	import merged beside Onicode's findStoredHtmlRenderBootstrap; HTML still served as text/html; charset=utf-8 so the render bootstrap path is unchanged
+bf961f8121	take	ported the idea onto Onicode's per-steer note tracking: delivered notes stored as sha256 digests, persisted in claudeDeliveredAppContext and restored at turn start; kept Onicode's recordAppContextOffer (merges only notes actually sent) over upstream's appContextOffered overwrite
+e6641e6ec6	take	kept Onicode's anchorOpenHandlers on the profile anchor (also handles middle click) instead of an onClick-only handler
+000ea81099	take	taken as is
+972bae6a61	take	kept Onicode's tunnelled partition scope; preload path from DesktopEnvironment
+520e670cb5	take	avdsAvailable wired at Onicode's makeDeviceHubOperations call
+b9b1f5745b	take	taken as is
+abc0c4ae55	take	thread query context wraps Onicode's results, keeping its folder-search empty states
+2ae731530d	take	Onicode's route body inlined flat as upstream does, keeping its props (threadTitleText title); upstream's new useStableCallback already exists in Onicode
+94af14b1f2	take	retargeted to the desktop app over CDP (build:desktop, Electron with ONICODE_HOME + ONICODE_DESKTOP_APP_DATA_DIR, connectOverCDP, no pairing); kept Onicode's processTable/unchangedProcesses kill (never a recycled PID) over upstream's descendantsOf; playwright-core 1.65.1 pinned like desktop/server; docs say it drives the desktop window and Linux needs DISPLAY/xvfb
+357ee7ec9d	take	taken as is
+5e9b58e809	take	adopted upstream over Onicode's var()-shorthand fallback in stripDeclarations (6938f30829): upstream's pre-parse withoutFetchingShorthands also catches a shorthand a later longhand hides from CSSOM, and keeps harmless var() shorthands; kept Onicode's two extra probe lines in the test
+30a7aae9a3	take	Onicode has no CLAUDE_DESCENDANT_POLL (uses makeSharedProcessDescendantPoll): added only the transcript poll constant; kept Onicode's steer-backgrounding block beside the forked-skill transcript start; result change only in the task_notification site
+ea3328c50c	take	adopted upstream's shared tooltip over per-trigger Base UI tooltips (one popup root instead of one per row); kept Onicode's 300/300 ms timing (#516), its shortcut/description slots (added to SharedTooltipContent), aria-disabled explained-off controls, labels and classes; app-level TooltipProvider + TruncationTooltip kept (~176 files still on Base UI); Sidebar.tsx only loses the two TooltipProvider wrappers (hook order untouched); upstream's renderedDisabled hides tooltips on disabled triggers, so the four explain-why-it's-off items (ModelListRow, RightPanelTabs DisabledReasonTooltip, PullRequestListFilters, PullRequestCompactFilterMenu) keep Base UI; dropped CloudEnvironmentConnectList (T3 Connect), GuestShareIndicator, QRCodeSvg
+eb9e8ae42f	take	kept Onicode's ungated pairing-link prefill in ConnectionsNewRouteScreen (a link only fills the form; desktop pair links need it in store builds), took devAutoConnect's gate; perf probe methods added after Onicode's wakeups methods; perfProbe.key() first in Onicode's onChangeText; touch capture handlers beside Onicode's replay scroll-pause handlers; dropped ConnectDeviceApprovalCoordinator (T3 Connect); mobile:behavior passes the render counter via metroEnv (Onicode's cases need it; upstream made it opt-in); EXPO_PUBLIC_ONI_BEHAVIOR_PROBE set only by the behavior/metrics Metro
+9fe3150799	take	wire compat: kept Onicode's role: Literal("reasoning") (shipped mobile decodes role strictly) and marks agent modes with a new optional agentMode: true; kept Onicode's shared OrchestrationMcp.validateModelSelection (launch + configure + workspace re-scan) with a new agentMode option over upstream's inline validateSelection; dropped the tool-analytics ProviderRegistry test hunks (telemetry); docs got only the Full access sentence (no T3 Connect/web-app text)
+159bcd8e7d	take	kept Onicode's tailnetOnly in the connection string; headless output now via headlessServeOutput({serviceManaged: launcher.managed}) in Onicode's desktop-skipping block (no browser-open branch); only the service sentence of Onicode's serve description changed
+b76d0f023f	take	dropped managedRelayState/TunnelUsage and the SavedEnvironmentRows T3ConnectTunnelUsage hunk (relay); dropped BrowserKeybindingNotice (web surface removed); section preload added to Onicode's nav markup (search results, group links, arrow keys); new Voice test uses Onicode's Bearer httpAuthorization; i18n key 800966eb58181745 in all 10 locales
+153671166c	take	applied cleanly onto Onicode's settingsSecrets (keeps commandCode/muse imports); OpenCode is the only provider package with a SettingsSecretValue address field, so providerSecretDestinations is complete
+14e4a5097f	take	taken as is
+ef49296026	take	taken as is
+cbe475e5d6	take	applied cleanly on Onicode's documentTextWorker
+6f44901b02	take	taken as is
+e057f7a770	take	adopted upstream's one benchmark per surface over Onicode's render-metrics, web/client-runtime bench files and mobile measure-renders (client-metrics --renders measures the real desktop app); carried Onicode's divergences through the moves: survivors-only processTable kill in metrics/core (upstream's descendantsOf dropped), forge gpgsign off (01eac8908f), server-metrics 514397c661, client-metrics desktop target; kept the mobile render counter (mobile:behavior uses it) and emitShellThread; docs point the payload row at transferBudgetV2.integration.test.ts and name the client row Desktop client
+efcf9cb5bc	take	taken as is
+3eee3d48f1	take	taken as is
+f8b2fcbee5	skip	only touches infra/relay/ (T3 relay Worker), removed in Onicode
+6b09aea61d	take	imports merged next to Onicode's ./service/ launcher (no ./cloud/); one auto-pull sweep per fetch interval, skipped on constrained hosts
+4f04b70bf8	take	mechanical merges only (mock agent env, new tests beside Onicode's port-discovery test); tightens auto-accept-edits to paths inside cwd/writable roots for every ACP flavor; Antigravity's Onicode-MCP allow-first and withSentRawInputPaths unchanged
+1485712d69	skip	already done in Onicode (1a4f3d2b64): PR reply/load-error links route through useOpenLink + anchorOpenHandlers, which also handles middle click; upstream's tests only check click wiring that passes on HEAD
+152342da7d	take	taken as is
+84fe59bb3b	take	taken as is
+fe7d0d0fee	take	altssh mapping added beside Onicode's isProjectPath work-item guard
+51021b4888	take	taken as is
+f0769f330d	skip	only renames PostHog config in apps/server/src/telemetry (telemetry removed in Onicode)
+0d371444f3	take	adopted upstream's scoped poll input stamp (readStatusPoll/readStatusInputs) over Onicode's whole-repo readLocalStatusRefSnapshot on the background poll: an unrelated remote branch or sibling worktree commit no longer forces a full local read; kept Onicode's keepCountsOnUnknown positional param (poll inputs via options), forced-local-read cadence, sealed unpackLimit fetch, and its checkpoint-free branch-picker ref snapshot (upstream's test assertion that a checkpoint ref moves the snapshot inverted)
+d98c3e2de7	take	taken as is (ACP Registry only)
+0d2b8eda98	take	taken as is
+a03617a312	take	taken as is
+333cf311bc	take	taken as is
+539008aab9	take	taken as is
+cca1e3e1e7	take	electronFuses beside Onicode's productName/electronLanguages; took only the inspector test (the AppImage-per-channel test needs nightly, which Onicode dropped); electron-builder 26.18.1 supports electronFuses; only dev Electron uses --inspect
+fbb6526db2	take	taken as is
+c1b3254791	take	kept Onicode's leadingFrontmatterLength scanner (ffcff8727f), which already stops at the first closing fence; upstream fixes its LEADING_FRONTMATTER regex, which Onicode doesn't use; took only the test row
+bed9141ec2	take	kept Onicode's minted canonical-base gate (b165b86970) as belowBase and took upstream's outsideBase/previewEntry rule on top: a dependency whose base no longer matches is now denied instead of falling back to the root-relative check
+32e130c76d	take	taken as is
+a8f708de96	take	taken as is
+57d886b41e	take	taken as is
+bf20415ea6	take	taken as is
+9f96e22f39	take	image description early return before Onicode's TEXT_BOXES branch; Onicode's heading-marker loop (f456fb8cc0) flushes the marker before a leading image description (else <h2><img alt=Logo>Title</h2> gave 'Logo## Title'), with a test row
+150a3c9699	take	taken as is
+7cfca0252c	take	taken as is
+17bc259705	take	taken as is
+4fd24866ab	take	taken as is
+84490014d1	take	taken as is
+923fe897d6	take	taken as is (Claude only); docs paragraph lands before Onicode's 'Claude can still ask in Full access…'
+b888f3c3ba	take	kept Onicode's markdownMathRanges argument and its titleSeed call shape (deriveComposerSendTitle(snapshot, m)); scenario terminal-excerpt-title-follows-language ported to the desktop target (Ctrl+Shift+A select-all, as the Linux desktop scenarios run)
+44b787b5a0	take	applied onto Onicode's IssueDetailPanel test file (created by 6bb4e3d9d6)
+de3ec23861	take	taken as is
+6378cabd19	take	taken as is
+65585f336a	take	taken as is; controller tests pass (Kotlin unit test not run here)
+21aebbf7d9	take	applied cleanly; Onicode's hasThreadLink (oni-thread://) kept; Robolectric ComposerPasteTest not run here
+c7042abcd1	take	upstream's t3.19 tarball not taken: the inline-icon variant (pingdotgg/enriched-markdown bf8bbaf3..3757a449) was cherry-picked into aislopware/enriched-markdown 1.2.0-oni.28 (884ac07b, tag oni-v1.2.0-oni.28) and repacked; useEnrichedLinkVariants taken as is; deps README updated; native fingerprint changes (device wrap check owed)
+522b067dcd	take	blockquote branch placed after Onicode's text-box/marker heading branch
+750d81bd8d	take	kept Onicode's clearSearchOnEscape helper (same rule, shared by every settings search field) over upstream's inline handler; took the test
+2d4ac16cf8	take	kept Onicode's own ZIP reader (zipDirectory.ts, no jszip) and ported the fix into it: unflagged names without a valid Unicode Path decode as strict UTF-8, else CP437; the test builds archives with fflate
+cb8b22cfa0	take	taken as is
+84e8b8d03c	take	upstream's two plugin sections appended to Onicode's expo-widgets patch (keeps its getProps hunks); lockfile regenerated by vp i; patch verified applied
+429e921198	take	patch applied cleanly to Onicode's expo-modules-core patch; lockfile regenerated by vp i
+7e629f3963	take	applied cleanly (ComposerCommandMenu's grouped list included); Onicode's TailnetDevicePicker keeps its own overflow like upstream's ThreadLinkPicker
+54cee86c7e	take	Onicode is on react-native-keyboard-controller 1.24.0 (upstream patches 1.23.0, file MISSING): prepended upstream's Android KeyboardAnimationCallback.kt section to Onicode's 1.24.0 patch with hunk offsets for 1.24.0 (bug still present there); vp i applies it
+cbf5c78696	take	taken as is
+9f05579533	take	pre branch placed before Onicode's pPr-lookup paragraph branch
+0085217d1b	take	taken as is
+8ada2c0f1c	take	taken as is
+8468c7af68	take	ClaudeAdapterV2: upstream's resolveClaudeModeAvailability/announceAutoFallback replace Onicode's readBypassSettings+resolveBypassAvailability block (same body, moved out); kept Onicode's announcedModelSubstitutions, firstInit gate and readInstalledBuild tail, not upstream's reportedCwd/onSessionInit return; dropped upstream's requiresClaudeApproval (removed in Onicode #288, unused); ClaudeDriver computes configDir via resolveClaudeHomePath (Onicode lacks upstream's reset-credits commit); new read query getProviderRuntimeModeLimits in RPC_REQUIRED_SCOPES (read); wire-compatible additions only; i18n in all locales; Claude adapter, registry, replay fixtures and composer permission tests pass
+e75534b3e5	take	i18n catalogs merged as a union
+be0b94683a	take	took upstream's code placeholders and split _/* emphasis passes; kept Onicode's link regex [^[\]] (d38dda42b2: a stray [ no longer runs into the next link; upstream still has [^\]]) and its test
+be5b14d842	take	taken as is
+428684301a	take	applied cleanly onto Onicode's paragraphs() (hr line after br)
+8515b31c8d	take	kept Onicode's DiscoveryListRow device rows (one button each) and added a trailing slot beside the row for the Stop button, since a button cannot nest in a button; took shutdown, per-environment stopping/stopErrors, Stop all devices and the tests; mobile has no stop yet (follow-up)
+6d21ad2b25	take	taken as is
+f839ab4041	take	figcaption joined Onicode's blockquote branch (after its text-box/marker heading loop)
+a03c43363b	take	kept Onicode's existing user pages (upstream's pass reintroduces removed surfaces and drops unintuitive details); adopted upstream's onboarding index and new guides, rewritten for Onicode: README index, onicode-json.md (no t3 schema), cli.md (only binCli commands), diagnostics, diffs, subagents, providers-grok, browser; unverifiable claims dropped
+f727a75b59	take	import merged beside Onicode's carryFanoutSelections; retargetDraftWorkspace uses only helpers Onicode has (read-only shelf reads, hook order untouched); mobile new-task flow has no counterpart (follow-up)
+4c8a324e8f	take	kept Onicode's markdownLinks escape handling (4cef77e10c: any CommonMark ASCII-punctuation escape, a superset of upstream's \" and \' rule); took only upstream's test rows, which pass
+72559e12fa	take	taken as is
+d846efc143	take	applied cleanly on top of the shared-tooltip port (ea3328c50c); SidebarThreadRow is not a hook-order file; hover cards render at most 8 rows (perf win)
+72ecf7d13d	take	test import merged into Onicode's block
+3157fe9ebf	take	taken as is
+0ccd7a886e	take	taken as is
+b972842270	take	taken as is
+83f475e7be	take	aside joined Onicode's blockquote/figcaption branch
+7deb51b550	skip	Onicode's mobile version comes from the server package (one shared version, better-update releases); upstream's release bookkeeping
+e380d41c2c	take	taken as is
+824474d7a3	take	taken as is
+9853cf885a	take	taken as is
+36b9a06f09	take	took upstream's shared-checkout check, expectedWorktreePath and the removal-before-unbind order; kept Onicode's withWorkspaceLease around task-folder removal; deduped the ProjectionStore test import
+3ed650f999	take	kept Onicode's shared processDescendants.ts tracker (#701, serves Claude and Antigravity) and ported upstream's pid-keyed, start-time-precise tracking into it; native→rows helper readNativeProcessTable with ps fallback wired only into ClaudeAdapterV2 on darwin via serviceOption(NativeTelemetryClient); both ps callers run with LC_ALL=C TZ=UTC0; release-desktop.yml absent in Onicode, build.rs added to the scenarios.yml resource-monitor cache keys; contract fields optional; cargo test --locked passes
+4c34f1c56f	take	taken as is
+6c1e423d0e	take	sampleRoutineSpans added beside Onicode's Sentry delegate; routineSpan marks Onicode's MCP addTool wrappers (no tool analytics: telemetry removed; no resource-metadata helper hunk); ScheduledTaskService without relayTracing; Onicode's WorkflowAgents.model also runs without routine spans; workflow, scheduled-task, MCP and observability tests pass
+d5d5c17ecb	take	web card uses upstream's ApprovalText (keeps Onicode's data-approval-detail, tabIndex and ring-ring focus style); ACP runtimeModel keeps Onicode's CommandLine/command_line/commandLine aliases and locationDetail order with upstream's verbatim command/title; i18n catalogs merged as a union; web, mobile, ACP tests pass
+e9f7acf679	take	taken as is
+b996cf2067	take	imports merged beside Onicode's ScheduledTaskWebhookOrigin
+4e97609e3c	take	address joined Onicode's blockquote-like branch
+afc388c052	take	panel applied cleanly (scrollToLine typechecks on Onicode's @pierre/diffs 1.7.1); test helper keeps Onicode's composerDraftTarget before upstream's reveal object, existing reveal callers updated, Onicode's async setup
+6ca7e667ab	take	taken as is
+2cc5253241	take	web as is; mobile: dropped upstream's forceStop block placed above the hooks and kept Onicode's next to its use (React Compiler rebuilt it otherwise), now with its three alerts in gt() and upstream's plural; i18n catalogs merged and i18n:check passes
+3e0a40ff24	take	Onicode locks @exodus/bytes 1.16.0 (upstream 1.15.1): dependency, override pin and the typings patch moved to 1.16.0 (same encoding.d.ts line), lockfile regenerated by vp i; polyfill imported right after intl-polyfills (Onicode has no observe entry); Electron decodes GB18030 natively
+744ff6c8cb	take	Antigravity ask_question form; package export added
+77cd243e6b	take	monotonic OTLP sums; kept Onicode webhook description
+9c4ab6d47a	take	reuse Onicode listRef; tests use await using setup(); scenario ported
+336b8c70fc	take	upstream hover/leave restructure; kept Onicode TOOLTIP_* timing and shortcut/description refresh fields
+5db3ecd1e3	take	import-context merge only
+9ba025320d	take	taken as is
+23057ddd0d	take	taken as is
+60375a5636	take	taken as is
+66f7a6c289	take	taken as is
+bcf2efdf0a	take	taken as is
+99879a87a9	take	Onicode already used parseUrl in workflowReferenceLabel; took isWebUrl + tests
+5a563f8df4	take	SharedTooltipTrigger side=right; capture owed in the integrated pass
+4f5d613a3d	take	image openers kept in Onicode's ESCAPE/PARAGRAPH_END scanner
+5eaff03eaa	take	taken as is
+0c4e7d8a4c	take	taken as is
+567aa0b141	take	taken as is
+d451c500f5	take	taken as is
+39eb396fae	take	taken as is
+8f0f47b1ef	take	taken as is
+2e4c3b0490	take	taken as is
+59d840c076	take	taken as is
+1d015a3794	take	taken as is
+57b0227d39	take	taken as is
+cd414b81c1	skip	already done: Onicode's FILE_LINK_LABEL_CHAR (d38dda42b2) excludes unescaped [ from file-link labels and still allows balanced nested brackets; covered by 'reads a file link after an unclosed bracket'
+2b0f633db3	take	kept fileDisplayName import
+cf29ce760a	take	taken as is
+b8ef0600d5	take	taken as is
+852d86ee56	take	taken as is
+8bbdd33667	take	taken as is
+c6df984916	take	taken as is
+00fa6cd60c	take	taken as is
+b5592c6061	take	taken as is
+25525f9483	take	taken as is
+8213d1dda2	take	taken as is
+30ad6c2806	skip	launch-video skill (marketing launch videos) is not in Onicode, as with 77a553ab2c
