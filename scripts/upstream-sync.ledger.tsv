@@ -4650,3 +4650,4 @@ e70368d582	take	styles.xml read from Onicode's OfficeArchive (string or bytes); 
 337bb36869	take	adapted: DocumentText VERSION 16 -> 17 so cached sidecars re-extract nested cells; test conflict kept Onicode's hidden-text row name
 b2387ca103	take	taken as is
 f3e36337ce	take	taken as is
+0c8b397b81	take	taken as is
