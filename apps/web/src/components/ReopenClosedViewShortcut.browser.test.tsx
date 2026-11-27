@@ -90,6 +90,7 @@ import {
   useRightPanelStore,
 } from "../rightPanelStore";
 import { useTerminalUiStateStore } from "../terminalUiStateStore";
+import { writePullRequestListPreferences } from "./pullRequest/pullRequestListPreferences";
 import { ReopenClosedViewShortcut } from "./ReopenClosedViewShortcut";
 
 const ref = { environmentId: "remote", threadId: "thread-1" } as ScopedThreadRef;
@@ -442,6 +443,67 @@ describe("root reopen shortcut", () => {
         }),
       }),
     );
+  });
+
+  it("reopens a closed pull request tab from another route with saved list preferences and no foreign search params", async () => {
+    setup();
+    window.localStorage.removeItem("onicode.pullRequests.preferences");
+    using _cleanup = {
+      [Symbol.dispose]: () => window.localStorage.removeItem("onicode.pullRequests.preferences"),
+    };
+    writePullRequestListPreferences({ involvement: "reviewing", state: "merged" });
+    useClosedViewStore.getState().remember({
+      kind: "panel-tab",
+      threadRef: PULL_REQUESTS_PANEL_REF,
+      surface: {
+        id: "pull-request:remote:project-1:github.com:aislopware/onicode#42",
+        kind: "pull-request",
+        environmentId: "remote",
+        projectId: "project-1",
+        host: "github.com",
+        repository: "aislopware/onicode",
+        number: 42,
+      },
+    });
+
+    const history = createMemoryHistory({
+      initialEntries: [
+        "/issues?who=assigned&status=closed&q=login&host=linear.app&tracker=linear&scope=ENG&key=ENG-12",
+      ],
+    });
+    const root = createRootRoute({
+      component: () => (
+        <>
+          <ReopenClosedViewShortcut />
+          <Outlet />
+        </>
+      ),
+    });
+    const router = createRouter({
+      history,
+      routeTree: root.addChildren([
+        createRoute({ getParentRoute: () => root, path: "issues" }),
+        createRoute({ getParentRoute: () => root, path: "pull-requests" }),
+      ]),
+    });
+    state.navigate.mockImplementation(router.navigate);
+    using _platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64");
+    await using _view = await render(<RouterProvider router={router} />, { router: false });
+
+    await act(() => {
+      press();
+    });
+
+    expect(router.state.location.pathname).toBe("/pull-requests");
+    expect(router.state.location.search).toEqual({
+      involvement: "reviewing",
+      state: "merged",
+      repository: "aislopware/onicode",
+      number: 42,
+      selectedProjectId: "project-1",
+      selectedHost: "github.com",
+      selectedEnvironmentId: "remote",
+    });
   });
 
   it("forwards address-bar focus, zoom, and panel new and close from a focused desktop page", async () => {

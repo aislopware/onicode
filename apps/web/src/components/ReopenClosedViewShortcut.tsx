@@ -56,6 +56,7 @@ import {
 } from "../threadRoutes";
 import { toastManager } from "./ui/toast";
 import { readIssueListPreferences } from "./issue/issueListPreferences";
+import { readPullRequestListPreferences } from "./pullRequest/pullRequestListPreferences";
 
 const PREVIEW_FORWARDED_COMMANDS = [
   "workspace.focusNext",
@@ -178,7 +179,7 @@ export function ReopenClosedViewShortcut() {
       destination = globalPullRequests
         ? linkOptions({
             to: "/pull-requests",
-            search: (previous) => pullRequestsSearchForRestore(previous, selected),
+            search: pullRequestsSearchForRestore(readPullRequestListPreferences(), selected),
           })
         : linkOptions({
             to: "/issues",
