@@ -4290,3 +4290,4 @@ c2fcbd7952	take	taken as is
 a3e13b25dc	take	exec loop and code-span scan taken without the hosted-link bare group
 712f51f0a6	take	taken as is
 64a1f09186	take	applied by fuzz; test placed before Onicode's 'keeps links it may not chip' case
+36816d26be	take	comment updated under Onicode's canFastSettleDelegated branch; condition unchanged
