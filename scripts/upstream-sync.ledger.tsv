@@ -4645,3 +4645,4 @@ cef444e553	take	taken as is
 16858030aa	take	kept Onicode's diff 9.0.0 pin; added character-entities-legacy 3.0.0
 d7ea20f3d9	take	taken as is
 f771ee89a4	take	taken as is; shared by desktop and mobile
+e70368d582	take	styles.xml read from Onicode's OfficeArchive (string or bytes); test uses TestArchive (no JSZip)
