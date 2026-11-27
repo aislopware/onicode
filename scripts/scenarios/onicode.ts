@@ -232,20 +232,34 @@ export function makeState(home: string, env: NodeJS.ProcessEnv = {}) {
       project: (title, files = {}) => runPromise(project(title, files)),
       thread: (input) => runPromise(thread(input)),
     } satisfies OniState,
-    // The server outlives the test, so the next one must not see this one's projects.
-    cleanup: Effect.forEach(
-      projects,
-      (projectId) =>
-        Effect.flatMap(uuid, (commandId) =>
-          mutate({
-            type: "project.delete",
-            commandId: CommandId.make(commandId),
-            projectId,
-            force: true,
-          }),
-        ),
-      { discard: true },
-    ),
+    // The server outlives the test, so the next one must not see this one's projects, including
+    // those it added through the app from inside its workspaces.
+    cleanup: Effect.gen(function* () {
+      if (projects.length === 0) return;
+      const { client, headers } = yield* api;
+      const { projects: live } = yield* client.projects
+        .snapshot({ headers })
+        .pipe(Effect.mapError((cause) => new ScenarioError({ message: `projects: ${cause}` })));
+      const workspaces = `${(yield* Path.Path).join(home, "workspaces")}/`;
+      const added = live.flatMap((project) =>
+        project.deletedAt === null && project.workspaceRoot.startsWith(workspaces)
+          ? [project.id]
+          : [],
+      );
+      yield* Effect.forEach(
+        new Set([...projects, ...added]),
+        (projectId) =>
+          Effect.flatMap(uuid, (commandId) =>
+            mutate({
+              type: "project.delete",
+              commandId: CommandId.make(commandId),
+              projectId,
+              force: true,
+            }),
+          ),
+        { discard: true },
+      );
+    }),
   };
 }
 
