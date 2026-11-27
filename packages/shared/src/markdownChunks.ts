@@ -148,6 +148,8 @@ function blockCloser(line: string): ((line: string) => boolean) | null | undefin
 export interface MarkdownChunk {
   readonly text: string;
   readonly lines: number;
+  /** The line break after this piece, when there is one. */
+  readonly separator?: "\n" | "\r";
 }
 
 // Footnotes are left alone so each piece does not grow a footnote section.
@@ -372,7 +374,7 @@ export function extendMarkdownSplit(
     resume === undefined ||
     resume.targetChars !== targetChars ||
     text.length < resume.textLength ||
-    text.charCodeAt(resume.start - 1) !== 10 ||
+    !endsLineBreak(text, resume.start) ||
     keepsWhole(text)
   ) {
     return splitMarkdown(text, targetChars, complete);
@@ -393,14 +395,57 @@ export function extendMarkdownSplit(
   );
 }
 
+/** Whether a line break ends right before `start`, and a CR there is not half of a CRLF. */
+function endsLineBreak(text: string, start: number): boolean {
+  const code = text.charCodeAt(start - 1);
+  return code === 10 || (code === 13 && text.charCodeAt(start) !== 10);
+}
+
 function keepsWhole(text: string): boolean {
   return text.length <= LARGE_MARKDOWN_CHUNK_MAX_CHARS && FOOTNOTE_DEFINITION.test(text);
 }
 
+// A bare CR ends a line too; CRLF lines keep their `\r`, which the patterns here allow.
+function nextLineBreak(text: string, from: number): number {
+  for (let at = from; at < text.length; at++) {
+    const code = text.charCodeAt(at);
+    if (code === 10 || (code === 13 && text.charCodeAt(at + 1) !== 10)) return at;
+  }
+  return text.length;
+}
+
+/** The lines of `text` from `start`, each ending at a one-character line break. */
+function splitLines(text: string, start: number): string[] {
+  const body = start > 0 ? text.slice(start) : text;
+  if (!body.includes("\r")) return body.split("\n");
+  const lines: string[] = [];
+  for (let at = 0; at <= body.length;) {
+    const end = nextLineBreak(body, at);
+    lines.push(body.slice(at, end));
+    at = end + 1;
+  }
+  return lines;
+}
+
+/** The piece from `start` to the line break before `next`, which is the text's end past it. */
+function markdownPiece(text: string, start: number, next: number, lines: number): MarkdownChunk {
+  if (next > text.length) return { text: text.slice(start), lines };
+  const separator = text[next - 1];
+  const piece = { text: text.slice(start, next - 1), lines };
+  return separator === "\n" || separator === "\r" ? { ...piece, separator } : piece;
+}
+
+/** The source of split pieces, with each piece's own line break between them. */
+export function joinMarkdownChunks(chunks: readonly MarkdownChunk[]): string {
+  return chunks
+    .map((chunk, index) =>
+      index + 1 < chunks.length ? `${chunk.text}${chunk.separator ?? "\n"}` : chunk.text,
+    )
+    .join("");
+}
+
 function wholeMarkdown(text: string): SplitMarkdown {
-  let lines = 1;
-  for (let at = text.indexOf("\n"); at >= 0; at = text.indexOf("\n", at + 1)) lines++;
-  return { chunks: [{ text, lines }], definitions: "" };
+  return { chunks: [{ text, lines: splitLines(text, 0).length }], definitions: "" };
 }
 
 function scanMarkdown(
@@ -431,7 +476,8 @@ function scanMarkdown(
     htmlStarts = undefined;
   };
   let resume = from.start > 0 ? from : undefined;
-  let lines: string[] = [];
+  let pieceStart = from.start;
+  let pieceLines = 0;
   let chars = 0;
   let closes: ((line: string) => boolean) | null = null;
   let openedFence = false;
@@ -450,7 +496,7 @@ function scanMarkdown(
   let inCommentBlock = false;
   let offset = from.start;
   let linesBefore = from.linesBefore;
-  const textLines = (from.start > 0 ? text.slice(from.start) : text).split("\n");
+  const textLines = splitLines(text, from.start);
   // Lines from this index on may still grow, so they are not cuts.
   const wholeLines = complete ? textLines.length : textLines.length - 1;
   for (let index = 0; index < textLines.length; index++) {
@@ -470,7 +516,7 @@ function scanMarkdown(
       if (openWrappers > 0 && chars - wrapperStart >= WRAPPED_MAX_CHARS) openWrappers = 0;
       const cutPoint =
         !ambiguousHtml &&
-        lines.length > 0 &&
+        pieceLines > 0 &&
         index < wholeLines &&
         chars >= targetChars &&
         ((line.startsWith("#") && ATX_HEADING.test(line)) ||
@@ -492,13 +538,14 @@ function scanMarkdown(
           parseBudget,
         };
         if (openWrappers === 0) {
-          chunks.push({ text: lines.join("\n"), lines: lines.length });
+          chunks.push(markdownPiece(text, pieceStart, offset, pieceLines));
           resume = at;
-          lines = [];
+          pieceStart = offset;
+          pieceLines = 0;
           chars = 0;
           held = null;
         } else {
-          held = { line: lines.length, index, definitionCount: definitions.length, resume: at };
+          held = { line: pieceLines, index, definitionCount: definitions.length, resume: at };
         }
       }
       const closer = blockCloser(line);
@@ -602,12 +649,13 @@ function scanMarkdown(
       // A comment left open runs to the end of its paragraph or HTML block.
       if (BLANK_LINE.test(line) && !inCommentBlock) commentIn = null;
     }
-    lines.push(line);
+    pieceLines++;
     chars += line.length + 1;
     // Cuts at the held cut and rescans from it in place, as extendMarkdownSplit would resume
     // there. A growing last line may still become a cut itself, so it waits for its line break.
     if (held !== null && index < wholeLines && chars - 1 > LARGE_MARKDOWN_CHUNK_MAX_CHARS) {
-      chunks.push({ text: lines.slice(0, held.line).join("\n"), lines: held.line });
+      chunks.push(markdownPiece(text, pieceStart, held.resume.start, held.line));
+      pieceStart = held.resume.start;
       ({ afterBlankLine, afterHeading, definitionChars, parseBudget } = held.resume);
       ambiguousHtml = false;
       resetFlow(held.index);
@@ -619,7 +667,7 @@ function scanMarkdown(
       linesBefore = held.resume.linesBefore;
       definitions.length = held.definitionCount;
       definitionsLength = held.resume.definitions;
-      lines = [];
+      pieceLines = 0;
       chars = 0;
       closes = null;
       openedFence = false;
@@ -643,7 +691,7 @@ function scanMarkdown(
     offset += line.length + 1;
     linesBefore++;
   }
-  chunks.push({ text: lines.join("\n"), lines: lines.length });
+  chunks.push(markdownPiece(text, pieceStart, text.length + 1, pieceLines));
   return resume === undefined
     ? { chunks, definitions: definitions.join("\n") }
     : {
