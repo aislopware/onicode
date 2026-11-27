@@ -266,32 +266,56 @@ it.each([
   },
 );
 
-function SubmissionProbe({ onKeyDown }: { onKeyDown: (event: KeyboardEvent) => void }) {
+function SubmissionProbe({
+  onKeyDown,
+  background = false,
+}: {
+  onKeyDown: (event: KeyboardEvent) => void;
+  background?: boolean;
+}) {
   const formRef = useRef<HTMLFormElement>(null);
-  useDictationSubmissionShortcut({ enabled: true, formRef, onKeyDown });
+  useDictationSubmissionShortcut({ enabled: true, background, formRef, onKeyDown });
   return (
     <>
       <div data-testid="timeline" tabIndex={0}>
         <button type="button">Copy</button>
         <input aria-label="Search" />
+        <span role="link" tabIndex={0}>
+          Docs
+        </span>
+      </div>
+      <div data-side-chat-pane="">
+        <div data-testid="side-timeline" tabIndex={0} />
       </div>
       <form ref={formRef} />
     </>
   );
 }
 
-it("submits dictation on Enter while the chat timeline has focus", async () => {
-  const onKeyDown = vi.fn();
-  await using screen = await render(<SubmissionProbe onKeyDown={onKeyDown} />);
-  (screen.getByTestId("timeline").element() as HTMLElement).focus();
-  await userEvent.keyboard("{Enter}");
-  expect(onKeyDown).toHaveBeenCalledOnce();
-});
+it.each([
+  { composer: "main", focus: "timeline", submits: true },
+  { composer: "main", focus: "side-timeline", submits: false },
+  { composer: "side", focus: "timeline", submits: false },
+  { composer: "side", focus: "side-timeline", submits: true },
+])(
+  "$composer composer dictation Enter with $focus focused submits: $submits",
+  async ({ composer, focus, submits }) => {
+    const onKeyDown = vi.fn();
+    await using screen = await render(
+      <SubmissionProbe onKeyDown={onKeyDown} background={composer === "side"} />,
+    );
+    (screen.getByTestId(focus).element() as HTMLElement).focus();
+    await userEvent.keyboard("{Enter}");
+    expect(onKeyDown).toHaveBeenCalledTimes(submits ? 1 : 0);
+  },
+);
 
-it("leaves dictation Enter to a focused button or field", async () => {
+it("leaves dictation Enter to a focused button, link or field", async () => {
   const onKeyDown = vi.fn();
   await using screen = await render(<SubmissionProbe onKeyDown={onKeyDown} />);
   (screen.getByRole("button", { name: "Copy" }).element() as HTMLElement).focus();
+  await userEvent.keyboard("{Enter}");
+  (screen.getByRole("link", { name: "Docs" }).element() as HTMLElement).focus();
   await userEvent.keyboard("{Enter}");
   (screen.getByRole("textbox", { name: "Search" }).element() as HTMLElement).focus();
   await userEvent.keyboard("{Enter}");

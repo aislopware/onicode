@@ -552,11 +552,24 @@ describe("question answer paths", () => {
             expect(NodeFS.existsSync(stale + ".txt")).toBe(false);
             expect(yield* documents.resolve(stale)).toBe(sidecar);
             expect(worker).toHaveBeenCalledTimes(1);
+            const fs = yield* FileSystem.FileSystem;
+            // Current text needs one lookup, however many extractor versions came before.
+            const lookups: Array<string> = [];
+            yield* Effect.gen(function* () {
+              return yield* (yield* DocumentText.DocumentText).resolve(stale);
+            }).pipe(
+              Effect.provide(Layer.fresh(DocumentText.layer)),
+              Effect.provideService(FileSystem.FileSystem, {
+                ...fs,
+                exists: (file) =>
+                  Effect.sync(() => lookups.push(file)).pipe(Effect.andThen(fs.exists(file))),
+              }),
+            );
+            expect(lookups).toEqual([sidecar]);
             // Another extraction publishes and removes the old text between the lookups.
             const racing = NodePath.join(config.attachmentsDir, "racing.rtf");
             NodeFS.writeFileSync(racing, source);
             NodeFS.writeFileSync(racing + ".txt", "The fee is $500$700.");
-            const fs = yield* FileSystem.FileSystem;
             let published = false;
             const racingSidecar = yield* Effect.gen(function* () {
               return yield* (yield* DocumentText.DocumentText).resolve(racing);

@@ -5,6 +5,7 @@ import * as DateTime from "effect/DateTime";
 import { compactOniMcpToolOutput } from "@onicode/shared/toolOutput";
 
 import {
+  liveThoughtLine,
   resolveViewedImageAsset,
   resolveWorkEntryToolPresentation,
   summarizeToolGroup,
@@ -368,5 +369,19 @@ describe("summarizeToolGroup read counts", () => {
         read("b", "/repo/src/b.ts"),
       ]).summary,
     ).toBe("Read 2 files");
+  });
+});
+
+describe("liveThoughtLine", () => {
+  it.each([
+    [
+      "Checked the cache first[^1] and it was stale.\n\n[^1]: Redis TTL is 60s.",
+      "Checked the cache first and it was stale.",
+    ],
+    ["Checking the cache[^1]\n\n[^1]: Redis TTL is 60s", "Checking the cache"],
+    ["Read [the docs][1] next\n\n[1]: https://example.com", "Read the docs next"],
+    ["Match [^a-z] first. More.", "Match [^a-z] first."],
+  ])("keeps only the prose of %j", (markdown, expected) => {
+    expect(liveThoughtLine(markdown)).toBe(expected);
   });
 });

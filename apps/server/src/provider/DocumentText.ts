@@ -139,12 +139,13 @@ const make = Effect.gen(function* () {
     function* (path: string) {
       const extension = path.split(".").at(-1)?.toLowerCase();
       if (!extension || !extensions.has(extension)) return;
-      // Old names first: an extraction publishes the current name before it removes them.
+      // The current name is published by a rename, so when it exists it is complete.
+      const current = extractedTextPath(path);
+      if (yield* fs.exists(current)) return current;
       for (const stale of extractedTextPaths(path)) {
-        if (stale !== extractedTextPath(path) && (yield* fs.exists(stale))) {
-          return yield* ensure(path);
-        }
+        if (stale !== current && (yield* fs.exists(stale))) return yield* ensure(path);
       }
+      // An extraction publishes the current name before it removes the old ones.
       return yield* currentExtractedTextPath(fs, path);
     },
     Effect.orElseSucceed(() => undefined),

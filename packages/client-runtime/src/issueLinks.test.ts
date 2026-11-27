@@ -9,6 +9,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
   createIssueLinkResolver,
+  issueLinkWorkspace,
   mayContainStandaloneIssueLink,
   resolveIssueLinkTarget,
   withProjectIssueHost,
@@ -176,6 +177,43 @@ describe("resolveIssueLinkTarget", () => {
     ]).toEqual(["p2", "p1"]);
   });
 
+  it("reads a Jira link through the account connected to the site it names", () => {
+    const trackers = {
+      trackers: [
+        {
+          tracker: IssueTrackerKind.make("jira"),
+          displayName: "Jira",
+          host: "atlassian.net",
+          scopeNoun: "project",
+          credential: { label: "API token", helpUrl: null },
+          connected: true,
+          account: "julius",
+          detail: null,
+          workspace: "acme.atlassian.net",
+          scopes: [],
+        },
+      ],
+      bindings: {
+        [ProjectId.make("p1")]: { tracker: IssueTrackerKind.make("jira"), scope: "ENG" },
+      },
+    };
+    const resolve = (url: string) => resolveIssueLinkTarget({ url, projects, trackers });
+    expect(
+      resolve("https://acme.atlassian.net/jira/software/c/projects/ENG/issues/ENG-7")?.ref,
+    ).toEqual({
+      projectId: "p1",
+      tracker: "jira",
+      host: "atlassian.net",
+      scope: "ENG",
+      key: "ENG-7",
+      workspace: "acme.atlassian.net",
+    });
+    expect(issueLinkWorkspace("https://Acme.atlassian.net/browse/ENG-7")).toBe(
+      "acme.atlassian.net",
+    );
+    expect(resolve("https://other.atlassian.net/browse/ENG-7")).toBeNull();
+  });
+
   it.each([
     "https://github.com.evil.example/acme/web/issues/7",
     "https://github.com/acme/web/pull/7",
@@ -256,6 +294,7 @@ describe("mayContainStandaloneIssueLink", () => {
   it.each([
     ["[issue](https://linear.app/acme/issue/WEB-17)", true],
     ["[issue](https://LINEAR.APP/acme/issue/WEB-17)", true],
+    ["[issue](https://acme.atlassian.net/browse/ENG-7)", true],
     ["[issue](https://github.com/acme/web/issues/7)", false],
   ])("classifies %s as %s", (text, expected) => {
     expect(mayContainStandaloneIssueLink(text)).toBe(expected);
