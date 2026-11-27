@@ -4530,3 +4530,4 @@ a0ad0c6c79	take	clean; two extra field compares per row, re-render only on real 
 3d7512a30b	take	clean
 937ea8978f	take	clean
 dc37556a93	take	clean
+1f7cb36e06	take	documentTextWorker chain; tests userInputAttachments xlsx
