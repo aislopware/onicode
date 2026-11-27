@@ -4143,3 +4143,4 @@ f727a75b59	take	import merged beside Onicode's carryFanoutSelections; retargetDr
 4c8a324e8f	take	kept Onicode's markdownLinks escape handling (4cef77e10c: any CommonMark ASCII-punctuation escape, a superset of upstream's \" and \' rule); took only upstream's test rows, which pass
 72559e12fa	take	taken as is
 d846efc143	take	applied cleanly on top of the shared-tooltip port (ea3328c50c); SidebarThreadRow is not a hook-order file; hover cards render at most 8 rows (perf win)
+72ecf7d13d	take	test import merged into Onicode's block
