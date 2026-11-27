@@ -170,6 +170,9 @@ const config: E2EConfig = {
   // One server holds every test's state, and a dev stack is heavy.
   workers: 1,
   timeout: 300_000,
+  // Engine init boots the iOS session, which a loaded CI Mac answers past the 60 s default but
+  // within agent-device's own 90 s request limit. A failed init fails every test of its worker.
+  launchTimeout: 120_000,
   assertionTimeout: 15_000,
   // e2e retries once under CI unless told otherwise, and a retried pass would hide a race.
   retries: 0,

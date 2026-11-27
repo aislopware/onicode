@@ -1,72 +1,159 @@
 diff --git a/dist/device.js b/dist/device.js
-index 819e3a8294724e95a5deb934e443f9615b92f0d9..7e3f0d937147d46c75d05e195b63494f9fe1688d 100644
+index 819e3a8294724e95a5deb934e443f9615b92f0d9..fc16c76704977dad0e2fdafab3c081a7e7ca1d8f 100644
 --- a/dist/device.js
 +++ b/dist/device.js
-@@ -71,7 +71,8 @@ export function createDeviceFixture(surface, context) {
-             await surface.command('device.setAppearance', (client) => client.settings.update({ ...surface.selection(), setting: 'appearance', state: mode }), context.signal);
+@@ -15,6 +15,8 @@ import { unsupported } from './support.js';
+  * the wanted state, so a cleanup hook shared with Android still passes.
+  */
+ const IOS_OFFLINE = "on iOS agent-device can only repaint a simulator's status bar, since the simulator shares the Mac's network, and cannot switch an iPhone's radios, so the app would stay online";
++/** An install copies the whole build, which a loaded host takes far longer for than the action timeout a tap gets. */
++const INSTALL_TIMEOUT_MS = 120_000;
+ /** The raw driver session a surface is bound to: `device.unstable_raw`, and what `unstable_deviceSession()` hands a custom tool. */
+ export function rawSession(surface) {
+     const { session, deviceId, deviceName } = surface.boundDevice;
+@@ -31,6 +33,10 @@ export function rawSession(surface) {
+ }
+ /** Builds the device fixture for one attempt. */
+ export function createDeviceFixture(surface, context) {
++    const installTimeoutMs = () => Math.max(INSTALL_TIMEOUT_MS, context.timeouts.action);
++    /** The budget a busy iOS runner is waited out within: the timeout the harness bounds the call by. */
++    const budget = (label, timeoutMs = context.timeouts.action) => surface.inputBudget(label, { timeoutMs, signal: context.signal });
++    const command = (label, run) => surface.command(label, run, context.signal, budget(label));
+     const device = {
+         get unstable_raw() {
+             return rawSession(surface);
+@@ -42,7 +48,7 @@ export function createDeviceFixture(surface, context) {
+                     throw unsupported(`device.setNetwork('offline') turns off an Android device's Wi-Fi; ${IOS_OFFLINE}`);
+                 return;
+             }
+-            await surface.command('device.setNetwork', (client) => client.settings.update({ ...surface.selection(), setting: 'wifi', state: state === 'offline' ? 'off' : 'on' }), context.signal);
++            await command('device.setNetwork', (client) => client.settings.update({ ...surface.selection(), setting: 'wifi', state: state === 'offline' ? 'off' : 'on' }));
+         },
+         async setAirplaneMode(enabled) {
+             if (surface.options.platform === 'ios') {
+@@ -50,57 +56,59 @@ export function createDeviceFixture(surface, context) {
+                     throw unsupported(`device.setAirplaneMode(true) cuts an Android device's radios; ${IOS_OFFLINE}`);
+                 return;
+             }
+-            await surface.command('device.setAirplaneMode', (client) => client.settings.update({ ...surface.selection(), setting: 'airplane', state: enabled ? 'on' : 'off' }), context.signal);
++            await command('device.setAirplaneMode', (client) => client.settings.update({ ...surface.selection(), setting: 'airplane', state: enabled ? 'on' : 'off' }));
+         },
+         async setPermission(permission, state) {
+-            await surface.setPermission(permission, state, context.signal);
++            await surface.setPermission(permission, state, context.signal, budget('device.setPermission'));
+         },
+         async setLocation({ latitude, longitude }) {
+             // Android reads a fix only while location services are on, and
+             // `clearLocation` switched them off for good on the emulator (the
+             // setting outlives the app); iOS has no such switch.
+             if (surface.options.platform === 'android') {
+-                await surface.command('device.setLocation', (client) => client.settings.update({ ...surface.selection(), setting: 'location', state: 'on' }), context.signal);
++                await command('device.setLocation', (client) => client.settings.update({ ...surface.selection(), setting: 'location', state: 'on' }));
+             }
+-            await surface.command('device.setLocation', (client) => client.settings.update({ ...surface.selection(), setting: 'location', state: 'set', latitude, longitude }), context.signal);
++            await command('device.setLocation', (client) => client.settings.update({ ...surface.selection(), setting: 'location', state: 'set', latitude, longitude }));
+         },
+         async clearLocation() {
+-            await surface.command('device.clearLocation', (client) => client.settings.update({ ...surface.selection(), setting: 'location', state: 'off' }), context.signal);
++            await command('device.clearLocation', (client) => client.settings.update({ ...surface.selection(), setting: 'location', state: 'off' }));
+         },
+         async setAppearance(mode) {
+-            await surface.command('device.setAppearance', (client) => client.settings.update({ ...surface.selection(), setting: 'appearance', state: mode }), context.signal);
++            await command('device.setAppearance', (client) => client.settings.update({ ...surface.selection(), setting: 'appearance', state: mode }));
          },
          async setOrientation(orientation) {
 -            await surface.screenCommand('device.setOrientation', (client) => client.command.orientation({ ...surface.selection(), orientation }), context.signal);
-+            const input = surface.inputBudget('device.setOrientation', { timeoutMs: context.timeouts.action, signal: context.signal });
++            const input = budget('device.setOrientation');
 +            await surface.screenCommand('device.setOrientation', (client) => input.send(() => client.command.orientation({ ...surface.selection(), orientation })), context.signal);
          },
          async fold(pose) {
-             await surface.fold(pose, context.signal);
-@@ -91,7 +92,7 @@ export function createDeviceFixture(surface, context) {
-             await surface.openApp(app, options ?? {}, context.signal);
+-            await surface.fold(pose, context.signal);
++            await surface.fold(pose, context.signal, budget('device.fold'));
+         },
+         async setBiometrics(sensor, result) {
+-            await surface.command('device.setBiometrics', (client) => sensor === 'fingerprint'
++            await command('device.setBiometrics', (client) => sensor === 'fingerprint'
+                 ? client.settings.update({ ...surface.selection(), setting: 'fingerprint', state: result })
+-                : client.settings.update({ ...surface.selection(), setting: sensor, state: result }), context.signal);
++                : client.settings.update({ ...surface.selection(), setting: sensor, state: result }));
+         },
+         async enrollBiometrics(sensor, enrolled) {
+-            await surface.command('device.enrollBiometrics', (client) => client.settings.update({ ...surface.selection(), setting: sensor, state: enrolled ? 'enroll' : 'unenroll' }), context.signal);
++            await command('device.enrollBiometrics', (client) => client.settings.update({ ...surface.selection(), setting: sensor, state: enrolled ? 'enroll' : 'unenroll' }));
+         },
+         async installApp(appPath, options) {
+-            return surface.installApp(appPath, options ?? {}, context.signal);
++            return surface.installApp(appPath, options ?? {}, context.signal, budget('device.installApp', installTimeoutMs()));
+         },
+         async openApp(app, options) {
+-            await surface.openApp(app, options ?? {}, context.signal);
++            await surface.openApp(app, options ?? {}, context.signal, budget('device.openApp'));
          },
          async openLink(url, options) {
 -            await surface.openLink(linkTarget(url), options?.app, context.signal);
-+            await surface.openLink(linkTarget(url), options?.app, context.signal, surface.inputBudget('device.openLink', { timeoutMs: context.timeouts.action, signal: context.signal }));
++            await surface.openLink(linkTarget(url), options?.app, context.signal, budget('device.openLink'));
          },
          async closeApp() {
-             await surface.closeApp(context.signal);
-@@ -100,7 +101,8 @@ export function createDeviceFixture(surface, context) {
-             await surface.clearKeychain(context.signal);
+-            await surface.closeApp(context.signal);
++            await surface.closeApp(context.signal, budget('device.closeApp'));
+         },
+         async clearKeychain() {
+-            await surface.clearKeychain(context.signal);
++            await surface.clearKeychain(context.signal, budget('device.clearKeychain'));
          },
          async foregroundApp() {
 -            const state = await surface.command('device.foregroundApp', (client) => client.command.appState({}), context.signal);
-+            const input = surface.inputBudget('device.foregroundApp', { timeoutMs: context.timeouts.action, signal: context.signal });
++            const input = budget('device.foregroundApp');
 +            const state = await surface.command('device.foregroundApp', (client) => input.read(() => client.command.appState({})), context.signal);
              if ('package' in state)
                  return { name: state.package, bundleId: state.package };
              return {
-@@ -109,23 +111,28 @@ export function createDeviceFixture(surface, context) {
+@@ -109,23 +117,28 @@ export function createDeviceFixture(surface, context) {
              };
          },
          async home() {
 -            await surface.screenCommand('device.home', (client) => client.command.home(surface.selection()), context.signal);
-+            const input = surface.inputBudget('device.home', { timeoutMs: context.timeouts.action, signal: context.signal });
++            const input = budget('device.home');
 +            await surface.screenCommand('device.home', (client) => input.send(() => client.command.home(surface.selection())), context.signal);
          },
          async back() {
 -            await surface.screenCommand('device.back', (client) => client.command.back({ ...surface.settleOptions }), context.signal);
-+            const input = surface.inputBudget('device.back', { timeoutMs: context.timeouts.action, signal: context.signal });
++            const input = budget('device.back');
 +            await surface.screenCommand('device.back', (client) => input.send(() => client.command.back({ ...surface.settleOptions })), context.signal);
          },
          async alert(action) {
 -            await surface.screenCommand('device.alert', (client) => client.command.alert({ ...surface.selection(), action }), context.signal);
-+            const input = surface.inputBudget('device.alert', { timeoutMs: context.timeouts.action, signal: context.signal });
++            const input = budget('device.alert');
 +            await surface.screenCommand('device.alert', (client) => input.send(() => client.command.alert({ ...surface.selection(), action })), context.signal);
          },
          async dismissKeyboard() {
-             await surface.dismissKeyboard(context.signal, surface.inputBudget('device.dismissKeyboard', { timeoutMs: context.timeouts.action, signal: context.signal }));
+-            await surface.dismissKeyboard(context.signal, surface.inputBudget('device.dismissKeyboard', { timeoutMs: context.timeouts.action, signal: context.signal }));
++            await surface.dismissKeyboard(context.signal, budget('device.dismissKeyboard'));
          },
          async clipboard() {
 -            const result = await surface.command('device.clipboard', (client) => client.command.clipboard({ ...surface.selection(), action: 'read' }), context.signal);
-+            const input = surface.inputBudget('device.clipboard', { timeoutMs: context.timeouts.action, signal: context.signal });
++            const input = budget('device.clipboard');
 +            const result = await surface.command('device.clipboard', (client) => input.read(() => client.command.clipboard({ ...surface.selection(), action: 'read' })), context.signal);
              return result.action === 'read' ? result.text : '';
          },
          async setClipboard(text) {
 -            await surface.command('device.setClipboard', (client) => client.command.clipboard({ ...surface.selection(), action: 'write', text }), context.signal);
-+            const input = surface.inputBudget('device.setClipboard', { timeoutMs: context.timeouts.action, signal: context.signal });
++            const input = budget('device.setClipboard');
 +            await surface.command('device.setClipboard', (client) => input.send(() => client.command.clipboard({ ...surface.selection(), action: 'write', text })), context.signal);
          },
      };
      const action = { kind: 'resource' };
+@@ -140,7 +153,7 @@ export function createDeviceFixture(surface, context) {
+         fold: { ...action, label: (pose) => pose },
+         setBiometrics: action,
+         enrollBiometrics: action,
+-        installApp: { ...action, label: (appPath) => appPath ?? surface.appPath ?? 'appPath' },
++        installApp: { ...action, timeout: installTimeoutMs, label: (appPath) => appPath ?? surface.appPath ?? 'appPath' },
+         openApp: { ...action, label: (app) => appLabel(app) },
+         openLink: { ...action, label: (url) => linkLabel(url) },
+         closeApp: action,
 diff --git a/dist/support.js b/dist/support.js
-index 91d50ca0a3a10f1798f2f3d83e45da56de77351a..64d4e7643c5b9c482671adc5f4b6aa75474f1a3e 100644
+index 91d50ca0a3a10f1798f2f3d83e45da56de77351a..47582e55b4b53f6f3aa10fe90553251b0d5d3aaf 100644
 --- a/dist/support.js
 +++ b/dist/support.js
 @@ -1,4 +1,5 @@
@@ -125,10 +212,18 @@ index 91d50ca0a3a10f1798f2f3d83e45da56de77351a..64d4e7643c5b9c482671adc5f4b6aa75
          const remaining = this.remainingMs();
          if (remaining <= 0)
              return Promise.reject(this.spent());
-@@ -76,6 +106,34 @@ export class InputBudget {
+@@ -76,6 +106,42 @@ export class InputBudget {
              ? this.maybeCommitted()
              : new EngineError('OPERATION_TIMEOUT', `${this.label} timed out before the device answered`, { retryable: false }));
      }
++    /**
++     * Runs a command that is neither an input nor a read (an app launch or
++     * close, an install, a setting, a recording) whose caller bounds its
++     * answer: only a busy runner's refusal waits, within the budget.
++     */
++    whenRunnerFree(dispatch) {
++        return this.untilRunnerFree(dispatch, MIN_ANSWER_MS);
++    }
 +    /**
 +     * Sends a command again, within the budget, while the iOS runner refuses it
 +     * as busy: nothing went out, and the refusal clears once the runner drains
@@ -160,3 +255,251 @@ index 91d50ca0a3a10f1798f2f3d83e45da56de77351a..64d4e7643c5b9c482671adc5f4b6aa75
      /** Milliseconds left of the budget; zero or less once it is spent. */
      remainingMs() {
          return this.endsAt - Date.now();
+diff --git a/dist/surface.js b/dist/surface.js
+index 8511c8b53486d1fb9573d6d97d00add242afc0b2..141bbb7e230e82bb943b932816ed97a542a83ef8 100644
+--- a/dist/surface.js
++++ b/dist/surface.js
+@@ -363,11 +363,13 @@ export class AgentDeviceSurface {
+     /**
+      * Runs one agent-device command under an operation budget and translates
+      * its failure. Contributed-fixture methods route through here too, so the
+-     * device fixture never carries its own error mapping.
++     * device fixture never carries its own error mapping. With `input` the
++     * command waits out a busy iOS runner within that budget.
+      */
+-    async command(label, run, signal) {
++    async command(label, run, signal, input) {
+         const client = this.requireClient();
+-        return runCommand(label, () => this.track(run(client)), signal ?? new AbortController().signal, this.where);
++        const dispatch = input === undefined ? () => run(client) : () => input.whenRunnerFree(() => run(client));
++        return runCommand(label, () => this.track(dispatch()), signal ?? new AbortController().signal, this.where);
+     }
+     /**
+      * Runs a fixture command that changes the screen (a back, the home screen,
+@@ -377,9 +379,9 @@ export class AgentDeviceSurface {
+      * `device.back()` followed by a tap lands where the returning screen has
+      * not yet arrived.
+      */
+-    async screenCommand(label, run, signal) {
++    async screenCommand(label, run, signal, input) {
+         const before = this.latestScreen;
+-        const result = await this.command(label, run, signal);
++        const result = await this.command(label, run, signal, input);
+         this.markAction(before);
+         return result;
+     }
+@@ -514,7 +516,7 @@ export class AgentDeviceSurface {
+             quality: 'medium',
+             recordingScope: 'device',
+             ...(this.hideTouches ? { hideTouches: true } : {}),
+-        }), operation.signal);
++        }), operation.signal, this.inputBudget('start video recording', operation));
+         // The device confirmed: it is recording from about now.
+         recording.startedAt = new Date().toISOString();
+     }
+@@ -529,7 +531,7 @@ export class AgentDeviceSurface {
+         if (video.kind === 'lease') {
+             return [await this.stopLeaseRecording(video, operation.signal)];
+         }
+-        const result = await this.stopScreenRecording(video, operation.signal);
++        const result = await this.stopScreenRecording(video, operation.signal, this.inputBudget('stop video recording', operation));
+         // The device may finalize the file under a path of its own choosing; the
+         // artifact must live where the attempt directory expects it.
+         const written = typeof result.outPath === 'string' ? result.outPath : video.absolute;
+@@ -545,10 +547,10 @@ export class AgentDeviceSurface {
+      * whatever the test opened in it since, so the session is then as
+      * `closeApp` leaves it.
+      */
+-    async stopScreenRecording(video, signal) {
++    async stopScreenRecording(video, signal, input) {
+         return raceAbort(() => {
+             // Cleanup must wait for this bookkeeping as well as the SDK request.
+-            video.stopping ??= this.track(this.command('stop video recording', (client) => client.recording.record({ ...this.selection(), action: 'stop' })).then((result) => {
++            video.stopping ??= this.track(this.command('stop video recording', (client) => client.recording.record({ ...this.selection(), action: 'stop' }), undefined, input).then((result) => {
+                 if (this.recording === video)
+                     this.recording = undefined;
+                 if (result.recordOnlySession === true)
+@@ -640,7 +642,7 @@ export class AgentDeviceSurface {
+      * open it as a URL, and `openLink` is the path that carries the
+      * navigation rule.
+      */
+-    async openApp(app, options, signal) {
++    async openApp(app, options, signal, input) {
+         assertAppId(app);
+         if (options.permissions !== undefined)
+             assertPermissions('device.openApp({ permissions })', options.permissions, 'INVALID_ARGUMENT');
+@@ -652,17 +654,17 @@ export class AgentDeviceSurface {
+         const launchArguments = options.launchArguments ?? (configured ? this.app.launchArguments : undefined);
+         const permissions = options.permissions ?? (configured ? this.app.permissions : undefined);
+         if (permissions !== undefined)
+-            await this.presetPermissions(app, permissions, signal);
+-        await this.open(app, relaunch, launchArguments, signal);
++            await this.presetPermissions(app, permissions, signal, input);
++        await this.open(app, relaunch, launchArguments, signal, input);
+     }
+     /** One `open` of an app, remembered as the session's app and as the screen's replacement. */
+-    async open(app, relaunch, launchArguments, signal) {
++    async open(app, relaunch, launchArguments, signal, input) {
+         const result = await this.command(`open ${app}`, (client) => client.apps.open({
+             app,
+             ...this.selection(),
+             ...(relaunch ? { relaunch: true } : {}),
+             ...(launchArguments === undefined || launchArguments.length === 0 ? {} : { launchArgs: [...launchArguments] }),
+-        }), signal);
++        }), signal, input);
+         this.launched(result.appBundleId ?? result.appName ?? app);
+     }
+     /**
+@@ -671,23 +673,23 @@ export class AgentDeviceSurface {
+      * permission was revoked, so a change after the launch would leave the
+      * test on no screen.
+      */
+-    async presetPermissions(app, permissions, signal) {
++    async presetPermissions(app, permissions, signal, input) {
+         const entries = Object.entries(permissions).filter((entry) => entry[1] !== undefined);
+         for (const [permission, state] of entries)
+-            await this.permission(permission, state, app, signal);
++            await this.permission(permission, state, app, signal, input);
+     }
+     /**
+      * One permission change for `device.setPermission`: on the pinned app, else
+      * on the app agent-device's session is on. The name and state are checked
+      * before any device command, a missing state refused rather than skipped.
+      */
+-    async setPermission(permission, state, signal) {
++    async setPermission(permission, state, signal, input) {
+         assertPermission('device.setPermission', permission, state, 'INVALID_ARGUMENT');
+-        await this.permission(permission, state, this.pinnedApp, signal);
++        await this.permission(permission, state, this.pinnedApp, signal, input);
+     }
+     /** One permission change on `app`, which needs no running app and no open in the session. */
+-    async permission(permission, state, app, signal) {
+-        await this.command(`permission ${permission} ${state}`, (client) => client.settings.update({ setting: 'permission', permission, state, ...this.selection(), ...(app === undefined ? {} : { app }) }), signal);
++    async permission(permission, state, app, signal, input) {
++        await this.command(`permission ${permission} ${state}`, (client) => client.settings.update({ setting: 'permission', permission, state, ...this.selection(), ...(app === undefined ? {} : { app }) }), signal, input);
+     }
+     /**
+      * Opens a link on the device, into `app` (the pinned app when none is
+@@ -747,9 +749,9 @@ export class AgentDeviceSurface {
+      * the pinned one; with neither known there is nothing to terminate and
+      * only the session ends.
+      */
+-    async closeApp(signal) {
++    async closeApp(signal, input) {
+         const app = this.appIdentity ?? this.pinnedApp;
+-        await this.command('device.closeApp', (client) => client.apps.close({ ...this.selection(), ...(app === undefined ? {} : { app }) }), signal);
++        await this.command('device.closeApp', (client) => client.apps.close({ ...this.selection(), ...(app === undefined ? {} : { app }) }), signal, input);
+         this.screenReplaced();
+     }
+     /**
+@@ -757,7 +759,7 @@ export class AgentDeviceSurface {
+      * named by `options.app` (else the pinned app) first, so the build starts
+      * with no data; a plain install replaces the binary and keeps its data.
+      */
+-    async installApp(appPath, options, signal) {
++    async installApp(appPath, options, signal, input) {
+         const build = appPath ?? this.app.appPath;
+         if (build === undefined)
+             throw invalidState("installApp needs a build: pass a path, or name one with the target's app.appPath");
+@@ -770,7 +772,7 @@ export class AgentDeviceSurface {
+         }
+         const result = await this.command(`install ${resolved}`, (client) => options.reinstall === true && app !== undefined
+             ? client.apps.reinstall({ ...selection, app, appPath: resolved })
+-            : client.apps.install({ ...selection, ...(app === undefined ? {} : { app }), appPath: resolved }), signal);
++            : client.apps.install({ ...selection, ...(app === undefined ? {} : { app }), appPath: resolved }), signal, input);
+         const identity = result.bundleId ?? result.package ?? result.appId;
+         const opensBy = identity ?? app;
+         if (opensBy === undefined) {
+@@ -1481,15 +1483,16 @@ export class AgentDeviceSurface {
+         const app = this.pinnedApp;
+         if (app === undefined)
+             throw unsupported(`launching the app needs the target's \`app.bundleId\`, or ${UNINSTALLED_BUILD}`);
+-        await this.openApp(app, { relaunch: true }, operation.signal);
++        await this.openApp(app, { relaunch: true }, operation.signal, this.inputBudget('restart', operation));
+     }
+     /** Clears the pinned app's persisted state and relaunches it: the device equivalent of a fresh context. */
+     async reset(operation) {
+         const app = this.pinnedApp;
+         if (app === undefined)
+             throw unsupported(`app.clearState needs the target's \`app.bundleId\`, or ${UNINSTALLED_BUILD}`);
+-        await this.command('clear app state', (client) => client.settings.update({ ...this.selection(), setting: 'clear-app-state', state: 'clear', app }), operation.signal);
+-        await this.openApp(app, { relaunch: true }, operation.signal);
++        const input = this.inputBudget('clear app state', operation);
++        await this.command('clear app state', (client) => client.settings.update({ ...this.selection(), setting: 'clear-app-state', state: 'clear', app }), operation.signal, input);
++        await this.openApp(app, { relaunch: true }, operation.signal, input);
+     }
+     /**
+      * Sends a foldable simulator's or emulator's hinge to a pose; agent-device
+@@ -1498,19 +1501,19 @@ export class AgentDeviceSurface {
+      * another panel, so it counts as an action like a rotation. A device
+      * without a hinge comes back from agent-device as `UNSUPPORTED_OPERATION`.
+      */
+-    async fold(pose, signal) {
+-        await this.screenCommand('device.fold', (client) => client.command.fold({ ...this.selection(), pose }), signal);
++    async fold(pose, signal, input) {
++        await this.screenCommand('device.fold', (client) => client.command.fold({ ...this.selection(), pose }), signal, input);
+     }
+     /**
+      * Resets the simulator's keychain through agent-device. simctl resets the
+      * whole simulator's, not one app's, and only a simulator has one to reset:
+      * Android is refused before any device command.
+      */
+-    async clearKeychain(signal) {
++    async clearKeychain(signal, input) {
+         if (this.options.platform !== 'ios') {
+             throw unsupported('device.clearKeychain resets an iOS simulator keychain; Android has none to reset');
+         }
+-        await this.command('device.clearKeychain', (client) => client.settings.update({ ...this.selection(), setting: 'reset-keychain', state: 'clear' }), signal);
++        await this.command('device.clearKeychain', (client) => client.settings.update({ ...this.selection(), setting: 'reset-keychain', state: 'clear' }), signal, input);
+     }
+     /**
+      * A redacted screenshot artifact. The device paints secure fields as dots,
+diff --git a/dist/tools.js b/dist/tools.js
+index 97850b9d8e5a026757b0e698c428adb04491ba42..d60b0b60e3339e26bb2469619b59a37130164447 100644
+--- a/dist/tools.js
++++ b/dist/tools.js
+@@ -12,6 +12,8 @@ import { EngineError, TestError } from '@e2e-dev/core/engine';
+ import { rawSession } from './device.js';
+ import { surfaceOf } from './engine.js';
+ import { isAppNotInstalled } from './errors.js';
++/** A tool call has no operation budget, so a busy iOS runner is waited out for as long as the default action timeout. */
++const RUNNER_BUSY_TOOL_MS = 30_000;
+ /**
+  * Types a tool the way the SDK's `tool()` does, without importing it: `ai`
+  * is an optional peer dependency, and this module loads with the project's
+@@ -83,6 +85,7 @@ export function mobileTools(...engines) {
+         platforms,
+     });
+     const abort = (options) => options.abortSignal;
++    const budget = (surface, label, options) => surface.inputBudget(label, { timeoutMs: RUNNER_BUSY_TOOL_MS, signal: abort(options) ?? new AbortController().signal });
+     return {
+         open_app: defineTool(deviceTool({
+             description: 'Bring an app to the foreground. Omit app to return to the app under test, e.g. after a system sheet or another app took over the screen; pass a bundle id, package, or display name (e.g. "Settings") only for another app. Set relaunch to restart it fresh. Takes an app, not a URL: a link is refused.',
+@@ -91,7 +94,7 @@ export function mobileTools(...engines) {
+                 const surface = active();
+                 const target = app ?? appUnderTest(surface);
+                 try {
+-                    await surface.openApp(target, { relaunch: relaunch === true }, abort(options) ?? new AbortController().signal);
++                    await surface.openApp(target, { relaunch: relaunch === true }, abort(options) ?? new AbortController().signal, budget(surface, 'open_app', options));
+                 }
+                 catch (error) {
+                     if (app === undefined || !isAppNotInstalled(error))
+@@ -108,7 +111,8 @@ export function mobileTools(...engines) {
+                 to: z.object({ x: z.number(), y: z.number() }),
+             }),
+             execute: async ({ from, to }, options) => {
+-                await active().command('swipe', (client) => client.interactions.swipe({ from, to }), abort(options));
++                const surface = active();
++                await surface.command('swipe', (client) => client.interactions.swipe({ from, to }), abort(options), budget(surface, 'swipe', options));
+                 return `Swiped from (${from.x}, ${from.y}) to (${to.x}, ${to.y}).`;
+             },
+         }), annotate(true)),
+@@ -117,7 +121,7 @@ export function mobileTools(...engines) {
+             inputSchema: z.object({ action: z.enum(['accept', 'dismiss']) }),
+             execute: async ({ action }, options) => {
+                 const surface = active();
+-                await surface.command('alert', (client) => client.command.alert({ ...surface.selection(), action }), abort(options));
++                await surface.command('alert', (client) => client.command.alert({ ...surface.selection(), action }), abort(options), budget(surface, 'alert', options));
+                 return `Alert ${action}ed.`;
+             },
+         }), annotate(true)),
