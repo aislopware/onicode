@@ -4210,3 +4210,4 @@ d878f7b192	take	taken as is (applies on Onicode's documentTextWorker after the e
 cc61cdb1e4	take	applied cleanly; kept Onicode's listedCommands tap (e18b04b22b) around loadOpenCodeCommands
 2a99314a47	take	taken as is
 5fda4f7bff	take	kept Onicode's sender-keyed auto-send barrier (e90d520d3b: agentSenderKey, projection-first reads) and added the explicitQueue filter to it; explicitQueue optional on the run and dispatch command (wire-compatible)
+12c1152924	take	taken as is
