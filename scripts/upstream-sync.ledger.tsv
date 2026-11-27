@@ -4352,3 +4352,4 @@ d8a52dda31	take	taken as is
 17b5c1a29c	skip	already done: bbd1b820da moved the fake mounter's traps before the mount announcement in DesktopCliShim.test.ts
 9b4a5e1086	take	took upstream's prepend withMarkdownDefinitions; web marker offset shifted by the prefix; mobile render-only, unchanged; imports merged with Onicode's; task toggle with definitions in the desktop pass
 b403a7c2e3	take	taken as is
+6249fe9d45	take	kept Onicode's row JSX and classes; only the sort uses compareArchiveRows
