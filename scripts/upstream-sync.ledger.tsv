@@ -4152,3 +4152,4 @@ b972842270	take	taken as is
 e380d41c2c	take	taken as is
 824474d7a3	take	taken as is
 9853cf885a	take	taken as is
+36b9a06f09	take	took upstream's shared-checkout check, expectedWorktreePath and the removal-before-unbind order; kept Onicode's withWorkspaceLease around task-folder removal; deduped the ProjectionStore test import

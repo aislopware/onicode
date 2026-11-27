@@ -100,6 +100,7 @@ import { isPlaceholderThreadTitle } from "./placeholderThreadTitle.ts";
 import { canRefreshGeneratedTitle } from "./threadTitleRefresh.ts";
 import { combinePullRequestWatchWakes, type PullRequestWatchWake } from "./pullRequestWatch.ts";
 import { outputRequestProblem } from "./runOutput.ts";
+import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
 import { recordThreadOpen } from "@onicode/shared/paletteSearch";
 import { isSlashCommand } from "@onicode/shared/composerTrigger";
 import {
@@ -1780,6 +1781,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
   const idAllocator = yield* IdAllocator.IdAllocatorV2;
   const projects = yield* ProjectStore.ProjectStoreV2;
   const taskFolderStore = yield* TaskFolderStore.TaskFolderStore;
+  const worktreeSetupTracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
   const projectionStore = yield* ProjectionStoreV2;
   const effectOutbox = yield* EffectOutbox.EffectOutboxV2;
   const nextTurnItemOrdinal = (
@@ -6570,15 +6572,22 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         cause: `Thread ${command.sourceThreadId} was deleted.`,
       });
     }
-    // The fork would copy no worktree path and run in the project checkout.
     if (
       command.sideChat === true &&
-      orchestrationV2WorktreePending(sourceProjection.thread.worktreePath, sourceProjection.runs)
+      (orchestrationV2WorktreePending(
+        sourceProjection.thread.worktreePath,
+        sourceProjection.runs,
+      ) ||
+        (yield* worktreeSetupTracker.workspaceIsHeld(command.sourceThreadId)))
     ) {
+      const workspaceStatus =
+        sourceProjection.thread.worktreePath === null
+          ? "has no worktree yet"
+          : "is still preparing its worktree";
       return yield* new OrchestratorDispatchError({
         commandId: command.commandId,
         commandType: command.type,
-        cause: `Thread ${command.sourceThreadId} has no worktree yet. Start the side chat once its worktree is set up.`,
+        cause: `Thread ${command.sourceThreadId} ${workspaceStatus}. Start the side chat once its worktree is set up.`,
       });
     }
     if ((yield* findThread(command.targetThreadId)) !== null) {
@@ -19110,5 +19119,6 @@ export const layer: Layer.Layer<
   | TaskFolderStore.TaskFolderStore
   | ThreadForkServiceV2
 > = Layer.effect(OrchestratorV2, makeOrchestrator()).pipe(
-  Layer.provide(ThreadCommandExecutor.layer),
+  // Layers memoize by reference, so this is the tracker ThreadLaunchService holds workspaces in.
+  Layer.provide(Layer.merge(ThreadCommandExecutor.layer, WorktreeSetupTracker.layer)),
 );
