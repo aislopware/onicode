@@ -4448,3 +4448,4 @@ aed2db70ee	take	BOM sourceOffset merged into Onicode's one-entry fencedCodeRange
 002594adbe	take	applies cleanly after 34846ca8d6
 1d2a9b5277	take	GitManager CONFLICT: recordCheckout added beside Onicode's guardCheckoutMove; createRef+switchRef stay inside the guard, record on success or when a failing post-checkout hook leaves HEAD on the new branch; contracts createdBranch optional (wire-safe); mobile onProgress pass-through with gitActionResultTitle kept; scenario failed-new-branch-commit-keeps-excluded-files ported as is (WEB), typechecked
 13a910f50e	take	ThemeSearchSection and test taken; web locales regenerated and key 90d1efbdea5f026b filled from upstream's values (pt-BR 'download' is upstream's Portuguese); mobile has no theme search
+ac20e4d95a	take	applies cleanly
