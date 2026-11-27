@@ -66,6 +66,15 @@ const makeTempDir = Effect.gen(function* () {
   );
 });
 
+it("matches reopened submodule sections by their decoded, case-sensitive names", () => {
+  const gitmodules = String.raw`
+[submodule.Legacy] path = stale
+[SUBMODULE "le\gacy"] path = real
+[submodule "Legacy"] path = another
+`;
+  assert.deepEqual(WorkspaceFolders.parseGitmodulesPaths(gitmodules), ["real", "another"]);
+});
+
 it.layer(NodeServices.layer)("WorkspaceFolders", (it) => {
   it.effect("scans child repositories and the folders a code-workspace file lists", () =>
     Effect.gen(function* () {
@@ -85,6 +94,7 @@ it.layer(NodeServices.layer)("WorkspaceFolders", (it) => {
         `${padded}/.git`,
         "api/.git",
         "web/.git",
+        "unrelated/.git",
         "sub/.git",
         "libs/hash/.git",
         "libs/semi/.git",
@@ -116,6 +126,7 @@ it.layer(NodeServices.layer)("WorkspaceFolders", (it) => {
           "[include]",
           "\tpath = extra/repo",
           '[submodule "sub"]',
+          "\tpath = unrelated",
           "\tpath = sub",
           "\turl = https://example.test/sub.git",
           '[submodule "hash"]',
@@ -193,6 +204,12 @@ it.layer(NodeServices.layer)("WorkspaceFolders", (it) => {
           {
             path: path.join(root, "src", "svc"),
             name: "svc",
+            isGitRepository: true,
+            source: "child",
+          },
+          {
+            path: path.join(root, "unrelated"),
+            name: "unrelated",
             isGitRepository: true,
             source: "child",
           },
