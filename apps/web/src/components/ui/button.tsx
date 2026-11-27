@@ -29,7 +29,7 @@ const buttonVariants = cva(
           "size-7 sm:size-6 not-in-data-[slot=input-group]:[&_svg:not([class*='size-'])]:size-4 sm:not-in-data-[slot=input-group]:[&_svg:not([class*='size-'])]:size-3.5",
         lg: "h-10 px-3 sm:h-9",
         micro:
-          "h-5 gap-1 rounded-sm px-1.5 text-2xs sm:text-2xs [&_svg:not([class*='size-'])]:size-3 sm:[&_svg:not([class*='size-'])]:size-3",
+          "h-5 gap-1.5 rounded-sm px-1.5 text-2xs sm:text-2xs [&_svg:not([class*='size-'])]:size-3 sm:[&_svg:not([class*='size-'])]:size-3",
         multiline: "min-h-9 px-2.5 py-1.5 whitespace-normal sm:min-h-8",
         sm: "h-8 gap-1.5 px-2 sm:h-7 sm:text-xs sm:[&_svg:not([class*='size-'])]:size-3.5",
         "sm-pill":
