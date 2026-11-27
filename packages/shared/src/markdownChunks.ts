@@ -121,7 +121,7 @@ export interface MarkdownChunk {
 // A one-line link reference definition; footnotes are left alone so each piece does not grow
 // a footnote section.
 const LINK_DEFINITION =
-  /^ {0,3}\[(?!\^)(?:[^\]\\]|\\.)+\]:[ \t]*(?:<[^<>\n]*>|[^\s<]\S*)(?:[ \t]+(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\((?:[^()\\]|\\.)*\)))?[ \t]*\r?$/;
+  /^ {0,3}\[(?!\^)(?:[^\]\\]|\\.)+\]:[ \t]*(?:<[^<>\n]*>|([^\s<]\S*))(?:[ \t]+(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\((?:[^()\\]|\\.)*\)))?[ \t]*\r?$/;
 // Definitions past this are not repeated into every piece; their parse cost would outweigh links.
 const SHARED_DEFINITIONS_MAX_CHARS = 16 * 1024;
 // A footnote resolves only inside its own piece, so a file that defines one stays whole.
@@ -141,6 +141,25 @@ interface MarkdownSplitResume {
   readonly afterBlankLine: boolean;
   readonly afterDefinition: boolean;
   readonly afterHeading: boolean;
+}
+
+function isLinkDefinition(line: string): boolean {
+  const match = LINK_DEFINITION.exec(line);
+  if (!match) return false;
+  const bareDestination = match[1];
+  if (bareDestination === undefined) return true;
+  let depth = 0;
+  for (let i = 0; i < bareDestination.length; i++) {
+    const ch = bareDestination[i];
+    if (ch === "\\") {
+      i++;
+    } else if (ch === "(") {
+      depth++;
+    } else if (ch === ")" && --depth < 0) {
+      return false;
+    }
+  }
+  return depth === 0;
 }
 
 export interface SplitMarkdown {
@@ -307,7 +326,7 @@ function scanMarkdown(
       // a closing code fence or another definition.
       const definition: boolean =
         (offset === 0 || afterBlankLine || afterDefinition || afterHeading) &&
-        LINK_DEFINITION.test(line);
+        isLinkDefinition(line);
       afterDefinition = definition;
       if (definition && definitionChars + line.length < SHARED_DEFINITIONS_MAX_CHARS) {
         const trimmed = line.trim();
