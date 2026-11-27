@@ -57,7 +57,9 @@ import {
   SourceControlProviderKind,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
   resolveEnvironmentMachineKind,
+  type ScopedProjectRef,
 } from "@onicode/contracts";
+import type { EnvironmentProject } from "@onicode/client-runtime/state/shell";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeftIcon,
@@ -108,6 +110,7 @@ import { useDesktopLocalBootstraps } from "../connection/useDesktopLocalBootstra
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl";
 import { copyThreadReference } from "../lib/copyThreadReference";
+import { moveDraftToProject } from "../lib/moveDraftToProject";
 import {
   queueWorkspaceFocusFromPalette,
   restoreWorkspaceFocusFromPalette,
@@ -588,7 +591,25 @@ function OpenCommandPaletteDialog(props: {
   const [isCreatingNewProject, setIsCreatingNewProject] = useState(false);
   // State lags a render behind, so a repeated Enter could start a second create.
   const newProjectSubmittingRef = useRef(false);
-  const createNewProject = useNewProject();
+  // "Add project" from a draft's project picker picks the new project for that draft.
+  const [addProjectDraftId] = useState(() =>
+    props.openIntent?.kind === "add-project" ? (props.openIntent.draftId ?? null) : null,
+  );
+  const moveDraftToAddedProject = async (project: EnvironmentProject): Promise<boolean> => {
+    if (addProjectDraftId === null || !moveDraftToProject(addProjectDraftId, project)) {
+      return false;
+    }
+    await navigate({ to: "/draft/$draftId", params: { draftId: addProjectDraftId } });
+    return true;
+  };
+  const openAddedProject = async (projectRef: ScopedProjectRef): Promise<void> => {
+    // A moved draft is keyed from the project record, so wait for it to reach this client.
+    const project =
+      addProjectDraftId === null ? null : await waitForProject(projectRef, 3_000).catch(() => null);
+    if (project !== null && (await moveDraftToAddedProject(project))) return;
+    await handleNewThread(projectRef);
+  };
+  const createNewProject = useNewProject(openAddedProject);
   const cloneLookupGeneration = useRef(0);
   const [isRemoteProjectLookingUp, setIsRemoteProjectLookingUp] = useState(false);
   const [isRemoteProjectCloning, setIsRemoteProjectCloning] = useState(false);
@@ -2155,6 +2176,10 @@ function OpenCommandPaletteDialog(props: {
           input: { projectId: existing.id, archived: false },
         }).then((result) => reportProjectFailure(gt("Failed to unarchive project"), result));
       }
+      if (await moveDraftToAddedProject(existing)) {
+        setOpen(false);
+        return;
+      }
       const latestThread = getLatestThreadForProject(
         threads.filter((thread) => thread.environmentId === existing.environmentId),
         existing.id,
@@ -2223,7 +2248,7 @@ function OpenCommandPaletteDialog(props: {
     }
 
     const navigationResult = await settlePromise(() =>
-      handleNewThread(scopeProjectRef(input.environmentId, projectId)),
+      openAddedProject(scopeProjectRef(input.environmentId, projectId)),
     );
     if (navigationResult._tag === "Failure") {
       const error = squashAtomCommandFailure(navigationResult);
@@ -2489,7 +2514,7 @@ function OpenCommandPaletteDialog(props: {
       startResult.value.projectId,
     );
     await waitForProject(projectRef, 3_000).catch(() => null);
-    const navigationResult = await settlePromise(() => handleNewThread(projectRef));
+    const navigationResult = await settlePromise(() => openAddedProject(projectRef));
     if (navigationResult._tag === "Failure") {
       const error = squashAtomCommandFailure(navigationResult);
       toastManager.add(
