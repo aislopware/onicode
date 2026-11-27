@@ -411,8 +411,10 @@ function ScaledRows(
     pendingRestore.current = undefined;
     // A pending line reveal owns the scroll position.
     if (props.revealLine != null) return;
-    node.scrollTop = Math.max(0, (row - headerRows) * 29) * scale;
-    setTop(node.scrollTop);
+    const exact = Math.max(0, (row - headerRows) * 29) * scale;
+    node.scrollTop = exact;
+    restoredTop.current = { exact, actual: node.scrollTop };
+    setTop(exact);
     pendingTailPixels.current = 0;
     pendingReveal.current = { row, attempts: 0 };
   }, [props.revealLine, props.count, headerRows, scale]);
@@ -452,7 +454,16 @@ function ScaledRows(
     }
     return { top: (index + fraction) * rowPixels };
   };
+  // Also called where the rounded DOM position may not move, so no scroll event would save it.
+  const savePosition = (logicalTop: number) => {
+    pendingRestore.current = undefined;
+    savedFirstRows.set(
+      positionKey,
+      Math.min(maxFirst, Math.floor(logicalTop / scale / 29)) + headerRows,
+    );
+  };
   const scrollByContent = (node: HTMLElement, delta: number) => {
+    pendingRestore.current = undefined;
     pendingEnd.current = false;
     pendingReveal.current = null;
     if (pendingTailPixels.current) {
@@ -472,6 +483,7 @@ function ScaledRows(
       node.scrollTop = top;
       restoredTop.current = { exact: top, actual: node.scrollTop };
       setTop(top);
+      savePosition(top);
     };
     // Walked even before a render leaving the tail commits: heights are looked up by row index.
     if (exactTop < tailStart) {
@@ -784,6 +796,7 @@ function ScaledRows(
           pendingEnd.current = event.key === "End";
           pendingTailPixels.current = 0;
           pendingReveal.current = null;
+          pendingRestore.current = undefined;
           node.scrollTop = event.key === "Home" ? 0 : node.scrollHeight;
           setTop(node.scrollTop);
         }
@@ -793,11 +806,7 @@ function ScaledRows(
         if (restoredTop.current?.actual !== scrollTop) restoredTop.current = null;
         const logicalTop = restoredTop.current?.exact ?? scrollTop;
         setTop(logicalTop);
-        pendingRestore.current = undefined;
-        savedFirstRows.set(
-          positionKey,
-          Math.min(maxFirst, Math.floor(logicalTop / scale / 29)) + headerRows,
-        );
+        savePosition(logicalTop);
       }}
     >
       <div className="relative" style={{ height: scrollHeight }}>
