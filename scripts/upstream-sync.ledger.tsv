@@ -3912,3 +3912,4 @@ d50a43e642	take	taken as is (shared ACP core; Antigravity/ACP tests pass)
 89047261b1	take	taken as is
 4e6b1fa771	take	taken as is
 87479a6951	take	taken as is
+af276ccbb2	take	Cargo.lock regenerated for Onicode's sysinfo 0.40.4 (windows 0.62.2 already locked); Windows build left to CI (no local msvc target)
