@@ -1270,7 +1270,9 @@ const measurePass = Effect.fn("clientMetrics.measurePass")(function* (options: M
   // again (with the render probe, which did not exist at its first load).
   yield* browserPromise("reload the seeded app", async () => {
     if (options.renders) await page.addInitScript(RENDER_PROBE);
+    // A hash-only goto stays in the same document; the reload is what runs the init script.
     await page.goto(`${APP_ORIGIN}/#/`);
+    await page.reload();
   });
   const h: Harness = {
     page,
