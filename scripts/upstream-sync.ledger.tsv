@@ -3937,3 +3937,4 @@ ef4a1643ed	skip	telemetry only: Onicode removed AnalyticsService, relay tracing 
 91f0b32e2d	take	dropped guestShare json_remove and sweep clause (guest links removed, 082 strips it); merged Onicode's turn-start cancellation with upstream's continue/title cancellation on thread.delete
 79be5ad616	take	kept Onicode's slot refunds and shared importBytes/decodedBytes budget (same fix already on main; upstream's second decompression budget doubles bytes read per scan); took upstream's 100-unreadable-sessions test, which passes
 c5d6aa19de	take	kept Onicode's last-wins topLevelCwd assignment, gated off for Pi
+80659c54a3	take	taken as is
