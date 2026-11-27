@@ -25,8 +25,7 @@ export default Effect.gen(function* () {
       FROM orchestration_v2_projection_messages
       WHERE message_id > ${afterMessageId}
         AND payload_json LIKE '%oni-citation://%'
-        AND json_valid(payload_json)
-        AND json_type(payload_json, '$.text') = 'text'
+        AND CASE WHEN json_valid(payload_json) THEN json_type(payload_json, '$.text') END = 'text'
       ORDER BY message_id
       LIMIT ${pageSize}
     `;
