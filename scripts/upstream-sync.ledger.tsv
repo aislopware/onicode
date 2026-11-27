@@ -3987,3 +3987,4 @@ cef38e408d	take	taken as is
 2f7b7f03e3	skip	already done: Onicode's IssueDetailPanel routes the issue number through anchorOpenHandlers(openLink, url), which also handles middle click
 e849afabb4	take	taken as is
 f7ec366acd	take	taken as is
+1c3f0ee88f	skip	removed surface: only touches the relay ManagedEndpointRuntime, which Onicode removed
