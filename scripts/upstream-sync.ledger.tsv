@@ -4586,3 +4586,4 @@ ea8e968024	skip	already in Onicode 59b82f3fd3: addBrowserSurface forwards zoomFa
 7b8942b009	take	clean; shared by web and mobile
 7d13649477	take	clean; mobile has no closed-view store
 84bcfab359	take	import conflict only (added proper-lockfile beside SubscriptionRef); server-side publish (oni_theme_set, Settings) shares the lock; theme tests 40 passed
+dc2c7db0b6	take	clean; iOS release-build device check owed
