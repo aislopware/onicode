@@ -4049,3 +4049,4 @@ cbc3057f59	take	kept Onicode's stricter workEntryViewedImagePath and frame style
 73c48a4341	take	kept Onicode's commandsForUnvisitedWorkspace as the last fallback after upstream's workspaceCommands, in session start and snapshotForCwd
 dc5ae5ce63	take	test builds the ODS from a Map like its neighbours (no JSZip in Onicode)
 cecbe8a89a	take	taken as is
+96423cb5e2	take	server keyring dependency dropped (desktop keeps it for ChromiumKeys); lockfile regenerated; Onicode's local Antigravity token-usage readers stay. Removes Antigravity quota windows from Usage → Limits, hub pools and limit routing (Google allows only ACP clients)
