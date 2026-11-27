@@ -730,8 +730,7 @@ Third}`;
           '<container><rootfiles><rootfile full-path="Book/book.opf"/></rootfiles></container>',
         "Book/book.opf":
           '<package><manifest><item id="a" href="one.xhtml" media-type="application/xhtml+xml"/><item id="b" href="two&amp;&#x26;&#38;.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="b"/><itemref idref="a"/></spine></package>',
-        "Book/one.xhtml":
-          '<html><head><title>First</title></head><body><h1>First chapter</h1><img src="cover.png" alt="Cover"/><img src="https://example.com/tracker.png"/><script>alert(1)</script><style>@import "https://example.com/style.css";</style></body></html>',
+        "Book/one.xhtml": `<html><head><title>${"a".repeat(119)}🚀</title></head><body><h1>First chapter</h1><img src="cover.png" alt="Cover"/><img src="https://example.com/tracker.png"/><script>alert(1)</script><style>@import "https://example.com/style.css";</style></body></html>`,
         "Book/two&&&.xhtml":
           '<?xml-stylesheet href="a<b.css"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd"><html><head><title>Second</title></head><body><h1>Second chapter</h1><p>A&nbsp;B &copy; &mdash; &NotEqualTilde; &amp;lt;</p><pre><![CDATA[Use &amp; and &lt; literally]]></pre><pre><![CDATA[<!DOCTYPE html><!ENTITY author "Ada">]]></pre><!-- <!ENTITY note "x"> --><img src="cover.png" alt="&lt; &copy; &NotEqualTilde;"/></body></html>',
         "Book/cover.png": Buffer.from(
@@ -743,7 +742,7 @@ Third}`;
     const result = await openEpub(archive);
     expect(result.type).toBe("document");
     if (result.type !== "document") throw new Error("Expected document");
-    expect(result.pages.map((page) => page.title)).toEqual(["Second", "First"]);
+    expect(result.pages.map((page) => page.title)).toEqual(["Second", "a".repeat(119)]);
     expect(result.pages[0]!.html).toContain("A\u00a0B © — ≂̸ &amp;lt;");
     expect(result.pages[0]!.html).toContain("<pre>Use &amp;amp; and &amp;lt; literally</pre>");
     expect(result.pages[0]!.html).toContain(
