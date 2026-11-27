@@ -258,11 +258,31 @@ export const make: Effect.Effect<StandaloneIssueTrackerApi, never, JiraApi.JiraA
         : Effect.fail(notFound(operation));
     };
 
+    /** A link's site, refused unless it is the credential's: keys repeat across Jira sites. */
+    const requireSite = Effect.fn("JiraIssueTracker.requireSite")(function* (
+      operation: string,
+      workspace: string | undefined,
+    ) {
+      if (workspace === undefined) return;
+      const origin = yield* jira.origin;
+      if (URL.parse(origin)?.hostname.toLowerCase() === workspace.toLowerCase()) return;
+      return yield* JiraApi.fail(
+        operation,
+        "not-found",
+        "This issue link names another Jira site than the connected one.",
+      );
+    });
+
     /** The key a write names, refused unless it is one of the bound project's. */
     const requireProjectKey = Effect.fn("JiraIssueTracker.requireProjectKey")(function* (
       operation: string,
-      input: { readonly scope: string; readonly key: string },
+      input: {
+        readonly scope: string;
+        readonly key: string;
+        readonly workspace?: string | undefined;
+      },
     ) {
+      yield* requireSite(operation, input.workspace);
       const key = yield* requireKey(operation, input.key);
       const project = projectKey(input.scope);
       if (!key.startsWith(`${project}-`)) {
@@ -394,6 +414,7 @@ export const make: Effect.Effect<StandaloneIssueTrackerApi, never, JiraApi.JiraA
       }),
 
       getIssue: Effect.fn("JiraIssueTracker.getIssue")(function* (input) {
+        yield* requireSite("getIssue", input.workspace);
         const key = yield* requireKey("getIssue", input.key);
         const [origin, issue, page, allowed, me] = yield* Effect.all(
           [
@@ -439,6 +460,7 @@ export const make: Effect.Effect<StandaloneIssueTrackerApi, never, JiraApi.JiraA
       }),
 
       getComments: Effect.fn("JiraIssueTracker.getComments")(function* (input) {
+        yield* requireSite("getComments", input.workspace);
         const key = yield* requireKey("getComments", input.key);
         const startAt = /^\d+$/u.test(input.cursor) ? Number(input.cursor) : 0;
         const [origin, page] = yield* Effect.all([

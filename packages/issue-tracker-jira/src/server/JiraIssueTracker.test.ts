@@ -378,6 +378,30 @@ describe("JiraIssueTracker", () => {
         .pipe(Effect.flip);
       expect(foreign.detail).toBe("OPS-1 does not belong to Jira project ENG.");
       expect(requests).toHaveLength(before);
+      // So is a link naming another Jira site: its keys repeat, and this credential reads only its own.
+      const elsewhere = "This issue link names another Jira site than the connected one.";
+      expect(
+        yield* api
+          .getIssue({ ...target, key: "ENG-7", workspace: "other-corp.atlassian.net" })
+          .pipe(Effect.flip),
+      ).toMatchObject({ reason: "not-found", detail: elsewhere });
+      expect(
+        (yield* api
+          .setState({
+            ...target,
+            key: "ENG-7",
+            state: "Finish",
+            workspace: "other-corp.atlassian.net",
+          })
+          .pipe(Effect.flip)).detail,
+      ).toBe(elsewhere);
+      expect(requests).toHaveLength(before);
+      yield* api.setState({
+        ...target,
+        key: "ENG-7",
+        state: "Finish",
+        workspace: "ACME.atlassian.net",
+      });
     }),
   );
 
