@@ -3974,3 +3974,4 @@ a686952304	take	test keeps Onicode's Map archive fixture
 f9da246cd5	take	adopted upstream's start at position 0 for the delegation scan; readThread no longer retries -1; kept readFromStartOrRetry for agent-forwarded oni_thread_read
 4a34889e28	take	taken as is
 e8fb0a0d43	take	entry skills wired at Onicode's registry-root push; no claimedPluginNames (Onicode has no synced bucket); inline and archive roots unchanged
+45a3880ce1	take	taken as is

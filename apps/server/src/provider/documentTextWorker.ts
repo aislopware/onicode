@@ -125,6 +125,11 @@ function xml(source: string, extension: string): XmlNode {
             (prop) => prop.name === "vanish" && ["true", "1", "on"].includes(prop.attrs.val ?? "1"),
           )) ||
       (odf && node.name === "annotation" && parent.name !== "semantics") ||
+      (extension === ".pptx" &&
+        node.name === "timing" &&
+        stack.every((ancestor) =>
+          ["root", "sld", "AlternateContent", "Choice", "Fallback"].includes(ancestor.name),
+        )) ||
       (extension === ".odp" &&
         node.name === "page-thumbnail" &&
         stack.some((ancestor) => ancestor.name === "notes"))
