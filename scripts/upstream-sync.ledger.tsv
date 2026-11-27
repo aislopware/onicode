@@ -4623,3 +4623,4 @@ c103563d84	take	taken as is
 68b3c575b9	take	taken as is
 f765ce36fe	take	adopted upstream's scpRemoteHost over Onicode's last-@ SCP_REMOTE regex (1977b26df4): same last-@ split, plus Git's connect.c rules (bracketed hosts, a slash before the colon, option-looking user/path rejected), so it is stricter and matches git; GitHub definition 14, GitLab discovery 10 passed
 c443bbfc9d	take	taken as is
+a7b4502c41	take	taken as is
