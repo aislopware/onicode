@@ -517,7 +517,7 @@ const probeClaudeCapabilities = (
   claudeSettings: ClaudeSettings,
   environment?: NodeJS.ProcessEnv,
   cwd?: string,
-  includeStatus = true,
+  includeStatus: boolean | "usageOnly" = true,
 ) => {
   const abort = new AbortController();
   // Launchers explain refusals (not enrolled, proxy down) only on stderr.
@@ -535,13 +535,14 @@ const probeClaudeCapabilities = (
       claudeEnvironment,
     );
     const managedMcpConfig = yield* hasClaudeManagedMcpConfig();
-    // Workspace probes (no usage) discard models; the machine probe refreshes the shared cache.
-    const graceMs = includeStatus
-      ? claudeGatewayDiscoveryGraceMs({
-          ...claudeEnvironment,
-          ...(yield* readClaudeSettingsEnv(claudeSettings, cwd, claudeEnvironment)),
-        })
-      : 0;
+    // Workspace and usage-only probes discard models; the machine probe refreshes the shared cache.
+    const graceMs =
+      includeStatus === true
+        ? claudeGatewayDiscoveryGraceMs({
+            ...claudeEnvironment,
+            ...(yield* readClaudeSettingsEnv(claudeSettings, cwd, claudeEnvironment)),
+          })
+        : 0;
     const platform = yield* HostProcess.Platform;
     const spawnVia =
       platform === "win32"
@@ -592,7 +593,7 @@ const probeClaudeCapabilities = (
         const { getSettings } = q as ClaudeSettingsQuery;
         const [usageResult, settingsResult] = yield* Effect.all(
           [
-            includeStatus
+            includeStatus !== false
               ? Effect.tryPromise({
                   try: () =>
                     q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({
@@ -602,7 +603,7 @@ const probeClaudeCapabilities = (
                     new ClaudeCapabilitiesProbeSdkError({ operation: "usage", cause }),
                 }).pipe(Effect.timeout(DEFAULT_TIMEOUT_MS), Effect.result)
               : Effect.undefined,
-            includeStatus && getSettings
+            includeStatus === true && getSettings
               ? Effect.tryPromise({
                   try: () => getSettings.call(q),
                   catch: (cause) =>
