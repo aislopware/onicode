@@ -276,7 +276,7 @@ export function FileMarkdownPreview(props: {
   const markdown = maskMarkdownFrontmatter(props.markdown);
 
   // Only chunks near the viewport mount, so only they pay for the JS rewrites and native parse.
-  const { chunks, definitions } = splitMarkdown(markdown, undefined, true);
+  const { chunks, definitions } = splitMarkdown(markdown, undefined, true, "whole");
   // A piece this long (one huge fence or HTML block) is too slow to parse, so it shows as source,
   // in runs so no one text view lays out all of it.
   const pieces = chunks.flatMap((chunk): PreviewPiece[] => {

@@ -10,26 +10,45 @@ import {
 
 import { markdownFragmentSlug } from "~/components/chat/markdownFragments";
 import { Spinner } from "~/components/ui/spinner";
+import type { MarkdownExtensions } from "~/markdown/wordsHast";
 import { FileMarkdownPreview } from "./FileMarkdownPreview";
 import { LineCappedText, useMoreCharactersLabel } from "./shownText";
 import {
+  buildMarkdownFootnotesSection,
+  findFootnoteRefChunkIndex,
   joinMarkdownChunks,
   LARGE_MARKDOWN_CHUNK_MAX_CHARS,
   markdownHeadingPiece,
   type MarkdownChunk,
+  type MarkdownFootnotes,
+  type MarkdownFootnotesSection,
+  prepareMarkdownChunk,
 } from "@onicode/shared/markdownChunks";
 
 const ESTIMATED_LINE_PX = 24;
 const MAX_SAVED_POSITIONS = 100;
+const FOOTNOTE_TARGET_ID = /^fn-\d+$/;
+const FOOTNOTE_REF_ID = /^fnref-(\d+)(?:-(\d+))?$/;
+
+const CHUNK_FOOTNOTES_OMIT: MarkdownExtensions = { footnotes: "omit" };
+const CHUNK_FOOTNOTES_OMIT_SEEDED: MarkdownExtensions = { footnotes: "omit-seeded" };
+const CHUNK_FOOTNOTES_ONLY: MarkdownExtensions = { footnotes: "only" };
 
 /** Reading positions outlive the preview, which unmounts when the file or thread changes. */
 const savedPositions = new Map<string, { readonly index: number; readonly viewOffset: number }>();
 
-interface ChunkItem {
-  readonly index: number;
-  readonly start: number;
-  readonly chunk: MarkdownChunk;
-}
+type ChunkItem =
+  | {
+      readonly kind: "chunk";
+      readonly index: number;
+      readonly start: number;
+      readonly chunk: MarkdownChunk;
+    }
+  | {
+      readonly kind: "footnotes";
+      readonly index: number;
+      readonly section: MarkdownFootnotesSection;
+    };
 
 interface HeadingTarget {
   readonly index: number;
@@ -52,6 +71,8 @@ export function ChunkedMarkdown(props: {
   readonly chunks: readonly MarkdownChunk[];
   /** Link definitions from the whole file, so references resolve across pieces. */
   readonly definitions: string;
+  /** Document-wide footnotes, so references and definitions resolve across pieces. */
+  readonly footnotes?: MarkdownFootnotes | undefined;
   /** Shows a spinner after the last chunk while more of the file streams in. */
   readonly loading?: boolean;
   readonly cwd: string;
@@ -63,7 +84,7 @@ export function ChunkedMarkdown(props: {
     | ((input: { readonly markerOffset: number; readonly checked: boolean }) => void)
     | undefined;
 }) {
-  const { chunks, onTaskListChange } = props;
+  const { chunks, footnotes, onTaskListChange } = props;
   const more = useMoreCharactersLabel();
   const rootRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<LegendListRef | null>(null);
@@ -110,7 +131,8 @@ export function ChunkedMarkdown(props: {
     const href =
       event.target instanceof Element ? event.target.closest("a")?.getAttribute("href") : undefined;
     if (!href?.startsWith("#")) return;
-    const target = markdownHeadingPiece(chunks, markdownFragmentSlug(href));
+    const slug = markdownFragmentSlug(href);
+    const target = footnoteTarget(slug) ?? markdownHeadingPiece(chunks, slug);
     if (target === null) return;
     event.preventDefault();
     const piece = mountedPiece(event.currentTarget, target);
@@ -126,9 +148,25 @@ export function ChunkedMarkdown(props: {
   let start = 0;
   let lines = 0;
   for (const [index, chunk] of chunks.entries()) {
-    items.push({ index, start, chunk });
+    items.push({ kind: "chunk", index, start, chunk });
     lines += chunk.lines;
     start += chunk.text.length + 1;
+  }
+  const footnotesSection = buildMarkdownFootnotesSection(props.definitions, footnotes);
+  const footnotesIndex = footnotesSection === null ? null : items.length;
+  if (footnotesSection !== null) {
+    items.push({ kind: "footnotes", index: items.length, section: footnotesSection });
+  }
+  // Without shared footnotes each piece keeps its own section, which ChatMarkdown resolves.
+  function footnoteTarget(slug: string): HeadingTarget | null {
+    if (!footnotes) return null;
+    if (FOOTNOTE_TARGET_ID.test(slug)) {
+      return footnotesIndex === null ? null : { index: footnotesIndex, id: slug };
+    }
+    const ref = FOOTNOTE_REF_ID.exec(slug);
+    if (!ref) return null;
+    const index = findFootnoteRefChunkIndex(footnotes, Number(ref[1]), Number(ref[2] ?? 1));
+    return index === null ? null : { index, id: slug };
   }
   const saved = savedPositions.get(positionKey);
   // The list applies its initial index once, so wait for the saved chunk to stream in.
@@ -196,49 +234,92 @@ export function ChunkedMarkdown(props: {
             savedPositions.delete(savedPositions.keys().next().value!);
           }
         }}
-        extraData={props.definitions}
-        keyExtractor={(item) => String(item.index)}
+        extraData={
+          footnotes
+            ? `${props.definitions}\0${footnotes.stubs}\0${footnotes.definitions}\0${footnotes.chunkRefs.map((refs) => refs.join(",")).join("|")}`
+            : props.definitions
+        }
+        keyExtractor={(item) => (item.kind === "footnotes" ? "footnotes" : String(item.index))}
         estimatedItemSize={(lines / Math.max(items.length, 1)) * ESTIMATED_LINE_PX}
         drawDistance={800}
         recycleItems={false}
         className="h-full scrollbar-gutter-both"
         contentContainerClassName="py-5"
         ListFooterComponent={props.loading ? spinner : null}
-        renderItem={({ item }) => (
-          <div className="pb-5" data-markdown-piece={item.index}>
-            {item.chunk.text.length > LARGE_MARKDOWN_CHUNK_MAX_CHARS ? (
-              // One block this long (a huge fence or HTML block) is too slow to parse.
-              <pre className="mx-auto max-w-4xl overflow-x-auto px-6 font-mono text-xs whitespace-pre">
-                <LineCappedText
-                  text={item.chunk.text}
-                  more={more}
-                  total={Number.POSITIVE_INFINITY}
+        renderItem={({ item }) => {
+          if (item.kind === "footnotes") {
+            return (
+              <div className="pb-5" data-markdown-piece={item.index}>
+                <FileMarkdownPreview
+                  text={item.section.text}
+                  cwd={props.cwd}
+                  relativePath={props.relativePath}
+                  threadRef={props.threadRef}
+                  workspaceMutationId={props.workspaceMutationId}
+                  className="mx-auto max-w-4xl px-6"
+                  extensions={CHUNK_FOOTNOTES_ONLY}
+                  onTaskListChange={
+                    onTaskListChange &&
+                    ((input) => {
+                      const markerOffset = item.section.fileOffset(input.markerOffset);
+                      if (markerOffset !== null) {
+                        onTaskListChange({ markerOffset, checked: input.checked });
+                      }
+                    })
+                  }
                 />
-              </pre>
-            ) : (
+              </div>
+            );
+          }
+          if (item.chunk.text.length > LARGE_MARKDOWN_CHUNK_MAX_CHARS) {
+            return (
+              <div className="pb-5" data-markdown-piece={item.index}>
+                {/* One block this long (a huge fence or HTML block) is too slow to parse. */}
+                <pre className="mx-auto max-w-4xl overflow-x-auto px-6 font-mono text-xs whitespace-pre">
+                  <LineCappedText
+                    text={item.chunk.text}
+                    more={more}
+                    total={Number.POSITIVE_INFINITY}
+                  />
+                </pre>
+              </div>
+            );
+          }
+          const prepared = prepareMarkdownChunk(
+            item.chunk.text,
+            item.index,
+            props.definitions,
+            footnotes,
+          );
+          return (
+            <div className="pb-5" data-markdown-piece={item.index}>
               <FileMarkdownPreview
                 text={item.chunk.text}
-                definitions={props.definitions}
+                definitions={prepared.prefix}
                 cwd={props.cwd}
                 relativePath={props.relativePath}
                 threadRef={props.threadRef}
                 workspaceMutationId={props.workspaceMutationId}
                 className="mx-auto max-w-4xl px-6"
+                extensions={
+                  prepared.footnotesMode === "omit-seeded"
+                    ? CHUNK_FOOTNOTES_OMIT_SEEDED
+                    : prepared.footnotesMode === "omit"
+                      ? CHUNK_FOOTNOTES_OMIT
+                      : undefined
+                }
                 onTaskListChange={
                   onTaskListChange &&
                   ((input) =>
                     onTaskListChange({
-                      markerOffset:
-                        item.start +
-                        input.markerOffset -
-                        (props.definitions ? props.definitions.length + 2 : 0),
+                      markerOffset: item.start + input.markerOffset - prepared.offsetShift,
                       checked: input.checked,
                     }))
                 }
               />
-            )}
-          </div>
-        )}
+            </div>
+          );
+        }}
       />
     </div>
   );
