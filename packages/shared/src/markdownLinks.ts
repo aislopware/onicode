@@ -545,20 +545,20 @@ function markdownLinkDestinationScanner(markdown: string) {
 export function extractMarkdownLinkHrefs(markdown: string): string[] {
   const hrefs: string[] = [];
   const scanDestination = markdownLinkDestinationScanner(markdown);
-  const bracket = new RegExp(String.raw`${ESCAPE}|[[\]]|${PARAGRAPH_END}`, "g");
-  let openBrackets = 0;
+  const bracket = new RegExp(String.raw`${ESCAPE}|!\[|[[\]]|${PARAGRAPH_END}`, "g");
+  const openers: boolean[] = [];
   for (let match = bracket.exec(markdown); match; match = bracket.exec(markdown)) {
     if (match[0].startsWith("\\")) continue;
     if (match[0].startsWith("\n")) {
-      openBrackets = 0;
-    } else if (match[0] === "[") {
-      openBrackets += 1;
-    } else if (openBrackets > 0) {
-      openBrackets -= 1;
+      openers.length = 0;
+    } else if (match[0].endsWith("[")) {
+      openers.push(match[0] === "![");
+    } else if (openers.length > 0) {
+      const image = openers.pop();
       const destination = scanDestination(match.index + 1);
       if (!destination) continue;
-      // A link cannot contain a link, so the brackets still open around it become text.
-      openBrackets = 0;
+      // A link cannot contain a link, but it can contain an image.
+      if (!image) openers.length = 0;
       bracket.lastIndex = destination.end;
       const href = markdown.slice(destination.hrefStart, destination.hrefEnd).trim();
       if (href) hrefs.push(href);
