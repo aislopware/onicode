@@ -46,6 +46,7 @@ import {
 import { buildFileTreePathUpdates, shouldRebuildFileTree } from "./fileTreePathReconciliation";
 import { loadFileAncestors } from "./loadFileAncestors";
 import { useDirectoryEntries } from "./useDirectoryEntries";
+import { useFileDownload } from "./useFileDownload";
 import { useProjectPathSearch } from "~/state/queries";
 import { isMacPlatform } from "~/lib/utils";
 import { type PreviewAction, subscribePreviewAction } from "../preview/previewActionBus";
@@ -191,6 +192,7 @@ export default function FileBrowserPanel({
   const { resolvedTheme } = useTheme();
   const composerRef = useComposerHandleContext();
   const fileContextMenu = useFileContextMenu(environmentId);
+  const downloadFile = useFileDownload(environmentId);
   const {
     entries: directoryEntries,
     load,
@@ -256,6 +258,9 @@ export default function FileBrowserPanel({
         const clicked = await api.contextMenu.show(
           [
             ...fileMenuItems,
+            ...(downloadFile && item.kind !== "directory"
+              ? [{ id: "download", label: gt("Download", { $context: "verb, saves a file" }) }]
+              : []),
             { id: "copy-path", label: gt("Copy path") },
             { id: "copy-mention", label: gt("Copy mention") },
             { id: "add-to-chat", label: gt("Add to chat") },
@@ -269,6 +274,10 @@ export default function FileBrowserPanel({
           fileMenuItems.some((entry) => entry.id === clicked) || clicked.startsWith("editor:");
         if (isFileMenuAction) {
           await fileContextMenu.activate(clicked as FileContextMenuAction, fileTarget);
+          return;
+        }
+        if (clicked === "download") {
+          downloadFile?.(cwd, relativePath);
           return;
         }
         if (clicked === "copy-path" || clicked === "copy-mention") {

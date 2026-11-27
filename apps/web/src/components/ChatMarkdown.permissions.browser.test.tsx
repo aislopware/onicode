@@ -25,6 +25,7 @@ const state = vi.hoisted(() => ({
   openFile: vi.fn(),
   openExternal: vi.fn(),
   copy: vi.fn(),
+  download: vi.fn(),
   pullRequests: [] as ThreadPullRequestLink[],
 }));
 
@@ -96,6 +97,27 @@ vi.mock(import("../localApi"), async (original) => ({
       shell: { openExternal: state.openExternal },
     }) as never,
 }));
+// Chat links read their metadata only when the menu opens.
+const fileMetadata = (path: string) =>
+  path.includes("user.ts") ? null : { kind: path.includes("src") ? "directory" : "file" };
+vi.mock(import("../hooks/useFileMetadata"), async (original) => ({
+  ...(await original()),
+  getFileMetadataQueryAtom: ((_id: unknown, path: string) => ({ fileMetadataPath: path })) as never,
+}));
+vi.mock(import("@onicode/client-runtime/state/runtime"), async (original) => {
+  const actual = await original();
+  return {
+    ...actual,
+    executeAtomQuery: ((...args: Parameters<typeof actual.executeAtomQuery>) => {
+      const path = (args[1] as { fileMetadataPath?: string }).fileMetadataPath;
+      return path === undefined
+        ? actual.executeAtomQuery(...args)
+        : Promise.resolve({ _tag: "Success", value: fileMetadata(path) });
+    }) as never,
+  };
+});
+vi.mock(import("./files/useFileDownload"), () => ({ useFileDownload: () => state.download }));
+vi.mock(import("../env"), async (original) => ({ ...(await original()), isElectron: true }));
 vi.mock(import("@onicode/client-runtime/change-request-links"), async (original) => ({
   ...(await original()),
   resolvePullRequestPreviewTarget: () => null,
@@ -140,6 +162,7 @@ function setup() {
   state.openFile.mockReset();
   state.openExternal.mockReset().mockResolvedValue(undefined);
   state.copy.mockReset().mockResolvedValue(undefined);
+  state.download.mockReset();
   const { openFile } = useRightPanelStore.getState();
   useRightPanelStore.setState({ openFile: state.openFile });
   stack.defer(() => useRightPanelStore.setState({ openFile }));
@@ -187,15 +210,30 @@ it("removes host actions after revocation while keeping file preview and copying
   using _setup = setup();
   await using screen = await renderMarkdown("[Readme](docs/readme.md)");
   await screen.openContextMenu();
-  expect(offeredActions()).toEqual(["open", "reveal", "copy-relative", "copy-full"]);
+  expect(offeredActions()).toEqual(["open", "reveal", "download", "copy-relative", "copy-full"]);
   await setAllowed(false);
+  state.choose.mockResolvedValue("download");
+  await screen.openContextMenu();
+  expect(offeredActions()).toEqual(["download", "copy-relative", "copy-full"]);
+  expect(state.download).toHaveBeenCalledWith("/work", expect.any(Promise));
+  await expect(state.download.mock.lastCall![1]).resolves.toBe("/work/docs/readme.md");
   state.choose.mockResolvedValue("copy-full");
   await screen.openContextMenu();
-  expect(offeredActions()).toEqual(["copy-relative", "copy-full"]);
   await vi.waitFor(() => expect(state.copy).toHaveBeenCalledWith("/work/docs/readme.md"));
   await act(async () => screen.anchor().click());
   expect(state.openFile).toHaveBeenCalledWith(threadRef, "docs/readme.md", undefined);
   expect(state.openEditor).not.toHaveBeenCalled();
+});
+
+it("offers download unless the link is a known folder", async () => {
+  using _setup = setup();
+  await using folder = await renderMarkdown("[Source](./src)");
+  await folder.openContextMenu();
+  expect(offeredActions()).not.toContain("download");
+  // A bare name the workspace lookup resolves elsewhere has no metadata at its literal path.
+  await using basename = await renderMarkdown("[user.ts](user.ts)");
+  await basename.openContextMenu();
+  expect(offeredActions()).toContain("download");
 });
 
 it.each(["[Docs](https://example.com/docs)", "[Readme](docs/readme.md)"])(

@@ -4536,3 +4536,4 @@ d2c7c73ab5	take	clean
 5340fcfc5f	take	adapted: release-smoke.ts hunk dropped (T3 release pipeline); i18n tails unioned; docs/user keeps Onicode's text plus a Jira Cloud paragraph; @muse-code/sdk stays 1.4.25; mobile keeps onDisconnected and adds upstream's drafts reset; lockfile regenerated in a follow-up commit; wire: new fields optional, old mobile shows Jira without site/email and the server answers 'Jira needs its site too'
 f40f78eb5e	take	clean
 3e9a0106ff	take	clean
+15c42f7a67	take	adapted: kept Onicode's lazy chat-link metadata: upstream's render-time useFileMetadata stats every file link in every rendered message over the websocket; MarkdownFileLink now asks once when its context menu opens (executeAtomQuery, same pattern as the terminal link check); test mocks the one-shot query; i18n tails unioned; mobile chat file links have no Download (follow-up), the mobile Files route already downloads
