@@ -7,7 +7,11 @@ import { backgroundTaskLaunch } from "./BackgroundWorkDetails.logic";
 const script = `python3 - <<'EOF'\n${"print('step')\n".repeat(2_000)}EOF`;
 const preview = "python3 - <<'EOF'…";
 
-const item = (type: "command_execution" | "dynamic_tool", input: unknown, nativeId = "toolu_1") =>
+const item = (
+  type: "command_execution" | "dynamic_tool" | "subagent",
+  input: unknown,
+  nativeId = "toolu_1",
+) =>
   ({
     id: TurnItemId.make(`item-${nativeId}`),
     type,
@@ -43,5 +47,13 @@ describe("backgroundTaskLaunch", () => {
         item("dynamic_tool", { command: "workflow parameter" }),
       ]),
     ).toBeUndefined();
+    // A subagent published before its launch was linked finds its subagent item, not the approval.
+    const subagent = item("subagent", null);
+    expect(
+      backgroundTaskLaunch({ taskId: "task-2", kind: "subagent", nativeItemId: "toolu_1" }, [
+        subagent,
+        { ...item("dynamic_tool", null), type: "approval_request" } as never,
+      ]).item,
+    ).toBe(subagent);
   });
 });
