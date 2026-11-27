@@ -177,13 +177,8 @@ const issue101: WorkflowRunReference = {
   origin: "trigger",
 };
 
-/** Wide enough for the list and the run side by side; put back when the test ends. */
-async function desktop() {
-  const width = window.innerWidth;
-  const height = window.innerHeight;
-  await browserPage.viewport(1280, 800);
-  return { [Symbol.asyncDispose]: () => browserPage.viewport(width, height) };
-}
+/** Wide enough for the list and the run side by side. */
+const desktop = () => browserPage.viewport(1280, 800);
 
 const page = (
   selectedRunId: string | null = null,
@@ -219,7 +214,7 @@ describe("WorkflowRunsView", () => {
       { ship: [step({ name: "approve", kind: "ask", status: "running", endedAt: null })] },
     );
     const thread = vi.fn();
-    await using _desktop = await desktop();
+    await desktop();
     await using screen = await render(page(null, { thread }));
 
     // The list opens on what waits on a person, and the run that asks is the one shown.
@@ -271,7 +266,7 @@ describe("WorkflowRunsView", () => {
       },
       { ship: [step({ name: "approve", kind: "ask", status: "running", endedAt: null })] },
     );
-    await using _desktop = await desktop();
+    await desktop();
     await using screen = await render(page());
 
     await expect.element(screen.getByText("It waits a week")).toBeVisible();
@@ -308,7 +303,7 @@ describe("WorkflowRunsView", () => {
       questions: [question],
     });
     state.detailError = "The server did not answer.";
-    await using _desktop = await desktop();
+    await desktop();
     {
       await using screen = await render(page("ship"));
       await expect.element(screen.getByText("The server did not answer.")).toBeVisible();
@@ -346,7 +341,7 @@ describe("WorkflowRunsView", () => {
       questions: [question],
     });
     state.permitted = false;
-    await using _desktop = await desktop();
+    await desktop();
     await using screen = await render(page());
 
     await expect.element(screen.getByRole("button", { name: "Ship", exact: true })).toBeDisabled();
@@ -357,7 +352,7 @@ describe("WorkflowRunsView", () => {
     const { steps: _steps, origin: _origin, state: _state, ...subject } = issue101;
     setup({ runs: [run({ runId: "fix", title: "Fix the minutes", subject })], questions: [] });
     const reference = vi.fn();
-    await using _desktop = await desktop();
+    await desktop();
     await using screen = await render(page(null, { reference }));
 
     const row = screen
@@ -390,7 +385,7 @@ describe("WorkflowRunsView", () => {
       ],
       questions: [],
     });
-    await using _desktop = await desktop();
+    await desktop();
     await using screen = await render(page("talk", {}, { thread: "t1" }));
 
     const runs = screen.getByRole("navigation", { name: "Workflow runs" });
@@ -437,7 +432,7 @@ describe("WorkflowRunsView", () => {
         ],
       },
     );
-    await using _desktop = await desktop();
+    await desktop();
     await using screen = await render(page());
 
     const why = screen.getByRole("region", { name: "Why it paused" });
@@ -685,7 +680,7 @@ describe("WorkflowRunsView", () => {
       ],
       questions: [],
     });
-    await using _desktop = await desktop();
+    await desktop();
     await using screen = await render(page());
 
     const runs = screen.getByRole("navigation", { name: "Workflow runs" });
@@ -728,7 +723,7 @@ describe("WorkflowRunsView", () => {
       ],
       questions: [],
     });
-    await using _desktop = await desktop();
+    await desktop();
     await using screen = await render(page());
 
     await screen.getByRole("button", { name: "All", exact: true }).click();
@@ -752,7 +747,7 @@ describe("WorkflowRunsView", () => {
       ],
       questions: [],
     });
-    await using _desktop = await desktop();
+    await desktop();
     await using screen = await render(page());
 
     await expect.element(screen.getByRole("article", { name: "Nightly report" })).toBeVisible();
@@ -807,7 +802,7 @@ describe("WorkflowRunsView", () => {
   it("narrows what needs you to one kind of question, and stays there once it is answered", async () => {
     localStorage.removeItem(KIND_KEY);
     kindsAsked();
-    await using _desktop = await desktop();
+    await desktop();
     // Opened by its link, as a run picked from the list is.
     await using screen = await render(page("dark"));
 
@@ -849,7 +844,7 @@ describe("WorkflowRunsView", () => {
       runs: [...otherKinds, run({ runId: "typo", title: "Typo fix", status: "waiting" })],
       questions: [asked("sticky", "intended"), asked("plain"), asked("typo", "feture")],
     });
-    await using _desktop = await desktop();
+    await desktop();
     await using screen = await render(page());
 
     const runs = screen.getByRole("navigation", { name: "Workflow runs" });
@@ -868,7 +863,7 @@ describe("WorkflowRunsView", () => {
   it("shows by itself only a run that asks the picked kind, and none once it is answered", async () => {
     localStorage.removeItem(KIND_KEY);
     kindsAsked();
-    await using _desktop = await desktop();
+    await desktop();
     await using screen = await render(page());
 
     // With no kind picked, the first run that waits is shown: one of another kind.
@@ -899,7 +894,7 @@ describe("WorkflowRunsView", () => {
     localStorage.removeItem(KIND_KEY);
     kindsAsked();
     const select = vi.fn();
-    await using _desktop = await desktop();
+    await desktop();
     await using screen = await render(page("sticky", { select }));
 
     await screen.getByRole("combobox", { name: "Kind of question" }).click();
@@ -925,7 +920,7 @@ describe("WorkflowRunsView", () => {
   it("keeps a kind remembered from before through answering a run picked from the list", async () => {
     localStorage.setItem(KIND_KEY, JSON.stringify("feature"));
     kindsAsked();
-    await using _desktop = await desktop();
+    await desktop();
     await using screen = await render(page());
 
     const runs = screen.getByRole("navigation", { name: "Workflow runs" });
@@ -951,7 +946,7 @@ describe("WorkflowRunsView", () => {
       questions: [asked("epic", "intended"), asked("dark", "feature")],
     });
     const select = vi.fn();
-    await using _desktop = await desktop();
+    await desktop();
     await using screen = await render(page(null, { select }));
 
     // Listed for the question the run it invoked asks; its own is of another kind.
@@ -971,7 +966,7 @@ describe("WorkflowRunsView", () => {
       ],
       questions: [asked("sticky", "intended")],
     });
-    await using _desktop = await desktop();
+    await desktop();
     await using screen = await render(page("busy"));
 
     const runs = screen.getByRole("navigation", { name: "Workflow runs" });
