@@ -363,10 +363,8 @@ describe("buildProjectGroups", () => {
         repositoryIdentity: { ...repositoryIdentity, rootPath: root },
         ...overrides,
       });
-    const renamed = checkout("renamed", "/work/onicode", {
-      title: "Onicode",
-      hasCustomTitle: true,
-    });
+    // Distinct from the repository's display name, so only the rename can produce it.
+    const renamed = checkout("renamed", "/work/onicode", { title: "Oni", hasCustomTitle: true });
     const joined = checkout("joined", "/remote/onicode", {
       environmentId: EnvironmentId.make("remote"),
     });
@@ -378,10 +376,10 @@ describe("buildProjectGroups", () => {
 
     const label = (projects: ReadonlyArray<EnvironmentProject>) =>
       buildProjectGroups({ projects, settings: settings("repository") })[0]?.label;
-    expect(label([renamed, joined])).toBe("Onicode");
+    expect(label([renamed, joined])).toBe("Oni");
     expect(label([joined, renamedSubfolder])).toBe("Onicode");
     // An older server may not send the repository root; like grouping, read that as the root.
-    expect(label([{ ...renamed, repositoryIdentity }, joined])).toBe("Onicode");
+    expect(label([{ ...renamed, repositoryIdentity }, joined])).toBe("Oni");
 
     const joinedSubfolder = makeProject("web", "/work/onicode/apps/web", {
       title: "web",
