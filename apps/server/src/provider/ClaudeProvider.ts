@@ -838,7 +838,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     probeResult && Result.isSuccess(probeResult) ? probeResult.success : undefined;
   const probeFailure =
     probeResult && Result.isFailure(probeResult) ? probeResult.failure : undefined;
-  const reportedModels = claudeReportedModels(
+  const { models: reportedModels, hasNonCatalogModels } = claudeReportedModels(
     modelCatalog,
     claudeSettings.customModels,
     capabilities?.models,
@@ -974,8 +974,9 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     },
   });
   // Claude Code lists gateway models only while its one gateway cache holds this base URL, and
-  // then all of them, so a list without any may lack this gateway's models.
-  return customApiEndpoint && reportedModels.length === 0
+  // then all of them, including those already configured as custom models. A first-party account
+  // has no gateway cache, so its list is complete.
+  return customApiEndpoint && !hasNonCatalogModels
     ? { ...provider, modelsIncomplete: true }
     : provider;
 });

@@ -4399,3 +4399,4 @@ a4ab2c51e3	take	applied cleanly
 7d2db832f7	take	goBack keeps Onicode's isFocused guard beside upstream's saved check; test's useNavigation mock adds isFocused
 fd1694cdd3	take	applied cleanly
 dcee01cbfd	take	applied cleanly; scenario ported, typechecked
+beb24ffed8	take	took hasNonCatalogModels; kept wave 3's customApiEndpoint gate so a first-party probe stays complete and claudeModelsOfferedByReport sticks
