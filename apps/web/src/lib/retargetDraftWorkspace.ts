@@ -22,7 +22,7 @@ function newThreadWorkspace(projectRef: ScopedProjectRef) {
       .get(environmentSummaries.connectedEnvironmentIdsAtom)
       .includes(projectRef.environmentId);
   const projectFile = consultProjectFile
-    ? (peekOniProjectFile(projectRef.environmentId, project.workspaceRoot) ?? null)
+    ? (peekOniProjectFile(projectRef.environmentId, project.workspaceRoot)?.projectFile ?? null)
     : null;
   const projectSettings = resolveProjectSettings(
     settings,
