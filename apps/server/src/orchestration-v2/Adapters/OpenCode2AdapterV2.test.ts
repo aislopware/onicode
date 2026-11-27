@@ -2914,19 +2914,22 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
   it.effect("still checks the server when a failed prompt's execution starts late", () =>
     Effect.gen(function* () {
       const offered = yield* Deferred.make<void>();
-      const { runtime, thread } = yield* resumed([
-        out("session.prompt", { sessionID: SESSION, text: "<any>" }),
-        // A status session.prompt does not declare, so the client fails before reading the body.
-        reply("session.prompt", {
-          status: 503,
-          body: { _tag: "UnknownError", message: "service unavailable" },
-        }),
-        event("session.execution.started", { sessionID: SESSION }),
-        out("session.active"),
-        reply("session.active", { data: { [SESSION]: { type: "running" } } }),
-        out("session.interrupt", { sessionID: SESSION }),
-        reply("session.interrupt", { interrupted: true }),
-      ]).pipe(
+      const gate = makeProviderReplayGate(["late-start"]);
+      const { runtime, thread } = yield* resumed(
+        [
+          out("session.prompt", { sessionID: SESSION, text: "<any>" }),
+          reply("session.prompt", {
+            status: 502,
+            body: { _tag: "UnknownError", message: "bad gateway" },
+          }),
+          event("session.execution.started", { sessionID: SESSION }, "late-start"),
+          out("session.active"),
+          reply("session.active", { data: { [SESSION]: { type: "running" } } }),
+          out("session.interrupt", { sessionID: SESSION }),
+          reply("session.interrupt", { interrupted: true }),
+        ],
+        { replayGate: gate },
+      ).pipe(
         Effect.provideService(ProviderContinuationRequests.ProviderContinuationRequests, {
           offer: () => Deferred.succeed(offered, undefined).pipe(Effect.asVoid),
           take: Effect.never,
@@ -2934,6 +2937,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       );
       const ended = yield* terminals(runtime, 2);
       yield* runtime.startTurn(turnInput(thread)).pipe(Effect.ignore);
+      gate.release("late-start");
       yield* Deferred.await(offered);
       yield* runtime.startTurn(secondTurn(thread));
       const [first, second] = yield* Fiber.join(ended);
