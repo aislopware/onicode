@@ -4060,3 +4060,4 @@ bf961f8121	take	ported the idea onto Onicode's per-steer note tracking: delivere
 e6641e6ec6	take	kept Onicode's anchorOpenHandlers on the profile anchor (also handles middle click) instead of an onClick-only handler
 000ea81099	take	taken as is
 972bae6a61	take	kept Onicode's tunnelled partition scope; preload path from DesktopEnvironment
+520e670cb5	take	avdsAvailable wired at Onicode's makeDeviceHubOperations call
