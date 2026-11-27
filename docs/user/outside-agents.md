@@ -52,7 +52,8 @@ disabled):
   changing projects and environment settings.
 
 A thread an outside agent starts or steers cannot run with broader permissions
-than the level you chose.
+than the level you chose. Some agents have modes of their own that skip
+approvals; only an agent with **Full access** can pick one.
 
 ### Approve with an agent code
 

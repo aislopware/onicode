@@ -358,6 +358,15 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
                 workspaceStrategy?.type === "existing_worktree"
                   ? workspaceStrategy.worktreePath
                   : project?.workspaceRoot,
+                {
+                  agentMode: {
+                    callerRuntimeMode: context.limits.runtimeMode,
+                    held:
+                      caller?.modelSelection.instanceId === input.modelSelection.instanceId
+                        ? caller.modelSelection.options
+                        : undefined,
+                  },
+                },
               );
         const projectSettings =
           replaying || project === undefined

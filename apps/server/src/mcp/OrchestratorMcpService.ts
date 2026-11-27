@@ -135,6 +135,8 @@ import {
 import * as Metrics from "../observability/Metrics.ts";
 import {
   interactionModeRank,
+  providerOptionDescriptors,
+  refuseAgentModePick,
   resolveInteractionMode,
   resolveRuntimeMode,
   runtimeModeRank,
@@ -565,7 +567,14 @@ const validateModelOptions = (
 export const validateModelSelection = Effect.fn("mcp.validateModelSelection")(function* (
   selection: ModelSelection,
   cwd: string | undefined,
-  options?: { readonly requireRegisteredProvider?: boolean },
+  options?: {
+    readonly requireRegisteredProvider?: boolean;
+    /** Refuses an agent's own mode the caller does not hold, unless it runs with full access. */
+    readonly agentMode?: {
+      readonly callerRuntimeMode: RuntimeMode;
+      readonly held: ReadonlyArray<ProviderOptionSelection> | undefined;
+    };
+  },
 ) {
   const registry = yield* ProviderRegistry.ProviderRegistry;
   const check = (
@@ -574,17 +583,32 @@ export const validateModelSelection = Effect.fn("mcp.validateModelSelection")(fu
     const provider = withWorkspaceModels(providers, cwd).find(
       (candidate) => candidate.instanceId === selection.instanceId,
     );
+    // Checked with the same provider snapshot that validates the options below.
+    const refusal =
+      options?.agentMode === undefined
+        ? Effect.void
+        : refuseAgentModePick({
+            callerRuntimeMode: options.agentMode.callerRuntimeMode,
+            picked: selection.options,
+            descriptors: providerOptionDescriptors(provider),
+            held: options.agentMode.held,
+          });
     if (provider === undefined) {
-      return options?.requireRegisteredProvider === true
-        ? Effect.fail(
-            failure(
-              "provider_unavailable",
-              `Provider instance ${selection.instanceId} is not registered.`,
-            ),
-          )
-        : Effect.succeed(selection);
+      return refusal.pipe(
+        Effect.andThen(
+          options?.requireRegisteredProvider === true
+            ? Effect.fail(
+                failure(
+                  "provider_unavailable",
+                  `Provider instance ${selection.instanceId} is not registered.`,
+                ),
+              )
+            : Effect.succeed(selection),
+        ),
+      );
     }
-    return requireAdvertisedModel(provider, selection.model).pipe(
+    return refusal.pipe(
+      Effect.andThen(requireAdvertisedModel(provider, selection.model)),
       Effect.andThen(validateModelOptions(provider, selection.model, selection.options)),
       Effect.map((options) =>
         options === undefined || options === selection.options
@@ -1757,6 +1781,8 @@ const make = Effect.gen(function* () {
     readonly providers: ReadonlyArray<ServerProvider>;
     /** Receipt replays bypass current settings because they start no work. Dispatch must reuse the checked command ID. */
     readonly skipProjectEnablementFilter?: boolean;
+    /** A retry replays its accepted command; refusing it here would lose that replay. */
+    readonly skipAgentModeRefusal?: boolean;
   }): Effect.fn.Return<ResolvedTarget, OrchestratorMcpFailure> {
     const requestedInstanceId = input.target?.providerInstanceId;
     const requestedDriver = input.target?.driverKind;
@@ -1852,6 +1878,17 @@ const make = Effect.gen(function* () {
     const advertised = advertisedModel(provider, model);
     const descriptors = advertised?.capabilities?.optionDescriptors;
     const requestedOptions = yield* validateModelOptions(provider, model, input.target?.options);
+    if (input.skipAgentModeRefusal !== true) {
+      yield* refuseAgentModePick({
+        callerRuntimeMode: input.parent.thread.runtimeMode,
+        picked: requestedOptions,
+        descriptors: descriptors ?? [],
+        held:
+          instanceId === input.parent.thread.modelSelection.instanceId
+            ? input.parent.thread.modelSelection.options
+            : undefined,
+      });
+    }
 
     const inheritsOptions =
       instanceId === inheritedSelection.instanceId &&
@@ -3038,6 +3075,7 @@ const make = Effect.gen(function* () {
         providers,
         cwd: yield* parentWorkspaceCwd(parent),
         skipProjectEnablementFilter: isRetryOfAcceptedDelegation,
+        skipAgentModeRefusal: isRetryOfAcceptedDelegation,
       });
       const runtimeMode = yield* resolveRuntimeMode(
         parent.thread.runtimeMode,
@@ -3517,6 +3555,7 @@ const make = Effect.gen(function* () {
                 providers,
                 cwd,
                 skipProjectEnablementFilter: isRetryOfAcceptedCreation,
+                skipAgentModeRefusal: isRetryOfAcceptedCreation,
               });
               const runtimeMode = yield* resolveRuntimeMode(
                 parent.thread.runtimeMode,
