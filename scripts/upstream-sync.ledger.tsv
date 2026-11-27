@@ -4390,3 +4390,4 @@ b6a054a92b	take	applied cleanly; mobile filePath keeps its own anchored isWindow
 5bd72c5997	take	applied cleanly
 3166b94135	take	source applied cleanly; upstream's renderer-gone test appended after Onicode's request-id trim test
 99420d6f11	take	applied cleanly; mobile keep-unavailable path queued as a follow-up
+9c67c7da9b	take	contract unreadProviders optional (wire-compatible); kept Onicode's model-list caching (modelLists/lookupRounds) and computed unreadProviders after readable; readAccounts reads destructure accounts, Onicode's slow-account rows kept; HUB_PROVIDERS is codex/claude/xai after 96423cb5e2, so the copy is true; i18n keys in all locales

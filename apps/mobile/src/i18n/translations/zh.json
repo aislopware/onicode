@@ -1251,6 +1251,7 @@
   "42a2622893a6bced": "无法读取限额。",
   "4897e228d3185c96": "没有报告限额。",
   "e27d2cb964df5dd5": "{source}：未报告任何账户。",
+  "161135f0aea4d1ca": "{source}：没有 Codex、Claude 或 Grok 账户。已跳过：{providers}。",
   "1b503134018285f4": "{days} 天 {hours} 小时",
   "fc7f69efcfa6fa32": "没有已累积的重置额度",
   "be7fd67c538a99a0": "已存 {count} 个 · {expires} 后过期",

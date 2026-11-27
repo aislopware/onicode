@@ -1251,6 +1251,7 @@
   "42a2622893a6bced": "Impossible de lire les limites.",
   "4897e228d3185c96": "Aucune limite signalée.",
   "e27d2cb964df5dd5": "{source} : aucun compte signalé.",
+  "161135f0aea4d1ca": "{source} : aucun compte Codex, Claude ou Grok. Ignorés : {providers}.",
   "1b503134018285f4": "{days} j {hours} h",
   "fc7f69efcfa6fa32": "Aucun crédit de réinitialisation en réserve",
   "be7fd67c538a99a0": "{count} en réserve · expire dans {expires}",
