@@ -1,4 +1,5 @@
 import * as NodeNet from "node:net";
+import * as NodeOS from "node:os";
 
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -6,7 +7,9 @@ import * as Context from "effect/Context";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 
-import { listensOnLoopback } from "./hostClassification.ts";
+import { isWildcardHost, listensOnLoopback, normalizeHostname } from "./hostClassification.ts";
+
+const WILDCARD_PORT_ATTEMPTS = 8;
 
 export class NetError extends Schema.TaggedError<NetError>()("NetError", {
   message: Schema.String,
@@ -132,6 +135,18 @@ export const make = () => {
     );
   });
 
+  // macOS lets a wildcard bind share a port with a listener on one interface address, so
+  // probe those addresses for a listener the bind alone would not reveal.
+  const hasInterfaceListener = (port: number): Effect.Effect<boolean> =>
+    Effect.forEach(
+      Object.values(NodeOS.networkInterfaces())
+        .flatMap((entries) => entries ?? [])
+        .filter((entry) => !entry.internal && (entry.family === "IPv4" || entry.scopeid === 0))
+        .map((entry) => entry.address),
+      (address) => hasListenerOnHost(port, address),
+      { concurrency: "unbounded" },
+    ).pipe(Effect.map((listening) => listening.includes(true)));
+
   const isPortAvailableForHost = Effect.fn("Net.isPortAvailableForHost")(function* (
     port: number,
     host: string | undefined,
@@ -183,10 +198,31 @@ export const make = () => {
     hasListenerOnHost,
     reserveLoopbackPort,
     findAvailablePort: Effect.fn("Net.findAvailablePort")(function* (preferred, host) {
-      if (preferred > 0 && (yield* isPortAvailableForHost(preferred, host))) {
+      const wildcardHost =
+        host !== undefined && (host === "" || isWildcardHost(host))
+          ? normalizeHostname(host)
+          : undefined;
+      if (
+        preferred > 0 &&
+        (yield* isPortAvailableForHost(preferred, host)) &&
+        (wildcardHost === undefined ||
+          ((yield* canListenOnHost(preferred, wildcardHost)) &&
+            !(yield* hasInterfaceListener(preferred))))
+      ) {
         return preferred;
       }
-      return yield* reserveLoopbackPort(listensOnLoopback(host) ? undefined : host);
+      if (wildcardHost === undefined) {
+        return yield* reserveLoopbackPort(listensOnLoopback(host) ? undefined : host);
+      }
+
+      // A wildcard bind can succeed while another address family owns the localhost port.
+      for (let attempt = 0; attempt < WILDCARD_PORT_ATTEMPTS; attempt += 1) {
+        const port = yield* reserveLoopbackPort(wildcardHost);
+        if ((yield* isPortAvailableOnLoopback(port)) && !(yield* hasInterfaceListener(port))) {
+          return port;
+        }
+      }
+      return yield* new NetError({ message: "Failed to find an available wildcard port" });
     }),
   } satisfies NetServiceShape;
 };
