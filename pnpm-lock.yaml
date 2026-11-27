@@ -184,11 +184,11 @@ settings:
 catalogs:
   default:
     '@effect/graphql-generator':
-      specifier: 4.1.5
-      version: 4.1.5
+      specifier: 4.1.6
+      version: 4.1.6
     '@effect/openapi-generator':
-      specifier: 4.1.5
-      version: 4.1.5
+      specifier: 4.1.6
+      version: 4.1.6
     '@noble/hashes':
       specifier: 2.4.0
       version: 2.4.0
@@ -309,10 +309,10 @@ overrides:
   '@anthropic-ai/claude-agent-sdk>@anthropic-ai/claude-agent-sdk-linux-x64-musl': '-'
   '@anthropic-ai/claude-agent-sdk>@anthropic-ai/claude-agent-sdk-win32-arm64': '-'
   '@anthropic-ai/claude-agent-sdk>@anthropic-ai/claude-agent-sdk-win32-x64': '-'
-  '@effect/atom-react': 4.1.5
-  '@effect/platform-node': 4.1.5
-  '@effect/platform-node-shared': 4.1.5
-  '@effect/vitest': 4.1.5
+  '@effect/atom-react': 4.1.6
+  '@effect/platform-node': 4.1.6
+  '@effect/platform-node-shared': 4.1.6
+  '@effect/vitest': 4.1.6
   '@effect/vitest>vitest': '-'
   '@expo/dom-webview': 58.0.2
   '@expo/metro-config': 58.0.23
@@ -327,9 +327,9 @@ overrides:
   '@tailwindcss/oxide>@tailwindcss/oxide-wasm32-wasi': '-'
   '@tailwindcss/vite': 4.3.5
   '@types/node': 26.6.6
-  effect: 4.1.5
-  '@opencode/protocol>effect': 4.1.5
-  '@opencode/schema>effect': 4.1.5
+  effect: 4.1.6
+  '@opencode/protocol>effect': 4.1.6
+  '@opencode/schema>effect': 4.1.6
   node-abi: 4.43.0
   metro: 0.87.1
   metro-config: 0.87.1
@@ -357,8 +357,8 @@ patchedDependencies:
   '@cursor/sdk@1.5.0': 7fe8889d7916196c56006cf15a39abba4099feb2c567b4030b82a09364cee500
   '@e2e-dev/mobile@0.12.8': a473199b8c02e83cf825b7d4cab0b5d67516945dfe30d1502fd47801828bf739
   '@e2e-dev/web@0.16.1': d4a718e516e19ad4db63cddd1e97439910bb260100dcde5de6213ecf75bc5b6b
-  '@effect/platform-node-shared@4.1.5': 5c85315aa18de2923bf58387cc351322ad3761bc580e467f7a197ba7865268b8
-  '@effect/vitest@4.1.5': 78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7
+  '@effect/platform-node-shared@4.1.6': f6aef893f2212c4eaa4fe97f84cead4d6ef7ba1651be51dfe28506578eb970ed
+  '@effect/vitest@4.1.6': f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2
   '@exodus/bytes@1.16.0': ceab67463db8cb74dcb2ced48eff4cc8ae9de925ae4cd2173a59a0dfba667bd8
   '@expo/metro-config@58.0.23': 90fa980e8b6480631fb2fbb04559834e3c612db40c550cd828f11be297d8d760
   '@expo/ui@58.0.29': 7d96dca3621b6a757f4fbf854cf85948e00dd4070398f4d9dc94ebb37cdf33aa
@@ -371,7 +371,7 @@ patchedDependencies:
   '@vitest/browser@5.1.1': 92f36cbf5b1f90691fa696db358eaaf7be96c34fb051b218348437998005cf36
   '@zip.js/zip.js@2.25.0': cb3596293f7a8a6cfe3fade1ab0be9aa33accc3e96e14c1fc8e17bcd333fdb36
   app-builder-lib@26.18.1: 9f74d395be438c1e2d4e790bf4e01ac04574c8d90020c6fbd07c0f0e3b45d17a
-  effect@4.1.5: 14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a
+  effect@4.1.6: c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1
   electron-updater@6.8.12: 9a871c1428f69161ddf12e9cf7af8fc19fee562247cb443305fb16429149e7f1
   expo-audio@58.0.12: 92414572bf24ffd0c45de44c45f11f6c48bc0af13b8b9a56f77a67bc0e915c1e
   expo-modules-core@58.1.0: 8fe87a992abdec57a7c3a59dc6bdf58f7f8c0121552fdc5918bd0da4a3004101
@@ -428,8 +428,8 @@ importers:
         specifier: 0.16.1
         version: 0.16.1
       '@effect/platform-node':
-        specifier: 4.1.5
-        version: 4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0))
+        specifier: 4.1.6
+        version: 4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(redis@6.4.0(@opentelemetry/api@1.10.0))
       '@napi-rs/keyring':
         specifier: ^2.1.2
         version: 2.1.2
@@ -455,8 +455,8 @@ importers:
         specifier: 'catalog:'
         version: 8.4.0
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
       electron:
         specifier: 45.4.1
         version: 45.4.1(supports-color@8.1.1)
@@ -483,8 +483,8 @@ importers:
         version: 7.5.5
     devDependencies:
       '@effect/vitest':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
       '@types/node':
         specifier: 26.6.6
         version: 26.6.6
@@ -507,8 +507,8 @@ importers:
   apps/mobile:
     dependencies:
       '@effect/atom-react':
-        specifier: 4.1.5
-        version: 4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(react@19.3.0)(scheduler@0.28.0)
+        specifier: 4.1.6
+        version: 4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(react@19.3.0)(scheduler@0.28.0)
       '@exodus/bytes':
         specifier: 1.16.0
         version: 1.16.0(patch_hash=ceab67463db8cb74dcb2ced48eff4cc8ae9de925ae4cd2173a59a0dfba667bd8)(@noble/hashes@2.4.0)
@@ -588,8 +588,8 @@ importers:
         specifier: 9.0.0
         version: 9.0.0
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
       expo:
         specifier: 58.0.26
         version: 58.0.26(877fedd1a3876882402cb09b93bbfd44)
@@ -769,8 +769,8 @@ importers:
         specifier: 0.12.8
         version: 0.12.8(patch_hash=a473199b8c02e83cf825b7d4cab0b5d67516945dfe30d1502fd47801828bf739)(@e2e-dev/core@0.24.0)(e2e@0.24.0)
       '@effect/vitest':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
       '@pierre/trees':
         specifier: 'catalog:'
         version: 1.0.0(@pierre/theme@2.1.0)(@shikijs/themes@4.6.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(shiki@4.6.0)
@@ -811,11 +811,11 @@ importers:
         specifier: 1.5.0
         version: 1.5.0(patch_hash=7fe8889d7916196c56006cf15a39abba4099feb2c567b4030b82a09364cee500)(zod@4.6.7)
       '@effect/platform-node':
-        specifier: 4.1.5
-        version: 4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0))
+        specifier: 4.1.6
+        version: 4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(redis@6.4.0(@opentelemetry/api@1.10.0))
       '@effect/platform-node-shared':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=5c85315aa18de2923bf58387cc351322ad3761bc580e467f7a197ba7865268b8)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f6aef893f2212c4eaa4fe97f84cead4d6ef7ba1651be51dfe28506578eb970ed)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))
       '@ff-labs/fff-node':
         specifier: 0.11.0
         version: 0.11.0(patch_hash=febc131287f6c71cd2a0c8bbdada299a22f16a9ce1fd720815c8d0083bcb86a0)
@@ -904,8 +904,8 @@ importers:
         specifier: 9.0.0
         version: 9.0.0
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
       ffi-rs:
         specifier: 1.3.7
         version: 1.3.7
@@ -945,10 +945,10 @@ importers:
     devDependencies:
       '@effect/graphql-generator':
         specifier: 'catalog:'
-        version: 4.1.5(@effect/platform-node@4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0)))(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))
+        version: 4.1.6(@effect/platform-node@4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(redis@6.4.0(@opentelemetry/api@1.10.0)))(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))
       '@effect/vitest':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
       '@handy-computer/models':
         specifier: 0.2.3
         version: 0.2.3
@@ -1043,8 +1043,8 @@ importers:
         specifier: ^3.2.2
         version: 3.2.2(react@19.3.0)
       '@effect/atom-react':
-        specifier: 4.1.5
-        version: 4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(react@19.3.0)(scheduler@0.28.0)
+        specifier: 4.1.6
+        version: 4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(react@19.3.0)(scheduler@0.28.0)
       '@fontsource-variable/inter':
         specifier: ^5.3.0
         version: 5.3.0
@@ -1157,8 +1157,8 @@ importers:
         specifier: ^3.5.0
         version: 3.5.0
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
       entities:
         specifier: 9.0.0
         version: 9.0.0
@@ -1230,11 +1230,11 @@ importers:
         version: 5.1.0(@types/react@19.3.0)(react@19.3.0)(use-sync-external-store@1.7.0(react@19.3.0))
     devDependencies:
       '@effect/platform-node':
-        specifier: 4.1.5
-        version: 4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0))
+        specifier: 4.1.6
+        version: 4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(redis@6.4.0(@opentelemetry/api@1.10.0))
       '@effect/vitest':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
       '@tailwindcss/vite':
         specifier: 4.3.5
         version: 4.3.5(@voidzero-dev/vite-plus-core@8.3.8001(@types/node@26.6.6)(jiti@2.7.0)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1))
@@ -1290,8 +1290,8 @@ importers:
   evals:
     dependencies:
       '@effect/platform-node':
-        specifier: 4.1.5
-        version: 4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0))
+        specifier: 4.1.6
+        version: 4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(redis@6.4.0(@opentelemetry/api@1.10.0))
       '@onicode/contracts':
         specifier: workspace:*
         version: link:../packages/contracts
@@ -1302,12 +1302,12 @@ importers:
         specifier: workspace:*
         version: link:../packages/shared
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
     devDependencies:
       '@effect/vitest':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
       '@types/node':
         specifier: 26.6.6
         version: 26.6.6
@@ -1336,8 +1336,8 @@ importers:
         specifier: 7.0.0
         version: 7.0.0
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
       reflect-metadata:
         specifier: 0.2.2
         version: 0.2.2
@@ -1349,8 +1349,8 @@ importers:
         specifier: 5.20261124.1
         version: 5.20261124.1
       '@effect/vitest':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
       '@types/node':
         specifier: 26.6.6
         version: 26.6.6
@@ -1370,15 +1370,15 @@ importers:
         specifier: 1.94.0
         version: 1.94.0
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
     devDependencies:
       '@effect/platform-node':
-        specifier: 4.1.5
-        version: 4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0))
+        specifier: 4.1.6
+        version: 4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(redis@6.4.0(@opentelemetry/api@1.10.0))
       '@effect/vitest':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
       vite-plus:
         specifier: 1.8.0
         version: 1.8.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
@@ -1440,8 +1440,8 @@ importers:
         specifier: 2.25.0
         version: 2.25.0(patch_hash=cb3596293f7a8a6cfe3fade1ab0be9aa33accc3e96e14c1fc8e17bcd333fdb36)
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
       fflate:
         specifier: 0.8.3
         version: 0.8.3
@@ -1456,8 +1456,8 @@ importers:
         version: 6.0.5
     devDependencies:
       '@effect/vitest':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
       '@types/mdast':
         specifier: ^4.0.4
         version: 4.0.4
@@ -1483,12 +1483,12 @@ importers:
   packages/contracts:
     dependencies:
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
     devDependencies:
       '@effect/vitest':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
       vite-plus:
         specifier: 1.8.0
         version: 1.8.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
@@ -1496,18 +1496,18 @@ importers:
   packages/effect-acp:
     dependencies:
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
     devDependencies:
       '@effect/openapi-generator':
         specifier: 'catalog:'
-        version: 4.1.5(@effect/platform-node@4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0)))(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))
+        version: 4.1.6(@effect/platform-node@4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(redis@6.4.0(@opentelemetry/api@1.10.0)))(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))
       '@effect/platform-node':
-        specifier: 4.1.5
-        version: 4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0))
+        specifier: 4.1.6
+        version: 4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(redis@6.4.0(@opentelemetry/api@1.10.0))
       '@effect/vitest':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
       '@types/node':
         specifier: 26.6.6
         version: 26.6.6
@@ -1518,18 +1518,18 @@ importers:
   packages/effect-codex-app-server:
     dependencies:
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
     devDependencies:
       '@effect/openapi-generator':
         specifier: 'catalog:'
-        version: 4.1.5(@effect/platform-node@4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0)))(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))
+        version: 4.1.6(@effect/platform-node@4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(redis@6.4.0(@opentelemetry/api@1.10.0)))(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))
       '@effect/platform-node':
-        specifier: 4.1.5
-        version: 4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0))
+        specifier: 4.1.6
+        version: 4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(redis@6.4.0(@opentelemetry/api@1.10.0))
       '@effect/vitest':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
       '@types/node':
         specifier: 26.6.6
         version: 26.6.6
@@ -1546,8 +1546,8 @@ importers:
         specifier: workspace:*
         version: link:../source-control-core
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
       remark-gfm:
         specifier: 'catalog:'
         version: 4.0.1(supports-color@10.2.2)
@@ -1559,8 +1559,8 @@ importers:
         version: 11.0.5
     devDependencies:
       '@effect/vitest':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
       '@types/node':
         specifier: 26.6.6
         version: 26.6.6
@@ -1577,15 +1577,15 @@ importers:
         specifier: workspace:*
         version: link:../source-control-core
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
     devDependencies:
       '@effect/graphql-generator':
         specifier: 'catalog:'
-        version: 4.1.5(@effect/platform-node@4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0)))(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))
+        version: 4.1.6(@effect/platform-node@4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(redis@6.4.0(@opentelemetry/api@1.10.0)))(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))
       '@effect/vitest':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
       '@types/node':
         specifier: 26.6.6
         version: 26.6.6
@@ -1608,15 +1608,15 @@ importers:
         specifier: 9.0.0
         version: 9.0.0
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
     devDependencies:
       '@effect/platform-node':
-        specifier: 4.1.5
-        version: 4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0))
+        specifier: 4.1.6
+        version: 4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(redis@6.4.0(@opentelemetry/api@1.10.0))
       '@effect/vitest':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
       '@types/node':
         specifier: 26.6.6
         version: 26.6.6
@@ -1645,15 +1645,15 @@ importers:
         specifier: workspace:*
         version: link:../shared
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
     devDependencies:
       '@effect/platform-node':
-        specifier: 4.1.5
-        version: 4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0))
+        specifier: 4.1.6
+        version: 4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(redis@6.4.0(@opentelemetry/api@1.10.0))
       '@effect/vitest':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
       '@onicode/provider-testing':
         specifier: workspace:*
         version: link:../provider-testing
@@ -1682,12 +1682,12 @@ importers:
         specifier: workspace:*
         version: link:../shared
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
     devDependencies:
       '@effect/vitest':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
       '@types/node':
         specifier: 26.6.6
         version: 26.6.6
@@ -1707,15 +1707,15 @@ importers:
         specifier: workspace:*
         version: link:../shared
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
     devDependencies:
       '@effect/platform-node':
-        specifier: 4.1.5
-        version: 4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0))
+        specifier: 4.1.6
+        version: 4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(redis@6.4.0(@opentelemetry/api@1.10.0))
       '@effect/vitest':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
       '@types/node':
         specifier: 26.6.6
         version: 26.6.6
@@ -1738,8 +1738,8 @@ importers:
         specifier: workspace:*
         version: link:../shared
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
       jsonc-parser:
         specifier: 3.3.1
         version: 3.3.1
@@ -1748,11 +1748,11 @@ importers:
         version: 2.9.1
     devDependencies:
       '@effect/platform-node':
-        specifier: 4.1.5
-        version: 4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0))
+        specifier: 4.1.6
+        version: 4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(redis@6.4.0(@opentelemetry/api@1.10.0))
       '@effect/vitest':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
       '@onicode/provider-testing':
         specifier: workspace:*
         version: link:../provider-testing
@@ -1778,15 +1778,15 @@ importers:
         specifier: workspace:*
         version: link:../shared
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
     devDependencies:
       '@effect/platform-node':
-        specifier: 4.1.5
-        version: 4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0))
+        specifier: 4.1.6
+        version: 4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(redis@6.4.0(@opentelemetry/api@1.10.0))
       '@effect/vitest':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
       '@onicode/provider-testing':
         specifier: workspace:*
         version: link:../provider-testing
@@ -1815,15 +1815,15 @@ importers:
         specifier: workspace:*
         version: link:../shared
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
     devDependencies:
       '@effect/platform-node':
-        specifier: 4.1.5
-        version: 4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0))
+        specifier: 4.1.6
+        version: 4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(redis@6.4.0(@opentelemetry/api@1.10.0))
       '@effect/vitest':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
       '@onicode/provider-testing':
         specifier: workspace:*
         version: link:../provider-testing
@@ -1852,15 +1852,15 @@ importers:
         specifier: workspace:*
         version: link:../shared
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
     devDependencies:
       '@effect/platform-node':
-        specifier: 4.1.5
-        version: 4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0))
+        specifier: 4.1.6
+        version: 4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(redis@6.4.0(@opentelemetry/api@1.10.0))
       '@effect/vitest':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
       '@onicode/provider-testing':
         specifier: workspace:*
         version: link:../provider-testing
@@ -1889,15 +1889,15 @@ importers:
         specifier: workspace:*
         version: link:../shared
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
     devDependencies:
       '@effect/platform-node':
-        specifier: 4.1.5
-        version: 4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0))
+        specifier: 4.1.6
+        version: 4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(redis@6.4.0(@opentelemetry/api@1.10.0))
       '@effect/vitest':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
       '@onicode/provider-testing':
         specifier: workspace:*
         version: link:../provider-testing
@@ -1924,7 +1924,7 @@ importers:
         version: 1.19.6
       '@opencode/client':
         specifier: 2.4.1
-        version: 2.4.1(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))
+        version: 2.4.1(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))
       '@opencode/protocol':
         specifier: 2.4.1
         version: 2.4.1
@@ -1932,15 +1932,15 @@ importers:
         specifier: 2.4.1
         version: 2.4.1
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
     devDependencies:
       '@effect/platform-node':
-        specifier: 4.1.5
-        version: 4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0))
+        specifier: 4.1.6
+        version: 4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(redis@6.4.0(@opentelemetry/api@1.10.0))
       '@effect/vitest':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
       '@onicode/provider-testing':
         specifier: workspace:*
         version: link:../provider-testing
@@ -1963,15 +1963,15 @@ importers:
         specifier: workspace:*
         version: link:../shared
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
     devDependencies:
       '@effect/platform-node':
-        specifier: 4.1.5
-        version: 4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0))
+        specifier: 4.1.6
+        version: 4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(redis@6.4.0(@opentelemetry/api@1.10.0))
       '@effect/vitest':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
       '@onicode/provider-testing':
         specifier: workspace:*
         version: link:../provider-testing
@@ -1985,8 +1985,8 @@ importers:
   packages/provider-testing:
     dependencies:
       '@effect/platform-node':
-        specifier: 4.1.5
-        version: 4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0))
+        specifier: 4.1.6
+        version: 4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(redis@6.4.0(@opentelemetry/api@1.10.0))
       '@onicode/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -1997,12 +1997,12 @@ importers:
         specifier: workspace:*
         version: link:../shared
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
     devDependencies:
       '@effect/vitest':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
       '@types/node':
         specifier: 26.6.6
         version: 26.6.6
@@ -2016,15 +2016,15 @@ importers:
         specifier: workspace:*
         version: link:../contracts
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
     devDependencies:
       '@effect/platform-node':
-        specifier: 4.1.5
-        version: 4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0))
+        specifier: 4.1.6
+        version: 4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(redis@6.4.0(@opentelemetry/api@1.10.0))
       '@effect/vitest':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
       '@types/node':
         specifier: 26.6.6
         version: 26.6.6
@@ -2056,15 +2056,15 @@ importers:
         specifier: workspace:*
         version: link:../shared
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
     devDependencies:
       '@effect/platform-node':
-        specifier: 4.1.5
-        version: 4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0))
+        specifier: 4.1.6
+        version: 4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(redis@6.4.0(@opentelemetry/api@1.10.0))
       '@effect/vitest':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
       '@types/node':
         specifier: 26.6.6
         version: 26.6.6
@@ -2084,8 +2084,8 @@ importers:
         specifier: 'catalog:'
         version: 11.10.0
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
       ffi-rs:
         specifier: 1.3.7
         version: 1.3.7
@@ -2145,11 +2145,11 @@ importers:
         version: 2.9.1
     devDependencies:
       '@effect/platform-node':
-        specifier: 4.1.5
-        version: 4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0))
+        specifier: 4.1.6
+        version: 4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(redis@6.4.0(@opentelemetry/api@1.10.0))
       '@effect/vitest':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
       '@types/hast':
         specifier: ^3.0.5
         version: 3.0.5
@@ -2184,15 +2184,15 @@ importers:
         specifier: 9.0.0
         version: 9.0.0
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
     devDependencies:
       '@effect/platform-node':
-        specifier: 4.1.5
-        version: 4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0))
+        specifier: 4.1.6
+        version: 4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(redis@6.4.0(@opentelemetry/api@1.10.0))
       '@effect/vitest':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
       '@onicode/source-control-testing':
         specifier: workspace:*
         version: link:../source-control-testing
@@ -2218,15 +2218,15 @@ importers:
         specifier: workspace:*
         version: link:../source-control-core
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
     devDependencies:
       '@effect/platform-node':
-        specifier: 4.1.5
-        version: 4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0))
+        specifier: 4.1.6
+        version: 4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(redis@6.4.0(@opentelemetry/api@1.10.0))
       '@effect/vitest':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
       '@onicode/source-control-testing':
         specifier: workspace:*
         version: link:../source-control-testing
@@ -2246,12 +2246,12 @@ importers:
         specifier: workspace:*
         version: link:../shared
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
     devDependencies:
       '@effect/vitest':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
       '@types/node':
         specifier: 26.6.6
         version: 26.6.6
@@ -2262,8 +2262,8 @@ importers:
   packages/source-control-cursor-origin:
     dependencies:
       '@effect/platform-node':
-        specifier: 4.1.5
-        version: 4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0))
+        specifier: 4.1.6
+        version: 4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(redis@6.4.0(@opentelemetry/api@1.10.0))
       '@onicode/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -2277,12 +2277,12 @@ importers:
         specifier: workspace:*
         version: link:../source-control-core
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
     devDependencies:
       '@effect/vitest':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
       '@types/node':
         specifier: 26.6.6
         version: 26.6.6
@@ -2335,15 +2335,15 @@ importers:
         specifier: workspace:*
         version: link:../source-control-core
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
     devDependencies:
       '@effect/platform-node':
-        specifier: 4.1.5
-        version: 4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0))
+        specifier: 4.1.6
+        version: 4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(redis@6.4.0(@opentelemetry/api@1.10.0))
       '@effect/vitest':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
       '@onicode/source-control-testing':
         specifier: workspace:*
         version: link:../source-control-testing
@@ -2369,12 +2369,12 @@ importers:
         specifier: workspace:*
         version: link:../source-control-core
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
     devDependencies:
       '@effect/vitest':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
       '@onicode/source-control-testing':
         specifier: workspace:*
         version: link:../source-control-testing
@@ -2388,8 +2388,8 @@ importers:
   packages/source-control-github:
     dependencies:
       '@effect/platform-node':
-        specifier: 4.1.5
-        version: 4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0))
+        specifier: 4.1.6
+        version: 4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(redis@6.4.0(@opentelemetry/api@1.10.0))
       '@onicode/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -2403,18 +2403,18 @@ importers:
         specifier: workspace:*
         version: link:../source-control-core
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
       yaml:
         specifier: ^2.9.1
         version: 2.9.1
     devDependencies:
       '@effect/graphql-generator':
         specifier: 'catalog:'
-        version: 4.1.5(@effect/platform-node@4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0)))(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))
+        version: 4.1.6(@effect/platform-node@4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(redis@6.4.0(@opentelemetry/api@1.10.0)))(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))
       '@effect/vitest':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
       '@onicode/source-control-testing':
         specifier: workspace:*
         version: link:../source-control-testing
@@ -2437,15 +2437,15 @@ importers:
         specifier: workspace:*
         version: link:../source-control-core
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
     devDependencies:
       '@effect/platform-node':
-        specifier: 4.1.5
-        version: 4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0))
+        specifier: 4.1.6
+        version: 4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(redis@6.4.0(@opentelemetry/api@1.10.0))
       '@effect/vitest':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
       '@onicode/source-control-testing':
         specifier: workspace:*
         version: link:../source-control-testing
@@ -2468,12 +2468,12 @@ importers:
         specifier: workspace:*
         version: link:../source-control-core
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
     devDependencies:
       '@effect/vitest':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
       '@onicode/source-control-testing':
         specifier: workspace:*
         version: link:../source-control-testing
@@ -2487,8 +2487,8 @@ importers:
   packages/source-control-testing:
     dependencies:
       '@effect/platform-node':
-        specifier: 4.1.5
-        version: 4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0))
+        specifier: 4.1.6
+        version: 4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(redis@6.4.0(@opentelemetry/api@1.10.0))
       '@onicode/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -2499,8 +2499,8 @@ importers:
         specifier: workspace:*
         version: link:../source-control-core
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
     devDependencies:
       '@types/node':
         specifier: 26.6.6
@@ -2515,15 +2515,15 @@ importers:
         specifier: workspace:*
         version: link:../shared
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
     devDependencies:
       '@effect/platform-node':
-        specifier: 4.1.5
-        version: 4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0))
+        specifier: 4.1.6
+        version: 4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(redis@6.4.0(@opentelemetry/api@1.10.0))
       '@effect/vitest':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
       '@types/node':
         specifier: 26.6.6
         version: 26.6.6
@@ -2540,12 +2540,12 @@ importers:
         specifier: workspace:*
         version: link:../shared
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
     devDependencies:
       '@effect/vitest':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
       '@types/node':
         specifier: 26.6.6
         version: 26.6.6
@@ -2562,8 +2562,8 @@ importers:
         specifier: 0.16.1
         version: 0.16.1(patch_hash=d4a718e516e19ad4db63cddd1e97439910bb260100dcde5de6213ecf75bc5b6b)(@e2e-dev/core@0.24.0)(e2e@0.24.0)
       '@effect/platform-node':
-        specifier: 4.1.5
-        version: 4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0))
+        specifier: 4.1.6
+        version: 4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(redis@6.4.0(@opentelemetry/api@1.10.0))
       '@electron/asar':
         specifier: ^4.3.2
         version: 4.3.2
@@ -2586,8 +2586,8 @@ importers:
         specifier: 0.24.0
         version: 0.24.0
       effect:
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
       playwright-core:
         specifier: 1.65.1
         version: 1.65.1
@@ -2602,8 +2602,8 @@ importers:
         version: 0.35.5(@types/node@26.6.6)
     devDependencies:
       '@effect/vitest':
-        specifier: 4.1.5
-        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
+        specifier: 4.1.6
+        version: 4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
       '@types/pngjs':
         specifier: 6.0.5
         version: 6.0.5
@@ -3382,38 +3382,38 @@ packages:
       e2e:
         optional: true
 
-  '@effect/atom-react@4.1.5':
-    resolution: {integrity: sha512-7bFJUOa4hatIE4LD4EmuOSS7+jNniZxaltX3TRExBCYAFqMd6vjZs9G/Ez3u24oUaJnkschmjfG3EwVzzebgig==}
+  '@effect/atom-react@4.1.6':
+    resolution: {integrity: sha512-Df4DXCrI6T7im/iObhLtZAvVCvXmXApjh/Xj+iVeRlIshUdzDrAgPpJgpa0m8Ti7sf5vO2cj2LDcxdQCx/wl9A==}
     peerDependencies:
-      effect: 4.1.5
+      effect: 4.1.6
       react: '>=19.0.0 <20.0.0'
       scheduler: '>=0.25.0 <0.29.0'
 
-  '@effect/graphql-generator@4.1.5':
-    resolution: {integrity: sha512-Re1ZD0VkEAICN/TK7Y30TkcBnYk3im9O1iUpfnlvlWS9y4Vl/9C2Du/O5NGanXPpm75MuPitOUu/eCN1nTvRBg==}
+  '@effect/graphql-generator@4.1.6':
+    resolution: {integrity: sha512-SG+Vj2C6i/X/eZQBaf/OpA8SILduu5TKo5Lioi+/miaaXznrRJ3aR2xJ9Aj19HLqvLjcv9q0Uxm6foLgIoxbbg==}
     hasBin: true
     peerDependencies:
-      '@effect/platform-node': 4.1.5
-      effect: 4.1.5
+      '@effect/platform-node': 4.1.6
+      effect: 4.1.6
 
-  '@effect/openapi-generator@4.1.5':
-    resolution: {integrity: sha512-tovGv6oLMX31PsDgGdibh8b/CVVpFCg9Y7zJ84gPMD6u8xS0dSjfwIQiQgbPJiDg5aDKA2aas5h3/pS7KfDhFQ==}
+  '@effect/openapi-generator@4.1.6':
+    resolution: {integrity: sha512-7S0Ik8FyuP36+7idsytZbEeUgPzpkX9TwqNULqFlXvPtsPqoaWEev2/YygbnBaCGXRX5zxe1iL4vORTKB4iL9w==}
     hasBin: true
     peerDependencies:
-      '@effect/platform-node': 4.1.5
-      effect: 4.1.5
+      '@effect/platform-node': 4.1.6
+      effect: 4.1.6
 
-  '@effect/platform-node-shared@4.1.5':
-    resolution: {integrity: sha512-JzlrYe4uKaBFTWihBRXo2pDjkUVB39kQpKdGfXdbp7Co5sKT8hbcjOmdB5pg/WOYESdGTddd3fxD4lwlZELbZQ==}
+  '@effect/platform-node-shared@4.1.6':
+    resolution: {integrity: sha512-RWKHX5TEZet2KC/NlBu5prBkZT30m6h8YTSWfJM0wIw0BNMkfEzCuH6N5HOw8mUudclWp5z1XTzsZ7xg0h+6Qw==}
     engines: {node: '>=22.19.0'}
     peerDependencies:
-      effect: 4.1.5
+      effect: 4.1.6
 
-  '@effect/platform-node@4.1.5':
-    resolution: {integrity: sha512-tFnRvxF9EKc3oU17sDHj1JeLP+TL/IkaOEl3IUk2EjgMS0x7AWs0ioUXjdNKLb3Z1LdjVfMf/DxsNh9PW5FFAg==}
+  '@effect/platform-node@4.1.6':
+    resolution: {integrity: sha512-DNHzWIRARCCoK6Ez5MOqJ6H81e5FbQecH8GY41ftJGqATENUOVOLkT1iNgxBt6zPi36iF1EpraBen+MjKUqHpw==}
     engines: {node: '>=22.19.0'}
     peerDependencies:
-      effect: 4.1.5
+      effect: 4.1.6
       redis: '>=5.1.0 <7.0.0'
 
   '@effect/tsgo-darwin-arm64@0.73.4':
@@ -3455,10 +3455,10 @@ packages:
     resolution: {integrity: sha512-geduC9fV5lEU14M7xo1av2wZx7zNbSslyAAxob3UMGUh3wUGJLme5emsjXULSILBbByt3HpMPaI0HaRFVPJBhg==}
     hasBin: true
 
-  '@effect/vitest@4.1.5':
-    resolution: {integrity: sha512-18u1013wkJtSelk1ZYLc/5aUnluTQyDfi2hAemkJW1GQ9qXw4mtPSiSf0AXZPhesmGCvG1Dk2C4JYD2sz+R72w==}
+  '@effect/vitest@4.1.6':
+    resolution: {integrity: sha512-Knb13gPhDbtOuNUnPXE/Sl+UvrKFHRATwU2vy+DGQCpjK1yI3oy1feQo1g2X8ZdOdc63sJB7HJXCMNsDy8xYvg==}
     peerDependencies:
-      effect: 4.1.5
+      effect: 4.1.6
 
   '@electron-internal/extract-zip@1.0.8':
     resolution: {integrity: sha512-8iajeLFbzNwM0m3AsQZSZgYREWglAImyGvvFSWU34FgMW8sHlzdwj9QKvv9dgN7jMP591EFUF/sLOC3Jl9YIjQ==}
@@ -4675,7 +4675,7 @@ packages:
   '@opencode/client@2.4.1':
     resolution: {integrity: sha512-VKMsNqK8p8EplzwhS3rKBtnBR08Xiz76r6yJ/eZ/7hNF5CTdvWVEjVKZB6dTp5CJ/fyGJBaVPtSPiBaNmhWU+g==}
     peerDependencies:
-      effect: 4.1.5
+      effect: 4.1.6
       solid-js: '>=1.9.0'
     peerDependenciesMeta:
       effect:
@@ -8340,8 +8340,8 @@ packages:
   ee-first@1.1.1:
     resolution: {integrity: sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow==}
 
-  effect@4.1.5:
-    resolution: {integrity: sha512-xyR20KhQI0vg2gD8ILUSQRTTESEYJ0JKdP+QD8J37xbwPTqXRxFM/l0+vUVD9fuSvoYruoTqyt33C4FZv1s4TQ==}
+  effect@4.1.6:
+    resolution: {integrity: sha512-P3CxMsdcSCle/7/FnPILd9GJkNqGtduKam2LX9Xsb8LoOjmeQ9Kmsuh16JwtIthaxLyiTCOzUUt+PZsXIohl+A==}
 
   ejs@3.1.10:
     resolution: {integrity: sha512-UeJmFfOrAQS8OJWPZ4qtgHyWExa088/MtK5UEyoJGFH67cDEXkZSviOiKRCZ4Xij0zxI3JECgYs3oKx+AizQBA==}
@@ -12830,38 +12830,38 @@ snapshots:
     optionalDependencies:
       e2e: 0.24.0
 
-  '@effect/atom-react@4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(react@19.3.0)(scheduler@0.28.0)':
+  '@effect/atom-react@4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(react@19.3.0)(scheduler@0.28.0)':
     dependencies:
-      effect: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+      effect: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
       react: 19.3.0
       scheduler: 0.28.0
 
-  '@effect/graphql-generator@4.1.5(@effect/platform-node@4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0)))(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))':
+  '@effect/graphql-generator@4.1.6(@effect/platform-node@4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(redis@6.4.0(@opentelemetry/api@1.10.0)))(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))':
     dependencies:
-      '@effect/platform-node': 4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0))
-      effect: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+      '@effect/platform-node': 4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(redis@6.4.0(@opentelemetry/api@1.10.0))
+      effect: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
 
-  '@effect/openapi-generator@4.1.5(@effect/platform-node@4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0)))(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))':
+  '@effect/openapi-generator@4.1.6(@effect/platform-node@4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(redis@6.4.0(@opentelemetry/api@1.10.0)))(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))':
     dependencies:
-      '@effect/platform-node': 4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0))
-      effect: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+      '@effect/platform-node': 4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(redis@6.4.0(@opentelemetry/api@1.10.0))
+      effect: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
       swagger2openapi: 7.0.8
     transitivePeerDependencies:
       - encoding
 
-  '@effect/platform-node-shared@4.1.5(patch_hash=5c85315aa18de2923bf58387cc351322ad3761bc580e467f7a197ba7865268b8)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))':
+  '@effect/platform-node-shared@4.1.6(patch_hash=f6aef893f2212c4eaa4fe97f84cead4d6ef7ba1651be51dfe28506578eb970ed)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))':
     dependencies:
       '@types/ws': 8.18.2
-      effect: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+      effect: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
       ws: 8.23.0
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
 
-  '@effect/platform-node@4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0))':
+  '@effect/platform-node@4.1.6(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(redis@6.4.0(@opentelemetry/api@1.10.0))':
     dependencies:
-      '@effect/platform-node-shared': 4.1.5(patch_hash=5c85315aa18de2923bf58387cc351322ad3761bc580e467f7a197ba7865268b8)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))
-      effect: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+      '@effect/platform-node-shared': 4.1.6(patch_hash=f6aef893f2212c4eaa4fe97f84cead4d6ef7ba1651be51dfe28506578eb970ed)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))
+      effect: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
       redis: 6.4.0(@opentelemetry/api@1.10.0)
       undici: 8.13.1
     transitivePeerDependencies:
@@ -12899,9 +12899,9 @@ snapshots:
       '@effect/tsgo-win32-arm64': 0.73.4
       '@effect/tsgo-win32-x64': 0.73.4
 
-  '@effect/vitest@4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)':
+  '@effect/vitest@4.1.6(patch_hash=f87ba071dd4f5cfa3b1ba14d5d59363e64372cd49af4d8282c322939e6bf3af2)(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)':
     dependencies:
-      effect: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+      effect: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
       vite-plus: 1.8.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
     transitivePeerDependencies:
       - '@arethetypeswrong/core'
@@ -14222,22 +14222,22 @@ snapshots:
     dependencies:
       cross-spawn: 7.0.6
 
-  '@opencode/client@2.4.1(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))':
+  '@opencode/client@2.4.1(effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1))':
     dependencies:
       '@opencode/protocol': 2.4.1
       '@opencode/schema': 2.4.1
     optionalDependencies:
-      effect: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+      effect: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
 
   '@opencode/protocol@2.4.1':
     dependencies:
       '@opencode/schema': 2.4.1
-      effect: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+      effect: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
 
   '@opencode/schema@2.4.1':
     dependencies:
       '@standard-schema/spec': 1.1.0
-      effect: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+      effect: 4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1)
 
   '@opentelemetry/api@1.10.0': {}
 
@@ -17252,7 +17252,7 @@ snapshots:
 
   ee-first@1.1.1: {}
 
-  effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a): {}
+  effect@4.1.6(patch_hash=c13237f64561426c002130285a9832acc5bb6ab42fd81e020b306429757ddda1): {}
 
   ejs@3.1.10:
     dependencies:
