@@ -76,10 +76,11 @@ export function writeComposerContextClipboard(
   return nativeClipboard().writeContextClipboard(text, encoded);
 }
 
-// `[label](url)` as copyLinksAs: 'markdown' and Copy as Markdown write it: `!` for an image, `\` before
-// `\[]` in the label, and a destination in `<...>` escaping `\<>`, or bare escaping `\()`.
+// `[label](url)` as copyLinksAs: 'markdown' and Copy as Markdown write it: `\` before `\[]` in the
+// label, and a destination in `<...>` escaping `\<>`, or bare escaping `\()`. Only Copy as Markdown
+// writes an image's `!`; any other `!` before a link is the text's own.
 const COPIED_MARKDOWN_LINK =
-  /!?\[((?:\\.|[^\\\]])*)\]\((?:<((?:\\.|[^\\<>])*)>|((?:\\.|[^\\\s()<>])+))\)/g;
+  /(!?)\[((?:\\.|[^\\[\]])*)\]\((?:<((?:\\.|[^\\<>])*)>|((?:\\.|[^\\\s()<>])+))\)/g;
 const unescapeMarkdown = (text: string) => text.replace(/\\(.)/g, "$1");
 
 /**
@@ -111,17 +112,23 @@ export function copiedComposerContextText(
   let changed = false;
   const text = copied.replace(
     COPIED_MARKDOWN_LINK,
-    (link, label: string, bracketed: string | undefined, bare: string | undefined) => {
+    (
+      link,
+      bang: string,
+      label: string,
+      bracketed: string | undefined,
+      bare: string | undefined,
+    ) => {
       const href = unescapeMarkdown(bracketed ?? bare ?? "");
       const reference = referenceByHref.get(href);
       if (reference !== undefined) {
         hasContext = true;
         changed = true;
-        return reference;
+        return format === "markdown" && reference.startsWith("!") ? reference : bang + reference;
       }
       if (format === "markdown" || !linkUrls.has(href)) return link;
       changed = true;
-      return unescapeMarkdown(label);
+      return bang + unescapeMarkdown(label);
     },
   );
   return changed ? { text, hasContext } : null;

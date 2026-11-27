@@ -355,7 +355,7 @@ pnpmfileChecksum: sha256-V4l4scZuq2tJGzv9CIPYF0cGBGNRBI8wBVBZg42BsCM=
 
 patchedDependencies:
   '@cursor/sdk@1.5.0': 7fe8889d7916196c56006cf15a39abba4099feb2c567b4030b82a09364cee500
-  '@e2e-dev/mobile@0.12.9': cd86bca59421a5c8e749d58ea5f6262f8555f908e6b46ab28bba5bb388480b63
+  '@e2e-dev/mobile@0.12.9': c40d4ab0cc2917388badb005d86e3c62570d6450ffedb66d8ceb8a51de2ca5b0
   '@e2e-dev/web@0.17.0': d4a718e516e19ad4db63cddd1e97439910bb260100dcde5de6213ecf75bc5b6b
   '@effect/platform-node-shared@4.1.7': c330ea1d6b9061406681ed905c71411f4574f30d1a718d2ba6071a273e712cd9
   '@effect/vitest@4.1.7': 3752ba7dcfe5449546ba77a5297613e1d0e31a87d1806a6d941a899e26770501
@@ -767,7 +767,7 @@ importers:
         version: 7.29.13(supports-color@8.1.1)
       '@e2e-dev/mobile':
         specifier: 0.12.9
-        version: 0.12.9(patch_hash=cd86bca59421a5c8e749d58ea5f6262f8555f908e6b46ab28bba5bb388480b63)(@e2e-dev/core@0.25.0)(e2e@0.25.0)
+        version: 0.12.9(patch_hash=c40d4ab0cc2917388badb005d86e3c62570d6450ffedb66d8ceb8a51de2ca5b0)(@e2e-dev/core@0.25.0)(e2e@0.25.0)
       '@effect/vitest':
         specifier: 4.1.7
         version: 4.1.7(patch_hash=3752ba7dcfe5449546ba77a5297613e1d0e31a87d1806a6d941a899e26770501)(@opentelemetry/api@1.10.0)(@types/node@26.6.11)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(effect@4.1.7(patch_hash=eca58993801b2681500afba78da973110d0d6311df77564258edc4bf8a46544c))(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.51.4)(typescript@7.0.2)(yaml@2.9.1)
@@ -2557,7 +2557,7 @@ importers:
     dependencies:
       '@e2e-dev/mobile':
         specifier: 0.12.9
-        version: 0.12.9(patch_hash=cd86bca59421a5c8e749d58ea5f6262f8555f908e6b46ab28bba5bb388480b63)(@e2e-dev/core@0.25.0)(e2e@0.25.0)
+        version: 0.12.9(patch_hash=c40d4ab0cc2917388badb005d86e3c62570d6450ffedb66d8ceb8a51de2ca5b0)(@e2e-dev/core@0.25.0)(e2e@0.25.0)
       '@e2e-dev/web':
         specifier: 0.17.0
         version: 0.17.0(patch_hash=d4a718e516e19ad4db63cddd1e97439910bb260100dcde5de6213ecf75bc5b6b)(@e2e-dev/core@0.25.0)(e2e@0.25.0)
@@ -12815,7 +12815,7 @@ snapshots:
       pixelmatch: 8.0.0
       zod: 4.6.7
 
-  '@e2e-dev/mobile@0.12.9(patch_hash=cd86bca59421a5c8e749d58ea5f6262f8555f908e6b46ab28bba5bb388480b63)(@e2e-dev/core@0.25.0)(e2e@0.25.0)':
+  '@e2e-dev/mobile@0.12.9(patch_hash=c40d4ab0cc2917388badb005d86e3c62570d6450ffedb66d8ceb8a51de2ca5b0)(@e2e-dev/core@0.25.0)(e2e@0.25.0)':
     dependencies:
       '@e2e-dev/core': 0.25.0
       '@napi-rs/image': 1.16.0

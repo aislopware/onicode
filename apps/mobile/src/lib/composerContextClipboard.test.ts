@@ -421,6 +421,22 @@ describe("mobile context clipboard copies", () => {
         "plain",
         { text: "C and a", hasContext: false },
       ],
+      [
+        "Use [option or [docs](https://x.dev)",
+        "plain",
+        { text: "Use [option or docs", hasContext: false },
+      ],
+      ["Done![docs](https://x.dev)", "plain", { text: "Done!docs", hasContext: false }],
+      [
+        "Look![Check\\[out\\]](oni-context://v1/image/image-source)",
+        "plain",
+        { text: `Look!${formatComposerContextReference(image)}`, hasContext: true },
+      ],
+      [
+        "![Check\\[out\\]](oni-context://v1/image/image-source)",
+        "markdown",
+        { text: formatComposerContextReference(image), hasContext: true },
+      ],
       // Inline code that reads like a link is not one of the message's links.
       ["Fix [docs](https://example.com)", "plain", null],
       ["[Other](oni-context://v1/terminal/missing)", "plain", null],

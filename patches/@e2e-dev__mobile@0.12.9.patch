@@ -520,7 +520,7 @@ index 449d286..bcd5622 100644
      /**
       * A redacted screenshot artifact. The device paints secure fields as dots,
 diff --git a/dist/tools.js b/dist/tools.js
-index 3981784..3e51d05 100644
+index 3981784..cfd92c8 100644
 --- a/dist/tools.js
 +++ b/dist/tools.js
 @@ -14,6 +14,8 @@ import { rawSession } from './device.js';
@@ -578,3 +578,13 @@ index 3981784..3e51d05 100644
                  }
                  return times === 1 ? `Pressed ${key} on the remote.` : `Pressed ${key} on the remote ${String(times)} times.`;
              },
+@@ -175,7 +180,8 @@ export function foldTools(...engines) {
+             description: 'Fold or unfold a foldable device. closed puts the app on the outer (cover) display, open lays the inner display flat, and half-open bends it like a book. The app moves to the other display and can change its layout, so read the screen again before the next action. On the iPhone Duo simulator a fold takes 10 to 16 seconds.',
+             inputSchema: z.object({ pose: z.enum(FOLD_POSES) }),
+             execute: async ({ pose }, options) => {
+-                await active().fold(pose, abort(options) ?? new AbortController().signal);
++                const surface = active();
++                await surface.fold(pose, abort(options) ?? new AbortController().signal, budget(surface, 'fold', options));
+                 return FOLDED[pose];
+             },
+         }), annotate(true)),
