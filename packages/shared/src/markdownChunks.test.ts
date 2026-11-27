@@ -394,6 +394,59 @@ describe("splitMarkdown", () => {
     ]);
   });
 
+  it("keeps the complete sample fence before a later oversized source chunk", () => {
+    const example = ["```md", "Sample Markdown", "", "# Sample heading", "```"].join("\n");
+    const preview = ["x".repeat(4200), "<span>", example, "More prose", "<span>"].join("\n");
+    const oversized = "# Appendix\n" + "[link](/example) ".repeat(11_000);
+    const { chunks } = splitMarkdown(preview + "\n" + oversized);
+    expect(chunks.map((chunk) => chunk.text)).toEqual([preview, oversized]);
+  });
+
+  it.each(["===", "---", "***"])(
+    "keeps HTML together after a long paragraph and %s",
+    (boundary) => {
+      const text = ["x".repeat(9000), boundary, "<span>", "# literal"].join("\n");
+      expect(splitMarkdown(text).chunks.map((chunk) => chunk.text)).toEqual([text]);
+    },
+  );
+
+  it.each([
+    ["a fence", "```md", "```"],
+    ["an HTML comment", "<!--", "-->"],
+    ["display math", "$$", "$$"],
+  ])("keeps %s intact after an ambiguous standalone tag", (_, open, close) => {
+    const block = [open, "Sample Markdown", "", "# Sample heading", close].join("\n");
+    const preview = ["x".repeat(9000), "<span>", block].join("\n");
+    expect(splitMarkdown(preview).chunks.map((chunk) => chunk.text)).toEqual([preview]);
+  });
+
+  it("preserves an oversized ambiguous region for source display", () => {
+    const oversized = ["x".repeat(LARGE_MARKDOWN_CHUNK_MAX_CHARS), "<span>", "# Heading"].join(
+      "\n",
+    );
+    // A trailing line break, so the last line is whole and may be a cut.
+    const next = "# Next\n";
+    const text = oversized + "\n\n" + next;
+    expect(splitMarkdown(text).chunks.map((chunk) => chunk.text)).toEqual([oversized + "\n", next]);
+  });
+
+  it.each([
+    ["multiline math with backticks", ["$$", "```", "$$", " # Heading"]],
+    ["single-line display math", ["$$x$$"]],
+  ])("keeps standalone HTML intact after %s", (_, math) => {
+    const text = ["x".repeat(4200), "<span>", ...math, "<span>", "# literal"].join("\n");
+    expect(splitMarkdown(text).chunks.map((chunk) => chunk.text)).toEqual([text]);
+  });
+
+  it("can cut at a heading after a tag in a lazy quote continuation", () => {
+    const quote = ["> " + "x".repeat(4200), "continued", "<span>"].join("\n");
+    const heading = "# Next\n";
+    expect(splitMarkdown(quote + "\n" + heading).chunks.map((chunk) => chunk.text)).toEqual([
+      quote,
+      heading,
+    ]);
+  });
+
   it("never cuts at the last line, which may still be growing", () => {
     expect(starts("# a\n# b")).toEqual(["# a"]);
     expect(starts("# a\n# b\n")).toEqual(["# a", "# b"]);
@@ -586,6 +639,10 @@ describe("extendMarkdownSplit", () => {
   // The first definition fits under the shared cap, so the cap is nearly spent past the cut: the
   // longer one after it no longer fits, the short one does.
   const cappedDefinitions = `# A\n\n[a]: /${"a".repeat(16_000)}\n\n# B\n\n[b]: /${"b".repeat(400)}\n\n[c]: /c\n\n# C\n`;
+  // Each flow parses about 8 KB, so the third finds the document's parse budget spent.
+  const spentParseBudget = [0, 1, 2]
+    .map((index) => `p${index}\n<span>\n${"x".repeat(8000)}\n\n# H${index}\n`)
+    .join("\n");
   // The first [id] is too large to share; the later one must not take its place after a cut.
   const omittedDefinition = `# A\n\n[id]:\n  /first\n  "${"t".repeat(16 * 1024)}"\n\n# B\n\n[ID]: /later\n\n[id]\n\n# C\n`;
   const heldPastLimit = `<details>\n\nintro\n\npara ${"x".repeat(LARGE_MARKDOWN_CHUNK_MAX_CHARS)}\n\n</details>\n\n# B\n`;
@@ -609,6 +666,21 @@ describe("extendMarkdownSplit", () => {
     {
       name: "definitions in the last piece",
       text: "# A\n\n[a]: /one\n\nuse [a] and [b]\n\n# B\n\ntext\n\n[b]: /two 'Two'\n[c]: /three\n",
+    },
+    {
+      name: "ambiguous standalone HTML",
+      text: 'intro\n<span>\n```md\n# not\n```\n\n# B\n\nmore <b>\n<span class="a">\ntext\n\n# C\n',
+    },
+    {
+      name: "a spent HTML parse budget",
+      text: spentParseBudget,
+      cuts: [
+        ...near(spentParseBudget, "# H0", [0, 3]),
+        ...near(spentParseBudget, "p1", [0, 3, 9]),
+        ...near(spentParseBudget, "# H1", [0, 3]),
+        ...near(spentParseBudget, "p2", [0, 3, 9, 100]),
+        spentParseBudget.length - 1,
+      ],
     },
     {
       name: "a wrapped label with a next-line destination",

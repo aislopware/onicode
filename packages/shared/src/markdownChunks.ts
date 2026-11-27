@@ -1,4 +1,5 @@
 import { decodeString } from "micromark-util-decode-string";
+import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
 
@@ -41,6 +42,28 @@ const HTML_STANDALONE_TAG =
   /^ {0,3}(?:<[A-Za-z][A-Za-z0-9-]*(?:[ \t]+[A-Za-z_:][A-Za-z0-9_.:-]*(?:[ \t]*=[ \t]*(?:[^ \t\r"'=<>`]+|'[^']*'|"[^"]*"))?)*[ \t]*\/?>|<\/[A-Za-z][A-Za-z0-9-]*[ \t]*>)[ \t]*\r?$/;
 const BLANK_LINE = /^[ \t]*\r?$/;
 const closesAtBlankLine = (next: string) => BLANK_LINE.test(next);
+const flowParser = unified().use(remarkParse).use(remarkGfm).freeze();
+const HTML_FLOW_MAX_CHARS = 8 * 1024;
+// Parsing is far slower than the line scan, so a whole document shares one budget.
+const HTML_PARSE_BUDGET_CHARS = 16 * 1024;
+// A streamed reply rescans its last piece on every append; only the growing flow is new text.
+const htmlFlowStarts = new Map<string, readonly number[]>();
+const HTML_FLOW_CACHE_ENTRIES = 32;
+
+/** Lines, from 0, where `flowText` starts an HTML node. */
+function flowHtmlStarts(flowText: string): readonly number[] {
+  const cached = htmlFlowStarts.get(flowText);
+  if (cached) return cached;
+  const starts: number[] = [];
+  for (const node of flowParser.parse(flowText).children) {
+    if (node.type === "html" && node.position) starts.push(node.position.start.line - 1);
+  }
+  if (htmlFlowStarts.size >= HTML_FLOW_CACHE_ENTRIES) {
+    htmlFlowStarts.delete(htmlFlowStarts.keys().next().value!);
+  }
+  htmlFlowStarts.set(flowText, starts);
+  return starts;
+}
 
 // A <details> or <table> wraps the Markdown between its tags, across the blank lines that end
 // each HTML block, so a cut waits until the ones an HTML block opened are closed.
@@ -97,8 +120,8 @@ const INDENTED_CODE = /^(?: {4}|\t)/;
 // A backtick run is whole, so a span never starts inside a longer run.
 const INLINE_CODE = /(?<!`)(`+)(?:[^`]|[^`][\s\S]*?[^`])\1(?!`)/g;
 
-/** Returns how to recognize the end of a block that `line` opens, or null for none. */
-function blockCloser(line: string): ((line: string) => boolean) | null {
+/** Null means the block ends on this line. Undefined means no block opens. */
+function blockCloser(line: string): ((line: string) => boolean) | null | undefined {
   const fence = FENCE_OPEN.exec(line)?.[1];
   if (fence) {
     return (next) => {
@@ -119,8 +142,7 @@ function blockCloser(line: string): ((line: string) => boolean) | null {
     const rest = line.slice(opener.length);
     return close.test(rest) ? null : (next) => close.test(next);
   }
-  // Other HTML blocks (CommonMark types 6 and 7) run until a blank line.
-  return HTML_BLOCK_TAG.test(line) || HTML_STANDALONE_TAG.test(line) ? closesAtBlankLine : null;
+  return HTML_BLOCK_TAG.test(line) ? closesAtBlankLine : undefined;
 }
 
 export interface MarkdownChunk {
@@ -190,6 +212,8 @@ interface MarkdownSplitResume {
   readonly afterHeading: boolean;
   /** Labels whose first definition was too large to share, so a later one must not win. */
   readonly omittedDefinitions: ReadonlySet<string>;
+  /** What is left of the document-wide budget for parsing ambiguous HTML flows. */
+  readonly parseBudget: number;
 }
 
 function hasDefinitionLabel(lines: readonly string[], start: number): boolean {
@@ -328,6 +352,7 @@ export function splitMarkdown(
     afterDefinition: false,
     afterHeading: false,
     omittedDefinitions: new Set(),
+    parseBudget: HTML_PARSE_BUDGET_CHARS,
   });
 }
 
@@ -394,6 +419,17 @@ function scanMarkdown(
   // The local index of the last line of the latest definition; -1 makes line 0 follow one.
   let definitionEnd = from.afterDefinition ? -1 : -2;
   let pendingDefinitions: ReturnType<typeof readLinkDefinitions> | undefined;
+  // A cut line always resets the flow, so a resumed scan starts a fresh one.
+  let ambiguousHtml = false;
+  let flowStart = 0;
+  let parsedThrough = 0;
+  let htmlStarts: Set<number> | undefined;
+  let parseBudget = from.parseBudget;
+  const resetFlow = (start: number) => {
+    flowStart = start;
+    parsedThrough = start;
+    htmlStarts = undefined;
+  };
   let resume = from.start > 0 ? from : undefined;
   let lines: string[] = [];
   let chars = 0;
@@ -425,11 +461,15 @@ function scanMarkdown(
       // Masked to blank lines, so nothing inside is a cut, a block or a definition.
       openedFence = false;
     } else if (closes !== null) {
-      if (closes(line)) closes = null;
+      if (closes(line)) {
+        closes = null;
+        resetFlow(index + 1);
+      }
     } else if (index > definitionEnd) {
       // The last line may still be growing; "1" can become "1. item" and "#" "#tag".
       if (openWrappers > 0 && chars - wrapperStart >= WRAPPED_MAX_CHARS) openWrappers = 0;
       const cutPoint =
+        !ambiguousHtml &&
         lines.length > 0 &&
         index < wholeLines &&
         chars >= targetChars &&
@@ -449,6 +489,7 @@ function scanMarkdown(
           afterDefinition: index === definitionEnd + 1,
           afterHeading,
           omittedDefinitions: new Set(omittedDefinitions),
+          parseBudget,
         };
         if (openWrappers === 0) {
           chunks.push({ text: lines.join("\n"), lines: lines.length });
@@ -460,12 +501,50 @@ function scanMarkdown(
           held = { line: lines.length, index, definitionCount: definitions.length, resume: at };
         }
       }
-      closes = blockCloser(line);
+      const closer = blockCloser(line);
+      closes = closer ?? null;
+      if (closer === null || ATX_HEADING.test(line) || THEMATIC_BREAK.test(line)) {
+        resetFlow(index + 1);
+      } else if (closer === undefined && HTML_STANDALONE_TAG.test(line)) {
+        // Type-7 HTML cannot interrupt prose. Keep ambiguous tags beyond the parse
+        // budget with their following lines, as a cut could expose literal HTML as Markdown.
+        if (htmlStarts === undefined && index > flowStart) {
+          let end = flowStart;
+          let flowChars = 0;
+          const maxChars = Math.min(HTML_FLOW_MAX_CHARS, parseBudget);
+          for (; end < textLines.length; end++) {
+            const next = textLines[end]!;
+            flowChars += next.length + 1;
+            if (flowChars > maxChars || BLANK_LINE.test(next)) break;
+            // Include the boundary line, which can end a lazy container continuation.
+            if (
+              ATX_HEADING.test(next) ||
+              THEMATIC_BREAK.test(next) ||
+              blockCloser(next) !== undefined
+            ) {
+              end++;
+              break;
+            }
+          }
+          parsedThrough = end;
+          htmlStarts = new Set();
+          if (index < end) {
+            const flowText = textLines.slice(flowStart, end).join("\n");
+            parseBudget -= flowText.length;
+            for (const line of flowHtmlStarts(flowText)) htmlStarts.add(flowStart + line);
+          }
+        }
+        if (index === flowStart || htmlStarts?.has(index)) closes = closesAtBlankLine;
+        else if (index >= parsedThrough) ambiguousHtml = true;
+      }
       // Two or more spaces may put a fence in a list item, which this does not track.
       openedFence = /^ ?[`~]/.test(line) && FENCE_OPEN.test(line);
       // A definition cannot interrupt a paragraph, so it follows a blank line, a heading,
       // a closing code fence or another definition.
-      if (offset === 0 || afterBlankLine || index === definitionEnd + 1 || afterHeading) {
+      if (
+        !ambiguousHtml &&
+        (offset === 0 || afterBlankLine || index === definitionEnd + 1 || afterHeading)
+      ) {
         let definition = pendingDefinitions?.get(index);
         if (!definition && definitionChars < SHARED_DEFINITIONS_MAX_CHARS) {
           definition = readOneLineDefinition(textLines, index);
@@ -529,7 +608,9 @@ function scanMarkdown(
     // there. A growing last line may still become a cut itself, so it waits for its line break.
     if (held !== null && index < wholeLines && chars - 1 > LARGE_MARKDOWN_CHUNK_MAX_CHARS) {
       chunks.push({ text: lines.slice(0, held.line).join("\n"), lines: held.line });
-      ({ afterBlankLine, afterHeading, definitionChars } = held.resume);
+      ({ afterBlankLine, afterHeading, definitionChars, parseBudget } = held.resume);
+      ambiguousHtml = false;
+      resetFlow(held.index);
       definitionEnd = held.resume.afterDefinition ? held.index - 1 : -2;
       omittedDefinitions.clear();
       for (const label of held.resume.omittedDefinitions) omittedDefinitions.add(label);
@@ -551,6 +632,10 @@ function scanMarkdown(
       continue;
     }
     afterBlankLine = inFrontmatter || BLANK_LINE.test(line);
+    if (afterBlankLine) {
+      ambiguousHtml = false;
+      resetFlow(index + 1);
+    }
     afterHeading =
       !inFrontmatter &&
       closes === null &&
@@ -708,7 +793,7 @@ function headingSlugs(text: string): string[] {
       paragraph = [];
       continue;
     }
-    closes = blockCloser(line);
+    closes = blockCloser(line) ?? (HTML_STANDALONE_TAG.test(line) ? closesAtBlankLine : null);
     if (closes !== null || THEMATIC_BREAK.test(line)) {
       paragraph = [];
     } else if (
