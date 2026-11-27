@@ -78,6 +78,7 @@ interface XmlNode {
   hasSelectedChoice?: boolean;
   epubTable?: boolean;
   mathmlFirstChildSeen?: boolean;
+  epubNavigation?: boolean;
 }
 
 // ODF 1.3 Part 3 §6.1.2: paragraph character data turns TAB, CR and LF into spaces, collapses
@@ -132,14 +133,12 @@ function namespaceOf(tagName: string, scope: readonly XmlNode[]) {
   return scope.findLast((node) => Object.hasOwn(node.attrs, binding))?.attrs[binding];
 }
 
-function isXhtmlTemplate(
+function isXhtmlElement(
   tagName: string,
-  node: XmlNode,
-  ancestors: readonly XmlNode[],
+  scope: readonly XmlNode[],
   rootTagName: string | undefined,
 ) {
-  if (node.name !== "template") return false;
-  const namespace = namespaceOf(tagName, [...ancestors, node]);
+  const namespace = namespaceOf(tagName, scope);
   return (
     namespace === "http://www.w3.org/1999/xhtml" ||
     (namespace === undefined && !tagName.includes(":") && rootTagName === "html")
@@ -185,6 +184,12 @@ function xml(source: string, extension: string): XmlNode {
     )
       node.mathmlFirstChildSeen = false;
     if (
+      extension === ".epub" &&
+      node.name === "nav" &&
+      isXhtmlElement(tag.name, stack, rootTagName)
+    )
+      node.epubNavigation = true;
+    if (
       (node.name === "AlternateContent" || node.name === "Choice") &&
       namespaceOf(tag.name, stack) === MARKUP_COMPATIBILITY_NS
     )
@@ -204,7 +209,9 @@ function xml(source: string, extension: string): XmlNode {
     if (odf && (node.name === "p" || node.name === "h")) collapseOdfWhitespace(node);
     if (
       isMathmlAlternative ||
-      (extension === ".epub" && isXhtmlTemplate(tag.name, node, stack, rootTagName)) ||
+      (extension === ".epub" &&
+        node.name === "template" &&
+        isXhtmlElement(tag.name, [...stack, node], rootTagName)) ||
       (extension === ".epub" &&
         (stack[1] ?? node).name === "html" &&
         Object.hasOwn(tag.attributes, "hidden") &&
@@ -447,17 +454,18 @@ function* paragraphs(node: XmlNode): Generator<TextPart, void> {
       // A text box that ends the paragraph has already ended its line.
       if (!line.afterBox) yield "\n";
     } else if (
-      [
-        "blockquote",
-        "figure",
-        "figcaption",
-        "aside",
-        "address",
-        "header",
-        "footer",
-        "article",
-      ].includes(child.name) &&
-      child.hasText
+      child.hasText &&
+      (child.epubNavigation ||
+        [
+          "blockquote",
+          "figure",
+          "figcaption",
+          "aside",
+          "address",
+          "header",
+          "footer",
+          "article",
+        ].includes(child.name))
     ) {
       yield LINE_START;
       yield* paragraphs(child);
