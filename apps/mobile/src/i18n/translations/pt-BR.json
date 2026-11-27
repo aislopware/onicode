@@ -3,6 +3,7 @@
   "59c888898cca0a57": "Sua organização não permite agentes externos neste ambiente.",
   "a80458a4ad02acde": "Este dispositivo não pode conceder esse acesso. Escolha um nível mais baixo.",
   "a256081b5ce634fd": "Não foi possível criar o acesso do agente. Tente novamente.",
+  "035aab5e99159bd8": "{count, plural, one {… {hidden} caractere do meio não é exibido.} other {… {hidden} caracteres do meio não são exibidos.}} O texto termina com:",
   "4bcfa3b976a421cf": "Chat paralelo",
   "23be753133ae6950": "Thread",
   "0001ae5846061bb6": "Thread em {machine}",

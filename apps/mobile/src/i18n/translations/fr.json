@@ -3,6 +3,7 @@
   "59c888898cca0a57": "Votre organisation n’autorise pas les agents externes sur cet environnement.",
   "a80458a4ad02acde": "Cet appareil ne peut pas accorder cet accès. Choisissez un niveau inférieur.",
   "a256081b5ce634fd": "Impossible de créer l’accès de l’agent. Réessayez.",
+  "035aab5e99159bd8": "{count, plural, one {… {hidden} caractère au milieu n’est pas affiché.} other {… {hidden} caractères au milieu ne sont pas affichés.}} Le texte se termine par :",
   "4bcfa3b976a421cf": "Discussion annexe",
   "23be753133ae6950": "Fil",
   "0001ae5846061bb6": "Fil sur {machine}",

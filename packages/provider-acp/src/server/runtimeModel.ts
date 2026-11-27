@@ -551,9 +551,10 @@ function normalizeToolCallStatus(
   }
 }
 
-function normalizeCommandValue(value: unknown): string | undefined {
+// `verbatim` keeps each string as the agent sent it. An approval shows that text, edges included.
+function normalizeCommandValue(value: unknown, verbatim = false): string | undefined {
   if (typeof value === "string" && value.trim().length > 0) {
-    return value.trim();
+    return verbatim ? value : value.trim();
   }
   if (!Array.isArray(value)) {
     return undefined;
@@ -563,37 +564,39 @@ function normalizeCommandValue(value: unknown): string | undefined {
     if (typeof entry === "string") {
       const part = entry.trim();
       if (part.length > 0) {
-        parts.push(part);
+        parts.push(verbatim ? entry : part);
       }
     }
   }
   return parts.length > 0 ? parts.join(" ") : undefined;
 }
 
-function extractCommandFromTitle(title: string | undefined): string | undefined {
+function extractCommandFromTitle(title: string | undefined, verbatim = false): string | undefined {
   if (!title) {
     return undefined;
   }
-  const match = /`([^`]+)`/.exec(title);
-  return match?.[1]?.trim() || undefined;
+  const command = /`([^`]+)`/.exec(title)?.[1];
+  if (!command?.trim()) return undefined;
+  return verbatim ? command : command.trim();
 }
 
 function extractToolCallCommand(
   rawInput: unknown,
   title: string | undefined,
   kind: string | undefined,
+  verbatim = false,
 ): string | undefined {
   if (isRecord(rawInput)) {
     const directCommand =
-      normalizeCommandValue(rawInput.command) ??
-      normalizeCommandValue(rawInput.CommandLine) ??
-      normalizeCommandValue(rawInput.command_line) ??
-      normalizeCommandValue(rawInput.commandLine);
+      normalizeCommandValue(rawInput.command, verbatim) ??
+      normalizeCommandValue(rawInput.CommandLine, verbatim) ??
+      normalizeCommandValue(rawInput.command_line, verbatim) ??
+      normalizeCommandValue(rawInput.commandLine, verbatim);
     if (directCommand) {
       return directCommand;
     }
     const executable = typeof rawInput.executable === "string" ? rawInput.executable.trim() : "";
-    const args = normalizeCommandValue(rawInput.args);
+    const args = normalizeCommandValue(rawInput.args, verbatim);
     if (executable && args) {
       return `${executable} ${args}`;
     }
@@ -605,7 +608,7 @@ function extractToolCallCommand(
   if (kind !== "execute") {
     return undefined;
   }
-  return extractCommandFromTitle(title);
+  return extractCommandFromTitle(title, verbatim);
 }
 
 function filePathFromToolValue(value: unknown): string | undefined {
@@ -1518,10 +1521,18 @@ export function parsePermissionRequest(
   const kind = normalizeToolKind(params.toolCall.kind) ?? "unknown";
   const locationDetail = formatPermissionLocations(toolCall);
   const isFileChangeKind = kind === "edit" || kind === "delete" || kind === "move";
+  // The person approves the command or title as the agent sent it, so the card gets its edges too:
+  // a trailing carriage return is part of what would run.
+  const sentTitle = params.toolCall.title ?? undefined;
   const detail =
-    toolCall?.command ??
+    (toolCall?.command === undefined
+      ? undefined
+      : (extractToolCallCommand(params.toolCall.rawInput, sentTitle, toolCall.kind, true) ??
+        toolCall.command)) ??
     (isFileChangeKind ? locationDetail : undefined) ??
-    toolCall?.title ??
+    (toolCall?.title !== undefined && toolCall.title === sentTitle?.trim()
+      ? sentTitle
+      : toolCall?.title) ??
     locationDetail ??
     toolCall?.detail ??
     (typeof params.sessionId === "string" ? `Session ${params.sessionId}` : undefined);
