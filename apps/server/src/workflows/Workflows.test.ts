@@ -2,7 +2,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { assert, it } from "@effect/vitest";
 import * as NodeSqliteClient from "@onicode/shared/nodeSqliteClient";
-import { ProjectId } from "@onicode/contracts";
+import { ProjectId, type WorkflowRunsSnapshot, type WorkflowRunsUpdate } from "@onicode/contracts";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -2313,6 +2313,56 @@ it.effect("a watcher is sent the runs again when one changes", () =>
       }),
     );
   }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+);
+
+it.effect("only a subscriber asking with diff gets tagged diffs; legacy changes gets lists", () =>
+  Effect.gen(function* () {
+    const run = (runId: string): WorkflowRun => ({
+      runId,
+      workflow: "review",
+      version: 1,
+      title: runId,
+      status: "waiting",
+      detail: null,
+      result: null,
+      pauses: 0,
+      retired: false,
+      resumesAt: null,
+      parentRunId: null,
+      parentStep: null,
+      startedAt: "1970-01-01T00:00:00.000Z",
+      updatedAt: "1970-01-01T00:00:00.000Z",
+      endedAt: null,
+    });
+    const first: WorkflowRunsSnapshot = {
+      workflows: [],
+      runs: [run("b"), run("a")],
+      questions: [{ runId: "b", name: "approve", request: {}, askedAt: "", thread: null }],
+    };
+    // A run leaves the list and the question of another closes.
+    const diff: WorkflowRunsUpdate = {
+      _tag: "changed",
+      runs: [],
+      removed: ["a"],
+      questions: [],
+      closed: [{ runId: "b", name: "approve" }],
+    };
+    const updates = Stream.make(first, diff);
+    const whole: Array<WorkflowRunsSnapshot> = [
+      first,
+      { workflows: [], runs: [run("b")], questions: [] },
+    ];
+    // v0.25/v0.26 clients send `changes` and cannot decode a tagged diff.
+    assert.deepStrictEqual(yield* Stream.runCollect(Workflows.subscribed(updates, {})), whole);
+    assert.deepStrictEqual(
+      yield* Stream.runCollect(Workflows.subscribed(updates, { changes: true })),
+      whole,
+    );
+    assert.deepStrictEqual(
+      yield* Stream.runCollect(Workflows.subscribed(updates, { diff: true })),
+      [first, diff],
+    );
+  }),
 );
 
 it.effect(
