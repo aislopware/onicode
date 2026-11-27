@@ -2,6 +2,8 @@ import { useEffect, useRef, type RefObject } from "react";
 
 import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { shouldRedirectInputToComposer } from "../components/chat/composerFocusRedirect";
+import { isInSideChatPane, SIDE_CHAT_PANE_SELECTOR } from "../lib/sideChatPane";
+import { getTerminalFocusOwner } from "../lib/terminalFocus";
 
 function isFrozenComposerTarget(target: Element, form: HTMLFormElement | null) {
   return (
@@ -14,6 +16,8 @@ function isFrozenComposerTarget(target: Element, form: HTMLFormElement | null) {
 /** Keep submission shortcuts reachable when the frozen composer loses focus to the page. */
 export function useDictationSubmissionShortcut(input: {
   enabled: boolean;
+  /** A side chat's composer, which takes Enter only from focus inside its own pane. */
+  background: boolean;
   formRef: RefObject<HTMLFormElement | null>;
   onKeyDown(event: KeyboardEvent): void;
 }) {
@@ -27,17 +31,20 @@ export function useDictationSubmissionShortcut(input: {
     if (!input.enabled) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || isCommandPaletteOpen()) return;
+      if (getTerminalFocusOwner() !== null) return;
       const target = event.target;
       if (!(target instanceof Element)) return;
-      if (
-        target !== document.body &&
-        target !== document.documentElement &&
-        !isFrozenComposerTarget(target, latest.current.formRef.current) &&
-        // Focus parked on the chat itself, such as the timeline, belongs to the composer.
-        !shouldRedirectInputToComposer(event)
-      )
-        return;
-      latest.current.onKeyDown(event);
+      const { background, formRef } = latest.current;
+      // Focus on the page itself is outside every side pane, so it belongs to the main chat.
+      const owned =
+        isInSideChatPane(target) === background &&
+        (isFrozenComposerTarget(target, formRef.current) ||
+          // Focus parked on the chat itself, such as the timeline, belongs to the composer.
+          shouldRedirectInputToComposer(
+            event,
+            background ? target.closest(SIDE_CHAT_PANE_SELECTOR) : null,
+          ));
+      if (owned) latest.current.onKeyDown(event);
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);

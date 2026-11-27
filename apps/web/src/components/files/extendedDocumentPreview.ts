@@ -383,6 +383,9 @@ const RTF_CHARACTERS = new Map([
   ["rtlmark", "\u200f"],
 ]);
 
+const RTF_UNDERLINE_WORD =
+  /^(?:ul|uld|uldash|uldashd|uldashdd|uldb|ulhair|ulhwave|ulldash|ulth|ulthd|ulthdash|ulthdashd|ulthdashdd|ulthldash|ululdbwave|ulw|ulwave)$/;
+
 const rtfCodePage = (value: number) =>
   (
     {
@@ -607,7 +610,7 @@ export function openRtf(bytes: ArrayBuffer): OfficeWorkerResult {
         }
       } else if (word === "b") state.bold = arg !== 0;
       else if (word === "i") state.italic = arg !== 0;
-      else if (word === "ul") state.underline = arg !== 0;
+      else if (RTF_UNDERLINE_WORD.test(word!)) state.underline = arg !== 0;
       else if (word === "ulnone") state.underline = false;
       else if (word === "deleted") state.deleted = arg !== 0;
       else if (word === "v") state.hiddenText = arg !== 0;

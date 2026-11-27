@@ -9,6 +9,7 @@ import type {
 } from "@onicode/source-control-core/server/IssueTracker";
 import * as IssueTrackerHost from "@onicode/source-control-core/server/IssueTrackerHost";
 
+import { parseJiraIssueUrl } from "../shared/issueUrl.ts";
 import * as JiraApi from "./JiraApi.ts";
 import * as JiraIssueTracker from "./JiraIssueTracker.ts";
 
@@ -547,4 +548,31 @@ describe("JiraIssueTracker", () => {
       expect(limited.retryAt).toBe(30_000);
     }),
   );
+});
+
+describe("parseJiraIssueUrl", () => {
+  const eng7 = {
+    host: "atlassian.net",
+    workspace: "acme.atlassian.net",
+    scope: "ENG",
+    key: "ENG-7",
+  };
+  it.each([
+    ["https://acme.atlassian.net/browse/ENG-7", eng7],
+    ["https://Acme.atlassian.net/browse/ENG-7?focusedCommentId=c9", eng7],
+    ["https://acme.atlassian.net/jira/software/c/projects/ENG/boards/1?selectedIssue=ENG-7", eng7],
+    ["https://acme.atlassian.net/issues/?jql=project%20%3D%20ENG&selectedIssue=ENG-7", eng7],
+    ["https://acme.atlassian.net/jira/software/c/projects/ENG/issues/ENG-7", eng7],
+    ["https://acme.atlassian.net/jira/software/c/projects/ENG/issues", null],
+    ["http://acme.atlassian.net/browse/ENG-7", null],
+    ["https://acme.atlassian.net.evil.example/browse/ENG-7", null],
+    ["https://jira.acme.test/browse/ENG-7", null],
+    ["https://acme.atlassian.net/wiki/spaces/ENG/pages/123/issues/ENG-7", null],
+    ["https://acme.atlassian.net/wiki/spaces/ENG?selectedIssue=ENG-7", null],
+    ["https://.atlassian.net/browse/ENG-7", null],
+    ["https://acme.atlassian.net:8443/browse/ENG-7", null],
+    ["https://acme.atlassian.net/browse/ENG-7/extra", null],
+  ])("reads %s", (url, expected) => {
+    expect(parseJiraIssueUrl(new URL(url))).toEqual(expected);
+  });
 });

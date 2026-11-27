@@ -718,6 +718,7 @@
   },
   "dependencies": {
     "@onicode/contracts": "workspace:*",
+    "@onicode/issue-tracker-jira": "workspace:*",
     "@onicode/issue-tracker-linear": "workspace:*",
     "@onicode/provider-acp-registry": "workspace:*",
     "@onicode/provider-command-code": "workspace:*",

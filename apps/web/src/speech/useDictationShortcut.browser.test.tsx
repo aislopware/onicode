@@ -266,32 +266,82 @@ it.each([
   },
 );
 
-function SubmissionProbe({ onKeyDown }: { onKeyDown: (event: KeyboardEvent) => void }) {
+function SubmissionProbe({
+  onKeyDown,
+  background = false,
+  layout = "split",
+}: {
+  onKeyDown: (event: KeyboardEvent) => void;
+  background?: boolean;
+  layout?: "split" | "maximized" | "sheet";
+}) {
   const formRef = useRef<HTMLFormElement>(null);
-  useDictationSubmissionShortcut({ enabled: true, formRef, onKeyDown });
+  useDictationSubmissionShortcut({ enabled: true, background, formRef, onKeyDown });
+  const sidePane = (
+    <div data-side-chat-pane="">
+      <div data-testid="side-timeline" tabIndex={0} />
+    </div>
+  );
   return (
     <>
-      <div data-testid="timeline" tabIndex={0}>
+      <div
+        data-testid="timeline"
+        tabIndex={0}
+        {...(layout === "maximized" ? { "data-chat-column-maximized-away": "true" } : {})}
+      >
         <button type="button">Copy</button>
         <input aria-label="Search" />
+        <span role="link" tabIndex={0}>
+          Docs
+        </span>
+      </div>
+      {layout === "sheet" ? (
+        <div data-slot="sheet-popup" data-open="">
+          {sidePane}
+        </div>
+      ) : (
+        sidePane
+      )}
+      <div data-terminal-owner="drawer">
+        <div data-testid="terminal" tabIndex={0} />
       </div>
       <form ref={formRef} />
     </>
   );
 }
 
-it("submits dictation on Enter while the chat timeline has focus", async () => {
-  const onKeyDown = vi.fn();
-  await using screen = await render(<SubmissionProbe onKeyDown={onKeyDown} />);
-  (screen.getByTestId("timeline").element() as HTMLElement).focus();
-  await userEvent.keyboard("{Enter}");
-  expect(onKeyDown).toHaveBeenCalledOnce();
-});
+it.each([
+  { composer: "main", focus: "timeline", layout: "split", submits: true },
+  { composer: "main", focus: "side-timeline", layout: "split", submits: false },
+  { composer: "main", focus: "terminal", layout: "split", submits: false },
+  { composer: "main", focus: "page", layout: "split", submits: true },
+  { composer: "main", focus: "page", layout: "maximized", submits: false },
+  { composer: "main", focus: "timeline", layout: "sheet", submits: false },
+  { composer: "side", focus: "timeline", layout: "split", submits: false },
+  { composer: "side", focus: "side-timeline", layout: "split", submits: true },
+  { composer: "side", focus: "page", layout: "split", submits: false },
+  { composer: "side", focus: "side-timeline", layout: "maximized", submits: true },
+  { composer: "side", focus: "side-timeline", layout: "sheet", submits: true },
+] as const)(
+  "$composer composer dictation Enter with $focus focused ($layout) submits: $submits",
+  async ({ composer, focus, layout, submits }) => {
+    const onKeyDown = vi.fn();
+    await using screen = await render(
+      <SubmissionProbe onKeyDown={onKeyDown} background={composer === "side"} layout={layout} />,
+    );
+    if (focus === "page") (document.activeElement as HTMLElement | null)?.blur();
+    else (screen.getByTestId(focus).element() as HTMLElement).focus();
+    await userEvent.keyboard("{Enter}");
+    expect(onKeyDown).toHaveBeenCalledTimes(submits ? 1 : 0);
+  },
+);
 
-it("leaves dictation Enter to a focused button or field", async () => {
+it("leaves dictation Enter to a focused button, link or field", async () => {
   const onKeyDown = vi.fn();
   await using screen = await render(<SubmissionProbe onKeyDown={onKeyDown} />);
   (screen.getByRole("button", { name: "Copy" }).element() as HTMLElement).focus();
+  await userEvent.keyboard("{Enter}");
+  (screen.getByRole("link", { name: "Docs" }).element() as HTMLElement).focus();
   await userEvent.keyboard("{Enter}");
   (screen.getByRole("textbox", { name: "Search" }).element() as HTMLElement).focus();
   await userEvent.keyboard("{Enter}");

@@ -13,6 +13,7 @@ import { Spinner } from "~/components/ui/spinner";
 import type { MarkdownExtensions } from "~/markdown/wordsHast";
 import { FileMarkdownPreview } from "./FileMarkdownPreview";
 import { LineCappedText, useMoreCharactersLabel } from "./shownText";
+import { createPositionMemory, previewPositionKey } from "./previewPosition";
 import {
   buildMarkdownFootnotesSection,
   findFootnoteRefChunkIndex,
@@ -26,7 +27,6 @@ import {
 } from "@onicode/shared/markdownChunks";
 
 const ESTIMATED_LINE_PX = 24;
-const MAX_SAVED_POSITIONS = 100;
 const FOOTNOTE_TARGET_ID = /^fn-\d+$/;
 const FOOTNOTE_REF_ID = /^fnref-(\d+)(?:-(\d+))?$/;
 
@@ -34,8 +34,10 @@ const CHUNK_FOOTNOTES_OMIT: MarkdownExtensions = { footnotes: "omit" };
 const CHUNK_FOOTNOTES_OMIT_SEEDED: MarkdownExtensions = { footnotes: "omit-seeded" };
 const CHUNK_FOOTNOTES_ONLY: MarkdownExtensions = { footnotes: "only" };
 
-/** Reading positions outlive the preview, which unmounts when the file or thread changes. */
-const savedPositions = new Map<string, { readonly index: number; readonly viewOffset: number }>();
+const savedPositions = createPositionMemory<{
+  readonly index: number;
+  readonly viewOffset: number;
+}>();
 
 type ChunkItem =
   | {
@@ -88,12 +90,12 @@ export function ChunkedMarkdown(props: {
   const more = useMoreCharactersLabel();
   const rootRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<LegendListRef | null>(null);
-  const positionKey = JSON.stringify([
+  const positionKey = previewPositionKey(
     props.threadRef.environmentId,
     props.threadRef.threadId,
     props.cwd,
     props.relativePath,
-  ]);
+  );
   // A linked heading in a piece the list has not mounted, revealed once it mounts. It belongs to
   // the thread it was clicked in, since the panel keeps this mounted across threads.
   const [pendingLink, setPendingLink] = useState<{
@@ -225,14 +227,10 @@ export function ChunkedMarkdown(props: {
         onScroll={() => {
           const list = listRef.current?.getState();
           if (!list) return;
-          savedPositions.delete(positionKey);
           savedPositions.set(positionKey, {
             index: list.start,
             viewOffset: list.positionAtIndex(list.start) - list.scroll,
           });
-          if (savedPositions.size > MAX_SAVED_POSITIONS) {
-            savedPositions.delete(savedPositions.keys().next().value!);
-          }
         }}
         extraData={
           footnotes

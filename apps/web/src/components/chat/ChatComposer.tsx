@@ -2554,7 +2554,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       submitComposerStable(undefined, mode, intent, atPress, options);
   }, [submitComposerStable]);
   useDictationSubmissionShortcut({
-    enabled: voiceInputActive && !speechInput.preparing,
+    enabled: voiceInputActive && !speechInput.preparing && !hiddenThread,
+    background: backgroundThread,
     formRef: composerFormRef,
     onKeyDown: (event) => {
       const intent = composerSubmissionIntentForKey({

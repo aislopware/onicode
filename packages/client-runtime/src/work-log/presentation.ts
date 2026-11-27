@@ -903,9 +903,32 @@ export function toolGroupSummaryKind(
   return fallbackKinds.size === 1 ? fallbackKinds.values().next().value! : "mixed";
 }
 
+// A footnote definition with its indented continuation, or a CommonMark link reference definition
+// (one destination and an optional title, either may start a new line); "[Note]: some prose" is neither.
+const REFERENCE_DEFINITION =
+  /^[ \t]{0,3}\[(?:(\^[^\]\s]+)\]:.*(?:\r?\n(?: {4}|\t).*)*|([^\]\r\n]+)\]:[ \t]*(?:\r?\n[ \t]*)?(?:<[^>\r\n]*>|[^\s<>]+)(?:(?:[ \t]+|[ \t]*\r?\n[ \t]*)(?:"(?:\\.|[^"\\\r\n])*"|'(?:\\.|[^'\\\r\n])*'|\((?:\\.|[^)\\\r\n])*\)))?[ \t]*$)/gm;
+
+/** Drops definitions and the references they resolve; an undefined `[^a-z]` is literal text. */
+function withoutReferences(markdown: string, text: string): string {
+  const labels = new Set(
+    Array.from(markdown.matchAll(REFERENCE_DEFINITION), (match) =>
+      (match[1] ?? match[2]!).toLowerCase(),
+    ),
+  );
+  if (labels.size === 0) return text;
+  return text
+    .replace(REFERENCE_DEFINITION, "")
+    .replace(/\[(\^[^\]\s]+)\]/g, (reference, label: string) =>
+      labels.has(label.toLowerCase()) ? "" : reference,
+    )
+    .replace(/(!?)\[([^[\]]*)\]\[([^[\]]*)\]/g, (reference, _image, text: string, label: string) =>
+      labels.has((label === "" ? text : label).toLowerCase()) ? text : reference,
+    );
+}
+
 export function liveThoughtLine(markdown: string): string {
   const heading = /^\s*\*\*([^*\r\n]+)\*\*[ \t]*\r?(?:\n|$)/.exec(markdown)?.[1];
-  const text = (heading ?? markdown)
+  const text = withoutReferences(markdown, heading ?? markdown)
     .replace(/!?\[([^[\]]*)\]\([^)]*\)/g, "$1")
     .replace(/^[ \t]*(?:#{1,6}|[-*+]|\d+\.)[ \t]+/gm, "")
     .replace(/`+|\*\*|~~/g, "")

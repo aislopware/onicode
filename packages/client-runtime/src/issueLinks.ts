@@ -6,6 +6,11 @@ import {
   type RepositoryIdentity,
 } from "@onicode/contracts";
 import {
+  JIRA_HOST,
+  JIRA_KIND,
+  parseJiraIssueUrl,
+} from "@onicode/issue-tracker-jira/shared/issueUrl";
+import {
   LINEAR_HOST,
   LINEAR_KIND,
   parseLinearIssueUrl,
@@ -64,13 +69,24 @@ function indexIssueBindings<Project extends LinkProject>(projects: ReadonlyArray
   return { bindings, hosts: new Set(bindings.map((candidate) => candidate.binding.host)) };
 }
 
+/** Each standalone tracker's link parser, as the server's `IssueService` tries them. */
+const STANDALONE_ISSUE_LINKS = [
+  { tracker: LINEAR_KIND, parse: parseLinearIssueUrl },
+  { tracker: JIRA_KIND, parse: parseJiraIssueUrl },
+];
+
 function parseStandaloneIssueLink(url: string) {
+  let parsed: URL;
   try {
-    const link = parseLinearIssueUrl(new URL(url));
-    return link === null ? null : { tracker: LINEAR_KIND, link };
+    parsed = new URL(url);
   } catch {
     return null;
   }
+  for (const { tracker, parse } of STANDALONE_ISSUE_LINKS) {
+    const link = parse(parsed);
+    if (link !== null) return { tracker, link };
+  }
+  return null;
 }
 
 /** The workspace a standalone tracker's issue link names, which a reference read through it keeps. */
@@ -80,10 +96,11 @@ export function issueLinkWorkspace(url: string | undefined): string | undefined 
     : parseStandaloneIssueLink(url)?.link.workspace.toLowerCase();
 }
 
-/** A link to a place in an issue (`#issuecomment-1`, `#note_1`, `#comment-…`). */
+/** A link to a place in an issue (`#issuecomment-1`, `#note_1`, `#comment-…`, Jira's `focusedCommentId`). */
 function namesPlaceInIssue(url: string): boolean {
   try {
-    return new URL(url).hash !== "";
+    const parsed = new URL(url);
+    return parsed.hash !== "" || parsed.searchParams.has("focusedCommentId");
   } catch {
     return false;
   }
@@ -94,14 +111,15 @@ export function isStandaloneIssueLink(url: string): boolean {
   return parseStandaloneIssueLink(url) !== null;
 }
 
-const LINEAR_LINK_HINT_PATTERN = new RegExp(
-  `${LINEAR_HOST.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`,
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const STANDALONE_LINK_HINT_PATTERN = new RegExp(
+  `${escapeRegExp(LINEAR_HOST)}/|\\.${escapeRegExp(JIRA_HOST)}/`,
   "i",
 );
 
 /** A cheap pre-check, so text without such a link never asks for the bindings. */
 export function mayContainStandaloneIssueLink(text: string): boolean {
-  return LINEAR_LINK_HINT_PATTERN.test(text);
+  return STANDALONE_LINK_HINT_PATTERN.test(text);
 }
 
 /**

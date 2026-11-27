@@ -17,11 +17,19 @@ const TYPE_TO_FOCUS_INTERACTIVE_SELECTOR = [
   '[role="application"]',
   '[role="button"]',
   '[role="checkbox"]',
+  '[role="combobox"]',
+  '[role="grid"]',
+  '[role="link"]',
+  '[role="listbox"]',
   '[role="menuitem"]',
   '[role="option"]',
   '[role="radio"]',
+  '[role="slider"]',
+  '[role="spinbutton"]',
   '[role="switch"]',
   '[role="tab"]',
+  '[role="tree"]',
+  '[role="treegrid"]',
 ].join(",");
 // Closed popups can stay mounted; match only open or closing layers.
 export const TYPE_TO_FOCUS_FLOATING_LAYER_SELECTOR = [
@@ -73,15 +81,25 @@ function isKeyClaimedInPath(event: KeyboardEvent): boolean {
     );
 }
 
-export function shouldRedirectInputToComposer(event: Event): boolean {
+/**
+ * `pane` is a side chat's own pane: the sheet holding it is not a layer over it, and a
+ * maximized side chat is the one on screen.
+ */
+export function shouldRedirectInputToComposer(event: Event, pane?: Element | null): boolean {
   if (event.defaultPrevented) return false;
   // Never persist or send secret-request typing through the composer.
   if (eventPathContainsSelector(event, SECRET_REQUEST_SELECTOR)) return false;
   if (eventPathContainsSelector(event, TYPE_TO_FOCUS_EDITABLE_SELECTOR)) return false;
   if (eventPathContainsSelector(event, TYPE_TO_FOCUS_INTERACTIVE_SELECTOR)) return false;
-  if (document.querySelector(TYPE_TO_FOCUS_FLOATING_LAYER_SELECTOR)) return false;
-  if (document.querySelector('[data-chat-column-maximized-away="true"]')) return false;
+  if (hasFloatingLayerOver(pane)) return false;
+  if (!pane && document.querySelector('[data-chat-column-maximized-away="true"]')) return false;
   return true;
+}
+
+function hasFloatingLayerOver(pane?: Element | null): boolean {
+  return [...document.querySelectorAll(TYPE_TO_FOCUS_FLOATING_LAYER_SELECTOR)].some(
+    (layer) => !pane || !layer.contains(pane),
+  );
 }
 
 export function shouldTypeToFocusComposer(event: KeyboardEvent): boolean {

@@ -4674,3 +4674,37 @@ a27ad36daa	take	fix(web): Markdown blocks keep the text direction their HTML set
 a4d748f5b9	take	Test conflict: upstream's locale test beside Onicode's renamed draft test
 6e2164ac88	take	Adapted: Physical goes into Onicode's device-row details list; docs rewritten into Onicode's Simlock section (Simlock 0.9.0+, phones subsection); no mobile device panel
 db7cba374e	take	fix(mobile): Changed files rows say 1 addition and 1 deletion (#44376)
+54627d3d3f	take	Adapted: positions plug into Onicode's ChunkedMarkdown (footnote targets kept), notebook line caps and VirtualTablePreview's exact compressed-track top; tests use Onicode's async setup, fflate and filePreview signature
+23425c21aa	take	Adapted: DocumentText VERSION 19 -> 20 so cached ODT text is extracted again
+bb6fd7d69c	take	Serialized settle scripts; doc note moved to onicode-json.md; Onicode's subagent shared-worktree guard reads the queued thread
+af17c90f40	take	applied cleanly
+b9afe8b6fa	skip	T3 Connect relay/tunnel hops removed in Onicode; driver has no relay refusals
+6696eefe21	take	applied cleanly
+7b8a63704f	take	conflict: kept Onicode rtfCodePage beside the new underline words
+89e3557126	take	applied cleanly
+2a2bbce139	take	applied cleanly
+0f8aa4c604	take	applied cleanly
+452d8f0dfd	take	conflicts: kept Onicode app-server deadlines and rollback cwd
+f3d9e8d6ce	take	applied cleanly; DocumentText VERSION 20 bump in this PR covers it
+ae7c9a309d	take	applied cleanly
+d838e95660	take	applied cleanly; DocumentText VERSION 20 bump in this PR covers it
+0e15425b23	take	applied cleanly
+9a66ff1e31	take	applied cleanly
+d99c3c2048	take	applied cleanly
+531ec4b5a4	skip	Onicode's shim already traps TERM/HUP before the CLI starts and forwards an early signal
+18d0019964	take	applied cleanly
+9c6faa632a	skip	Onicode has no product usage telemetry notice or privacy policy page
+9fe10dc6d2	take	taken as is
+468ac6637a	take	test uses Onicode's TestArchive in place of JSZip
+1f8a4522bb	take	conflict: adopted upstream's exact gitdir parse over Onicode's whitespace regex (it mangled U+2028 paths); kept Onicode's realPath resolution of relative gitdirs (Git follows links before ..)
+2292cca56a	take	taken as is; join only runs for commands containing a backslash-newline
+f946b0c6db	take	taken as is
+63209b3612	take	taken as is; mobile already passes its resolver
+f513ffe6f9	take	adapted: kept Onicode's refined-host match in requireProject across every tracked repository; addressed map keyed by project entry so a tracked repository never readdresses its root; mobile stats keys still host-less (follow-up)
+51f9ca9280	skip	kept Onicode's verbatim startup directory (e3c7b60759): it already opens relative directories with leading spaces, and upstream's trimEnd would bring back the folder-ending-in-a-space bug Onicode fixed
+b9c1337a84	take	taken as is
+40264a28dd	take	adapted: workspace keeps Onicode's keyboard-controller 1.24.0 and pdf-jsi pins; lockfile regenerated
+ee99fee188	take	adapted: web keeps Onicode's backgroundTaskLaunch lookup (launch types only, so an approval card sharing the native id never wins) and adds subagent items to it; mobile lookup filters to subagent items for the same reason
+76e38eea7c	take	taken as is
+ee9c4a5637	skip	marketing site, removed in Onicode
+e659bc4ab5	take	taken; uses Onicode's existing orchestrationTimingCopy formatDuration
