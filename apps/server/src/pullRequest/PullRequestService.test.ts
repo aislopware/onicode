@@ -456,6 +456,11 @@ it.effect(
       assert.deepStrictEqual(detailCwds, ["/ws/api"]);
       // A pull request named by number alone has no one repository to default to.
       assert.notExists((yield* service.addressedProject("p1" as ProjectId))?.repositoryIdentity);
+      // Tracked repositories stand in only for listing; callers get each stored project once.
+      assert.deepStrictEqual(
+        (yield* service.addressedProjects).map(({ id, workspaceRoot }) => `${id} ${workspaceRoot}`),
+        ["p1 /ws", "p2 /api"],
+      );
     }),
 );
 
