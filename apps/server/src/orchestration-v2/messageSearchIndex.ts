@@ -49,40 +49,28 @@ const readableText = (row: string) =>
   `COALESCE(${row}.search_text, json_extract(${row}.payload_json, '$.text'))`;
 
 // A file mention stores `__init__.py` as `[\_\_init\_\_.py](...)`; the index holds
-// the label as it reads, so search finds the name as typed. Brackets stay escaped
-// only when unbalanced, so the label still ends at its own `](`; an unescaped `[`
+// such a link as its label reads, so search finds the name as typed. An unescaped `[`
 // must close, as in ThreadSearch, so an unclosed one before a link starts no label.
-const LINK_LABEL = /(!?\[)((?:\\.|[^\\[\]\n]|\[(?:\\.|[^\\[\]\n])*\])*)(\]\([^)\s]*\))/g;
+const LINK_LABEL = /!?\[((?:\\.|[^\\[\]\n]|\[(?:\\.|[^\\[\]\n])*\])*)\]\([^)\s]*\)/g;
 // Sent file mentions write a label's brackets as &#91; and &#93;; older ones escaped them.
 const MARKDOWN_ESCAPE = /\\([!-/:-@[-`{-~])|&#9(1|3);/g;
-const BALANCED_BRACKETS = /^(?:[^[\]]|\[[^[\]]*\])*$/;
-const entityBracket = (code: string | undefined) => (code === "1" ? "[" : "]");
-
-const readableLabel = (label: string) => {
-  const unescaped = label.replace(
-    MARKDOWN_ESCAPE,
-    (_escape, char: string | undefined, code: string | undefined) => char ?? entityBracket(code),
-  );
-  return BALANCED_BRACKETS.test(unescaped)
-    ? unescaped
-    : label.replace(MARKDOWN_ESCAPE, (escape, char: string | undefined, code: string | undefined) =>
-        char === undefined
-          ? `\\${entityBracket(code)}`
-          : char === "[" || char === "]" || char === "\\"
-            ? escape
-            : char,
-      );
-};
 
 /**
  * What search_text holds for a message: its text as it reads, a quote's
- * percent-encoded link replaced by its words and comment. NULL when that is
- * the stored text, so most messages store nothing extra.
+ * percent-encoded link replaced by its words and comment, a link with an escaped
+ * label by that label. NULL when that is the stored text, so most store nothing extra.
  */
 export const readableSearchText = (text: string) => {
   const readable = assistantCitationsToPlainText(text).replace(
     LINK_LABEL,
-    (_link, open: string, label: string, close: string) => open + readableLabel(label) + close,
+    (link, label: string) => {
+      const decoded = label.replace(
+        MARKDOWN_ESCAPE,
+        (_escape, char: string | undefined, code: string | undefined) =>
+          char ?? (code === "1" ? "[" : "]"),
+      );
+      return decoded === label ? link : decoded;
+    },
   );
   return readable === text ? null : readable;
 };

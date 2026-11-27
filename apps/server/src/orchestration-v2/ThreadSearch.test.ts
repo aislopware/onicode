@@ -954,7 +954,7 @@ it.layer(layerTest)("ThreadSearch filters before it ranks", (it) => {
             mention,
             "heron-mention",
             "user",
-            String.raw`Fix [\_\_init\_\_.py](pkg/__init__.py), [\_café\_.py](pkg/_caf%C3%A9_.py), [\~\~draft\~\~.md](./notes/~~draft~~.md), [&#91;TODO&#93;.md](notes/%5BTODO%5D.md), and [\&#91;lit\&#93;.md](./notes/%26%2391;lit%26%2393;.md)`,
+            String.raw`Fix [\_\_init\_\_.py](pkg/__init__.py), [\_café\_.py](pkg/_caf%C3%A9_.py), [\~\~draft\~\~.md](./notes/~~draft~~.md), [&#91;TODO&#93;.md](notes/%5BTODO%5D.md), [&#91;&#91;...slug&#93;&#93;.tsx](app/%5B%5B...slug%5D%5D.tsx), [foo&#91;bar.md](notes/foo%5Bbar.md), and [\&#91;lit\&#93;.md](./notes/%26%2391;lit%26%2393;.md)`,
           ),
         ],
         projections.apply,
@@ -971,6 +971,8 @@ it.layer(layerTest)("ThreadSearch filters before it ranks", (it) => {
         "~~draft~~.md",
         "[TODO",
         "[TODO].md",
+        "[[...slug]].tsx",
+        "foo[bar.md",
         "&#91;lit&#93;.md",
       ]) {
         const mentions = yield* search.search({ query });
