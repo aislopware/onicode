@@ -359,24 +359,30 @@ export function DevicePanel(props: {
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
                           <Smartphone className="size-4 shrink-0" />
                           <h3 className="font-medium">
-                            {group.platform === "ios"
-                              ? gt("iOS Simulators")
-                              : group.devices.some((device) => device.physical)
-                                ? gt("Android Devices")
+                            {group.devices.some((device) => device.physical)
+                              ? group.platform === "ios"
+                                ? gt("iOS Devices")
+                                : gt("Android Devices")
+                              : group.platform === "ios"
+                                ? gt("iOS Simulators")
                                 : gt("Android Emulators")}
                           </h3>
                         </div>
                         <DiscoveryList>
                           {group.devices.map((device) => {
                             // The host says something only when there is more than one, and a
-                            // stopped device is the ordinary case.
+                            // stopped device is the ordinary case. The host goes last, so a long
+                            // label truncates before Physical, which says the device is not wiped.
                             const details = [
-                              state.hosts.length > 1
-                                ? state.hosts.find((host) => host.id === device.hostId)?.label
-                                : undefined,
                               device.version,
+                              device.physical
+                                ? gt("Physical", { $context: "physical device, not a simulator" })
+                                : undefined,
                               device.booted
                                 ? gt("Running", { $context: "device state" })
+                                : undefined,
+                              state.hosts.length > 1
+                                ? state.hosts.find((host) => host.id === device.hostId)?.label
                                 : undefined,
                             ]
                               .filter((part) => part !== undefined)

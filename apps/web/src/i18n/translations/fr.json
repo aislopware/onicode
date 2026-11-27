@@ -3986,6 +3986,7 @@
   "ac242b57dbfa5259": "Gérer les tâches planifiées",
   "d93c0db04f4c8e46": "Modifier l’automatisation",
   "3fe420ed9b5bdb75": "Exécuter maintenant",
+  "fdf273ca647a967f": "Supprimer",
   "0c433351a8606e50": [
     "Impossible de charger les automatisations : ",
     {
@@ -4891,7 +4892,9 @@
   "4cb21672153c1f18": "Aucun simulateur ni émulateur trouvé dans cet environnement.",
   "c82410197256eb53": "Simulateurs iOS",
   "31a71fec6b5f2bf3": "Appareils Android",
+  "1bd21d5284dc2d8e": "Appareils iOS",
   "ac18a5e35195a258": "Émulateurs Android",
+  "f28d1d2b5f30a8cd": "Physique",
   "94215375ea2558b8": "En cours",
   "381ceed77cb8b2b3": "Arrêter {name}",
   "5b9fda36b610d25c": "Arrêter",
@@ -5439,6 +5442,8 @@
   "92d0d4eab2596772": "Le gestionnaire de tickets l’a refusé.",
   "33591d9596fb7cb7": "Ajouter un commentaire",
   "225329f7d2adc33c": "Laisser un commentaire",
+  "eb1fd384ad5919dd": "Note interne",
+  "b45f0b467e9406d0": "Répondre au client",
   "35e166912930bdbf": "Publication du commentaire",
   "7bfcbdbcdd625603": "Commenter",
   "02de63c7a0ebd94c": "Chargement du ticket",

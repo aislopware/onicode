@@ -102,3 +102,52 @@ index ebae69a..fbaf7df 100644
  /**
   * Service that reports the proxy process started by {@link layerProxyProcess}.
   *
+diff --git a/dist/internal/proxyProcess.js b/dist/internal/proxyProcess.js
+index 2819a2b..42fccf2 100644
+--- a/dist/internal/proxyProcess.js
++++ b/dist/internal/proxyProcess.js
+@@ -168,6 +168,7 @@ class Proxy {
+   child;
+   // Bounds the wait for `Ready`, and for the reply to each sent request
+   timers = /*#__PURE__*/new Map();
++  heard = 0;
+   constructor(options) {
+     this.options = options;
+     try {
+@@ -299,14 +300,20 @@ class Proxy {
+   }
+   startTimer(key) {
+     const millis = this.options.responseTimeoutMillis;
+-    const timer = setTimeout(() => {
+-      this.stop(Object.assign(new Error(`The proxy process did not respond within ${millis} ms`), {
+-        code: "ETIMEDOUT"
+-      }));
+-    }, millis);
+-    // Whatever waits for the reply keeps the application running
+-    timer.unref();
+-    this.timers.set(key, timer);
++    // Effect-TS/effect#11008: a blocked event loop runs due timers before it reads waiting replies.
++    const arm = heard => {
++      const timer = setTimeout(() => setImmediate(() => {
++        if (this.timers.get(key) !== timer) return;
++        if (this.heard !== heard) return arm(this.heard);
++        this.stop(Object.assign(new Error(`The proxy process did not respond within ${millis} ms`), {
++          code: "ETIMEDOUT"
++        }));
++      }), millis);
++      // Whatever waits for the reply keeps the application running
++      timer.unref();
++      this.timers.set(key, timer);
++    };
++    arm(this.heard);
+   }
+   stopTimer(key) {
+     clearTimeout(this.timers.get(key));
+@@ -326,6 +333,7 @@ class Proxy {
+     }
+   }
+   receive(message) {
++    this.heard++;
+     if (message._tag === "Ready") return this.onReady();
+     const command = this.commands.get(message.id);
+     if (command === undefined) return;

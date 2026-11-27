@@ -3989,6 +3989,7 @@
   "ac242b57dbfa5259": "Geplante Aufgaben verwalten",
   "d93c0db04f4c8e46": "Automatisierung bearbeiten",
   "3fe420ed9b5bdb75": "Jetzt ausführen",
+  "fdf273ca647a967f": "Löschen",
   "0c433351a8606e50": [
     "Automatisierungen konnten nicht geladen werden: ",
     {
@@ -4893,7 +4894,9 @@
   "4cb21672153c1f18": "In dieser Umgebung wurden keine Simulatoren oder Emulatoren gefunden.",
   "c82410197256eb53": "iOS-Simulatoren",
   "31a71fec6b5f2bf3": "Android-Geräte",
+  "1bd21d5284dc2d8e": "iOS-Geräte",
   "ac18a5e35195a258": "Android-Emulatoren",
+  "f28d1d2b5f30a8cd": "Physisch",
   "94215375ea2558b8": "Läuft",
   "381ceed77cb8b2b3": "{name} stoppen",
   "5b9fda36b610d25c": "Stoppen",
@@ -5440,6 +5443,8 @@
   "92d0d4eab2596772": "Der Tracker hat es abgelehnt.",
   "33591d9596fb7cb7": "Kommentar hinzufügen",
   "225329f7d2adc33c": "Kommentar hinterlassen",
+  "eb1fd384ad5919dd": "Interne Notiz",
+  "b45f0b467e9406d0": "Dem Kunden antworten",
   "35e166912930bdbf": "Kommentar wird gepostet",
   "7bfcbdbcdd625603": "Kommentieren",
   "02de63c7a0ebd94c": "Issue wird geladen",

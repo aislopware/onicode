@@ -24,7 +24,7 @@ import type {
   ProjectSearchEntriesResult,
 } from "@onicode/contracts";
 import * as HostProcess from "@onicode/shared/HostProcess";
-import { isExplicitRelativePath, isWindowsAbsolutePath } from "@onicode/shared/path";
+import { isExplicitRelativePath, isNetworkPath, isWindowsAbsolutePath } from "@onicode/shared/path";
 import { normalizeSearchQuery } from "@onicode/shared/searchRanking";
 
 import { expandHomePath } from "@onicode/provider-core/server/pathExpansion";
@@ -418,19 +418,27 @@ export const make = Effect.gen(function* () {
                   relativePath: directoryPath,
                 })
                 .pipe(Effect.mapError(toError));
+        const isSameOrInside = (parent: string, child: string) => {
+          const relativeChild = path.relative(parent, child);
+          return (
+            relativeChild !== ".." &&
+            !relativeChild.startsWith(`..${path.sep}`) &&
+            !path.isAbsolute(relativeChild)
+          );
+        };
+        // `filesystem:read` covers the whole OS account, so links may lead out of the
+        // root, but not onto a share: Windows signs in to it with the user's credentials.
+        const isListable = (root: string, resolved: string) =>
+          isSameOrInside(root, resolved)
+            ? !path.relative(root, resolved).split(path.sep).includes(".git")
+            : !isNetworkPath(resolved) && !resolved.split(path.sep).includes(".git");
         const { root, directory, children, throughSymlink } = yield* Effect.tryPromise({
           try: async () => {
             const root = await NodeFSP.realpath(normalizedCwd);
             const directory = await NodeFSP.realpath(target.absolutePath);
             const relative = path.relative(root, directory);
-            if (
-              relative === ".." ||
-              relative.startsWith(`..${path.sep}`) ||
-              path.isAbsolute(relative) ||
-              relative.split(path.sep).includes(".git") ||
-              target.relativePath.split("/").includes(".git")
-            ) {
-              throw new Error("Directory must be inside the workspace and outside .git.");
+            if (!isListable(root, directory) || target.relativePath.split("/").includes(".git")) {
+              throw new Error("Directory must not be a network share or inside .git.");
             }
             return {
               root,
@@ -442,14 +450,6 @@ export const make = Effect.gen(function* () {
           },
           catch: toError,
         });
-        const isSameOrInside = (parent: string, child: string) => {
-          const relativeChild = path.relative(parent, child);
-          return (
-            relativeChild !== ".." &&
-            !relativeChild.startsWith(`..${path.sep}`) &&
-            !path.isAbsolute(relativeChild)
-          );
-        };
         // Reject canonical ancestors so "Expand all folders" cannot follow a cycle.
         let visitedFolders: Promise<ReadonlyArray<string>> | undefined;
         const loadVisitedFolders = () =>
@@ -471,12 +471,7 @@ export const make = Effect.gen(function* () {
                   link: true,
                 });
                 const realPath = linkTarget?.realPath;
-                if (
-                  !linkTarget ||
-                  realPath === undefined ||
-                  !isSameOrInside(root, realPath) ||
-                  path.relative(root, realPath).split(path.sep).includes(".git")
-                ) {
+                if (!linkTarget || realPath === undefined || !isListable(root, realPath)) {
                   return undefined;
                 }
                 if (linkTarget.kind === "file") return "file" as const;
@@ -621,7 +616,7 @@ export const make = Effect.gen(function* () {
     const files = yield* Effect.promise(() =>
       Promise.all(
         paths.slice(0, IGNORED_FILES_LIMIT).map(async (relativePath) => {
-          // lstat: a symlink usually points outside the workspace, where reads refuse to go.
+          // lstat: following a link could stall on a slow or remote target.
           const stat = await NodeFSP.lstat(path.join(normalizedCwd, relativePath)).catch(
             () => null,
           );

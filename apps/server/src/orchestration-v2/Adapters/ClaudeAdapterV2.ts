@@ -3501,7 +3501,7 @@ const resolveClaudeRollbackResumeSessionAt = Effect.fn(
       }
 
       // Only compaction can be omitted without dropping a retained user prompt.
-      if (target.message !== undefined && isCompactionCommandMessage(target.message)) {
+      if (target.message !== undefined && claudeCompactsSession(target.message)) {
         const earlierTurn = input.providerThreadTurns
           .filter((turn) => turn.ordinal < target.providerTurn.ordinal)
           .toSorted((left, right) => left.ordinal - right.ordinal)
@@ -5700,6 +5700,19 @@ function gatewayCooldownResetAt(
 const CLAUDE_UNSUPPORTED_VERSION_ERROR =
   /^API Error: 400 Claude Code (\d+\.\d+\.\d+) does not support this model; version (\d+\.\d+\.\d+) or newer is required\./;
 
+const MAX_REMEMBERED_CLAUDE_MODEL_LEDGERS = 512;
+
+/** Claude Code runs `/compact <instructions>` as its own compaction too. */
+function claudeCompactsSession(message: {
+  readonly text: string;
+  readonly attachments?: ReadonlyArray<unknown> | undefined;
+}): boolean {
+  return (
+    isCompactionCommandMessage({ role: "user", ...message }) ||
+    ((message.attachments?.length ?? 0) === 0 && /^\/compact\s/i.test(message.text.trim()))
+  );
+}
+
 // Claude Code restores a resumed session's model ledger from this version on; earlier ones
 // restart it at zero per process (the claude_idle_resume recording, 2.1.111).
 const CLAUDE_RESUME_RESTORES_MODEL_LEDGER_VERSION = "2.1.280";
@@ -6661,6 +6674,15 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
   const reportedContextWindows = new Map<string, number>();
   // A resumed session's result totals include its earlier turns; this anchor outlives idle release.
   const modelLedgers = new Map<string, ClaudeModelLedger>();
+  // Bounded, oldest first: a lost anchor only costs the next resumed turn its ledger growth.
+  const rememberModelLedger = (sessionId: string, ledger: ClaudeModelLedger | undefined) => {
+    modelLedgers.delete(sessionId);
+    if (ledger === undefined) return;
+    modelLedgers.set(sessionId, ledger);
+    if (modelLedgers.size > MAX_REMEMBERED_CLAUDE_MODEL_LEDGERS) {
+      modelLedgers.delete(modelLedgers.keys().next().value!);
+    }
+  };
   // Claude's own /context limits by API model id. Settings such as autoCompactWindow, and
   // account caps, shrink the window Claude works in below the model's, so these win.
   const effectiveContextLimits = new Map<string, ClaudeContextLimits>();
@@ -13822,7 +13844,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           if (
             message.type === "assistant" &&
             "local_command_source" in message &&
-            isCompactionCommandMessage({ role: "user", ...context.input.message })
+            claudeCompactsSession(context.input.message)
           ) {
             return;
           }
@@ -15515,8 +15537,20 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   ) {
                     context.permissionMode = message.permissionMode;
                   }
+                  // Claude Code 2.1.332 restarts the process's model totals at /clear.
+                  if (message.type === "conversation_reset" && message.trigger === "clear") {
+                    context.modelLedger = new Map();
+                  }
                   if (message.type === "result") {
-                    const ledger = claudeModelLedger(message.modelUsage);
+                    const spentNothing =
+                      typeof message.modelUsage === "object" &&
+                      message.modelUsage !== null &&
+                      Object.keys(message.modelUsage).length === 0;
+                    const ledger =
+                      claudeModelLedger(message.modelUsage) ??
+                      (spentNothing && context.modelLedger?.size === 0
+                        ? context.modelLedger
+                        : undefined);
                     const growth = claudeLedgerDelta(context.modelLedger, ledger);
                     if (growth !== undefined) resultLedgerUsage.set(message, growth);
                     // A ledger that went backwards cannot anchor the next turn's growth.
@@ -15526,10 +15560,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                         : ledger;
                     // A stopping process's late result must not replace its successor's anchor.
                     if (!context.stopping) {
-                      const sessionId =
-                        clearedNativeSessions.get(context.nativeThreadId) ?? context.nativeThreadId;
-                      if (context.modelLedger === undefined) modelLedgers.delete(sessionId);
-                      else modelLedgers.set(sessionId, context.modelLedger);
+                      rememberModelLedger(
+                        clearedNativeSessions.get(context.nativeThreadId) ?? context.nativeThreadId,
+                        context.modelLedger,
+                      );
                     }
                     for (const [model, window] of claudeReportedContextWindows(
                       message.modelUsage,

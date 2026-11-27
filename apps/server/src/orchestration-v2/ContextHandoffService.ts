@@ -57,6 +57,8 @@ export interface ContextHandoffServiceV2Shape {
   readonly prepareLegacyImport: (input: {
     readonly threadId: ThreadId;
     readonly targetRunId: RunId;
+    /** The provider thread that held the imported session, when the history leaves it. */
+    readonly fromProviderThreadIds?: ReadonlyArray<ProviderThreadId>;
     readonly toProviderThreadId: ProviderThreadId;
     readonly toProviderInstanceId: ProviderInstanceId;
     readonly items: ReadonlyArray<OrchestrationV2TurnItem>;
@@ -490,6 +492,7 @@ const makeContextHandoffService = Effect.fn("orchestrationV2.ContextHandoffServi
       function* (input: {
         readonly threadId: ThreadId;
         readonly targetRunId: RunId;
+        readonly fromProviderThreadIds?: ReadonlyArray<ProviderThreadId>;
         readonly toProviderThreadId: ProviderThreadId;
         readonly toProviderInstanceId: ProviderInstanceId;
         readonly items: ReadonlyArray<OrchestrationV2TurnItem>;
@@ -507,7 +510,7 @@ const makeContextHandoffService = Effect.fn("orchestrationV2.ContextHandoffServi
                 new ContextHandoffPrepareError({
                   threadId: input.threadId,
                   targetRunId: input.targetRunId,
-                  fromProviderThreadIds: [],
+                  fromProviderThreadIds: Array.from(input.fromProviderThreadIds ?? []),
                   toProviderThreadId: input.toProviderThreadId,
                   cause,
                 }),
@@ -527,7 +530,7 @@ const makeContextHandoffService = Effect.fn("orchestrationV2.ContextHandoffServi
           transferId: null,
           threadId: input.threadId,
           targetRunId: input.targetRunId,
-          fromProviderThreadIds: [],
+          fromProviderThreadIds: Array.from(input.fromProviderThreadIds ?? []),
           toProviderThreadId: input.toProviderThreadId,
           coveredRunOrdinals: { from: 1, to: 1 },
           strategy: "manual_context",

@@ -3987,6 +3987,7 @@
   "ac242b57dbfa5259": "Manage scheduled tasks",
   "d93c0db04f4c8e46": "Edit automation",
   "3fe420ed9b5bdb75": "Run now",
+  "fdf273ca647a967f": "Delete",
   "0c433351a8606e50": [
     "Could not load automations: ",
     {
@@ -4892,7 +4893,9 @@
   "4cb21672153c1f18": "No simulators or emulators were found on this environment.",
   "c82410197256eb53": "iOS Simulators",
   "31a71fec6b5f2bf3": "Android Devices",
+  "1bd21d5284dc2d8e": "iOS Devices",
   "ac18a5e35195a258": "Android Emulators",
+  "f28d1d2b5f30a8cd": "Physical",
   "94215375ea2558b8": "Running",
   "381ceed77cb8b2b3": "Stop {name}",
   "5b9fda36b610d25c": "Stop",
@@ -5440,6 +5443,8 @@
   "92d0d4eab2596772": "The tracker refused it.",
   "33591d9596fb7cb7": "Add a comment",
   "225329f7d2adc33c": "Leave a comment",
+  "eb1fd384ad5919dd": "Internal note",
+  "b45f0b467e9406d0": "Reply to customer",
   "35e166912930bdbf": "Posting comment",
   "7bfcbdbcdd625603": "Comment",
   "02de63c7a0ebd94c": "Loading issue",

@@ -7,6 +7,7 @@ import {
 import { createIssueCommentPager } from "@onicode/client-runtime/state/issues";
 import {
   issueAssigneeHeld,
+  issueAssigneeSearchView,
   issueAssigneesAfterPicks,
   issueLabelsAfterPicks,
   issuePicksAfterFailedWrite,
@@ -57,10 +58,12 @@ import { m } from "~/i18n/messages";
 import { issueEnvironment, refreshIssueLists } from "~/state/issues";
 import { useProjects } from "~/state/entities";
 import { useEnvironmentQuery } from "~/state/query";
+import { useDebouncedValue } from "~/state/queries";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
+import { Badge } from "../ui/badge";
 import { Button, InlineButton } from "../ui/button";
 import { Input } from "../ui/input";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
@@ -267,14 +270,23 @@ function IssueAssigneePicker({
   const candidatesQuery = useEnvironmentQuery(
     open ? issueEnvironment.candidates({ environmentId, input: reference }) : null,
   );
-  const update = useAtomCommand(issueEnvironment.update, { reportFailure: false });
-  const needle = query.trim().toLowerCase();
-  const candidates = (candidatesQuery.data?.assignees ?? []).filter(
-    (candidate) =>
-      needle.length === 0 ||
-      candidate.login.toLowerCase().includes(needle) ||
-      (candidate.name ?? "").toLowerCase().includes(needle),
+  const debouncedQuery = useDebouncedValue(query.trim(), 250);
+  const searchable = candidatesQuery.data?.assigneeSearch === true;
+  const hostQuery = searchable && debouncedQuery.length > 0 ? debouncedQuery : null;
+  const search = useEnvironmentQuery(
+    open && hostQuery !== null
+      ? issueEnvironment.candidates({ environmentId, input: { ...reference, query: hostQuery } })
+      : null,
   );
+  const view = issueAssigneeSearchView({
+    loaded: candidatesQuery.data?.assignees ?? [],
+    searchable,
+    query,
+    debouncedQuery,
+    search,
+  });
+  const update = useAtomCommand(issueEnvironment.update, { reportFailure: false });
+  const candidates = view.candidates;
   const onOpenChange = (nextOpen: boolean) => {
     setOpen(nextOpen);
     if (nextOpen) {
@@ -317,8 +329,8 @@ function IssueAssigneePicker({
       query={query}
       onQueryChange={setQuery}
       searchLabel={gt("Search people")}
-      isPending={candidatesQuery.isPending && candidatesQuery.data === null}
-      error={candidatesQuery.data === null ? candidatesQuery.error : null}
+      isPending={(candidatesQuery.isPending && candidatesQuery.data === null) || view.pending}
+      error={candidatesQuery.data === null ? candidatesQuery.error : view.error}
       candidates={candidates}
       emptyLabel={gt("Nobody can be assigned here.")}
       noMatchLabel={gt("Nobody matches that.")}
@@ -970,11 +982,19 @@ export function IssueDetailPanel({
               item.kind === "comment" ? (
                 <article
                   key={`c:${item.comment.id}`}
-                  className="flex flex-col gap-2 rounded-lg border border-border p-3"
+                  className={cn(
+                    "flex flex-col gap-2 rounded-lg border border-border p-3",
+                    item.comment.internal && "border-warning/32 bg-warning-surface",
+                  )}
                 >
                   <h3>
                     <PullRequestMetaLine className="text-xs text-muted-foreground">
                       <PullRequestActorLabel actor={item.comment.author} />
+                      {item.comment.internal ? (
+                        <Badge size="sm" variant="warning">
+                          {gt("Internal note")}
+                        </Badge>
+                      ) : null}
                       {item.comment.url ? (
                         <InlineButton
                           tone="muted"
@@ -1036,6 +1056,7 @@ export function IssueDetailPanel({
           environmentId={environmentId}
           reference={reference}
           blocked={canComment ? null : (blocked ?? gt("You cannot comment here."))}
+          audiences={detail.commentAudiences === true}
         />
       ) : null}
     </div>

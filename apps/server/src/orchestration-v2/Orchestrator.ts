@@ -146,6 +146,7 @@ import {
 import { CommandReceiptStoreV2, type CommandReceiptV2 } from "./CommandReceiptStore.ts";
 import {
   ContextHandoffServiceV2,
+  nativeSessionHoldsImportedHistory,
   readForkHistoryItems,
   readInheritedHandoffItems,
   visibleConversationItems,
@@ -592,6 +593,38 @@ export interface OrchestratorV2Shape {
 export class OrchestratorV2 extends Context.Service<OrchestratorV2, OrchestratorV2Shape>()(
   "onicode/orchestration-v2/Orchestrator/OrchestratorV2",
 ) {}
+
+/** An import has no runs to name its source, so its handoff names the provider thread that held it. */
+function legacyImportSource(
+  projection: Pick<
+    OrchestrationV2ThreadProjection,
+    "thread" | "providerThreads" | "contextHandoffs" | "runs"
+  >,
+  targetProviderThreadId: OrchestrationV2ProviderThread["id"],
+) {
+  // Only the session imported with the history; a switch handed a copy has no run that completed.
+  const source = projection.providerThreads.find(
+    (candidate) =>
+      candidate.id !== targetProviderThreadId &&
+      candidate.ownerNodeId === null &&
+      nativeSessionHoldsImportedHistory(projection, candidate) &&
+      !projection.contextHandoffs.some(
+        (handoff) =>
+          handoff.strategy === "manual_context" && handoff.toProviderThreadId === candidate.id,
+      ),
+  );
+  if (source === undefined) {
+    return { providerThreadIds: [], instanceIds: [], modelSelections: [] };
+  }
+  const threadModelSelection = projection.thread.modelSelection;
+  return {
+    providerThreadIds: [source.id],
+    instanceIds: [source.providerInstanceId],
+    // Selection commands may already have moved the thread to the target.
+    modelSelections:
+      threadModelSelection.instanceId === source.providerInstanceId ? [threadModelSelection] : [],
+  };
+}
 
 /** The messages queued ahead of a queued run, in queue order. */
 function messagesQueuedAhead(
@@ -3370,12 +3403,14 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                     }),
                 ),
               );
+      const importSource = legacyImportSource(projection, queuedProviderThread.id);
       const legacyImportRecoveryHandoff =
         latestCompletedRun === undefined && needsFullContext && legacyImportItems.length > 0
           ? yield* contextHandoffService
               .prepareLegacyImport({
                 threadId,
                 targetRunId: queuedRun.id,
+                fromProviderThreadIds: importSource.providerThreadIds,
                 toProviderThreadId: queuedProviderThread.id,
                 toProviderInstanceId: queuedRun.providerInstanceId,
                 items: legacyImportItems,
@@ -3567,18 +3602,22 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               contextHandoffId: activeHandoff.id,
               fromProviderThreadIds: activeHandoff.fromProviderThreadIds,
               toProviderThreadId: activeHandoff.toProviderThreadId,
-              fromProviderInstanceIds: Array.from(
-                new Set(coveredRuns.map((run) => run.providerInstanceId)),
-              ),
+              fromProviderInstanceIds:
+                handoff === null
+                  ? importSource.instanceIds
+                  : Array.from(new Set(coveredRuns.map((run) => run.providerInstanceId))),
               toProviderInstanceId: queuedRun.providerInstanceId,
-              fromModelSelections: Array.from(
-                new Map(
-                  coveredRuns.map((run) => [
-                    `${run.modelSelection.instanceId}\0${run.modelSelection.model}`,
-                    run.modelSelection,
-                  ]),
-                ).values(),
-              ),
+              fromModelSelections:
+                handoff === null
+                  ? importSource.modelSelections
+                  : Array.from(
+                      new Map(
+                        coveredRuns.map((run) => [
+                          `${run.modelSelection.instanceId}\0${run.modelSelection.model}`,
+                          run.modelSelection,
+                        ]),
+                      ).values(),
+                    ),
               toModel: queuedRun.modelSelection.model,
               strategy: activeHandoff.strategy,
               summary: activeHandoff.summaryText,
@@ -10206,6 +10245,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                   }),
               ),
             );
+    const importSource = legacyImportSource(projection, ensuredProviderThread.id);
     const legacyImportRecoveryHandoff =
       isProviderSwitch &&
       !canResumeAcrossInstances &&
@@ -10217,6 +10257,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             .prepareLegacyImport({
               threadId: command.threadId,
               targetRunId: runId,
+              fromProviderThreadIds: importSource.providerThreadIds,
               toProviderThreadId: ensuredProviderThread.id,
               toProviderInstanceId: modelSelection.instanceId,
               items: legacyImportItems,
@@ -10574,11 +10615,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             contextHandoffId: activeHandoff.id,
             fromProviderThreadIds: activeHandoff.fromProviderThreadIds,
             toProviderThreadId: activeHandoff.toProviderThreadId,
-            fromProviderInstanceIds: Array.from(
-              new Set(handoffSourceRuns.map((run) => run.providerInstanceId)),
-            ),
+            fromProviderInstanceIds:
+              activeHandoff === legacyImportRecoveryHandoff
+                ? importSource.instanceIds
+                : Array.from(new Set(handoffSourceRuns.map((run) => run.providerInstanceId))),
             toProviderInstanceId: modelSelection.instanceId,
-            fromModelSelections: handoffFromModelSelections,
+            fromModelSelections:
+              activeHandoff === legacyImportRecoveryHandoff
+                ? importSource.modelSelections
+                : handoffFromModelSelections,
             toModel: modelSelection.model,
             strategy: activeHandoff.strategy,
             summary: activeHandoff.summaryText,

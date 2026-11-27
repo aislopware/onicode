@@ -4655,3 +4655,22 @@ f3e36337ce	take	taken as is
 910c72ed99	take	taken as is
 c042549955	take	taken as is
 de4328bfb5	take	adopted upstream's index-walking sweep filter; kept Onicode's getPullRequestLinkKeys for archived PR keys (json_each in SQL returns 4 fields instead of decoding archived payloads), so no includeArchived branch; comment names migration 118, Onicode's active_shell_idx
+6c5e9e3ee6	skip	Onicode has no ModelPickerSidebar: kept Onicode's single-list model picker (no provider sidebar, since 00c6adbdce): no per-provider hover state, and its virtualized ModelListRow is already memo-wrapped
+346c58c03d	take	taken as is
+1f509e5151	take	taken as is
+44b3c4e0c6	take	taken as is
+ff6ad845f0	take	taken as is
+50464c16e0	take	adapted: the neighbour pick goes into Onicode's shared withoutTerminal helper (closeTerminal and dropTerminals both use it), kept Onicode's helper since it already serves server-closed terminals
+835de2827e	take	taken; import conflict in IssueDetailPanel resolved (Onicode already imports useOpenLink with anchorOpenHandlers). Wire-compatible: query and assigneeSearch are optional
+dcac7cfed6	take	taken; conflicts kept Onicode's: issue comment card border, composer placeholder/disabled classes, mobile contract imports, translation catalogs (new keys regenerated, upstream's translations copied), Onicode's own docs layout (JSM note added to its Jira paragraph), its eval file (2 JSM cases appended), and context budget (mcpToolListJsonBytes 66343 -> 66678, upstream's same +335). Wire-compatible: every new field optional; an old client's comment stays internal on JSM as before
+38452ae605	take	conflict with Onicode's text-box model (from 8335c0951b): kept Onicode's own-line handling for paragraph-anchored ODF boxes (odfBlockTextBox), took upstream's odfInlineParagraphs for as-char boxes and note bodies; DocumentText VERSION 18 -> 19 so cached ODT text extracts again
+c2e6204332	take	taken as is
+a27ad36daa	take	fix(web): Markdown blocks keep the text direction their HTML sets (#44375)
+8f8f4501e8	take	Adapted: unbound read passes the link's workspace to the tracker (Onicode's multi-account check) instead of upstream's canonical-URL comparison, so renamed workspaces read on; kept Onicode's message when no project is named; docs into Onicode's Linear paragraph
+9644ac48a5	take	fix(client-runtime): NDJSON tool output keeps JSON highlighting (#44372)
+8f6ea40953	take	Test-row conflict: kept Onicode's extra RTF rows beside upstream's nested-cells row
+0a63dfe23a	take	Took Effect 4.1.6 (deps, patches; Onicode's SqlClient hunk dropped, now in Effect); kept Onicode's Linux process launcher over Effect's proxy process: Effect's helper shares the server's process group and ignores SIGTERM while an unreferenced editor runs, so Linux desktop quit waits out the 5 s grace; relay test skipped (removed surface)
+641d082b11	take	Adapted: upstream's listable-link rule applied by hand to Onicode's directory listing (Onicode resolves link kinds through resolveLinkTarget); readOnly is optional in contracts; mobile has no file editor
+a4d748f5b9	take	Test conflict: upstream's locale test beside Onicode's renamed draft test
+6e2164ac88	take	Adapted: Physical goes into Onicode's device-row details list; docs rewritten into Onicode's Simlock section (Simlock 0.9.0+, phones subsection); no mobile device panel
+db7cba374e	take	fix(mobile): Changed files rows say 1 addition and 1 deletion (#44376)

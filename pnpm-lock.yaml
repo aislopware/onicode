@@ -357,7 +357,7 @@ patchedDependencies:
   '@cursor/sdk@1.5.0': 7fe8889d7916196c56006cf15a39abba4099feb2c567b4030b82a09364cee500
   '@e2e-dev/mobile@0.12.9': c40d4ab0cc2917388badb005d86e3c62570d6450ffedb66d8ceb8a51de2ca5b0
   '@e2e-dev/web@0.17.0': d4a718e516e19ad4db63cddd1e97439910bb260100dcde5de6213ecf75bc5b6b
-  '@effect/platform-node-shared@4.1.7': c330ea1d6b9061406681ed905c71411f4574f30d1a718d2ba6071a273e712cd9
+  '@effect/platform-node-shared@4.1.7': c1e465e4b1faca5839831624bd0705c7dd346412f06279c656aeefb5c3b3080d
   '@effect/vitest@4.1.7': 3752ba7dcfe5449546ba77a5297613e1d0e31a87d1806a6d941a899e26770501
   '@exodus/bytes@1.16.0': ceab67463db8cb74dcb2ced48eff4cc8ae9de925ae4cd2173a59a0dfba667bd8
   '@expo/metro-config@58.0.24': 9b04b4368ac6818778200ff9b31aaebfbef7caf3ce1dc65464fd2b12de87379c
@@ -815,7 +815,7 @@ importers:
         version: 4.1.7(effect@4.1.7(patch_hash=eca58993801b2681500afba78da973110d0d6311df77564258edc4bf8a46544c))(redis@6.4.0(@opentelemetry/api@1.10.0))
       '@effect/platform-node-shared':
         specifier: 4.1.7
-        version: 4.1.7(patch_hash=c330ea1d6b9061406681ed905c71411f4574f30d1a718d2ba6071a273e712cd9)(effect@4.1.7(patch_hash=eca58993801b2681500afba78da973110d0d6311df77564258edc4bf8a46544c))
+        version: 4.1.7(patch_hash=c1e465e4b1faca5839831624bd0705c7dd346412f06279c656aeefb5c3b3080d)(effect@4.1.7(patch_hash=eca58993801b2681500afba78da973110d0d6311df77564258edc4bf8a46544c))
       '@ff-labs/fff-node':
         specifier: 0.11.0
         version: 0.11.0(patch_hash=febc131287f6c71cd2a0c8bbdada299a22f16a9ce1fd720815c8d0083bcb86a0)
@@ -12850,7 +12850,7 @@ snapshots:
     transitivePeerDependencies:
       - encoding
 
-  '@effect/platform-node-shared@4.1.7(patch_hash=c330ea1d6b9061406681ed905c71411f4574f30d1a718d2ba6071a273e712cd9)(effect@4.1.7(patch_hash=eca58993801b2681500afba78da973110d0d6311df77564258edc4bf8a46544c))':
+  '@effect/platform-node-shared@4.1.7(patch_hash=c1e465e4b1faca5839831624bd0705c7dd346412f06279c656aeefb5c3b3080d)(effect@4.1.7(patch_hash=eca58993801b2681500afba78da973110d0d6311df77564258edc4bf8a46544c))':
     dependencies:
       '@types/ws': 8.18.2
       effect: 4.1.7(patch_hash=eca58993801b2681500afba78da973110d0d6311df77564258edc4bf8a46544c)
@@ -12861,7 +12861,7 @@ snapshots:
 
   '@effect/platform-node@4.1.7(effect@4.1.7(patch_hash=eca58993801b2681500afba78da973110d0d6311df77564258edc4bf8a46544c))(redis@6.4.0(@opentelemetry/api@1.10.0))':
     dependencies:
-      '@effect/platform-node-shared': 4.1.7(patch_hash=c330ea1d6b9061406681ed905c71411f4574f30d1a718d2ba6071a273e712cd9)(effect@4.1.7(patch_hash=eca58993801b2681500afba78da973110d0d6311df77564258edc4bf8a46544c))
+      '@effect/platform-node-shared': 4.1.7(patch_hash=c1e465e4b1faca5839831624bd0705c7dd346412f06279c656aeefb5c3b3080d)(effect@4.1.7(patch_hash=eca58993801b2681500afba78da973110d0d6311df77564258edc4bf8a46544c))
       effect: 4.1.7(patch_hash=eca58993801b2681500afba78da973110d0d6311df77564258edc4bf8a46544c)
       redis: 6.4.0(@opentelemetry/api@1.10.0)
       undici: 8.13.1

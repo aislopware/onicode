@@ -3986,6 +3986,7 @@
   "ac242b57dbfa5259": "Gerenciar tarefas agendadas",
   "d93c0db04f4c8e46": "Editar automação",
   "3fe420ed9b5bdb75": "Executar agora",
+  "fdf273ca647a967f": "Excluir",
   "0c433351a8606e50": [
     "Não foi possível carregar as automações: ",
     {
@@ -4890,7 +4891,9 @@
   "4cb21672153c1f18": "Nenhum simulador ou emulador foi encontrado neste ambiente.",
   "c82410197256eb53": "Simuladores iOS",
   "31a71fec6b5f2bf3": "Dispositivos Android",
+  "1bd21d5284dc2d8e": "Dispositivos iOS",
   "ac18a5e35195a258": "Emuladores Android",
+  "f28d1d2b5f30a8cd": "Físico",
   "94215375ea2558b8": "Em execução",
   "381ceed77cb8b2b3": "Parar {name}",
   "5b9fda36b610d25c": "Parar",
@@ -5438,6 +5441,8 @@
   "92d0d4eab2596772": "O rastreador recusou.",
   "33591d9596fb7cb7": "Adicionar um comentário",
   "225329f7d2adc33c": "Deixe um comentário",
+  "eb1fd384ad5919dd": "Nota interna",
+  "b45f0b467e9406d0": "Responder ao cliente",
   "35e166912930bdbf": "Publicando comentário",
   "7bfcbdbcdd625603": "Comentar",
   "02de63c7a0ebd94c": "Carregando issue",

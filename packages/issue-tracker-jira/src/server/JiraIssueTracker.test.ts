@@ -378,6 +378,30 @@ describe("JiraIssueTracker", () => {
         .pipe(Effect.flip);
       expect(foreign.detail).toBe("OPS-1 does not belong to Jira project ENG.");
       expect(requests).toHaveLength(before);
+      // So is a link naming another Jira site: its keys repeat, and this credential reads only its own.
+      const elsewhere = "This issue link names another Jira site than the connected one.";
+      expect(
+        yield* api
+          .getIssue({ ...target, key: "ENG-7", workspace: "other-corp.atlassian.net" })
+          .pipe(Effect.flip),
+      ).toMatchObject({ reason: "not-found", detail: elsewhere });
+      expect(
+        (yield* api
+          .setState({
+            ...target,
+            key: "ENG-7",
+            state: "Finish",
+            workspace: "other-corp.atlassian.net",
+          })
+          .pipe(Effect.flip)).detail,
+      ).toBe(elsewhere);
+      expect(requests).toHaveLength(before);
+      yield* api.setState({
+        ...target,
+        key: "ENG-7",
+        state: "Finish",
+        workspace: "ACME.atlassian.net",
+      });
     }),
   );
 
@@ -424,6 +448,44 @@ describe("JiraIssueTracker", () => {
     }),
   );
 
+  it.effect("assigns a person a search found after an empty assignable page", () =>
+    Effect.gen(function* () {
+      const JORDAN = user("acc_jordan", "Jordan");
+      const { tracker, requests } = fakeJira({
+        "GET /rest/api/3/label": () => ({ values: ["bug"] }),
+        "GET /rest/api/3/issue/createmeta/ENG/issuetypes": () => ({
+          issueTypes: [{ id: "3", name: "Task" }],
+        }),
+        "GET /rest/api/3/user/assignable/search": ({ query }) =>
+          query.get("query") === "jordan@acme.test" || query.get("accountId") === "acc_jordan"
+            ? query.get("startAt") === "0"
+              ? [JORDAN]
+              : []
+            : query.get("startAt") === "0"
+              ? [THEO]
+              : [],
+        "GET /rest/api/3/user/search": () => [],
+        "POST /rest/api/3/issue": () => ({ id: "1", key: "ENG-9" }),
+      });
+      const api = yield* tracker;
+      expect(yield* api.listCandidates!(target)).toMatchObject({ assigneeSearch: true });
+      expect(yield* api.listCandidates!({ ...target, query: "jordan@acme.test" })).toMatchObject({
+        labels: [],
+        assignees: [{ login: "Jordan", id: "acc_jordan" }],
+      });
+      yield* api.create({
+        ...target,
+        title: "New",
+        body: "",
+        labels: [],
+        assignees: ["acc_jordan"],
+      });
+      expect(requests.at(-1)?.body).toMatchObject({
+        fields: { assignee: { accountId: "acc_jordan" } },
+      });
+    }),
+  );
+
   it.effect("refuses to rewrite a description markdown would lose part of", () =>
     Effect.gen(function* () {
       const { tracker, requests } = fakeJira({
@@ -446,19 +508,26 @@ describe("JiraIssueTracker", () => {
   );
 
   // https://github.com/aislopware/onicode/pull/38003#issuecomment-7101618257
-  it.effect("posts a service desk comment as an internal note", () =>
-    Effect.gen(function* () {
-      const { tracker, requests } = fakeJira({
-        "GET /rest/api/3/issue/HELP-3": () =>
-          issue("HELP-3", { project: { key: "HELP", projectTypeKey: "service_desk" } }),
-        "POST /rest/api/3/issue/HELP-3/comment": () => ({}),
-      });
-      const api = yield* tracker;
-      yield* api.comment({ ...target, scope: "HELP", key: "HELP-3", body: "Looking" });
-      expect(requests.at(-1)?.body).toMatchObject({
-        properties: [{ key: "sd.public.comment", value: { internal: true } }],
-      });
-    }),
+  it.effect(
+    "posts a service desk comment as an internal note unless it replies to the customer",
+    () =>
+      Effect.gen(function* () {
+        const { tracker, requests } = fakeJira({
+          "GET /rest/api/3/issue/HELP-3": () =>
+            issue("HELP-3", { project: { key: "HELP", projectTypeKey: "service_desk" } }),
+          "POST /rest/api/3/issue/HELP-3/comment": () => ({}),
+        });
+        const api = yield* tracker;
+        const help = { ...target, scope: "HELP", key: "HELP-3" };
+        yield* api.comment({ ...help, body: "Looking" });
+        expect(requests.at(-1)?.body).toMatchObject({
+          properties: [{ key: "sd.public.comment", value: { internal: true } }],
+        });
+        yield* api.comment({ ...help, body: "Fixed", audience: "public" });
+        expect(requests.at(-1)?.body).toMatchObject({
+          properties: [{ key: "sd.public.comment", value: { internal: false } }],
+        });
+      }),
   );
 
   it.effect("reports Jira's own words for a refusal, and a rate limit with its wait", () =>
