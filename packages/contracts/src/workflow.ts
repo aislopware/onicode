@@ -67,9 +67,9 @@ const stepFields = {
 };
 
 // Builds from before the `queue` kind refuse a run that has one, so it travels as a marked `wait`.
+// A bare `queue` still decodes: servers between the two sent it that way.
 const WorkflowStepWire = Schema.Struct({
   ...stepFields,
-  kind: Schema.Literals(["step", "wait", "agent", "ask", "sleep"]),
   queue: Schema.optional(Schema.Boolean),
 });
 
