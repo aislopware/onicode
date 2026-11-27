@@ -164,7 +164,7 @@ describe("resolveWorkEntryToolPresentation", () => {
   it("names the reported outcome when it contradicts the row's verb", () => {
     const row = (tool: string, output: unknown) =>
       resolveWorkEntryToolPresentation({
-        label: `Onicode-code.${tool}`,
+        label: `oni-code.${tool}`,
         toolLifecycleStatus: "completed",
         toolData: { output: compactOniMcpToolOutput(`onicode.${tool}`, output) },
       })?.displayName;

@@ -483,12 +483,16 @@ it("reads only the linked issues a thread shows", async () => {
   expect(detailsIssues.elements()).toHaveLength(3);
 
   // Expanding the sidebar badge's preview stays on the open thread.
+  // The preview holds the first 8; the rest live in the Linked items tab.
   await userEvent.hover(page.getByRole("button", { name: "100 linked issues" }));
-  await userEvent.click(page.getByRole("button", { name: "Show 97 more" }));
-  await expect
-    .element(page.getByRole("link", { name: "Issue #100: Issue number 100" }))
-    .toBeVisible();
+  await userEvent.click(page.getByRole("button", { name: "Show 5 more" }));
+  await expect.element(page.getByRole("link", { name: "Issue #8: Issue number 8" })).toBeVisible();
   expect(router.history.location.pathname).toBe(`/${ENVIRONMENT_ID}/${few.id}`);
+  await userEvent.click(page.getByRole("button", { name: "+92 more in Linked items" }));
+  await expect
+    .element(linkedItems.getByRole("link", { name: "Issue #1: Issue number 1" }))
+    .toBeVisible();
+  expect(router.history.location.pathname).toBe(`/${ENVIRONMENT_ID}/${many.id}`);
 });
 
 it("a machine chip stashed in one thread restores with its machine in another", async () => {
