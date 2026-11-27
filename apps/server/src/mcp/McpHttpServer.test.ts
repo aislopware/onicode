@@ -2445,6 +2445,9 @@ it.effect("lists optional tools to a deferring client only after tool_search loa
       expect(yield* driving.listed).toEqual(
         everything.filter((name) => name !== "preview_snapshot"),
       );
+      expect(yield* drivingDeferred.callRaw("tool_search", { query: "page" })).not.toContain(
+        "notifications/tools/list_changed",
+      );
       expect(
         (yield* drivingDeferred.call("tool_search", { query: "page" })).result?.structuredContent,
       ).toEqual({ tools: [] });

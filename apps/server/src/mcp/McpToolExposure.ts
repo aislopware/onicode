@@ -54,7 +54,10 @@ export class McpToolExposure extends Context.Service<
     readonly search: (
       providerSessionId: string,
       query: string,
-      options?: { readonly mode?: McpToolExposureMode | undefined },
+      options?: {
+        readonly mode?: McpToolExposureMode | undefined;
+        readonly capabilities?: ReadonlySet<string> | undefined;
+      },
     ) => Effect.Effect<ReadonlyArray<ListedTool>>;
     readonly isListed: (
       providerSessionId: string,
@@ -119,7 +122,8 @@ export const make = (
           (tool) =>
             tool.name !== TOOL_SEARCH &&
             tool.name !== TOOL_CALL &&
-            (tool.isEnabled === undefined || tool.isEnabled()),
+            (tool.isEnabled === undefined || tool.isEnabled()) &&
+            (options?.capabilities === undefined || !isWithheld(options.capabilities, tool.name)),
         )
         .map((tool) => ({ tool, score: score(tool, terms) }))
         .filter((match) => match.score > 0)
