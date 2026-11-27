@@ -262,7 +262,7 @@ export const renderTerminalQrCode = (value: string, margin = 2): string => {
   return rows.join("\n");
 };
 
-export const formatHeadlessServeOutput = (accessInfo: HeadlessServeAccessInfo): string =>
+const formatHeadlessServeOutput = (accessInfo: HeadlessServeAccessInfo): string =>
   [
     "Onicode server is ready.",
     `Connection string: ${accessInfo.connectionString}`,
@@ -281,12 +281,11 @@ export const formatHeadlessServeOutput = (accessInfo: HeadlessServeAccessInfo): 
     "",
   ].join("\n");
 
-export const issueHeadlessServeAccessInfo = Effect.fn("issueHeadlessServeAccessInfo")(function* () {
+const resolveServeConnectionString = Effect.gen(function* () {
   const serverConfig = yield* ServerConfig.ServerConfig;
   const httpServer = yield* HttpServer.HttpServer;
-  const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
   const platform = yield* HostProcess.Platform;
-  const connectionString = resolveHeadlessConnectionString(
+  return resolveHeadlessConnectionString(
     serverConfig.host,
     resolveListeningPort(httpServer.address, serverConfig.port),
     {
@@ -295,6 +294,11 @@ export const issueHeadlessServeAccessInfo = Effect.fn("issueHeadlessServeAccessI
       platform,
     },
   );
+});
+
+const issueHeadlessServeAccessInfo = Effect.fn("issueHeadlessServeAccessInfo")(function* () {
+  const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+  const connectionString = yield* resolveServeConnectionString;
   const issued = yield* serverAuth.issueStartupPairingCredential();
 
   return {
@@ -302,4 +306,22 @@ export const issueHeadlessServeAccessInfo = Effect.fn("issueHeadlessServeAccessI
     token: issued.credential,
     pairingUrl: buildPairingUrl(connectionString, issued.credential),
   } satisfies HeadlessServeAccessInfo;
+});
+
+/**
+ * What `onicode serve` prints once it is ready. A terminal gets pairing details. The background
+ * service's output is its log file, so it gets the address and the command that pairs a device.
+ */
+export const headlessServeOutput = Effect.fn("headlessServeOutput")(function* (options: {
+  readonly serviceManaged: boolean;
+}) {
+  if (!options.serviceManaged) {
+    return formatHeadlessServeOutput(yield* issueHeadlessServeAccessInfo());
+  }
+  return [
+    "Onicode server is ready.",
+    `Connection string: ${yield* resolveServeConnectionString}`,
+    "Run `onicode pair` on this machine to connect a device.",
+    "",
+  ].join("\n");
 });

@@ -18,6 +18,9 @@ run these commands on the machine that will host Onicode:
 | Restart                               | `onicode service restart`   |
 | Stop and remove from startup          | `onicode service uninstall` |
 
+The service never writes a pairing code to its log. To connect a device, run
+`onicode pair` on the host, or `onicode up` to set up access from your other devices.
+
 Uninstalling the service leaves your projects, threads, and settings intact.
 Running `onicode service install` again repairs a service that `onicode service status`
 reports as broken.

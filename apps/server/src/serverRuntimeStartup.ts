@@ -45,7 +45,7 @@ import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import { forkParked, forkParkedFiber } from "./serverActivation.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
-import { formatHeadlessServeOutput, issueHeadlessServeAccessInfo } from "./startupAccess.ts";
+import { headlessServeOutput } from "./startupAccess.ts";
 import { NEW_THREAD_TITLE } from "@onicode/shared/threadTitles";
 
 export class ServerRuntimeStartupError extends Schema.TaggedError<ServerRuntimeStartupError>()(
@@ -534,11 +534,8 @@ const make = Effect.fn("serverRuntimeStartup.make")(function* (options?: Startup
       Effect.gen(function* () {
         if (serverConfig.mode === "desktop") return;
         yield* Effect.logDebug("startup phase: headless access info");
-        const accessInfo = yield* issueHeadlessServeAccessInfo();
-        yield* runStartupPhase(
-          "headless.output",
-          Console.log(formatHeadlessServeOutput(accessInfo)),
-        );
+        const output = yield* headlessServeOutput({ serviceManaged: launcher.managed });
+        yield* runStartupPhase("headless.output", Console.log(output));
       }),
     );
 
