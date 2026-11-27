@@ -5,7 +5,7 @@ sdk=$(xcrun --sdk macosx --show-sdk-path)
 compiler=$(xcrun --find swiftc)
 output=$(mktemp -d)
 trap 'rm -rf "$output"' EXIT
-# Compile the real editor view; only the Expo bridge and clipboard are stubbed.
+# Compile the real editor view and clipboard helpers; only the Expo bridge is stubbed.
 python3 - "$module_dir" "$output/main.swift" <<'PYTHON'
 import sys
 from pathlib import Path
@@ -23,15 +23,14 @@ final class EventDispatcher {
   var payloads: [[String: Any]] = []
   func callAsFunction(_ payload: [String: Any] = [:]) { payloads.append(payload) }
 }
-enum OniComposerClipboard {
-  static func hasThreadLink(_ text: String) -> Bool { false }
-  static func hasWebLink(_ html: String) -> Bool { false }
-  static func rtfLinks(_ board: UIPasteboard) -> (html: String, text: String)? { nil }
-  static func read() -> [String: String] { [:] }
-  static func write(text: String, fragment: String) {}
-}
 """
-Path(sys.argv[2]).write_text(source + "\n" + stubs + "\n" + (module / "tests/ios/main.swift").read_text())
+# The clipboard helpers are plain UIKit, so the real ones compile beside the view.
+bridge = (module / "ios/OniComposerEditorModule.swift").read_text()
+start = bridge.index("enum OniComposerClipboard {")
+clipboard = bridge[start : bridge.index("\n}\n", start) + 3]
+Path(sys.argv[2]).write_text(
+  source + "\n" + stubs + "\n" + clipboard + "\n" + (module / "tests/ios/main.swift").read_text()
+)
 PYTHON
 "$compiler" -target "$(uname -m)-apple-ios16.1-macabi" -sdk "$sdk" \
   -F "$sdk/System/iOSSupport/System/Library/Frameworks" \

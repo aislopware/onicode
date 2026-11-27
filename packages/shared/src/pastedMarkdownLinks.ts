@@ -11,16 +11,30 @@ export interface PastedTextRun {
 // backticks, brackets, and emphasis or strikethrough runs (user remark-gfm sets singleTilde: false).
 const INLINE_MARKDOWN = /\\(?=[!-/:-@[-`{-~\n]|$)|[`[\]]|\*+|_+|~{2,}/g;
 
-/** Escapes rendered prose so it parses back to the same text, leaving runs that cannot open or close. */
-export function escapeMarkdownProse(text: string): string {
+function escapedByBackslash(text: string, index: number): boolean {
+  let backslashes = 0;
+  while (text[index - backslashes - 1] === "\\") backslashes += 1;
+  return backslashes % 2 === 1;
+}
+
+/**
+ * Escapes rendered prose so it parses back to the same text, leaving runs that cannot open or close.
+ * In a link label, `label` also escapes what would end or nest the label inside a drive path.
+ */
+export function escapeMarkdownProse(text: string, { label = false } = {}): string {
   return text.replace(/\S+/g, (word, wordOffset: number) => {
     // Check each word once; testing every escape's growing prefix would be quadratic.
     const drive = UNFINISHED_DRIVE_PATH.exec(word);
     const driveStart = drive ? drive.index + drive[0].search(/[A-Za-z]/) + 2 : Infinity;
     return word.replace(INLINE_MARKDOWN, (match: string, offset: number) => {
-      if (offset >= driveStart) return match;
       const before = text[wordOffset + offset - 1];
       const after = text[wordOffset + offset + match.length];
+      if (offset >= driveStart) {
+        // The renderer shows escapes in a drive path as written, so they stay as they are.
+        if (!label || escapedByBackslash(text, wordOffset + offset)) return match;
+        if (match === "\\") return after === undefined ? "\\\\" : match;
+        return match === "[" || match === "]" ? `\\${match}` : match;
+      }
       if (match === "\\" && after !== undefined && /[^\S\n]/.test(after)) return match;
       // A text node's edge may touch another node's markers, so it counts as neither.
       const between = (pattern: RegExp) =>
@@ -32,15 +46,14 @@ export function escapeMarkdownProse(text: string): string {
   });
 }
 
+// Checked by shape, not with URL: React Native's URL validates nothing, and both clients must agree.
+const LINK_DESTINATION =
+  /^(?:https?:\/\/(?:[^\s/?#@]*@)?(?:\[[\d:A-Fa-f.]+\]|[^\s/?#@:[\]]+)(?::\d*)?(?:[/?#]|$)|mailto:\S)/i;
+
 function linkDestination(href: string): string | undefined {
   const trimmed = href.trim();
-  if (!/^(?:https?:\/\/|mailto:)/i.test(trimmed)) return undefined;
-  try {
-    // React Native's URL keeps the input as written, so whitespace that ends a destination stays.
-    return new URL(trimmed).href.replace(/[\s\p{Cc}]/gu, encodeURIComponent);
-  } catch {
-    return undefined;
-  }
+  if (!LINK_DESTINATION.test(trimmed)) return undefined;
+  return trimmed.replace(/[\s\p{Cc}]/gu, encodeURIComponent);
 }
 
 /**
@@ -69,7 +82,10 @@ export function restoreMarkdownLinkRuns(plain: string, runs: Iterable<PastedText
     const destination = href.replaceAll("&", "&amp;").replace(/[\\()]/g, "\\$&");
     parts.push(
       prefix,
-      label.replace(/\S(?:[^\n]*\S)?/g, (line) => `[${escapeMarkdownProse(line)}](${destination})`),
+      label.replace(
+        /\S(?:[^\n]*\S)?/g,
+        (line) => `[${escapeMarkdownProse(line, { label: true })}](${destination})`,
+      ),
     );
     resultEnd = end;
   }
@@ -141,8 +157,8 @@ function pastedHtmlTextRuns(html: string): PastedTextRun[] {
   TOKEN.lastIndex = 0;
   for (let token = TOKEN.exec(html); token; token = TOKEN.exec(html)) {
     const [raw, closing, rawName, rawAttributes = ""] = token;
-    const parent = stack.at(-1);
     if (rawName === undefined) {
+      const parent = stack.at(-1);
       if (raw.startsWith("<!") || raw.startsWith("<?") || parent?.removed || parent?.invisible)
         continue;
       const text = decodeHtml(raw);
@@ -174,6 +190,7 @@ function pastedHtmlTextRuns(html: string): PastedTextRun[] {
       const open = stack.findLastIndex((element) => element.name === "a");
       if (open >= 0) close(open);
     }
+    const parent = stack.at(-1);
     const { display, visibility } = inlineStyle(attributes.get("style"));
     // Visibility inherits, but a visible descendant can override a hidden ancestor.
     const inheritsHidden = parent?.invisible ?? false;
@@ -201,7 +218,9 @@ function pastedHtmlTextRuns(html: string): PastedTextRun[] {
 }
 
 /** Restores pasted link destinations from clipboard HTML without a DOM, for clients that have none. */
-export function restorePastedHtmlLinks(plain: string, html: string): string {
+export function restorePastedHtmlLinks(text: string, html: string): string {
+  // Old Mac apps end lines with a bare carriage return, which Markdown lines must not contain.
+  const plain = text.replace(/\r\n?/g, "\n");
   if (!plain || !/<a[\s>]/i.test(html)) return plain;
   return restoreMarkdownLinkRuns(plain, pastedHtmlTextRuns(html));
 }

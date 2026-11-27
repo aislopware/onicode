@@ -273,12 +273,21 @@ function markdownAnchor(label: string, href: string, inTableCell: boolean): stri
   return `[${label}](${destination})`;
 }
 
+// Serialization is synchronous, so a counter tells text it sits inside a link label.
+let linkLabelDepth = 0;
+
 function serializeAnchor(anchor: Element, inTableCell: boolean): string {
   const markdownCopy = anchor.getAttribute("data-markdown-copy");
   if (markdownCopy !== null) return escapeTablePipes(markdownCopy, inTableCell);
-  const content = serializeChildren(anchor, inTableCell);
   const href = anchor.getAttribute("href") ?? "";
-  if (!/^(?:https?:\/\/|mailto:)/i.test(href)) return content;
+  if (!/^(?:https?:\/\/|mailto:)/i.test(href)) return serializeChildren(anchor, inTableCell);
+  linkLabelDepth += 1;
+  let content: string;
+  try {
+    content = serializeChildren(anchor, inTableCell);
+  } finally {
+    linkLabelDepth -= 1;
+  }
   const label = content.trim();
   if (!label) return "";
   // The label arrives escaped; a bare address goes out as shown, since GFM links it again.
@@ -312,7 +321,7 @@ function serializeNode(node: Node, inTableCell = false): string {
     // A <br> already wrote the line ending that follows it.
     if (node.previousSibling?.nodeName === "BR") text = text.replace(/^\n/, "");
     if (text.includes("\n") && text.trim().length === 0) return "\n";
-    return escapeTablePipes(escapeMarkdownProse(text), inTableCell);
+    return escapeTablePipes(escapeMarkdownProse(text, { label: linkLabelDepth > 0 }), inTableCell);
   }
   if (node.nodeType !== Node.ELEMENT_NODE) return "";
   const element = node as Element;

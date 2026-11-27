@@ -226,6 +226,29 @@ do {
   check(view.text == "hi ok", "Redo did not cut again: \(view.text)")
 }
 
+// Notes copies rich text as RTF alone; its links reach JS as anchors, and the RTF supplies the text.
+do {
+  let board = UIPasteboard(name: UIPasteboard.Name("oni-composer-test-\(UUID().uuidString)"), create: true)!
+  let rtf = { (text: NSAttributedString) in
+    try! text.data(
+      from: NSRange(location: 0, length: text.length),
+      documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]
+    )
+  }
+  let linked = NSMutableAttributedString(string: "Read the release notes today.")
+  linked.addAttribute(.link, value: URL(string: "https://example.com/notes?a=1&b=2")!, range: NSRange(location: 9, length: 13))
+  board.setData(rtf(linked), forPasteboardType: "public.rtf")
+  let restored = OniComposerClipboard.rtfLinks(board)
+  check(restored?.html == #"Read the <a href="https://example.com/notes?a=1&amp;b=2">release notes</a> today."#,
+        "An RTF link must reach JS as an anchor, got \(restored?.html ?? "nil")")
+  check(restored?.text == "Read the release notes today.", "An RTF-only paste must take its text from the RTF")
+  board.setData(rtf(NSAttributedString(string: "No links here")), forPasteboardType: "public.rtf")
+  check(OniComposerClipboard.rtfLinks(board) == nil, "RTF without a link must keep the native paste")
+  check(OniComposerClipboard.hasWebLink(#"<p><A HREF="https://example.com">x</A></p>"#), "Any anchor with an href is a web link")
+  check(!OniComposerClipboard.hasWebLink("<a name=top>x</a>"), "An anchor without an href is not a web link")
+  UIPasteboard.remove(withName: board.name)
+}
+
 print("composer editor tests passed")
 
 private let dropEditor = ComposerTextView()

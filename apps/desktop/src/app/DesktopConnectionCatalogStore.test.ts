@@ -322,6 +322,56 @@ describe("DesktopConnectionCatalogStore", () => {
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
+  it.effect("announces a reset once when concurrent reads both find no backup", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "oni-desktop-connection-catalog-test-",
+      });
+      const key = yield* Ref.make("original-key");
+      const writer = yield* DesktopConnectionCatalogStore.DesktopConnectionCatalogStore.pipe(
+        Effect.provide(layerFor(baseDir, true, key)),
+      );
+      assert.isTrue(yield* writer.set(emptyCatalog));
+      const readerKey = yield* Ref.make("regenerated-key");
+      const checks = yield* Ref.make(0);
+      const bothChecked = yield* Deferred.make<void>();
+      const taken = yield* Deferred.make<void>();
+      const store = yield* DesktopConnectionCatalogStore.DesktopConnectionCatalogStore.pipe(
+        Effect.provide(
+          layerFor(
+            baseDir,
+            true,
+            readerKey,
+            Layer.succeed(FileSystem.FileSystem, {
+              ...fileSystem,
+              exists: (entryPath) =>
+                entryPath.endsWith(".undecryptable")
+                  ? Effect.gen(function* () {
+                      const exists = yield* fileSystem.exists(entryPath);
+                      if ((yield* Ref.updateAndGet(checks, (count) => count + 1)) === 1) {
+                        yield* Deferred.await(bothChecked);
+                      } else {
+                        yield* Deferred.succeed(bothChecked, undefined);
+                        yield* Deferred.await(taken);
+                      }
+                      return exists;
+                    })
+                  : fileSystem.exists(entryPath),
+            }),
+          ),
+        ),
+      );
+      const first = yield* Effect.forkChild(store.get);
+      const second = yield* Effect.forkChild(store.get);
+      assert.deepStrictEqual(yield* Fiber.join(first), Option.none());
+      assert.isTrue(Option.isSome(yield* store.takeResetBackupPath));
+      yield* Deferred.succeed(taken, undefined);
+      assert.deepStrictEqual(yield* Fiber.join(second), Option.none());
+      assert.deepStrictEqual(yield* store.takeResetBackupPath, Option.none());
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("preserves the undecryptable catalog even when a save replaces it mid-read", () =>
     Effect.gen(function* () {
       const path = yield* Path.Path;

@@ -310,6 +310,18 @@ class ComposerPasteTest {
   }
 
   @Test
+  fun richTextWithoutPlainTextKeepsNativePaste() {
+    val html = "<a href=\"https://example.com/setup\">Setup guide</a>"
+    clipboard.setPrimaryClip(ClipData.newHtmlText("browser", "", html))
+    editor.setText("")
+    editor.setSelection(0)
+    editor.pasteContextListener = { error("A clip without plain text must paste natively") }
+
+    editor.onTextContextMenuItem(android.R.id.paste)
+    assertEquals("Setup guide", editor.text.toString())
+  }
+
+  @Test
   fun readOnlyShortcutDoesNotPasteOrEmitAnEvent() {
     clipboard.setPrimaryClip(ClipData.newPlainText("test", "x".repeat(120_001)))
     editor.setText("unchanged")

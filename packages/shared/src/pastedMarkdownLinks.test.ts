@@ -79,6 +79,37 @@ describe("restoring pasted Markdown links from clipboard HTML", () => {
       expected: "[One](https://example.com/1) [Two](https://example.com/2)",
     },
     {
+      case: "a Windows path as a label",
+      plain: String.raw`C:\Users\me\ and C:\app\[id]`,
+      html: String.raw`<a href="https://example.com/1">C:\Users\me\</a> and <a href="https://example.com/2">C:\app\[id]</a>`,
+      expected: String.raw`[C:\Users\me\\](https://example.com/1) and [C:\app\[id\]](https://example.com/2)`,
+    },
+    {
+      case: "a label that looks like another link",
+      plain: "C:/x](https://evil.example)",
+      html: '<a href="https://example.com/safe">C:/x](https://evil.example)</a>',
+      expected: "[C:/x\\](https://evil.example)](https://example.com/safe)",
+    },
+    {
+      case: "destinations without a host, as written",
+      plain: "Empty, spaced, fragment, mail",
+      html: '<a href="https://">Empty</a>, <a href="https://not a host/path">spaced</a>, <a href="https://example.com#a#b">fragment</a>, <a href="mailto:ada@example.com#sig">mail</a>',
+      expected:
+        "Empty, spaced, [fragment](https://example.com#a#b), [mail](mailto:ada@example.com#sig)",
+    },
+    {
+      case: "a link after a hidden anchor it implicitly closes",
+      plain: "Visible",
+      html: '<a href="https://example.com/1" style="display:none">Hidden <a href="https://example.com/2">Visible</a>',
+      expected: "[Visible](https://example.com/2)",
+    },
+    {
+      case: "bare carriage returns as line breaks",
+      plain: "First\r\rSecond",
+      html: '<a href="https://example.com/">First<br><br>Second</a>',
+      expected: "[First](https://example.com/)\n\n[Second](https://example.com/)",
+    },
+    {
       case: "HTML that does not describe the plain text",
       plain: "Something else",
       html: '<a href="https://example.com/">Guide</a>',

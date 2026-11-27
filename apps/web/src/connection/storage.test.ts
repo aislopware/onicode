@@ -14,6 +14,11 @@ import { afterEach, vi } from "vite-plus/test";
 
 import * as ConnectionStorage from "./storage";
 
+const resetToast = vi.hoisted(() => ({ show: vi.fn<(backupPath: string) => void>() }));
+vi.mock("../components/ConnectionCatalogResetToast", () => ({
+  showConnectionCatalogResetToast: resetToast.show,
+}));
+
 const emptyCatalog = {
   schemaVersion: 1,
   targets: [],
@@ -69,6 +74,46 @@ const fixedHandle = (database: IDBDatabase) => ({
 });
 
 describe("ConnectionStorage.makeCatalogBackend", () => {
+  it.effect("announces a reset catalog only when the desktop names its backup", () =>
+    Effect.gen(function* () {
+      const read = (desktopBridge: object) => {
+        vi.stubGlobal("window", { desktopBridge });
+        return ConnectionStorage.makeCatalogBackend(fixedHandle({} as IDBDatabase)).read;
+      };
+      // An older desktop shell has no reset method.
+      expect(yield* read({ getConnectionCatalog: async () => null })).toBeNull();
+
+      const takeConnectionCatalogReset = vi.fn(async (): Promise<string | null> => null);
+      expect(
+        yield* read({ getConnectionCatalog: async () => "{}", takeConnectionCatalogReset }),
+      ).toBe("{}");
+      expect(takeConnectionCatalogReset).not.toHaveBeenCalled();
+
+      const warned = yield* Deferred.make<void>();
+      vi.spyOn(console, "warn").mockImplementation(() => {
+        Deferred.doneUnsafe(warned, Effect.void);
+      });
+      const failing = read({
+        getConnectionCatalog: async () => null,
+        takeConnectionCatalogReset: () => Promise.reject(new Error("IPC closed")),
+      });
+      expect(yield* failing).toBeNull();
+      yield* Deferred.await(warned);
+
+      const shown = yield* Deferred.make<string>();
+      resetToast.show.mockImplementation((backupPath) => {
+        Deferred.doneUnsafe(shown, Effect.succeed(backupPath));
+      });
+      const reset = read({
+        getConnectionCatalog: async () => null,
+        takeConnectionCatalogReset: async () => "/state/connection-catalog.json.ab.undecryptable",
+      });
+      expect(yield* reset).toBeNull();
+      expect(yield* Deferred.await(shown)).toBe("/state/connection-catalog.json.ab.undecryptable");
+      expect(resetToast.show).toHaveBeenCalledOnce();
+    }),
+  );
+
   it.effect("fails IndexedDB writes whose commit aborts", () =>
     Effect.gen(function* () {
       vi.stubGlobal("window", {});

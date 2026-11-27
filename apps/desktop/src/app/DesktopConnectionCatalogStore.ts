@@ -369,7 +369,10 @@ export const make = Effect.gen(function* () {
   const random = yield* SecureRandom.SecureRandom;
   const savedEnvironments = yield* DesktopSavedEnvironments.DesktopSavedEnvironments;
   const catalogPath = path.join(environment.stateDir, "connection-catalog.json");
-  const resetBackupPath = yield* Ref.make(Option.none<string>());
+  const resetBackup = yield* Ref.make({
+    pending: Option.none<string>(),
+    armed: new Set<string>(),
+  });
   const encryptionAvailable = safeStorage.isEncryptionAvailable.pipe(
     Effect.mapError(
       (cause) =>
@@ -467,7 +470,12 @@ export const make = Effect.gen(function* () {
         "The desktop connection catalog can no longer be decrypted; starting a new one.",
         { catalogPath, backupPath, reason: decryptError._tag },
       );
-      yield* Ref.set(resetBackupPath, Option.some(backupPath));
+      // Concurrent reads can both find no backup yet; only the first arms the notice.
+      yield* Ref.update(resetBackup, (state) =>
+        state.armed.has(backupPath)
+          ? state
+          : { pending: Option.some(backupPath), armed: new Set(state.armed).add(backupPath) },
+      );
     }
   });
 
@@ -567,7 +575,10 @@ export const make = Effect.gen(function* () {
       yield* writeCatalog(catalog);
       return true;
     }),
-    takeResetBackupPath: Ref.getAndSet(resetBackupPath, Option.none()),
+    takeResetBackupPath: Ref.modify(resetBackup, (state) => [
+      state.pending,
+      { ...state, pending: Option.none() },
+    ]),
   });
 });
 
