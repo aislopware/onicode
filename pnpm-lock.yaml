@@ -353,7 +353,7 @@ pnpmfileChecksum: sha256-V4l4scZuq2tJGzv9CIPYF0cGBGNRBI8wBVBZg42BsCM=
 
 patchedDependencies:
   '@cursor/sdk@1.5.0': 7fe8889d7916196c56006cf15a39abba4099feb2c567b4030b82a09364cee500
-  '@e2e-dev/mobile@0.12.8': 8f1abc9d7ee421f74a6811be5abd1bca28e6d15eb1843730cbb929bc63cb08e4
+  '@e2e-dev/mobile@0.12.8': ca668f3d63e0d6df169a7ebf3a910b87a10db6b82a469c03141f9854b98407f7
   '@e2e-dev/web@0.16.1': d4a718e516e19ad4db63cddd1e97439910bb260100dcde5de6213ecf75bc5b6b
   '@effect/platform-node-shared@4.1.5': 5c85315aa18de2923bf58387cc351322ad3761bc580e467f7a197ba7865268b8
   '@effect/vitest@4.1.5': 78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7
@@ -757,7 +757,7 @@ importers:
         version: 7.29.13(supports-color@8.1.1)
       '@e2e-dev/mobile':
         specifier: 0.12.8
-        version: 0.12.8(patch_hash=8f1abc9d7ee421f74a6811be5abd1bca28e6d15eb1843730cbb929bc63cb08e4)(@e2e-dev/core@0.24.0)(e2e@0.24.0)
+        version: 0.12.8(patch_hash=ca668f3d63e0d6df169a7ebf3a910b87a10db6b82a469c03141f9854b98407f7)(@e2e-dev/core@0.24.0)(e2e@0.24.0)
       '@effect/platform-node':
         specifier: 4.1.5
         version: 4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(redis@6.4.0(@opentelemetry/api@1.10.0))
@@ -2507,7 +2507,7 @@ importers:
     dependencies:
       '@e2e-dev/mobile':
         specifier: 0.12.8
-        version: 0.12.8(patch_hash=8f1abc9d7ee421f74a6811be5abd1bca28e6d15eb1843730cbb929bc63cb08e4)(@e2e-dev/core@0.24.0)(e2e@0.24.0)
+        version: 0.12.8(patch_hash=ca668f3d63e0d6df169a7ebf3a910b87a10db6b82a469c03141f9854b98407f7)(@e2e-dev/core@0.24.0)(e2e@0.24.0)
       '@e2e-dev/web':
         specifier: 0.16.1
         version: 0.16.1(patch_hash=d4a718e516e19ad4db63cddd1e97439910bb260100dcde5de6213ecf75bc5b6b)(@e2e-dev/core@0.24.0)(e2e@0.24.0)
@@ -12735,7 +12735,7 @@ snapshots:
       pixelmatch: 8.0.0
       zod: 4.6.7
 
-  '@e2e-dev/mobile@0.12.8(patch_hash=8f1abc9d7ee421f74a6811be5abd1bca28e6d15eb1843730cbb929bc63cb08e4)(@e2e-dev/core@0.24.0)(e2e@0.24.0)':
+  '@e2e-dev/mobile@0.12.8(patch_hash=ca668f3d63e0d6df169a7ebf3a910b87a10db6b82a469c03141f9854b98407f7)(@e2e-dev/core@0.24.0)(e2e@0.24.0)':
     dependencies:
       '@e2e-dev/core': 0.24.0
       '@napi-rs/image': 1.16.0
