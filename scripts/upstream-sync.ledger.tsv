@@ -4291,3 +4291,4 @@ a3e13b25dc	take	exec loop and code-span scan taken without the hosted-link bare 
 712f51f0a6	take	taken as is
 64a1f09186	take	applied by fuzz; test placed before Onicode's 'keeps links it may not chip' case
 36816d26be	take	comment updated under Onicode's canFastSettleDelegated branch; condition unchanged
+98f2a92fc1	skip	already done: Onicode's clearSearchOnEscape (09f564ad4a) handles Esc/IME/repeat in the ignored-file search, unit-tested in searchFieldEscape.test.ts
