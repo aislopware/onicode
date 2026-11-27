@@ -4260,3 +4260,4 @@ b35358ee07	take	mobile vite list placed after GitConfirmSheet; scenario failed-c
 01848baf6c	take	contracts reopenedAfterStop optional; kept Onicode's StoppedNoteHistory/stoppedNoteToldAt, its filter now uses cohortWasStopped; Orchestrator re-read placed after emitEvent, keeping background: true
 46692adb2b	take	taken as is
 407087823e	take	taken as is
+79f1432a17	take	plural via gt; kept Onicode's text-muted-foreground class
