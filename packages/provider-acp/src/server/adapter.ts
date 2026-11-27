@@ -507,7 +507,8 @@ export interface AcpAdapterV2Flavor {
   /**
    * Runs before `session/prompt`. The check reports a failure hidden by a clean stop, or
    * by silence when the inactivity watchdog retires the prompt (`retired`). A failure
-   * restarts the runtime; a `broken` thread's next turn starts a fresh session.
+   * restarts the runtime; a `broken` thread's next turn starts a fresh session. A retired
+   * prompt the agent had already finished reports `completed`.
    */
   readonly watchPromptOutcome?: (
     sessionId: string,
@@ -515,7 +516,7 @@ export interface AcpAdapterV2Flavor {
     (
       result: EffectAcpSchema.PromptResponse,
       options?: { readonly retired?: boolean },
-    ) => Effect.Effect<AcpPromptOutcomeFailure | undefined>
+    ) => Effect.Effect<AcpPromptOutcomeFailure | "completed" | undefined>
   >;
   readonly requiresSignIn?: (cause: unknown) => boolean;
   /**
@@ -10505,6 +10506,10 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                         }).pipe(Effect.as(undefined)),
                       ),
                     );
+              if (recorded === "completed") {
+                yield* finalizeTurn(context, "completed");
+                return "retired" as const;
+              }
               const minutes = Math.max(1, Math.round(timeoutMillis / 60_000));
               yield* finalizeTurn(
                 context,
@@ -10939,13 +10944,14 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                   }
                   if (context.finalized || followsAgentWorkState || superseded()) return;
                   // ACP v2 reports a failed prompt through its idle stop reason, not an RPC error.
-                  const hiddenFailure =
+                  const outcome =
                     settle.checkPromptOutcome === undefined ||
                     context.interrupted ||
                     result.stopReason === "error" ||
                     result.stopReason === "cancelled"
                       ? undefined
                       : yield* settle.checkPromptOutcome(result);
+                  const hiddenFailure = outcome === "completed" ? undefined : outcome;
                   const resumeWith = hiddenFailure?.resumeWith;
                   const maxResumes = Math.max(1, hiddenFailure?.maxResumes ?? 1);
                   if (

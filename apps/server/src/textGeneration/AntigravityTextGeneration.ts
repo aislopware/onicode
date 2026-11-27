@@ -590,7 +590,7 @@ export const makeAntigravityTextGeneration = Effect.fn("makeAntigravityTextGener
               });
             }
             const outcome = yield* checkPromptOutcome(result);
-            if (outcome !== undefined) {
+            if (outcome !== undefined && outcome !== "completed") {
               const detail = outcome.failure.message;
               if (imageBlocks.length > 0 && IMAGE_REJECTION.test(detail)) {
                 return { _tag: "imageRejected" as const, detail, modelKey };
