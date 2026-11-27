@@ -4574,3 +4574,4 @@ a853a4aafe	take	clean; shared by web and mobile
 3afe72c8b3	skip	already in Onicode ade942317a: startThreadTurn's message.dispatch forwards titleSeed, covered by commands.test.ts
 f46957a76b	take	clean; OpenCode follows upstream
 6b8a528f58	take	clean
+8317f7dd6b	take	conflicts beside Onicode's steer code only (kept both); Onicode callers of thread.metadata.update set expectedWorktreePath or are the launch bind; a UI worktree switch mid-turn now says 'Stop the current turn', as upstream
