@@ -15,82 +15,92 @@ import { __setClientSettingsForTests } from "../../hooks/useSettings";
 import { setAppearanceMode } from "../../hooks/useTheme";
 import { DEFAULT_CLIENT_SETTINGS } from "@onicode/contracts/settings";
 
-const { diffAtom, testFileDiffAtom, testFileFirstDiffAtom, pagedDiffAtom, singlePage } =
-  await vi.hoisted(async () => {
-    const { AsyncResult, Atom } = await import("effect/reactivity");
-    const filePatch = (path: string, addition = "after()") =>
-      [
-        `diff --git a/${path} b/${path}`,
-        "index 1111111..2222222 100644",
-        `--- a/${path}`,
-        `+++ b/${path}`,
-        "@@ -1,6 +1,6 @@",
-        "-before()",
-        `+${addition}`,
-        " one()",
-        " two()",
-        " three()",
-        " four()",
-        " five()",
-        "",
-      ].join("\n");
-    const firstPage: PullRequestDiffResult = {
-      patch: filePatch("a.ts"),
-      truncated: false,
-      nextCursor: null,
+const {
+  diffAtom,
+  onlyTestFilesDiffAtom,
+  testFileDiffAtom,
+  testFileFirstDiffAtom,
+  pagedDiffAtom,
+  singlePage,
+} = await vi.hoisted(async () => {
+  const { AsyncResult, Atom } = await import("effect/reactivity");
+  const filePatch = (path: string, addition = "after()") =>
+    [
+      `diff --git a/${path} b/${path}`,
+      "index 1111111..2222222 100644",
+      `--- a/${path}`,
+      `+++ b/${path}`,
+      "@@ -1,6 +1,6 @@",
+      "-before()",
+      `+${addition}`,
+      " one()",
+      " two()",
+      " three()",
+      " four()",
+      " five()",
+      "",
+    ].join("\n");
+  const firstPage: PullRequestDiffResult = {
+    patch: filePatch("a.ts"),
+    truncated: false,
+    nextCursor: null,
+  };
+  const pagedDiffAtom = Atom.family(([shortPages, cursor]: readonly [boolean, string]) => {
+    const pages: Record<string, PullRequestDiffResult> = {
+      first: {
+        patch: Array.from({ length: shortPages ? 2 : 40 }, (_, index) =>
+          filePatch(index === 1 ? "early-1.test.ts" : `early-${index}.ts`),
+        ).join(""),
+        truncated: true,
+        nextCursor: "page-2",
+      },
+      "page-2": {
+        patch: (shortPages ? filePatch("late.ts") : "") + filePatch("late.test.ts"),
+        truncated: false,
+        nextCursor: null,
+      },
     };
-    const pagedDiffAtom = Atom.family(([shortPages, cursor]: readonly [boolean, string]) => {
-      const pages: Record<string, PullRequestDiffResult> = {
-        first: {
-          patch: Array.from({ length: shortPages ? 2 : 40 }, (_, index) =>
-            filePatch(index === 1 ? "early-1.test.ts" : `early-${index}.ts`),
-          ).join(""),
-          truncated: true,
-          nextCursor: "page-2",
-        },
-        "page-2": {
-          patch: (shortPages ? filePatch("late.ts") : "") + filePatch("late.test.ts"),
-          truncated: false,
-          nextCursor: null,
-        },
-      };
-      return Atom.make(AsyncResult.success(pages[cursor]!));
-    });
-    const singlePage = { current: firstPage, first: firstPage };
-    return {
-      singlePage,
-      // An environment query whose refetch returns equal content hands back the previous value
-      // itself, so a refresh publishes a new result around the very same page.
-      diffAtom: Atom.make(() => AsyncResult.success(singlePage.current)),
-      testFileDiffAtom: Atom.make(() =>
-        AsyncResult.success({
-          patch:
-            filePatch("early-0.ts") +
-            filePatch("early-1.test.ts", "testOnly()") +
-            filePatch("early-2.generated.ts") +
-            (mocks.refreshed ? filePatch("early-3.ts") : ""),
-          truncated: false,
-          nextCursor: null,
-        }),
-      ),
-      // Only the first file renders here, so the test file leads.
-      testFileFirstDiffAtom: Atom.make(() =>
-        AsyncResult.success({
-          patch:
-            filePatch("early-1.test.ts", mocks.testChanged ? "testChanged()" : "testOnly()") +
-            (mocks.refreshed ? filePatch("early-3.ts") : ""),
-          truncated: false,
-          nextCursor: null,
-        }),
-      ),
-      pagedDiffAtom,
-    };
+    return Atom.make(AsyncResult.success(pages[cursor]!));
   });
+  const singlePage = { current: firstPage, first: firstPage };
+  return {
+    singlePage,
+    // An environment query whose refetch returns equal content hands back the previous value
+    // itself, so a refresh publishes a new result around the very same page.
+    diffAtom: Atom.make(() => AsyncResult.success(singlePage.current)),
+    onlyTestFilesDiffAtom: Atom.make(
+      AsyncResult.success({ ...firstPage, patch: filePatch("a.test.ts") }),
+    ),
+    testFileDiffAtom: Atom.make(() =>
+      AsyncResult.success({
+        patch:
+          filePatch("early-0.ts") +
+          filePatch("early-1.test.ts", "testOnly()") +
+          filePatch("early-2.generated.ts") +
+          (mocks.refreshed ? filePatch("early-3.ts") : ""),
+        truncated: false,
+        nextCursor: null,
+      }),
+    ),
+    // Only the first file renders here, so the test file leads.
+    testFileFirstDiffAtom: Atom.make(() =>
+      AsyncResult.success({
+        patch:
+          filePatch("early-1.test.ts", mocks.testChanged ? "testChanged()" : "testOnly()") +
+          (mocks.refreshed ? filePatch("early-3.ts") : ""),
+        truncated: false,
+        nextCursor: null,
+      }),
+    ),
+    pagedDiffAtom,
+  };
+});
 
 const mocks = vi.hoisted(() => ({
   paged: false,
   shortPages: false,
   withTestFile: false,
+  onlyTestFiles: false,
   refreshed: false,
   testChanged: false,
   testFileFirst: false,
@@ -144,6 +154,7 @@ vi.mock(import("~/state/pullRequests"), async (original) => {
         mocks.diffCommits.push(input.commit);
         if (mocks.paged) return pagedDiffAtom([mocks.shortPages, input.cursor ?? "first"] as const);
         if (mocks.testFileFirst) return testFileFirstDiffAtom;
+        if (mocks.onlyTestFiles) return onlyTestFilesDiffAtom;
         return mocks.withTestFile ? testFileDiffAtom : diffAtom;
       }) as never,
     },
@@ -214,6 +225,7 @@ function setup({ paged }: { paged: boolean }) {
   singlePage.current = singlePage.first;
   mocks.shortPages = false;
   mocks.withTestFile = false;
+  mocks.onlyTestFiles = false;
   mocks.refreshed = false;
   mocks.testChanged = false;
   mocks.testFileFirst = false;
@@ -256,6 +268,19 @@ it("keeps the diff after a refresh that brings back the same page", async () => 
     .element(screen.getByText("This pull request has no file changes."))
     .not.toBeInTheDocument();
   await expect.element(screen.getByText("1 file", { exact: true })).toBeVisible();
+});
+
+it("can show test files again from the narrow Code tab empty state", async () => {
+  setup({ paged: false });
+  mocks.onlyTestFiles = true;
+  const container = document.createElement("div");
+  container.className = "h-[700px] w-[429px]";
+  await using screen = await render(tab(0), { container });
+  await screen.getByRole("button", { name: "Hide test files", exact: true }).click();
+
+  await expect.element(screen.getByText("1 test file hidden", { exact: true })).toBeVisible();
+  await screen.getByRole("button", { name: "Show test files", exact: true }).click();
+  await expect.element(screen.getByText("a.test.ts", { exact: true }).first()).toBeVisible();
 });
 
 it("restores saved Viewed folds, follows cleared marks, and allows explicit expansion", async () => {
@@ -514,7 +539,7 @@ async function renderShortPages(stack: AsyncDisposableStack) {
     ),
   );
   const container = document.createElement("div");
-  container.className = "flex h-[1000px] w-[900px]";
+  container.className = "h-[1000px] w-[900px]";
   const screen = stack.use(await render(tab(0), { container }));
   const loadNextPage = async () => {
     await screen.getByRole("button", { name: "Show file tree", exact: true }).click();
