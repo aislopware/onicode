@@ -4076,3 +4076,4 @@ b76d0f023f	take	dropped managedRelayState/TunnelUsage and the SavedEnvironmentRo
 153671166c	take	applied cleanly onto Onicode's settingsSecrets (keeps commandCode/muse imports); OpenCode is the only provider package with a SettingsSecretValue address field, so providerSecretDestinations is complete
 14e4a5097f	take	taken as is
 ef49296026	take	taken as is
+cbe475e5d6	take	applied cleanly on Onicode's documentTextWorker
