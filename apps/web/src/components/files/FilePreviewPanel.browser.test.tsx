@@ -1467,6 +1467,19 @@ describe("large text scroll position", () => {
     await screen.rerender(opened("app.log", log(5000)));
     await vi.waitFor(() => expect(firstVisibleRow()).toBe(saved));
   });
+
+  it("remembers lines a keypress moves past without moving the rounded scroll position", async () => {
+    using _style = withPreviewAppCss();
+    {
+      await using _screen = await render(opened("vast.log", log(10_000_000)));
+      await vi.waitFor(() => expect(firstVisibleRow()).toBe(0));
+      scroller().focus();
+      for (let press = 0; press < 3; press++) await userEvent.keyboard("{ArrowDown}");
+      await vi.waitFor(() => expect(firstVisibleRow()).toBe(3));
+    }
+    await using _screen = await render(opened("vast.log", log(10_000_000)));
+    await vi.waitFor(() => expect(firstVisibleRow()).toBe(3));
+  });
 });
 
 describe("notebook scroll position", () => {
