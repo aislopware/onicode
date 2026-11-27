@@ -4154,3 +4154,4 @@ e380d41c2c	take	taken as is
 9853cf885a	take	taken as is
 36b9a06f09	take	took upstream's shared-checkout check, expectedWorktreePath and the removal-before-unbind order; kept Onicode's withWorkspaceLease around task-folder removal; deduped the ProjectionStore test import
 3ed650f999	take	kept Onicode's shared processDescendants.ts tracker (#701, serves Claude and Antigravity) and ported upstream's pid-keyed, start-time-precise tracking into it; native→rows helper readNativeProcessTable with ps fallback wired only into ClaudeAdapterV2 on darwin via serviceOption(NativeTelemetryClient); both ps callers run with LC_ALL=C TZ=UTC0; release-desktop.yml absent in Onicode, build.rs added to the scenarios.yml resource-monitor cache keys; contract fields optional; cargo test --locked passes
+4c34f1c56f	take	taken as is

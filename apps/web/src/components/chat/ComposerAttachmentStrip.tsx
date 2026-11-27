@@ -661,7 +661,7 @@ export function ComposerRestingImagePreviews({
           type="button"
           className="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md border border-border bg-muted/60 font-medium text-secondary-label text-xs tabular-nums outline-none hover:bg-accent focus-visible:outline-ring-inset"
           aria-label={gt(
-            "{count, plural, one {Show {count} more image attachments} other {Show {count} more image attachments}}",
+            "{count, plural, one {Show {count} more image attachment} other {Show {count} more image attachments}}",
             {
               count: counts.overflowCount,
             },
