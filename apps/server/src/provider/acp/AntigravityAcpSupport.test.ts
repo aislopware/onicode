@@ -169,7 +169,7 @@ describe("Antigravity Auto", () => {
       for (const [oniCall, readOnlySandbox] of [
         [request("Run mcp_onicode_oni_thread_list?"), "allow"],
         [request("Run mcp_onicode_send_to_user?"), "allow"],
-        [request("Run mcp_onicode_tool_search?"), "deny"],
+        [request("Run mcp_onicode_tool_search?"), "allow"],
         [request("Run mcp_onicode_tool_call?", { name: "preview_status", arguments: {} }), "deny"],
         // A proxied call is read-only when the tool it names is.
         [

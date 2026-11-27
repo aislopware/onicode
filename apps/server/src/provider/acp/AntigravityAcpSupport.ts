@@ -243,10 +243,11 @@ export function antigravityPermissionDisposition(
   request: EffectAcpSchema.RequestPermissionRequest,
 ) {
   const oniTool = antigravityOniMcpTool(request);
-  // Read-only sandboxes such as Plan mode still run Onicode's read-only tools, as Claude does.
+  // Read-only sandboxes such as Plan mode still run Onicode's read-only tools, as Claude does, and
+  // tool_search, which deferred ones need to be found.
   if (
     oniTool !== undefined &&
-    ONICODE_READ_ONLY_MCP_TOOL_NAMES.includes(oniTool) &&
+    (oniTool === TOOL_SEARCH || ONICODE_READ_ONLY_MCP_TOOL_NAMES.includes(oniTool)) &&
     unknownRecord(policy.sandboxPolicy)?.type === "readOnly"
   ) {
     return "allow";
