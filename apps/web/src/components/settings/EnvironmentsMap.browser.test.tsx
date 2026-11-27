@@ -23,6 +23,7 @@ const hub: FleetEnvironmentInput = {
   activeRouteId: null,
   refusedRouteIds: [],
   offersLinks: true,
+  offersLinkThrough: false,
   canWriteAccess: true,
   hasLinkAddress: true,
   outgoing: {
@@ -90,9 +91,8 @@ describe("EnvironmentsMap", () => {
 
   it("clears a stack's filter on Esc before Settings closes", async () => {
     const graph = buildFleetGraph({
-      clientLabel: "This browser",
+      clientLabel: "This computer",
       environments: [hub],
-      connectMachines: [],
       now: linkedAt,
     });
     const [stack] = fleetStacks(graph, new Set());
@@ -103,7 +103,6 @@ describe("EnvironmentsMap", () => {
           graph={graph}
           stacks={[stack!]}
           environments={[]}
-          connectProblem={null}
           selection={{ kind: "stack", id: stack!.id }}
           found={null}
           onSelect={onSelect}
@@ -111,7 +110,6 @@ describe("EnvironmentsMap", () => {
           onLinkBack={() => {}}
           onToggleStack={() => {}}
           renderSavedEnvironment={() => null}
-          renderConnectMachine={() => null}
           onAddEnvironment={() => {}}
         />
       </AppRouteModal>,
