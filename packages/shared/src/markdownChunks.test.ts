@@ -579,6 +579,7 @@ describe("splitMarkdown", () => {
       "",
       "[site]: https://example.com",
       "[b]: https://example.com/badge.svg 'Badge'",
+      "[^n]: note",
       "[^note]: a footnote",
       "",
       '[x]: /url "title" is paragraph text',

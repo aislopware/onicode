@@ -161,7 +161,7 @@ const SHARED_DEFINITIONS_MAX_CHARS = 16 * 1024;
 const definitionParser = unified().use(remarkParse);
 // A one-line definition; its parse would re-run on every append while a definition run streams.
 const ONE_LINE_DEFINITION =
-  /^ {0,3}\[((?:[^\][\\]|\\.)+)\]:[ \t]*(?:<[^<>\n]*>|([^\s<]\S*))([ \t]+(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\((?:[^()\\]|\\.)*\)))?[ \t]*\r?$/;
+  /^ {0,3}\[(?!\^)((?:[^\][\\]|\\.)+)\]:[ \t]*(?:<[^<>\n]*>|([^\s<]\S*))([ \t]+(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\((?:[^()\\]|\\.)*\)))?[ \t]*\r?$/;
 
 /** The definition `lines[index]` holds alone, when no later line could extend or undo it. */
 function readOneLineDefinition(lines: readonly string[], index: number) {
