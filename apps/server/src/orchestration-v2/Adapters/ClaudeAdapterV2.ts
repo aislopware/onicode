@@ -205,6 +205,7 @@ import {
   type CompiledClaudeModelSelection,
 } from "../../claudeModelOptions.ts";
 import * as ServerConfig from "../../config.ts";
+import { NativeTelemetryClient } from "../../resourceTelemetry/NativeTelemetryClient.ts";
 import * as PortScanner from "../../preview/PortScanner.ts";
 import * as ProcessRunner from "../../processRunner.ts";
 import * as ServerSettings from "../../serverSettings.ts";
@@ -213,8 +214,10 @@ import { spawnAndCollect } from "@onicode/provider-core/server/snapshotProbe";
 import { resolveSpawnCommand } from "@onicode/shared/shell";
 import {
   PROCESS_TABLE_PS_ARGS,
+  PROCESS_TABLE_PS_ENV,
   makeSharedProcessDescendantPoll,
   parseProcessTable,
+  readNativeProcessTable,
 } from "@onicode/provider-core/server/processDescendants";
 import { signalProcessGroup } from "@onicode/provider-core/server/processGroup";
 import {
@@ -1800,12 +1803,23 @@ export const layerQueryRunner: Layer.Layer<
     const hostEnvironment = yield* HostProcess.Environment;
     const portDiscovery = yield* PortScanner.PortDiscovery;
     const processRunner = yield* ProcessRunner.make();
-    const readProcessTable = processRunner
-      .run({ command: "ps", args: [...PROCESS_TABLE_PS_ARGS], timeout: "5 seconds" })
+    const psProcessTable = processRunner
+      .run({
+        command: "ps",
+        args: [...PROCESS_TABLE_PS_ARGS],
+        env: PROCESS_TABLE_PS_ENV,
+        timeout: "5 seconds",
+      })
       .pipe(
         Effect.map((result) => (result.code === 0 ? parseProcessTable(result.stdout) : [])),
         Effect.orElseSucceed(() => []),
       );
+    const monitor = Option.getOrUndefined(yield* Effect.serviceOption(NativeTelemetryClient));
+    const nativeTable = platform === "darwin" ? monitor?.processIdentities : undefined;
+    const readProcessTable =
+      nativeTable === undefined
+        ? psProcessTable
+        : readNativeProcessTable(nativeTable, psProcessTable);
     // Without an agent scope, a job that left the CLI's group escapes the group kill and is
     // re-parented once the CLI exits. So the CLI's tree is recorded while it runs, and what is
     // still the same process (pid and start time) is stopped after it exits.

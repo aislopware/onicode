@@ -35,6 +35,7 @@ import { windowsSystem32Path } from "@onicode/shared/windowsSystem";
 
 import {
   PROCESS_TABLE_PS_ARGS,
+  PROCESS_TABLE_PS_ENV,
   makeSharedProcessDescendantPoll,
   parseProcessTable,
   type ProcessTableRow,
@@ -1106,6 +1107,8 @@ const readDarwinProcessTable = (
     Effect.gen(function* () {
       const child = yield* spawner.spawn(
         ChildProcess.make("ps", [...PROCESS_TABLE_PS_ARGS], {
+          env: PROCESS_TABLE_PS_ENV,
+          extendEnv: true,
           stderr: "ignore",
           forceKillAfter: "1 second",
         }),

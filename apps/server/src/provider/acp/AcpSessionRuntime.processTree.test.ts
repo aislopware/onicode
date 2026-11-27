@@ -985,19 +985,19 @@ describe("AcpSessionRuntime darwin descendant ownership", () => {
           pid: 81100,
           ppid: 1,
           pgid: 81100,
-          started: "Mon Nov 23 17:00:05 2026",
+          startTimeSeconds: 5,
         };
         const reusedUnrelated: ProcessTableRow = {
           pid: 81105,
           ppid: 1,
           pgid: 81105,
-          started: "Mon Nov 23 17:00:09 2026",
+          startTimeSeconds: 9,
         };
         let table: ReadonlyArray<ProcessTableRow> = [
-          { pid: 78661, ppid: process.pid, pgid: 78661, started: "Mon Nov 23 17:00:00 2026" },
-          { pid: 78662, ppid: 78661, pgid: 78661, started: "Mon Nov 23 17:00:01 2026" },
-          { pid: 81100, ppid: 78661, pgid: 81100, started: "Mon Nov 23 17:00:05 2026" },
-          { pid: 81105, ppid: 78661, pgid: 81105, started: "Mon Nov 23 17:00:06 2026" },
+          { pid: 78661, ppid: process.pid, pgid: 78661, startTimeSeconds: 0 },
+          { pid: 78662, ppid: 78661, pgid: 78661, startTimeSeconds: 1 },
+          { pid: 81100, ppid: 78661, pgid: 81100, startTimeSeconds: 5 },
+          { pid: 81105, ppid: 78661, pgid: 81105, startTimeSeconds: 6 },
         ];
         let reads = 0;
         const reader = Effect.sync(() => {
@@ -1094,10 +1094,10 @@ describe("AcpSessionRuntime darwin descendant ownership", () => {
       const finishFirst = yield* Deferred.make<void>();
       const finishSecond = yield* Deferred.make<void>();
       let table: ReadonlyArray<ProcessTableRow> = [
-        { pid: 78661, ppid: process.pid, pgid: 78661, started: "Mon Nov 23 17:00:00 2026" },
-        { pid: 81100, ppid: 78661, pgid: 81100, started: "Mon Nov 23 17:00:05 2026" },
-        { pid: 78662, ppid: process.pid, pgid: 78662, started: "Mon Nov 23 17:00:00 2026" },
-        { pid: 82100, ppid: 78662, pgid: 82100, started: "Mon Nov 23 17:00:06 2026" },
+        { pid: 78661, ppid: process.pid, pgid: 78661, startTimeSeconds: 0 },
+        { pid: 81100, ppid: 78661, pgid: 81100, startTimeSeconds: 5 },
+        { pid: 78662, ppid: process.pid, pgid: 78662, startTimeSeconds: 0 },
+        { pid: 82100, ppid: 78662, pgid: 82100, startTimeSeconds: 6 },
       ];
       let reads = 0;
       const reader = Effect.sync(() => {
