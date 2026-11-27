@@ -4343,3 +4343,4 @@ d6061ec8ad	take	Markdown copy uses Onicode's formatThreadLink (hosted thread URL
 abdb695a56	take	taken as is
 39388dd0d6	take	taken as is
 90221188bf	take	test only; kept Onicode's map search keys (isImeKeyDown + shared clearSearchOnEscape), which pass upstream's IME test unchanged; mock drops relayManaged
+8a99245cae	skip	only changes scripts/smoke-desktop-app.ts, T3's release-job launch check, which Onicode removed with T3's release pipeline (357fb754fa)
