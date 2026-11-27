@@ -212,6 +212,11 @@ describe("resolveIssueLinkTarget", () => {
       "acme.atlassian.net",
     );
     expect(resolve("https://other.atlassian.net/browse/ENG-7")).toBeNull();
+    // Jira's comment permalinks name the comment in the query, not the hash.
+    expect(resolve("https://acme.atlassian.net/browse/ENG-7")?.namesPlace).toBe(false);
+    expect(resolve("https://acme.atlassian.net/browse/ENG-7?focusedCommentId=c9")?.namesPlace).toBe(
+      true,
+    );
   });
 
   it.each([

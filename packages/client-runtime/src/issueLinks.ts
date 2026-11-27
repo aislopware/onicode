@@ -96,10 +96,11 @@ export function issueLinkWorkspace(url: string | undefined): string | undefined 
     : parseStandaloneIssueLink(url)?.link.workspace.toLowerCase();
 }
 
-/** A link to a place in an issue (`#issuecomment-1`, `#note_1`, `#comment-…`). */
+/** A link to a place in an issue (`#issuecomment-1`, `#note_1`, `#comment-…`, Jira's `focusedCommentId`). */
 function namesPlaceInIssue(url: string): boolean {
   try {
-    return new URL(url).hash !== "";
+    const parsed = new URL(url);
+    return parsed.hash !== "" || parsed.searchParams.has("focusedCommentId");
   } catch {
     return false;
   }

@@ -17,7 +17,7 @@ import { getClientSettings } from "../hooks/useSettings";
 import { linkedThreadRouteParams } from "../linkedThreadSurface";
 import { rightPanelHostRef, useRightPanelStore } from "../rightPanelStore";
 
-const SIDE_CHAT_PANE_SELECTOR = "[data-side-chat-pane]";
+export const SIDE_CHAT_PANE_SELECTOR = "[data-side-chat-pane]";
 const FLOATING_PORTAL_SELECTOR = "[data-base-ui-portal]";
 
 const matching = (root: Element, selector: string) => [

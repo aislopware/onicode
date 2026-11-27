@@ -567,6 +567,11 @@ describe("parseJiraIssueUrl", () => {
     ["http://acme.atlassian.net/browse/ENG-7", null],
     ["https://acme.atlassian.net.evil.example/browse/ENG-7", null],
     ["https://jira.acme.test/browse/ENG-7", null],
+    ["https://acme.atlassian.net/wiki/spaces/ENG/pages/123/issues/ENG-7", null],
+    ["https://acme.atlassian.net/wiki/spaces/ENG?selectedIssue=ENG-7", null],
+    ["https://.atlassian.net/browse/ENG-7", null],
+    ["https://acme.atlassian.net:8443/browse/ENG-7", null],
+    ["https://acme.atlassian.net/browse/ENG-7/extra", null],
   ])("reads %s", (url, expected) => {
     expect(parseJiraIssueUrl(new URL(url))).toEqual(expected);
   });

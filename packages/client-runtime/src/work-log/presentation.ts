@@ -904,12 +904,17 @@ export function toolGroupSummaryKind(
 }
 
 // Footnote and link reference definitions, with a footnote's indented continuation lines.
-const REFERENCE_DEFINITION = /^[ \t]{0,3}\[(\^?[^\]\r\n]+)\]:.*(?:\r?\n(?: {4}|\t).*)*/gm;
+// A footnote definition with its indented continuation, or a CommonMark link reference definition
+// (one destination and an optional title); "[Note]: some prose" is neither.
+const REFERENCE_DEFINITION =
+  /^[ \t]{0,3}\[(?:(\^[^\]\s]+)\]:.*(?:\r?\n(?: {4}|\t).*)*|([^\]\r\n]+)\]:[ \t]*(?:<[^>\r\n]*>|[^\s<>]+)(?:[ \t]+(?:"[^"\r\n]*"|'[^'\r\n]*'|\([^)\r\n]*\)))?[ \t]*$)/gm;
 
 /** Drops definitions and the references they resolve; an undefined `[^a-z]` is literal text. */
 function withoutReferences(markdown: string, text: string): string {
   const labels = new Set(
-    Array.from(markdown.matchAll(REFERENCE_DEFINITION), (match) => match[1]!.toLowerCase()),
+    Array.from(markdown.matchAll(REFERENCE_DEFINITION), (match) =>
+      (match[1] ?? match[2]!).toLowerCase(),
+    ),
   );
   if (labels.size === 0) return text;
   return text

@@ -194,6 +194,7 @@ describe("IssueTrackerConnections", () => {
   it.effect("reuses a saved account's fields when an old app replaces its key alone", () => {
     const secrets = new Map<string, string>();
     const probed: Array<IssueTrackerCredential> = [];
+    let workKey = "";
     const tracker = {
       kind: JIRA,
       standalone: {
@@ -212,6 +213,8 @@ describe("IssueTrackerConnections", () => {
       probeCredential: (credential: IssueTrackerCredential) =>
         Effect.sync(() => {
           probed.push(credential);
+          // Another client disconnects the account while this probe is in flight.
+          if (credential.token === "racing") secrets.delete(workKey);
           return { account: credential.fields["email"], scopes: [] };
         }),
     } as unknown as StandaloneIssueTrackerApi;
@@ -220,6 +223,7 @@ describe("IssueTrackerConnections", () => {
       const work = { site: "acme.atlassian.net", email: "j@acme.test" };
       const home = { site: "home.atlassian.net", email: "j@home.test" };
       yield* connections.connect({ tracker: JIRA, token: "work", fields: work });
+      workKey = [...secrets.keys()][0]!;
       const { accountId } = yield* connections.connect({
         tracker: JIRA,
         token: "home",
@@ -247,6 +251,15 @@ describe("IssueTrackerConnections", () => {
           "Jira also needs its site and account email, which this version of the app can't send. " +
           "Update the app, or connect Jira from the desktop app.",
       });
+
+      // The fields read before the probe must not bring back an account disconnected meanwhile.
+      expect(
+        yield* Effect.flip(connections.connect({ tracker: JIRA, token: "racing" })),
+      ).toMatchObject({ detail: "This Jira account changed while connecting. Try again." });
+      expect(secrets.has(workKey)).toBe(false);
+      expect(
+        yield* Effect.flip(connections.connect({ tracker: JIRA, token: "work-again" })),
+      ).toMatchObject({ reason: "rejected" });
     }).pipe(Effect.provide(connectionsLayer(tracker, secrets)));
   });
 });
