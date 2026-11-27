@@ -4337,6 +4337,7 @@ export const make = Effect.gen(function* () {
     cwd: string,
     branch: string | null,
     guardCheckoutMove: CheckoutMoveGuard,
+    recordCheckout: (branch: string) => Effect.Effect<void>,
     commitMessage?: string,
     filePaths?: readonly string[],
   ) {
@@ -4362,9 +4363,22 @@ export const make = Effect.gen(function* () {
 
     yield* guardCheckoutMove(
       cwd,
-      gitCore
-        .createRef({ cwd, refName: resolvedBranch })
-        .pipe(Effect.andThen(Effect.scoped(gitCore.switchRef({ cwd, refName: resolvedBranch })))),
+      gitCore.createRef({ cwd, refName: resolvedBranch }).pipe(
+        Effect.andThen(
+          Effect.scoped(gitCore.switchRef({ cwd, refName: resolvedBranch })).pipe(
+            Effect.tap(() => recordCheckout(resolvedBranch)),
+            // A failing post-checkout hook can leave HEAD on the new branch.
+            Effect.tapError(() =>
+              gitCore.readCurrentBranch(cwd).pipe(
+                Effect.flatMap((current) =>
+                  current === resolvedBranch ? recordCheckout(resolvedBranch) : Effect.void,
+                ),
+                Effect.ignore,
+              ),
+            ),
+          ),
+        ),
+      ),
     );
 
     return {
@@ -4378,6 +4392,7 @@ export const make = Effect.gen(function* () {
     function* (input, options) {
       const progress = yield* createProgressEmitter(input, options);
       const currentPhase = yield* Ref.make<Option.Option<GitActionProgressPhase>>(Option.none());
+      const createdBranch = yield* Ref.make<string | undefined>(undefined);
 
       const runAction = Effect.fn("runStackedAction.runAction")(function* (): Effect.fn.Return<
         GitRunStackedActionResult,
@@ -4474,6 +4489,7 @@ export const make = Effect.gen(function* () {
             input.cwd,
             initialStatus.branch,
             options?.guardCheckoutMove ?? unguardedCheckoutMove,
+            (branch) => Ref.set(createdBranch, branch),
             input.commitMessage,
             input.filePaths,
           );
@@ -4578,13 +4594,16 @@ export const make = Effect.gen(function* () {
       return yield* runAction().pipe(
         Effect.ensuring(invalidateStatus(input.cwd)),
         Effect.tapError((error) =>
-          Effect.flatMap(Ref.get(currentPhase), (phase) =>
-            progress.emit({
+          Effect.gen(function* () {
+            const phase = yield* Ref.get(currentPhase);
+            const branch = yield* Ref.get(createdBranch);
+            yield* progress.emit({
               kind: "action_failed",
               phase: Option.getOrNull(phase),
               message: error.message,
-            }),
-          ),
+              ...(branch !== undefined ? { createdBranch: branch } : {}),
+            });
+          }),
         ),
       );
     },
