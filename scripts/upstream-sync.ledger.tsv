@@ -4037,3 +4037,4 @@ b1360538c1	take	taken as is
 f84c716839	take	taken as is
 487a29b916	take	row walk skips HIDDEN plus caption via a hoisted Set
 93b8dc3465	take	taken as is; visibleWhen is an optional annotation
+667cb3b255	skip	only serves T3 Connect: works around Cloudflare replacing 502 bodies; Onicode has no Cloudflare hop and no client branches on these statuses
