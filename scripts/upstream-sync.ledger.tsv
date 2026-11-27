@@ -4700,3 +4700,4 @@ d99c3c2048	take	applied cleanly
 2292cca56a	take	taken as is; join only runs for commands containing a backslash-newline
 f946b0c6db	take	taken as is
 63209b3612	take	taken as is; mobile already passes its resolver
+f513ffe6f9	take	adapted: kept Onicode's refined-host match in requireProject across every tracked repository; addressed map keyed by project entry so a tracked repository never readdresses its root; mobile stats keys still host-less (follow-up)
