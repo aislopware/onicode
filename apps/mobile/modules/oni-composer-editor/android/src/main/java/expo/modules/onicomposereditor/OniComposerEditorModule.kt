@@ -68,8 +68,11 @@ internal object OniComposerClipboard {
     val html = if (clip != null && clip.itemCount > 0) clip.getItemAt(0).htmlText else null
     copiedContext = null
     clipboard.setPrimaryClip(
-      if (html == null) ClipData.newPlainText("Onicode", text)
-      else ClipData.newHtmlText("Onicode", text, html)
+      if (html == null) {
+        ClipData.newPlainText("Onicode", text)
+      } else {
+        ClipData.newHtmlText("Onicode", text, html)
+      }
     )
   }
 
