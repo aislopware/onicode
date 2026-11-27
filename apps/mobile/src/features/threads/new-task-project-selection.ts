@@ -7,6 +7,7 @@ import {
 } from "@onicode/client-runtime/state/project-grouping";
 import type { EnvironmentProject } from "@onicode/client-runtime/state/shell";
 import { repositoryGroupingKeyOf, type EnvironmentId, type ServerConfig } from "@onicode/contracts";
+import { fileBasename } from "@onicode/shared/path";
 
 import { scopedProjectKey } from "../../lib/scopedEntities";
 import type { HomeProjectScope } from "../home/homeThreadList";
@@ -106,6 +107,11 @@ export function resolveNewTaskScratchOption(input: {
   return environment ? { environmentId: environment.environmentId, ready: ready.length > 0 } : null;
 }
 
+/** A workspace root's folder name on any host OS. Empty placeholder roots and drive roots have none. */
+export function workspaceFolderName(workspaceRoot: string): string | null {
+  return /^(?:[a-zA-Z]:)?[/\\]*$/.test(workspaceRoot) ? null : fileBasename(workspaceRoot);
+}
+
 export function resolveEnvironmentProjectMatch(
   targetProjects: ReadonlyArray<EnvironmentProject>,
   selectedProject: EnvironmentProject | null,
@@ -114,8 +120,9 @@ export function resolveEnvironmentProjectMatch(
   const repositoryKey = selectedProject?.repositoryIdentity
     ? repositoryGroupingKeyOf(selectedProject.repositoryIdentity)
     : null;
-  // Use || null: placeholder workspaceRoot can be empty, which supplies no useful basename.
-  const workspaceBasename = selectedProject?.workspaceRoot.split("/").at(-1) || null;
+  const workspaceBasename = selectedProject
+    ? workspaceFolderName(selectedProject.workspaceRoot)
+    : null;
   // Use weaker signals only when identity is unknown; different known repositories never match by basename or title.
   const isKnownMismatch = (project: EnvironmentProject) => {
     const projectKey = project.repositoryIdentity
@@ -139,7 +146,7 @@ export function resolveEnvironmentProjectMatch(
       ? projectsOnTarget.find(
           (project) =>
             !isKnownMismatch(project) &&
-            project.workspaceRoot.split("/").at(-1) === workspaceBasename,
+            workspaceFolderName(project.workspaceRoot) === workspaceBasename,
         )
       : undefined) ??
     (selectedProject !== null
