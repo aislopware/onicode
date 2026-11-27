@@ -4515,3 +4515,4 @@ aee6cf558d	take	clean; index exists, no migration
 7b5c7463d9	take	clean
 656a1ac2e5	take	clean
 f0a2574793	take	clean
+a86ac01b0a	take	clean; command palette shares settingsSearch.ts; mobile has no settings search
