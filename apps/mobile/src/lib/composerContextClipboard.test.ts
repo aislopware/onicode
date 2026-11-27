@@ -453,12 +453,17 @@ describe("mobile context links", () => {
   it("renders references as links and keeps a ! before one as text", () => {
     const reference = formatComposerContextReference(image);
     const href = "oni-context://v1/image/image-source";
+    const terminalReference = formatComposerContextReference(terminal);
+    const terminalHref = "oni-context://v1/terminal/terminal-source";
     const cases: ReadonlyArray<[string, string]> = [
       [`See ${reference} now`, `See [Checkout](${href}) now`],
       [`Look!${reference}`, `Look\\![Checkout](${href})`],
       [`!${reference}`, `\\![Checkout](${href})`],
       [`Look\\!${reference}`, `Look\\![Checkout](${href})`],
       [`Look\\\\!${reference}`, `Look\\\\\\![Checkout](${href})`],
+      [`Look\\${reference}`, `Look\\\\[Checkout](${href})`],
+      [`Look!${terminalReference}`, `Look\\![Checkout](${terminalHref})`],
+      [`Look\\!${terminalReference}`, `Look\\![Checkout](${terminalHref})`],
     ];
     for (const [text, expected] of cases) {
       expect(composerContextLinkMarkdown(text, () => "Checkout")).toBe(expected);

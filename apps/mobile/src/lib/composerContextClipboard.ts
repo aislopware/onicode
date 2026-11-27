@@ -137,7 +137,7 @@ export function copiedComposerContextText(
 
 /**
  * A message's context references as Markdown links the renderer shows as pills. An unescaped `!`
- * before one is escaped, or it would turn the link into an image.
+ * or backslash before one is escaped, or it would turn the link into an image or plain text.
  */
 export function composerContextLinkMarkdown(
   text: string,
@@ -148,6 +148,7 @@ export function composerContextLinkMarkdown(
   for (const reference of collectComposerContextReferences(text)) {
     result += text.slice(cursor, reference.start);
     if (/(?:^|[^\\])(?:\\\\)*!$/.test(result)) result = `${result.slice(0, -1)}\\!`;
+    else if (/(?:^|[^\\])(?:\\\\)*\\$/.test(result)) result += "\\";
     result += `[${label(reference)}](${formatComposerContextHref(reference.kind, reference.contextId)})`;
     cursor = reference.end;
   }
