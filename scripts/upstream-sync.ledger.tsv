@@ -4485,3 +4485,4 @@ bddcfb717c	take	adopted upstream's tool_call proxy over Antigravity's eager list
 76531c91d5	take	applies cleanly
 d8295b367d	take	right after ddcc48f21e
 61180588a2	take	applies cleanly
+538032a982	take	after 02d7a67f22; CONFLICT: kept Onicode's HTML-comment stripping before the protected-tag scan, reading the tag from upstream's BOM-free source
