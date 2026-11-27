@@ -111,14 +111,14 @@ function convertItems(items: NativeStackHeaderItem[], prefix: string): HeaderIte
           : { type: "spacer", id, sizing: "fixed", width: item.spacing };
       case "custom":
         return {
-          type: "item",
+          type: "custom",
           id,
           render: () => item.element,
           hidesSharedBackground: item.hidesSharedBackground,
         };
       case "menu":
         return {
-          type: "item",
+          type: "button",
           id,
           identifier: item.identifier,
           title: item.label || item.accessibilityLabel || undefined,
@@ -132,7 +132,7 @@ function convertItems(items: NativeStackHeaderItem[], prefix: string): HeaderIte
         };
       case "button":
         return {
-          type: "item",
+          type: "button",
           id,
           identifier: item.identifier,
           title: item.label || item.accessibilityLabel || undefined,
@@ -188,7 +188,7 @@ export function V5StackHeader(props: {
     if (item.type === "searchBarPlacement")
       return [
         {
-          type: "item",
+          type: "button",
           id: `toolbar-search:${index}`,
           searchBarPlacement: true,
           ...(props.searchIdentifier ? { identifier: props.searchIdentifier } : {}),
@@ -199,7 +199,7 @@ export function V5StackHeader(props: {
   if (mailSearch) {
     if (mailSearch.filterMenu)
       bottom.push({
-        type: "item",
+        type: "button",
         id: mailSearch.filterButtonId ?? "filter",
         icon: {
           type: "sfSymbol",
@@ -211,7 +211,7 @@ export function V5StackHeader(props: {
       if (spacesSearch && bottom.length)
         bottom.push({ type: "spacer", id: "before-search", sizing: "fixed", width: 8 });
       bottom.push({
-        type: "item",
+        type: "button",
         id: "home-search",
         searchBarPlacement: true,
         ...(props.searchIdentifier ? { identifier: props.searchIdentifier } : {}),
@@ -221,7 +221,7 @@ export function V5StackHeader(props: {
     }
     if (mailSearch.onComposePress)
       bottom.push({
-        type: "item",
+        type: "button",
         id: mailSearch.composeButtonId ?? "compose",
         identifier: "workspace-trailing-action",
         icon: { type: "sfSymbol", name: mailSearch.composeSystemImageName ?? "square.and.pencil" },
@@ -246,7 +246,7 @@ export function V5StackHeader(props: {
   }
   if (props.onCompose) {
     const compose: HeaderItem = {
-      type: "item",
+      type: "button",
       id: "workspace-compose",
       title: gt("New task"),
       icon: { type: "sfSymbol", name: "square.and.pencil" },
@@ -267,7 +267,7 @@ export function V5StackHeader(props: {
   ) {
     trailing.unshift(
       {
-        type: "item",
+        type: "button",
         id: "dismiss-keyboard",
         title: gt("Dismiss keyboard"),
         icon: { type: "sfSymbol", name: "keyboard.chevron.compact.down" },
@@ -281,9 +281,9 @@ export function V5StackHeader(props: {
   const left = options.headerLeft?.(itemProps);
   const right = options.headerRight?.(itemProps);
   if (!options.unstable_headerLeftItems && isValidElement(left))
-    leading.push({ type: "item", id: "custom-left", render: () => left });
+    leading.push({ type: "custom", id: "custom-left", render: () => left });
   if (!options.unstable_headerRightItems && isValidElement(right))
-    trailing.push({ type: "item", id: "custom-right", render: () => right });
+    trailing.push({ type: "custom", id: "custom-right", render: () => right });
   const title = typeof options.headerTitle === "string" ? options.headerTitle : options.title;
   const titleElement =
     typeof options.headerTitle === "function"

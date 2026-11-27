@@ -5,7 +5,9 @@ import { Platform, ScrollView, type ViewProps } from "react-native";
 import { ScrollViewMarker } from "react-native-screens";
 import { nativeHeaderScrollEdgeEffects } from "./scrollEdgeEffects";
 
-type ScrollEdgeEffects = ComponentProps<typeof ScrollViewMarker>["scrollEdgeEffects"];
+type ScrollEdgeEffects = NonNullable<
+  ComponentProps<typeof ScrollViewMarker>["ios"]
+>["scrollEdgeEffects"];
 
 const DEFAULT_SCROLL_EDGE_EFFECTS = nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version);
 
@@ -34,7 +36,10 @@ export function NativeScrollViewMarker(props: ComponentProps<typeof ScrollViewMa
     <ScrollViewMarker
       {...props}
       {...(ScrollEdgeBleed ? { style: { flex: 1 } } : {})}
-      scrollEdgeEffects={props.scrollEdgeEffects ?? effects ?? DEFAULT_SCROLL_EDGE_EFFECTS}
+      ios={{
+        ...props.ios,
+        scrollEdgeEffects: props.ios?.scrollEdgeEffects ?? effects ?? DEFAULT_SCROLL_EDGE_EFFECTS,
+      }}
     />
   );
   return ScrollEdgeBleed ? <ScrollEdgeBleed style={props.style}>{marker}</ScrollEdgeBleed> : marker;

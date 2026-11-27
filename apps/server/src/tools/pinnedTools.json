@@ -1,26 +1,26 @@
 {
   "cua-driver": {
-    "version": "0.61.3",
+    "version": "0.64.1",
     "assets": {
       "darwin-universal": {
-        "bytes": 44309329,
-        "sha256": "c8e6e186b8e4d81605fcc2873e11575bbb08f3854fca50cc9d1205f98d126409"
+        "bytes": 44384789,
+        "sha256": "b65e93c9547bdd847119166af515c84f7b2ce911a5876e3f9f7e8e048a734910"
       },
       "linux-x86_64": {
-        "bytes": 30467545,
-        "sha256": "7fa0251d160587ad22153d0bf161b196ca799cbd9211159d1429ccd02303a6c5"
+        "bytes": 30544351,
+        "sha256": "c4f8cd0ecfdf9344d4c14ac1833ef65c320faacbf6dcc03b459268b2528680e6"
       },
       "linux-arm64": {
-        "bytes": 28366468,
-        "sha256": "5431c6b05ac5373ac5100147114340885ced962968ca075dff8d2b2f73a26d55"
+        "bytes": 28411542,
+        "sha256": "6f1070df5467c30d42ccd04f659fc560f144e066b246dd7bc13a484b9c4cee31"
       },
       "windows-x86_64": {
-        "bytes": 32735527,
-        "sha256": "4dd46c5a3ab0e46644feeb86b28f8c61b655539337a9ef72702867879763ff82"
+        "bytes": 32828371,
+        "sha256": "3c38494a09dcc3d277f8e1f1e98cbc248e2d145a45749091c360d55ab60f39e6"
       },
       "windows-arm64": {
-        "bytes": 30425702,
-        "sha256": "3a926d3a96da29d9f081d1b927e59c7c38b83b77e6d8e7e10f81b94882d47c7b"
+        "bytes": 30510970,
+        "sha256": "dcd2b45135c9cf026b35ba21e215f63a6b885f337a42c43a116f40803c7053ed"
       }
     }
   },

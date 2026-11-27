@@ -12,7 +12,7 @@ const STALE_RUNTIME =
 
 const quoteShell = (value: string) => "'" + value.replaceAll("'", "'\"'\"'") + "'";
 
-/** agent-device 0.21.42's flags that take a value, so the launcher can find the command past them. */
+/** agent-device 0.21.44's flags that take a value, so the launcher can find the command past them. */
 const VALUE_FLAGS: ReadonlyArray<string> = [
   "--activity",
   "--android-device-allowlist",

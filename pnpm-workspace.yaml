@@ -361,3 +361,9 @@ minimumReleaseAgeExclude:
   - tldts-core@7.6.2
   - tldts@7.6.2
   - workerd@1.20261127.1
+  - "@transcribe-cpp/darwin-arm64-metal@0.5.1"
+  - "@transcribe-cpp/darwin-x64-cpu@0.5.1"
+  - "@transcribe-cpp/linux-arm64-cpu-vulkan@0.5.1"
+  - "@transcribe-cpp/linux-x64-cpu-vulkan@0.5.1"
+  - "@transcribe-cpp/win32-x64-cpu-vulkan@0.5.1"
+  - transcribe-cpp@0.5.1
