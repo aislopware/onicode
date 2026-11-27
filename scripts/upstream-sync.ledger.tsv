@@ -4612,3 +4612,4 @@ c92d75e486	take	taken as is
 88191b61a3	take	conflict: LINK_PATTERNS keeps Onicode's patterns without the hosted-app link (removed surface); adapted: the remark parse falls back to plain CommonMark on RangeError, since GFM's autolink transform overflows the stack at ~6000 nested quotes with Onicode's newer unist-util-visit-parents 6.1.0 (upstream's 'deeply nested quotes' row failed; plain parse survives 20000); threadLinks 57 passed
 e3cd83a299	take	taken as is
 0712c3891d	take	conflict: kept Onicode's split \cpg/\fcharset font maps (fontCodePages, fontCharsets) beside upstream's openGroup and \upr destination; userInputAttachments 74 passed
+858e19c790	take	conflict: kept Onicode's own-pPr pStyle lookup and text-box-aware heading marker, now reading the style's outline level as upstream does; Onicode's all() takes a Set, so the pPrChange skip is a Set; userInputAttachments 74 passed
