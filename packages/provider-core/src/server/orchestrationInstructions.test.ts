@@ -96,6 +96,13 @@ describe("Onicode device instructions", () => {
       "Again.",
     );
     assert.notInclude(oniAcpPromptWithInstructions({ prompt: "Hi.", state }), "## Onicode devices");
+    const withProxy = oniAcpPromptWithInstructions({
+      prompt: "Render a chart.",
+      state: { ...state, toolExposure: "deferred-proxy" },
+    });
+    assert.include(withProxy, "including `delegate_task`");
+    assert.include(withProxy, "tool_call({ name, arguments })");
+    assert.notInclude(oniAcpPromptWithInstructions({ prompt: "Hi.", state }), "tool_call(");
   });
 
   it("send ACP commands verbatim but instruct a prompt that opens with a path", () => {

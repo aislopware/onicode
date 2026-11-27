@@ -36,6 +36,7 @@ import {
   ONICODE_READ_ONLY_MCP_TOOL_NAMES,
 } from "@onicode/shared/oniMcpToolPresentation";
 import packageJson from "../../../package.json" with { type: "json" };
+import { TOOL_CALL, TOOL_SEARCH } from "../../mcp/McpToolExposure.ts";
 import { normalizeAntigravitySessionUpdate } from "./AntigravityProtocol.ts";
 
 export interface AntigravityAcpRuntimeInput extends Omit<
@@ -208,6 +209,19 @@ const ANTIGRAVITY_ONI_MCP_TITLE = /^Run mcp_onicode_(?<tool>[A-Za-z0-9_]+)\??$/;
 // rawInput is the tool's own arguments.
 const ANTIGRAVITY_PROXIED_MCP_TITLE = /^MCP Tool (?<tool>[A-Za-z0-9_]+)\??$/;
 
+// The Onicode tool a call runs: tool_call runs the tool it names.
+function antigravityOniTool(
+  tool: string,
+  toolArgs: Record<string, unknown> | undefined,
+): string | undefined {
+  if (ONICODE_MCP_TOOL_NAMES.has(tool) || tool === TOOL_SEARCH) return tool;
+  if (tool !== TOOL_CALL) return undefined;
+  const target = typeof toolArgs?.name === "string" ? toolArgs.name.trim() : "";
+  return target !== TOOL_CALL && target !== TOOL_SEARCH && ONICODE_MCP_TOOL_NAMES.has(target)
+    ? target
+    : undefined;
+}
+
 function antigravityOniMcpTool(
   request: EffectAcpSchema.RequestPermissionRequest,
 ): string | undefined {
@@ -215,15 +229,13 @@ function antigravityOniMcpTool(
   const rawInput = unknownRecord(request.toolCall.rawInput);
   const proxiedTool = ANTIGRAVITY_PROXIED_MCP_TITLE.exec(title)?.groups?.tool;
   if (proxiedTool !== undefined) {
-    return rawInput?.ServerName === "onicode" &&
-      rawInput.ToolName === proxiedTool &&
-      ONICODE_MCP_TOOL_NAMES.has(proxiedTool)
-      ? proxiedTool
+    return rawInput?.ServerName === "onicode" && rawInput.ToolName === proxiedTool
+      ? antigravityOniTool(proxiedTool, unknownRecord(rawInput.Arguments))
       : undefined;
   }
   if (typeof rawInput?.CommandLine === "string") return undefined;
   const tool = ANTIGRAVITY_ONI_MCP_TITLE.exec(title)?.groups?.tool;
-  return tool !== undefined && ONICODE_MCP_TOOL_NAMES.has(tool) ? tool : undefined;
+  return tool === undefined ? undefined : antigravityOniTool(tool, rawInput);
 }
 
 export function antigravityPermissionDisposition(

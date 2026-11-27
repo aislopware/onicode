@@ -2,8 +2,10 @@ import type { EnvironmentId, ProviderInstanceId, ThreadId } from "@onicode/contr
 import type * as Effect from "effect/Effect";
 
 /**
- * Sent by MCP clients that cannot defer tools themselves. The Onicode MCP server then
- * lists only a core set plus `tool_search`, which lists the rest on demand.
+ * Sent by MCP clients that cannot defer tools themselves. `"deferred"` lists a core set plus
+ * `tool_search` (for clients that reload on `notifications/tools/list_changed`); `"deferred-proxy"`
+ * keeps a fixed core set plus `tool_search` (with schemas) and `tool_call` (for clients that
+ * freeze their toolbox per turn).
  */
 export const MCP_TOOL_EXPOSURE_HEADER = "oni-tool-exposure";
 
@@ -16,6 +18,15 @@ export interface McpStdioServer {
 
 export const COMPUTER_MCP_SERVER_NAME = "computer";
 export const BROWSER_MCP_SERVER_NAME = "browser";
+
+export type McpToolExposureMode = "deferred" | "deferred-proxy";
+
+export function parseMcpToolExposureMode(
+  value: string | undefined,
+): McpToolExposureMode | undefined {
+  const trimmed = value?.trim();
+  return trimmed === "deferred" || trimmed === "deferred-proxy" ? trimmed : undefined;
+}
 
 export interface McpProviderSessionConfig {
   readonly environmentId: EnvironmentId;

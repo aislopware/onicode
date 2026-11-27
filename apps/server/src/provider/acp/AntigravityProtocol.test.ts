@@ -924,6 +924,62 @@ describe("Antigravity served reads", () => {
     );
     expect(oniCall.data.rawInput).toEqual({ message: "Hello" });
 
+    const proxiedOniCall = normalizeAntigravityToolCall(
+      parseToolUpdate(
+        normalizeAntigravitySessionUpdate({
+          sessionId: "session-1",
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId: "call_oni_proxy_send",
+            title: "Run mcp_onicode_tool_call",
+            kind: "other",
+            status: "in_progress",
+            rawInput: {
+              name: "send_to_user",
+              arguments: { message: "Hello", toolSummary: "Nested summary" },
+              toolSummary: "Outer summary",
+            },
+          },
+        }),
+      ).toolCall,
+    );
+    expect(proxiedOniCall.data.rawInput).toEqual({
+      name: "send_to_user",
+      arguments: { message: "Hello" },
+    });
+
+    const callMcpProxiedOniCall = normalizeAntigravityToolCall(
+      parseToolUpdate(
+        normalizeAntigravitySessionUpdate({
+          sessionId: "session-1",
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId: "call_oni_call_mcp_proxy_send",
+            title: "MCP Tool tool_call",
+            kind: "execute",
+            status: "in_progress",
+            rawInput: {
+              ServerName: "onicode",
+              ToolName: "tool_call",
+              Arguments: {
+                name: "send_to_user",
+                arguments: { message: "Hello", toolSummary: "Nested summary" },
+                toolSummary: "Outer summary",
+              },
+            },
+          },
+        }),
+      ).toolCall,
+    );
+    expect(callMcpProxiedOniCall.data.rawInput).toEqual({
+      ServerName: "onicode",
+      ToolName: "tool_call",
+      Arguments: {
+        name: "send_to_user",
+        arguments: { message: "Hello" },
+      },
+    });
+
     const foreignCall = normalizeAntigravityToolCall(
       parseToolUpdate({
         sessionId: "session-1",

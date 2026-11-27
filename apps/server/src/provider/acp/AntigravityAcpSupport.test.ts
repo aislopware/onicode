@@ -169,8 +169,23 @@ describe("Antigravity Auto", () => {
       for (const [oniCall, readOnlySandbox] of [
         [request("Run mcp_onicode_oni_thread_list?"), "allow"],
         [request("Run mcp_onicode_send_to_user?"), "allow"],
+        [request("Run mcp_onicode_tool_search?"), "deny"],
+        [request("Run mcp_onicode_tool_call?", { name: "preview_status", arguments: {} }), "deny"],
+        // A proxied call is read-only when the tool it names is.
+        [
+          request("Run mcp_onicode_tool_call?", { name: "oni_thread_list", arguments: {} }),
+          "allow",
+        ],
         [
           request("MCP Tool delegate_task", { ServerName: "onicode", ToolName: "delegate_task" }),
+          "deny",
+        ],
+        [
+          request("MCP Tool tool_call", {
+            ServerName: "onicode",
+            ToolName: "tool_call",
+            Arguments: { name: "preview_status", arguments: {} },
+          }),
           "deny",
         ],
       ] as const) {
@@ -188,8 +203,19 @@ describe("Antigravity Auto", () => {
       for (const otherCall of [
         // Names no server, so another MCP server's tool of the same name looks identical.
         request("Running preview_status"),
+        request("Running tool_call"),
+        request("Run mcp_onicode_tool_call?"),
+        request("Run mcp_onicode_tool_call?", { name: "tool_call", arguments: {} }),
+        request("Run mcp_onicode_tool_call?", { name: "tool_search", arguments: {} }),
+        request("Run mcp_onicode_tool_call?", { name: "unknown_tool", arguments: {} }),
+        request("MCP Tool tool_call", {
+          ServerName: "onicode",
+          ToolName: "tool_call",
+          Arguments: { name: "unknown_tool", arguments: {} },
+        }),
         request("Run mcp_github_create_issue"),
         request("MCP Tool preview_status", { ServerName: "other", ToolName: "preview_status" }),
+        request("MCP Tool tool_call", { ServerName: "other", ToolName: "tool_call" }),
         request("Run mcp_onicode_preview_status", {
           CommandLine: "Run mcp_onicode_preview_status",
         }),

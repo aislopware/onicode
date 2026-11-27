@@ -1,4 +1,5 @@
 import type { ProviderInteractionMode } from "@onicode/contracts";
+import type { McpToolExposureMode } from "./mcpSession.ts";
 
 import { opensWithSlashCommand } from "./ProviderAdapter.ts";
 
@@ -67,6 +68,9 @@ export const ONICODE_CODE_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH = deviceTool
   ` Load them with ToolSearch \`select:${ONICODE_CODE_DEVICE_TOOLS.map((tool) => `mcp__onicode__${tool}`).join(",")}\`.`,
 );
 
+const ONICODE_CODE_ACP_DEFERRED_PROXY_INSTRUCTIONS =
+  "Deferred Onicode tools: only core orchestration tools, `tool_search`, and `tool_call` are declared directly. For any Onicode tool not declared directly (including `delegate_task` if omitted, or optional tools like `preview_*`, `device_*`, `html_preview`, `html_render`, `oni_thread_*`, `oni_project_*`, `oni_worktree_*`, pull requests, `schedule_task`, `request_secret`, etc.), call `tool_search` to get its schema and `tool_call({ name, arguments })` to run it.";
+
 // ACP only: some ACP agents accept the injected MCP server but never expose
 // its tools, so they need the terminal transport other harnesses never use.
 const ONICODE_CODE_ACP_MCP_FALLBACK_INSTRUCTIONS = `ACP fallback: if the Onicode tools are absent and \`ONICODE_ACP_MCP_NODE\` is present, call them through the terminal: \`ELECTRON_RUN_AS_NODE=1 "$ONICODE_ACP_MCP_NODE" \${ONICODE_ACP_MCP_ENTRYPOINT:+"$ONICODE_ACP_MCP_ENTRYPOINT"} acp-mcp-call orchestrator_capabilities '{}'\` (\`ONICODE_ACP_MCP_ENTRYPOINT\` is unset for a standalone executable). Delegate with \`acp-mcp-call delegate_task '{"task":"...","target":{"providerInstanceId":"...","model":"..."},"mode":"async","clientRequestId":"..."}'\`. On Windows, run \`ONICODE_ACP_MCP_CALL\` instead and pipe the JSON to stdin, as in PowerShell \`'{}' | & $env:ONICODE_ACP_MCP_CALL orchestrator_capabilities -\`, writing non-ASCII characters as \`\\uXXXX\` escapes.`;
@@ -83,6 +87,7 @@ export interface OniAcpInstructionState {
   readonly interactionMode: ProviderInteractionMode;
   readonly hasOniMcp: boolean;
   readonly hasDeviceTools: boolean;
+  readonly toolExposure?: McpToolExposureMode | undefined;
 }
 
 /** ACP lacks system/developer fields; inject context on first prompt and tool/mode changes. */
@@ -96,7 +101,8 @@ export function oniAcpPromptWithInstructions(input: {
   if (
     input.previousState?.interactionMode === input.state.interactionMode &&
     input.previousState.hasOniMcp === input.state.hasOniMcp &&
-    input.previousState.hasDeviceTools === input.state.hasDeviceTools
+    input.previousState.hasDeviceTools === input.state.hasDeviceTools &&
+    input.previousState.toolExposure === input.state.toolExposure
   ) {
     return input.prompt;
   }
@@ -109,6 +115,9 @@ export function oniAcpPromptWithInstructions(input: {
           ONICODE_CODE_BROWSER_TOOL_INSTRUCTIONS.trim(),
           ...(input.state.hasDeviceTools ? [ONICODE_CODE_DEVICE_TOOL_INSTRUCTIONS] : []),
           ONICODE_CODE_ORCHESTRATION_INSTRUCTIONS.trim(),
+          ...(input.state.toolExposure === "deferred-proxy"
+            ? [ONICODE_CODE_ACP_DEFERRED_PROXY_INSTRUCTIONS]
+            : []),
           ONICODE_CODE_ACP_MCP_FALLBACK_INSTRUCTIONS,
         ]
       : []),
