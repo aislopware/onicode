@@ -55,27 +55,17 @@ export function rejectRequestsUntilServing<T extends NodeHttp.Server>(
   server: T,
   migrationProgress: () => DatabaseMigrationProgress | null = () => null,
 ): T {
-  const rejectRequest = (request: NodeHttp.IncomingMessage, response: NodeHttp.ServerResponse) => {
-    const migration = migrationProgress();
-    const html = request.headers.accept?.includes("text/html") === true;
-    const status: ServerStartupStatus = { status: "starting", migration };
-    const message = migration
-      ? `Upgrading database (${migration.current} of ${migration.total})`
-      : "Starting Onicode…";
-    const body = html
-      ? `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="1"><title>Starting Onicode</title><style>:root{color-scheme:light dark}body{margin:0;min-height:100vh;display:grid;place-content:center;text-align:center;font:16px system-ui}h1{font-size:20px}p{opacity:.7}</style></head><body><h1>${message}</h1><p>The app will open when startup finishes.</p></body></html>`
-      : JSON.stringify(status);
+  const rejectRequest = (_request: NodeHttp.IncomingMessage, response: NodeHttp.ServerResponse) => {
+    const status: ServerStartupStatus = { status: "starting", migration: migrationProgress() };
     response
       .writeHead(503, {
         "retry-after": "1",
         connection: "close",
         "cache-control": "no-store",
-        "content-type": html ? "text/html; charset=utf-8" : "application/json; charset=utf-8",
-        "content-security-policy":
-          "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'",
+        "content-type": "application/json; charset=utf-8",
         "x-content-type-options": "nosniff",
       })
-      .end(body);
+      .end(JSON.stringify(status));
   };
   const rejectUpgrade = (_request: NodeHttp.IncomingMessage, socket: NodeStream.Duplex) => {
     socket.end(

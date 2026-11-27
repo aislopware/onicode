@@ -30,7 +30,6 @@ function fetchResponse(
   port: number,
   path: string,
   upgrade = false,
-  accept?: string,
 ): Promise<{
   statusCode: number | undefined;
   headers: NodeHttp.IncomingHttpHeaders;
@@ -43,17 +42,14 @@ function fetchResponse(
         port,
         path,
         agent: false,
-        headers: {
-          ...(accept ? { accept } : {}),
-          ...(upgrade
-            ? {
-                connection: "Upgrade",
-                upgrade: "websocket",
-                "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==",
-                "sec-websocket-version": "13",
-              }
-            : {}),
-        },
+        headers: upgrade
+          ? {
+              connection: "Upgrade",
+              upgrade: "websocket",
+              "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==",
+              "sec-websocket-version": "13",
+            }
+          : {},
       },
       (response) => {
         response.on("error", reject);
@@ -233,25 +229,18 @@ describe("rejectRequestsUntilServing", () => {
     expect(earlyHttp.statusCode).toBe(503);
     expect(earlyHttp.headers["retry-after"]).toBe("1");
 
-    const startup = await fetchResponse(
-      port,
-      "/?name=<script>alert(1)</script>",
-      false,
-      "text/html",
-    );
-    const startupHtml = startup.body;
-    expect(startupHtml).toContain("Upgrading database (2 of 7)");
-    expect(startupHtml).not.toContain("<script>");
-    expect(startup.headers["cache-control"]).toBe("no-store");
-    expect(startup.headers["content-security-policy"]).toContain("default-src 'none'");
+    expect(earlyHttp.headers["cache-control"]).toBe("no-store");
+    expect(earlyHttp.headers["content-type"]).toBe("application/json; charset=utf-8");
+    expect(JSON.parse(earlyHttp.body)).toEqual({
+      status: "starting",
+      migration: { current: 2, total: 7 },
+    });
     progress = { current: 3, total: 7 };
     const step = await fetchResponse(port, "/.well-known/onicode/environment");
     expect(JSON.parse(step.body)).toEqual({ status: "starting", migration: progress });
     progress = null;
     const finished = await fetchResponse(port, "/.well-known/onicode/environment");
     expect(JSON.parse(finished.body)).toEqual({ status: "starting", migration: null });
-    const finishingPage = await fetchResponse(port, "/", false, "text/html");
-    expect(finishingPage.body).not.toContain("Upgrading database");
 
     const earlyUpgrade = await fetchResponse(port, "/rpc", true);
     expect(earlyUpgrade.statusCode).toBe(503);

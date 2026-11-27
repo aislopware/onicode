@@ -7,7 +7,7 @@ pull, while one of them is working. Commands an agent runs can still change the 
 
 ## Resize or hide the sidebar
 
-On web and desktop, drag the sidebar's right edge to resize it. Continue left past its minimum
+On desktop, drag the sidebar's right edge to resize it. Continue left past its minimum
 width to preview hiding it, then release to keep it hidden. Dragging back right before releasing
 shows it again and continues resizing.
 
