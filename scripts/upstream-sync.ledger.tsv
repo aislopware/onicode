@@ -4204,3 +4204,4 @@ b5592c6061	take	taken as is
 fc1f1bafde	take	taken as is
 3fa136a5c5	take	kept Onicode's leading-frontmatter mask in splitMarkdown (shares the renderer's closer rule, already counts a definition after a ... closer); took only the test assertions, both pass
 d878f7b192	take	taken as is (applies on Onicode's documentTextWorker after the earlier EPUB ports)
+65fc371bd8	take	taken as is
