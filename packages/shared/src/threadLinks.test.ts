@@ -7,6 +7,7 @@ import {
   formatThreadLink,
   guessThreadLinkRef,
   parseThreadLinkHref,
+  replaceThreadLinks,
   threadLinkCandidates,
   threadLinkRefs,
 } from "./threadLinks.ts";
@@ -168,6 +169,21 @@ describe("thread links", () => {
         "After [New](oni-thread://v2/local/t1)",
       ].join("\n"),
     );
+    const nested = [
+      "> > ```md",
+      ">> <oni-thread://v2/local/t1>",
+      ">>```",
+      "> > <oni-thread://v2/local/t1>",
+    ];
+    expect(relabelThreadLinks(nested.join("\n"), local, () => "New")).toBe(
+      [...nested.slice(0, 3), "> > [New](oni-thread://v2/local/t1)"].join("\n"),
+    );
+    const labels: Array<string | undefined> = [];
+    const separated = "[Label\u2028> > example](oni-thread://v1/t1)";
+    expect(replaceThreadLinks(separated, (_link, label) => void labels.push(label))).toBe(
+      separated,
+    );
+    expect(labels).toEqual(["Label\u2028> > example"]);
     for (const escaped of [
       "\\``<oni-thread://v2/env-1/t1>`",
       "\\```<oni-thread://v2/env-1/t1>``",
@@ -185,6 +201,8 @@ describe("thread links", () => {
       ["> ```", ` > ${hidden}`, "> ```", after],
       ["- ```bash", "  echo hi", "  ```", "", after],
       ["- > ```md", `  > ${hidden}`, "  > ```", "", after],
+      [">> ```md", `> > ${hidden}`, ">> ```", `> ${after}`],
+      ["> > ~~~", `>> ${hidden}`, ">> ~~~", after],
       ["1. Run:", "", "    ```bash", '    echo "```"', `    ${hidden}`, "    ```", "", after],
       ["````md", "```", hidden, "````", after],
       ["Use ~~~ to mark it.", after],
