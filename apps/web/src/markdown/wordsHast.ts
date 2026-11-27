@@ -623,7 +623,7 @@ function codexDirective(node: Element, walk: Walk, inLink: boolean): ElementCont
   };
 }
 
-const INLINE_PREFIX = "oni-markdown-inline-prefix:";
+const INLINE_PREFIX = "oni-markdown-inline-prefix ";
 
 function stripPositions(node: ElementContent) {
   delete node.position;

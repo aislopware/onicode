@@ -28,7 +28,7 @@ interface RecoveredMarkdown {
   readonly source: string;
 }
 
-const INLINE_PARSE_PREFIX = "oni-markdown-inline-prefix:";
+const INLINE_PARSE_PREFIX = "oni-markdown-inline-prefix ";
 
 function isSameLineOverIndentedCode(
   node: MarkdownAstNode,
