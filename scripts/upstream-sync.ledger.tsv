@@ -4672,3 +4672,4 @@ a27ad36daa	take	fix(web): Markdown blocks keep the text direction their HTML set
 0a63dfe23a	take	Adopted upstream's Effect 4.1.6 proxy process over Onicode's launcher (release/flush/group-leader changes retired; Effect leaves unreferenced commands running and never kills a lost one); kept Onicode's sync isLauncher/isServerChild, now read from ProxyProcess.currentPid; dropped Onicode's SqlClient patch hunk (in Effect 4.1.6); relay test skipped (removed surface)
 641d082b11	take	Adapted: upstream's listable-link rule applied by hand to Onicode's directory listing (Onicode resolves link kinds through resolveLinkTarget); readOnly is optional in contracts; mobile has no file editor
 a4d748f5b9	take	Test conflict: upstream's locale test beside Onicode's renamed draft test
+6e2164ac88	take	Adapted: Physical goes into Onicode's device-row details list; docs rewritten into Onicode's Simlock section (Simlock 0.9.0+, phones subsection); no mobile device panel
