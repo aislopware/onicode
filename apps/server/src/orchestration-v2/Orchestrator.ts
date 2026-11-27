@@ -8243,7 +8243,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       dispatchMode = { type: "queue_after_active" };
     }
     // An agent's automatic send must not overtake its own earlier message still queued
-    // (e.g. behind /compact), or the agent receives them out of send order.
+    // (e.g. behind /compact), or the agent receives them out of send order. A message it
+    // explicitly queued as a later turn is no such barrier.
     const senderKey = agentSenderKey(command);
     if (
       command.deliveryIntent === "auto" &&
@@ -8252,7 +8253,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     ) {
       const missing = new Set(
         projection.runs
-          .filter((run) => run.status === "queued" && run.queueHeld !== true)
+          .filter(
+            (run) =>
+              run.status === "queued" && run.queueHeld !== true && run.explicitQueue !== true,
+          )
           .map((run) => run.userMessageId),
       );
       // The command projection already holds queued messages; read only any it lacks.
@@ -8969,6 +8973,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         rootNodeId,
         activeAttemptId: attemptId,
         status: "queued",
+        ...(command.explicitQueue === true ? { explicitQueue: true as const } : {}),
         ...(steerWhenReadyRunId === undefined ? {} : { steerWhenReadyRunId }),
         // A restart cancels its run; nobody knows whether the provider read the steer, so a person decides.
         ...(worktreeMissingRun !== undefined ||
