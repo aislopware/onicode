@@ -39,7 +39,7 @@ const { diffAtom, testFileDiffAtom, testFileFirstDiffAtom, pagedDiffAtom, single
       truncated: false,
       nextCursor: null,
     };
-    const pagedDiffAtom = Atom.family((shortPages: boolean) => {
+    const pagedDiffAtom = Atom.family(([shortPages, cursor]: readonly [boolean, string]) => {
       const pages: Record<string, PullRequestDiffResult> = {
         first: {
           patch: Array.from({ length: shortPages ? 2 : 40 }, (_, index) =>
@@ -54,7 +54,7 @@ const { diffAtom, testFileDiffAtom, testFileFirstDiffAtom, pagedDiffAtom, single
           nextCursor: null,
         },
       };
-      return Atom.family((cursor: string) => Atom.make(AsyncResult.success(pages[cursor]!)));
+      return Atom.make(AsyncResult.success(pages[cursor]!));
     });
     const singlePage = { current: firstPage, first: firstPage };
     return {
@@ -142,7 +142,7 @@ vi.mock(import("~/state/pullRequests"), async (original) => {
       ...actual.pullRequestEnvironment,
       diff: (({ input }: { input: { cursor?: string; commit?: string } }) => {
         mocks.diffCommits.push(input.commit);
-        if (mocks.paged) return pagedDiffAtom(mocks.shortPages)(input.cursor ?? "first");
+        if (mocks.paged) return pagedDiffAtom([mocks.shortPages, input.cursor ?? "first"] as const);
         if (mocks.testFileFirst) return testFileFirstDiffAtom;
         return mocks.withTestFile ? testFileDiffAtom : diffAtom;
       }) as never,

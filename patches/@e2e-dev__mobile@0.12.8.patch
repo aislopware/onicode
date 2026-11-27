@@ -1,60 +1,89 @@
-diff --git a/dist/errors.js b/dist/errors.js
-index 916560230fc47bd18557e75255417914eaca6a79..96a94f401c6c627ae148dd438ab984ab9774b7cc 100644
---- a/dist/errors.js
-+++ b/dist/errors.js
-@@ -12,6 +12,7 @@
-  * | target_still_moving with `details.dispatched: no`            | NODE_STALE (retryable)        |
-  * | a covered or keyboard-occluded target, `dispatched: no`      | NOT_ACTIONABLE, with the hint |
-  * | a target with no screen origin to aim at, `dispatched: no`   | NOT_ACTIONABLE, with the hint |
-+ * | the iOS runner busy, `dispatched: no` (action paths only)   | NODE_STALE (retryable)       |
-  * | the iOS runner busy, wedged, or past its watchdog           | ENGINE_FAILURE, naming the   |
-  * | a snapshot the iOS runner acquired but could not present    |   runner and the recovery    |
-  * | anything else, agent-device's own timeouts included         | ENGINE_FAILURE with the text |
-@@ -277,6 +278,14 @@ export function isUnreadableCapture(error) {
- export function isAppNotRunning(error) {
-     return error instanceof Error && details(error.cause).runnerErrorCode === 'APP_NOT_RUNNING';
- }
+diff --git a/dist/support.js b/dist/support.js
+index 91d50ca0a3a10f1798f2f3d83e45da56de77351a..4de9c68ea6f04660dff65d8d5679a1c59a7e7df4 100644
+--- a/dist/support.js
++++ b/dist/support.js
+@@ -1,4 +1,5 @@
+ /** Shared helpers for the agent-device engine: error constructors, filenames, PNG headers, gestures, the screen location and size. */
++import { isAgentDeviceError } from 'agent-device';
+ import { EngineError, withTimeout } from '@e2e-dev/core/engine';
+ export function cancelled(text) {
+     return new EngineError('CANCELLED', text, { retryable: false });
+@@ -8,6 +9,29 @@ export function cancelled(text) {
+  * was left: a tap that lands is then not reported as cut off.
+  */
+ const MIN_ANSWER_MS = 250;
++/** The first and the longest wait before a command the busy iOS runner refused is sent again. */
++const RUNNER_BUSY_FIRST_WAIT_MS = 250;
++const RUNNER_BUSY_MAX_WAIT_MS = 2000;
 +/**
-+ * True for a translated command the iOS runner refused while it still drains a
-+ * command that overran its watchdog. Nothing was sent, and the refusal clears
-+ * once that work drains, so a caller that polls may read it as nothing there yet.
++ * True for a command the iOS runner refused, unsent, while it still drains one
++ * that overran its watchdog: `RUNNER_BUSY` with `dispatched: no`, raw or as
++ * the translated failure of a nested command. Sending it again is safe.
 + */
-+export function isRunnerBusy(error) {
-+    return error instanceof Error && details(error.cause).runnerErrorCode === 'RUNNER_BUSY';
++function isRunnerBusyRefusal(cause) {
++    const raw = isAgentDeviceError(cause) ? cause : cause instanceof Error ? cause.cause : undefined;
++    return isAgentDeviceError(raw) && raw.details?.runnerErrorCode === 'RUNNER_BUSY' && raw.details?.dispatched === 'no';
 +}
- /** True for a translated `open` agent-device refused because no installed app matches the name. */
- export function isAppNotInstalled(error) {
-     return error instanceof Error && isAgentDeviceError(error.cause) && normalizeAgentDeviceError(error.cause).code === 'APP_NOT_INSTALLED';
-@@ -312,6 +321,10 @@ export function staleOr(cause, operation, where) {
-         (reason === 'target_still_moving' && dispatched === 'no')) {
-         return new EngineError('NODE_STALE', `${operation}: ${message(cause)}`, { retryable: true, cause });
-     }
-+    // Nothing was sent and the runner clears once its abandoned work drains, so the action waits within its budget.
-+    if (details(cause).runnerErrorCode === 'RUNNER_BUSY' && dispatched === 'no') {
-+        return new EngineError('NODE_STALE', runnerMessage(operation, where, RUNNER_STATE.get('RUNNER_BUSY'), cause), { retryable: true, cause });
++function pause(ms, signal) {
++    return new Promise((resolve) => {
++        const timer = setTimeout(done, ms);
++        function done() {
++            clearTimeout(timer);
++            signal.removeEventListener('abort', done);
++            resolve();
++        }
++        signal.addEventListener('abort', done, { once: true });
++    });
++}
+ /**
+  * One operation's budget (its `timeoutMs`), which the harness signal does not
+  * enforce. Every device command the operation sends runs under it: the
+@@ -46,6 +70,9 @@ export class InputBudget {
+      * landed, so it is `ACTION_MAY_HAVE_COMMITTED` and the runner never repeats it.
+      */
+     send(dispatch, holdMs = 0) {
++        return this.untilRunnerFree(() => this.sendOnce(dispatch, holdMs));
 +    }
-     if (typeof reason === 'string' && NOT_ACTIONABLE_REASONS.has(reason) && dispatched === 'no') {
-         const hint = NOT_ACTIONABLE_REASONS.get(reason);
-         const text = hint === undefined ? withHint(cause, message(cause)) : `${message(cause)} Hint: ${hint}`;
-diff --git a/dist/surface.js b/dist/surface.js
-index 8511c8b53486d1fb9573d6d97d00add242afc0b2..3847621b8bcc0efd9d5b81502aff437ed0e8f9f2 100644
---- a/dist/surface.js
-+++ b/dist/surface.js
-@@ -15,7 +15,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, w
- import { tmpdir } from 'node:os';
- import path from 'node:path';
- import { EngineError, KEY_NAMES, parseKey, raceAbort, rejectUnknownKeys, stopProviderRecording, withinCleanupBudget, ConfigurationError, TestError, } from '@e2e-dev/core/engine';
--import { isAppNotRunning, isSnapshotPresentationFailure, isUnreadableCapture, ORIGIN_UNKNOWN_BOUNDS, ORIGIN_WARNING, runCommand, staleOr } from './errors.js';
-+import { isAppNotRunning, isRunnerBusy, isSnapshotPresentationFailure, isUnreadableCapture, ORIGIN_UNKNOWN_BOUNDS, ORIGIN_WARNING, runCommand, staleOr } from './errors.js';
- import { pointerInteraction, DEFAULT_LONG_PRESS_MS } from './actions.js';
- import { resolveExpression } from './locate.js';
- import { isWithin, KEYBOARD_KINDS, keyboardBand, mayTakeText, normalizeKind, projectSnapshot, ROOT_ID, screenRoot, screenTitle, } from './nodes.js';
-@@ -855,7 +855,7 @@ export class AgentDeviceSurface {
-             return await this.snapshotOrEmpty(operation, false, budget);
-         }
-         catch (cause) {
--            const arriving = isUnreadableCapture(cause) || (this.launching && isAppNotRunning(cause));
-+            const arriving = isUnreadableCapture(cause) || isRunnerBusy(cause) || (this.launching && isAppNotRunning(cause));
-             if (operation.signal.aborted || !arriving || budget.remainingMs() < Date.now() - startedMs)
-                 throw cause;
-             return undefined;
++    sendOnce(dispatch, holdMs) {
+         const remaining = this.remainingMs();
+         if (remaining <= 0)
+             return Promise.reject(this.spent());
+@@ -69,6 +96,9 @@ export class InputBudget {
+      * so the runner never repeats that input.
+      */
+     read(dispatch) {
++        return this.untilRunnerFree(() => this.readOnce(dispatch));
++    }
++    readOnce(dispatch) {
+         const remaining = this.remainingMs();
+         if (remaining <= 0)
+             return Promise.reject(this.spent());
+@@ -76,6 +106,28 @@ export class InputBudget {
+             ? this.maybeCommitted()
+             : new EngineError('OPERATION_TIMEOUT', `${this.label} timed out before the device answered`, { retryable: false }));
+     }
++    /**
++     * Sends a command again, within the budget, while the iOS runner refuses it
++     * as busy: nothing went out, and the refusal clears once the runner drains
++     * the command that overran its watchdog. When the budget cannot fit another
++     * wait, the refusal itself is the failure, so it still names the runner.
++     */
++    async untilRunnerFree(attempt) {
++        for (let waitMs = RUNNER_BUSY_FIRST_WAIT_MS;; waitMs = Math.min(waitMs * 2, RUNNER_BUSY_MAX_WAIT_MS)) {
++            const sent = this.sent;
++            try {
++                return await attempt();
++            }
++            catch (cause) {
++                if (!isRunnerBusyRefusal(cause))
++                    throw cause;
++                this.sent = sent;
++                if (this.signal.aborted || this.remainingMs() <= waitMs)
++                    throw cause;
++                await pause(waitMs, this.signal);
++            }
++        }
++    }
+     /** Milliseconds left of the budget; zero or less once it is spent. */
+     remainingMs() {
+         return this.endsAt - Date.now();
