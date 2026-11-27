@@ -35,7 +35,7 @@ describe("Onicode device instructions", () => {
     // agent-device's DEVICE_IN_USE advice is to rerun with the owner's --session or close it first.
     assert.include(
       ONICODE_CODE_DEVICE_TOOL_INSTRUCTIONS,
-      "follow its advice once, but never reuse or close another session; if it still fails,",
+      "follow its advice once, but never reuse or close another session unless the user explicitly asked; if it still fails,",
     );
   });
 

@@ -4306,3 +4306,4 @@ d389f8b3ac	take	test merged by hand: upstream's manifest rows plus Onicode's roo
 b42cac5145	take	taken as is
 34d3f155b9	take	taken as is
 571d187ce5	take	taken as is
+266e92fa9d	take	codexAdditionalContextBytes measured 9002 (+175), Claude unchanged; README keeps Onicode's intro sentence with the #36192 clause; evals run at the wave gate
