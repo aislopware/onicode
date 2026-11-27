@@ -4066,3 +4066,4 @@ abc0c4ae55	take	thread query context wraps Onicode's results, keeping its folder
 2ae731530d	take	Onicode's route body inlined flat as upstream does, keeping its props (threadTitleText title); upstream's new useStableCallback already exists in Onicode
 94af14b1f2	take	retargeted to the desktop app over CDP (build:desktop, Electron with ONICODE_HOME + ONICODE_DESKTOP_APP_DATA_DIR, connectOverCDP, no pairing); kept Onicode's processTable/unchangedProcesses kill (never a recycled PID) over upstream's descendantsOf; playwright-core 1.65.1 pinned like desktop/server; docs say it drives the desktop window and Linux needs DISPLAY/xvfb
 357ee7ec9d	take	taken as is
+5e9b58e809	take	adopted upstream over Onicode's var()-shorthand fallback in stripDeclarations (6938f30829): upstream's pre-parse withoutFetchingShorthands also catches a shorthand a later longhand hides from CSSOM, and keeps harmless var() shorthands; kept Onicode's two extra probe lines in the test
