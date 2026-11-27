@@ -685,8 +685,10 @@ const make = Effect.gen(function* () {
   ) {
     let reply: OrchestratorMcpThreadTimelineItem | undefined;
     let error: OrchestratorMcpThreadTimelineItem | undefined;
-    // Explicit, as this scan runs forward however a peer pages a cursorless read.
-    let afterPosition = -1;
+    // Explicit, as this scan runs forward however a peer pages a cursorless read. It starts
+    // after position 0, the message that started the thread: no reply can precede it, and every
+    // peer accepts it.
+    let afterPosition = 0;
     let run: OrchestratorMcpThreadRun | undefined;
     let remainingItems = 0;
     let tailProbed = false;

@@ -253,16 +253,12 @@ const make = Effect.gen(function* () {
   });
 
   const readThread: PeerForwarding["Service"]["readThread"] = (scope, environmentId, input) =>
-    readFromStartOrRetry(
-      (args) =>
-        forward<OrchestratorMcpThreadReadResult>(
-          scope,
-          "oni_thread_read",
-          OrchestratorMcpThreadReadInput,
-          OrchestratorMcpThreadReadResult,
-          environmentId,
-          args,
-        ),
+    forward<OrchestratorMcpThreadReadResult>(
+      scope,
+      "oni_thread_read",
+      OrchestratorMcpThreadReadInput,
+      OrchestratorMcpThreadReadResult,
+      environmentId,
       input,
     );
 

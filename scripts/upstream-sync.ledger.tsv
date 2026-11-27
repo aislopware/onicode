@@ -3971,3 +3971,4 @@ c8b4a49b2b	take	taken as is
 b042e4ee75	take	taken as is
 a686952304	take	test keeps Onicode's Map archive fixture
 009ae578d0	take	taken as is
+f9da246cd5	take	adopted upstream's start at position 0 for the delegation scan; readThread no longer retries -1; kept readFromStartOrRetry for agent-forwarded oni_thread_read
