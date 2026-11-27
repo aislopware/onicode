@@ -27,7 +27,7 @@ test(
     await onicode.open(thread);
     await screen.getByText("fixture turn complete", { exact: false }).waitFor({ state: "visible" });
 
-    await browser.keyboard.press("Control+p");
+    await browser.keyboard.press("ControlOrMeta+p");
     await screen.getByPlaceholder("Search files…").fill("steps.odt");
     await screen.getByRole("option", "steps.odt", { exact: false }).tap();
 

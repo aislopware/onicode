@@ -46,7 +46,7 @@ test(
     await screen.getByRole("button", "Add project script", { exact: true }).tap();
     await browser.locator("#script-name").fill("Run smoke checks");
     await browser.locator("#script-command").fill("echo checks");
-    await browser.locator("#script-keybinding").press("Control+Shift+7");
+    await browser.locator("#script-keybinding").press("ControlOrMeta+Shift+7");
     const editor = browser.locator('[data-slot="dialog-popup"][data-open]');
     const save = editor.getByRole("button", "Save action", { exact: true });
 
