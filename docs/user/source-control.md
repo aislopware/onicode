@@ -441,7 +441,9 @@ Jira Cloud works the same way with projects in place of teams: connect your site
 (`yourteam.atlassian.net`), your account email, and an
 [API token](https://id.atlassian.com/manage-profile/security/api-tokens), then pick Jira projects
 for the project. Issues move along their workflow's transitions. Jira has no reactions or linked
-pull requests here, and new issues are filed as a Task.
+pull requests here, and new issues are filed as a Task. On a Jira Service Management issue, a
+comment is an **Internal note** the customer never sees unless you switch it to **Reply to customer**
+before sending.
 
 Select an issue to open it beside the list: description, comments, state changes, linked pull
 requests, labels, assignees, and reactions. Linked pull requests open in the same panel. You can
