@@ -4514,3 +4514,4 @@ aee6cf558d	take	clean; index exists, no migration
 1d90fe89f7	take	passive rescans only from RunFinalizationService (skip within 60 s or while a native scan runs); WorkspaceFileSystem write path stays a full refresh
 7b5c7463d9	take	clean
 656a1ac2e5	take	clean
+f0a2574793	take	clean
