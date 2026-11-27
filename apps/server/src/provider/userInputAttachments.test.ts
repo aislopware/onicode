@@ -690,9 +690,22 @@ describe("question answer paths", () => {
           },
           { cell_type: "raw", source: [rawSource] },
           { cell_type: "code", source: "total = 42", execution_count: null, outputs: [] },
+          {
+            cell_type: "code",
+            source: "display(chart)",
+            execution_count: 3,
+            outputs: [
+              {
+                output_type: "display_data",
+                data: { "image/png": "iVBORw0KGgo=" },
+                metadata: {},
+              },
+            ],
+          },
         ],
       });
-      NodeFS.writeFileSync(path, notebook);
+      const notebookWithBom = `\uFEFF${notebook}`;
+      NodeFS.writeFileSync(path, notebookWithBom);
       // Older extractors wrote these sidecars without the raw cell label or with terminal styling.
       NodeFS.writeFileSync(`${path}.txt`, `## Cell 3\n${rawSource}`);
       NodeFS.writeFileSync(`${path}.v2.txt`, "Output:\n\u001b[32m301\u001b[0m\n");
@@ -720,12 +733,13 @@ describe("question answer paths", () => {
       expect(extracted).not.toContain("iVBORw0KGgo");
       expect(extracted).not.toContain("<script>");
       expect(extracted).toContain(`## Cell 3 (raw)\n${rawSource}`);
-      expect(extracted).toMatch(/## Cell 4 \(code\)\ntotal = 42$/u);
+      expect(extracted).toContain("## Cell 4 (code)\ntotal = 42\n\n## Cell 5 (code)");
+      expect(extracted).toMatch(/## Cell 5 \(code\)\ndisplay\(chart\)$/u);
       expect(extracted).toContain(
         "ZeroDivisionError: division by zero\nCell In[1], line 1\n----> 1 1 / 0\nZeroDivisionError: division by zero",
       );
       expect(extracted).not.toContain("\u001b");
-      expect(NodeFS.readFileSync(path, "utf8")).toBe(notebook);
+      expect(NodeFS.readFileSync(path, "utf8")).toBe(notebookWithBom);
       const before = NodeFS.statSync(DocumentText.extractedTextPath(path)).mtimeMs;
       // A changed binary would fail parsing if the cached extraction were not reused.
       NodeFS.writeFileSync(path, "invalid notebook");
@@ -892,9 +906,13 @@ describe("question answer paths", () => {
             "book.opf":
               '<package><manifest><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="chapter"/></spine></package>',
             "chapter.xhtml":
-              '<html xmlns="http://www.w3.org/1999/xhtml"><body><figure><img alt="Map of the river"/><figcaption>Figure 1. River crossings</figcaption></figure><p>Water levels rose in May.</p></body></html>',
+              '<html xmlns="http://www.w3.org/1999/xhtml"><body><figure><img alt="Map of the river"/><figcaption>Figure 1. River crossings</figcaption></figure><p>Water levels rose in May.</p>' +
+              '<section>Choose your route.<figure><img alt="Map of the north pier"/></figure>Continue to the gate.</section><section>Keep <figure></figure>reading.</section></body></html>',
           },
-          expected: ["Map of the river\nFigure 1. River crossings\nWater levels rose in May."],
+          expected: [
+            "Map of the river\nFigure 1. River crossings\nWater levels rose in May.",
+            "Choose your route.\nMap of the north pier\nContinue to the gate.\nKeep reading.",
+          ],
         },
         {
           ext: "epub",

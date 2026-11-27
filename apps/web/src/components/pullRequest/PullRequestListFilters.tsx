@@ -4,6 +4,7 @@ import type {
   ProjectId,
   PullRequestFilterOptionsInput,
   PullRequestInvolvement,
+  PullRequestLabel,
   PullRequestListFilters,
   PullRequestListState,
   SourceControlProviderKind,
@@ -51,8 +52,10 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   pullRequestAuthorChoices,
   selectedPullRequestAuthor,
+  selectedPullRequestLabels,
   pullRequestLabelChoices,
   pullRequestLabelColor,
+  rememberPullRequestLabels,
   type PullRequestAuthorFacet,
   type PullRequestLabelFacet,
 } from "./pullRequestList.logic";
@@ -423,12 +426,15 @@ function PullRequestLabelChoices({
   const gt = useGT();
   const [query, setQuery] = useState("");
   const hosted = useHostedFilterOptions(scope, "labels", query);
+  const [seen, setSeen] = useState<ReadonlyArray<PullRequestLabel>>([]);
+  const remembered = rememberPullRequestLabels(seen, hosted.labels);
+  if (remembered !== seen) setSeen(remembered);
   const selected = new Set(value.map((name) => name.toLowerCase()));
   const choices = pullRequestLabelChoices(options, hosted.labels, query);
   const visible = [
-    ...value
-      .filter((name) => !choices.some((option) => option.name.toLowerCase() === name.toLowerCase()))
-      .map((name) => ({ name, color: null, count: 0 })),
+    ...selectedPullRequestLabels(options, remembered, value).filter(
+      (label) => !choices.some((option) => option.name.toLowerCase() === label.name.toLowerCase()),
+    ),
     ...choices,
   ];
   return (

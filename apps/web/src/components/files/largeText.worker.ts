@@ -52,7 +52,7 @@ async function read(start: number, end: number) {
   }
   const bytes = await new Blob(parts).arrayBuffer();
   try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    return new TextDecoder("utf-8", { fatal: true, ignoreBOM: start > 0 }).decode(bytes);
   } catch {
     // Invalid UTF-8 past the indexed prefix; the decoder's own message is untranslated.
     throw new PreviewError({ code: "text-binary" });
@@ -69,6 +69,7 @@ async function page(index: number) {
         maxColumns: LARGE_TEXT_MAX_COLUMNS,
         maxCellLength: 1024 * 1024,
         detectCsv: false,
+        stripBom: false,
       }).rows
     : text
         .replace(/\r?\n$|\r$/, "")
@@ -125,7 +126,7 @@ async function open(input: Extract<TextPreviewRequest, { type: "open" }>) {
         }
       }
       prefix = new Uint8Array(await new Blob(parts).arrayBuffer());
-      delimiter = csvPreviewDelimiter(new TextDecoder().decode(prefix));
+      delimiter = csvPreviewDelimiter(new TextDecoder().decode(prefix), false);
     }
     while (true) {
       const { value, done } = prefix ? { value: prefix, done: false } : await reader.read();

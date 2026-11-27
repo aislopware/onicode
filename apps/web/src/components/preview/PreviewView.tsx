@@ -44,6 +44,7 @@ import { countHeldComposerSlots } from "../chat/composerThreadImport";
 import { ensureLocalApi } from "~/localApi";
 import { getClientSettings } from "~/hooks/useSettings";
 import {
+  previewNavStatus,
   rememberPreviewUrl,
   updatePreviewServerSnapshot,
   useThreadPreviewState,
@@ -265,12 +266,7 @@ export function PreviewView({
   const desktopOverlay =
     tabId && !isServerTab ? (previewState.desktopByTabId[tabId] ?? null) : null;
   const layoutZoomFactor = useBrowserLayoutZoomFactor(desktopOverlay?.zoomFactor ?? 1);
-  // A new Electron tab is Idle until its first URL commits, while the server already has it Loading.
-  const desktopNavStatus =
-    !serverOwnsRendering && desktopOverlay?.navStatus._tag !== "Idle"
-      ? desktopOverlay?.navStatus
-      : undefined;
-  const navStatus = desktopNavStatus ?? snapshot?.navStatus ?? { _tag: "Idle" as const };
+  const navStatus = previewNavStatus(snapshot, desktopOverlay);
   const url = navStatus._tag === "Idle" ? "" : navStatus.url;
   const loading = desktopOverlay?.loading ?? navStatus._tag === "Loading";
   const canGoBack = desktopOverlay?.canGoBack ?? snapshot?.canGoBack ?? false;

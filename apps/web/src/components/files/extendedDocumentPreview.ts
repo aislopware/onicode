@@ -468,7 +468,10 @@ export async function openEpub(archive: OfficeArchive): Promise<OfficeWorkerResu
     const entry = path ? archiveText(archive, path) : undefined;
     if (entry === undefined || !path) continue;
     const chapter = parseXml(entry);
-    const title = text(find(chapter, "title")[0] ?? find(chapter, "h1")[0] ?? chapter).trim();
+    const headings = [...find(chapter, "title"), ...find(chapter, "h1")].map((node) =>
+      text(node).trim(),
+    );
+    const title = headings.length ? (headings.find(Boolean) ?? "") : text(chapter).trim();
     const last = title.charCodeAt(119);
     pages.push({
       title: title.slice(0, last >= 0xd800 && last <= 0xdbff ? 119 : 120) || undefined,

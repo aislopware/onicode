@@ -4327,3 +4327,108 @@ b99dab9495	skip	already done: Onicode's d4e776df8e formats schedule times in UTC
 0894b42f11	take	taken as is
 d58b5c6485	take	taken as is
 b5c725b27d	take	taken as is
+56196d892f	take	taken as is
+5940d817a3	take	taken as is
+b990a32fb7	take	taken as is
+a77493caa5	take	kept Onicode's "ocd" context row; upstream's four rows added
+d9e28d4640	take	kept Onicode's balanced-bracket FILE_LINK_LABEL_CHAR, now counting &#91;/&#93; as one unit; kept Onicode's readableLabel (legacy \[id\] labels, migration 115), extended to decode the entities in the same pass; dropped upstream's whole-link-to-label replace. Wire: older mobile shows a newly sent [TODO].md mention as a plain link
+38f3bdb7f9	take	taken as is
+6eb817e521	take	kept Onicode's border-border; test keeps the fflate fixture (no jszip) with the DST-midnight entry and upstream's Nuuk table
+afc71642c9	take	taken as is
+2ecbb3a9d3	take	one-entry fence-range cache added: several composer readers parse the same text per edit
+44a5333786	take	test's spoken phrase is "Open Oni code" for the rebranded Onicode term
+0360a00296	take	fence check edited by hand in Onicode's scanMarkdown; Onicode's fuller definitions test made into upstream's it.each
+83d45092ed	take	taken as is
+d6061ec8ad	take	Markdown copy uses Onicode's formatThreadLink (hosted thread URLs removed); CSV/HTML unchanged
+abdb695a56	take	taken as is
+39388dd0d6	take	taken as is
+90221188bf	take	test only; kept Onicode's map search keys (isImeKeyDown + shared clearSearchOnEscape), which pass upstream's IME test unchanged; mock drops relayManaged
+8a99245cae	skip	only changes scripts/smoke-desktop-app.ts, T3's release-job launch check, which Onicode removed with T3's release pipeline (357fb754fa)
+fb7839477e	take	tests only; kept Onicode's leadingFrontmatterLength (already looks ahead for a closer, shared with the preview masks), which passes upstream's tests
+83d7e53f84	take	upstream's naming body inside Onicode's widgetAccounts signature (keeps is24Hour)
+40958c381e	take	applied cleanly onto normalizeLocalFileHref
+bc0f04da94	take	taken as is
+d8a52dda31	take	taken as is
+17b5c1a29c	skip	already done: bbd1b820da moved the fake mounter's traps before the mount announcement in DesktopCliShim.test.ts
+9b4a5e1086	take	took upstream's prepend withMarkdownDefinitions; web marker offset shifted by the prefix; mobile render-only, unchanged; imports merged with Onicode's; task toggle with definitions in the desktop pass
+b403a7c2e3	take	taken as is
+6249fe9d45	take	kept Onicode's row JSX and classes; only the sort uses compareArchiveRows
+f87ab0be1b	take	taken as is
+2e830d7733	skip	T3 release version bump (0.1.13); Onicode versions its own releases through better-update
+87132a26e8	take	isLinkDefinition swapped into Onicode's scanMarkdown, keeping offset === 0
+fb84179e19	take	taken as is
+81f8990da6	take	taken as is
+a066eb0935	take	BLANK_LINE used for Onicode's afterBlankLine (with frontmatter) and its comment reset; headingSlugs left, queued; CRLF test inputs end with a line break, since Onicode never cuts at an unfinished last line
+e07c80889e	take	last hunk applied with Onicode's wrapped throw
+484a0ee34d	take	applied cleanly; new key in all 10 web locales, i18n:check green
+5aa81ac848	take	applied cleanly
+5389ed620c	take	applied cleanly
+8d30a1d30d	take	vite.config entry added after the occupancy entry; pagination test also mocks Onicode's state/filesystem (queries.ts imports it)
+6bec332fca	take	HTML_BLOCK_START replaced by HTML_BLOCK_TAG/HTML_STANDALONE_TAG in blockCloser; Onicode's wrapper and comment tracking still key on closesAtBlankLine; autolink case takes upstream's inline-HTML rows and keeps Onicode's trailing line break
+3749a2e1c1	take	applied cleanly on the ported workflow chain; raw workflow_runs insert matches Onicode's table
+8e8e15ac89	take	applied cleanly
+9b4943f91c	take	applied cleanly
+49a6653db6	take	applied cleanly; two new keys in all 10 web locales, i18n:check green
+f08bafe07f	take	applied cleanly
+cc29be0f66	take	kept Onicode's synchronous archiveText read (its archive is not JSZip); took upstream's heading fallback; test builds the archive as Onicode's Map
+09f27413eb	take	applied cleanly
+663421a7f2	take	installer.nsh: Onicode dropped the channel-name block, so added only Var oniAppWasRunning, a customAppRunningMessages that sets it (electron-builder keeps its default prompts) and upstream's silent relaunch; comment names scripted /S installs, not WinGet; NSIS not compiled locally, needs a Windows packaging run
+6eda4d0bb4	take	test imports keep Onicode's instanceHubs beside hasProviderUsageLimits
+eadd4e7ddc	take	steering test imports keep Onicode's makeProviderFailure and vi; all source hunks merged cleanly on the ported chain
+8994fe6db4	take	applied cleanly
+0a329e0472	take	wordsHast import keeps Onicode's resolveChangeRequestFileHref beside expandIndentedCodeTabs
+d023407be8	take	applied cleanly; adopted as a checkpoint-capture performance fix
+b0e87e0f90	take	applied cleanly; key already in every web locale
+e66a0063aa	take	kept Onicode's interrupted-steer note restore (a different event; composes): restoreCompacted = compacted && !compactionKeepsAdditionalContext, notes-only restore otherwise
+340d4e812a	take	applied cleanly
+2858e6caff	take	toggle.tsx: Onicode's pressed background is in the base class, so data-pressed:bg-accent became bg-(--contrast-accent) there and Onicode's ghost variant stays; --contrast-accent sits beside --contrast-input (equals --accent at 100%); scenario ported, typechecked
+3f7acd7e8b	take	applied cleanly; scenario ported, typechecked; mobile n.a. (native fences)
+c66881ff2b	take	applied cleanly; scenario ported, typechecked
+7a8f65a5ff	take	applied cleanly; scenario change typechecked
+b6a054a92b	take	applied cleanly; mobile filePath keeps its own anchored isWindowsPathStyle and gains through shared joinPath
+82149221e7	take	applied cleanly
+5bd72c5997	take	applied cleanly
+3166b94135	take	source applied cleanly; upstream's renderer-gone test appended after Onicode's request-id trim test
+99420d6f11	take	applied cleanly; mobile keep-unavailable path queued as a follow-up
+9c67c7da9b	take	contract unreadProviders optional (wire-compatible); kept Onicode's model-list caching (modelLists/lookupRounds) and computed unreadProviders after readable; readAccounts reads destructure accounts, Onicode's slow-account rows kept; HUB_PROVIDERS is codex/claude/xai after 96423cb5e2, so the copy is true; i18n keys in all locales
+f4b252309f	take	applied cleanly
+6252f1f203	take	applied cleanly
+5596e7490e	take	kept Onicode's text-binary PreviewError around the decode; added only ignoreBOM: start > 0; mobile n.a.
+a4ab2c51e3	take	applied cleanly
+43530f99e7	take	applied cleanly
+7d2db832f7	take	goBack keeps Onicode's isFocused guard beside upstream's saved check; test's useNavigation mock adds isFocused
+fd1694cdd3	take	applied cleanly
+dcee01cbfd	take	applied cleanly; scenario ported, typechecked
+beb24ffed8	take	took hasNonCatalogModels; kept wave 3's customApiEndpoint gate so a first-party probe stays complete and claudeModelsOfferedByReport sticks
+1dba8e21bc	take	source merged cleanly; scenario adapted: environment id read in Node via environmentId(app.baseUrl), since the desktop renderer routes by hash
+04770fe6c1	take	applied cleanly; mobile n.a. (native picker)
+314f59d1e7	take	usage scan cache bumped to Onicode v19 (Onicode's v18 already meant the Codex state re-parse): v18 file added to legacy names, Grok legacy check version < 19, Codex clause kept, comments merged; test asserts v19
+d8193acc38	take	applied cleanly on the ported document worker chain
+59e80b72ca	take	applied cleanly; SidebarProjectFolderHeader only, Sidebar hook order untouched; visual, captures in the integrated pass
+3ebc46f867	take	hand-ported into Onicode's resumable scanMarkdown: upstream's definition helpers verbatim, definitionEnd local index (skips cut/closer/definition tests inside a run), resume keeps afterDefinition and gains omittedDefinitions (snapshotted at cuts and held cuts); kept a one-line-definition fast path so a streaming definition run is not remark-parsed on every append (measured 200-definition stream: 1.3-2.5 ms -> 0.12 ms per append, main 0.08 ms; matches remark on 46k generated lines); extend-matches-split rows for a wrapped label and an omitted oversized definition; scenario ported, typechecked
+f22d01bf77	take	applied cleanly on the ported ACP chain
+da36859cbe	take	applied cleanly; visual, captures in the integrated pass
+09d75fda77	take	applied cleanly
+8592f1b1b7	take	new test placed before Onicode's renamed identical-labels test; source merged cleanly
+6db795afd7	take	applied cleanly; shared device stream serves desktop and mobile
+7068f98453	take	applied cleanly; visual, capture in the integrated pass
+0ac7c99ef7	take	upstream's runtimeIncompatibility/external identity block placed before Onicode's runtimeBuilds WeakMap (kept for isRuntimeOutdated); startCompatible and probe took upstream's versions, probe keeps audio: false; Onicode's token-watch test mock gains compatibility, which the probe now calls
+483c892d46	take	patch added as is (Onicode's @vitest/browser is 5.1.1); override and patchedDependencies entry added beside Onicode's pins and patches; lockfile regenerated with vp i; a web browser test loads the patched client
+b79a254620	take	hand-ported into Onicode's resumable scanMarkdown: flow state on local indices, reset at blank lines, frontmatter, closed blocks and held-cut rescans; parseBudget added to MarkdownSplitResume (a mutation drops extend==split); headingSlugs keeps type-7 tags as HTML blocks via blockCloser ?? standalone check; kept a 32-entry memo of flow parses by text so a streamed reply re-parses only its growing flow (inline-tag stream: p50 0.67 -> 0.11 ms, p95 1.45 -> 0.32 ms per append; tag-free text unchanged); upstream tests ending on their cut line get a trailing line break; extend rows for ambiguous HTML and a spent budget; scenario ported, typechecked
+0b6b173244	take	test writes the BOM notebook beside Onicode's legacy sidecars and keeps extractedTextPath
+042dcfff6f	take	applied cleanly
+9f96e0d9cb	take	Tiptap import keeps Onicode's SelectionBookmark beside Selection; threadLinks takes only the LABEL change (no hosted prefix); tests use oni-thread links in place of app.t3.codes; scenarios ported, typechecked; mobile paste follow-up queued
+5478b88c9e	take	applied cleanly
+233378c606	take	applied cleanly
+8222562fc7	take	applied cleanly
+a71d749335	take	applied cleanly
+382f4b2c6c	take	3-way merge kept Onicode's isPickableProjectMember filter; both folder-name sites use workspaceFolderName
+d034b66f99	take	applied cleanly; every adapter helper it calls exists
+9534f2aab7	take	applied cleanly on the ported document worker chain
+1bd40a6427	take	applied cleanly; new test listed in the mobile react project
+81aac52ddb	take	hand-ported into Onicode's resumable scanMarkdown: lines split at LF or bare CR (native split when the text has no CR), pieces sliced from the source with their separator, held cuts too; extendMarkdownSplit resumes after LF or a bare CR, not half a CRLF; wholeMarkdown counts CR breaks; ChunkedMarkdown onCopy takes upstream's range check, clearData and joinMarkdownChunks; CR-only extend row; copy test uses Onicode's async setup
+e18c8fc2e5	take	applied cleanly; one web key in all locales, i18n:check green; tablePng is a lazy chunk; mobile n.a.; Electron clipboard image/png checked in the integrated pass
+3c4c16816b	take	applied cleanly
+ce2611312d	take	new it.each placed before Onicode's renamed draft test; source applied cleanly; mobile already says Minutes
+bba8114809	skip	relay infra only (infra/relay); Onicode removed the relay
+284c8d2d55	take	applied cleanly

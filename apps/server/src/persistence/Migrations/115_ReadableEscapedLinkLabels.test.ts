@@ -56,14 +56,13 @@ it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))(
           readonly search_text: string | null;
         }>`SELECT message_id, search_text FROM orchestration_v2_projection_messages`;
         const searchText = new Map(rows.map((row) => [row.message_id, row.search_text]));
-        assert.equal(searchText.get("route"), "Open [[id]_edit.tsx](app/routes/%5Bid%5D_edit.tsx)");
+        assert.equal(searchText.get("route"), "Open [id]_edit.tsx");
         assert.isNull(searchText.get("plain"));
-        // An unbalanced bracket stays escaped, so the label still ends at its own `](`.
-        assert.isNull(searchText.get("unbalanced"));
-        assert.equal(searchText.get("issue"), "Fixed in [Issue #42](https://example.com/42)");
+        assert.equal(searchText.get("unbalanced"), "See a]b.ts");
+        assert.equal(searchText.get("issue"), "Fixed in Issue #42");
         assert.equal(
           searchText.get("quoted"),
-          "[Assistant quote](oni-citation://v1/not-a-citation) and [[id].tsx](%5Bid%5D.tsx)",
+          "[Assistant quote](oni-citation://v1/not-a-citation) and [id].tsx",
         );
         assert.deepEqual(yield* indexed(sql, '"[id]_edit.tsx"'), ["route"]);
       }),

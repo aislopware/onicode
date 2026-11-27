@@ -61,6 +61,17 @@ describe("markdownTaskMarkerOffset", () => {
     expect(markdownTaskMarkerOffset("> -\n>   [ ] Task", 0, "Task", true)).toBeNull();
   });
 
+  it("counts empty task items before the tapped checkbox", () => {
+    for (const empty of ["- [ ]", "- [x]", "1. [X]\r"]) {
+      const body = `${empty}\n\n- [ ] Same`;
+      const offset = markdownTaskMarkerOffset(body, 1, "Same", true);
+      expect(offset).toBe(body.lastIndexOf("[ ]"));
+      expect(setMarkdownTaskChecked(body, offset ?? -1, true)).toBe(`${empty}\n\n- [x] Same`);
+      expect(markdownTaskMarkerOffset(body, 1, "Other", true)).toBeNull();
+      expect(markdownTaskMarkerOffset(body, 1, "Same", false)).toBeNull();
+    }
+  });
+
   it("tells identical labels apart by index and refuses a stale state", () => {
     const same = "- [ ] Same\n- [ ] Same\n\n```\nx\n```\n\n- [x] Same\n";
     expect(markdownTaskMarkerOffset(same, 0, "Same", true)).toBe(2);

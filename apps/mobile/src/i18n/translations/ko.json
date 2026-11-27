@@ -1251,6 +1251,7 @@
   "42a2622893a6bced": "한도를 읽을 수 없습니다.",
   "4897e228d3185c96": "보고된 한도가 없습니다.",
   "e27d2cb964df5dd5": "{source}: 보고된 계정이 없습니다.",
+  "161135f0aea4d1ca": "{source}: Codex, Claude, Grok 계정이 없습니다. 건너뜀: {providers}.",
   "1b503134018285f4": "{days}일 {hours}시간",
   "fc7f69efcfa6fa32": "적립된 초기화 크레딧 없음",
   "be7fd67c538a99a0": "{count}개 적립됨 · {expires} 후 만료",

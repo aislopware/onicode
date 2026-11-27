@@ -108,6 +108,7 @@ describe("V2 preview upgrade", () => {
         [126, "WorkflowMailSender"],
         [127, "WorkflowPools"],
         [128, "WorkflowRunSubject"],
+        [129, "EscapedLinkLabelsAsText"],
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
       assert.deepStrictEqual(yield* sql`SELECT * FROM orchestration_v2_legacy_imports`, imports);
@@ -259,6 +260,7 @@ describe("V2 preview upgrade", () => {
         [126, "WorkflowMailSender"],
         [127, "WorkflowPools"],
         [128, "WorkflowRunSubject"],
+        [129, "EscapedLinkLabelsAsText"],
       ]);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );

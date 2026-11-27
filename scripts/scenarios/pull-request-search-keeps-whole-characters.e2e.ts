@@ -2,12 +2,12 @@ import { expect } from "e2e";
 
 import { test, WEB } from "./onicode.ts";
 
-const KEPT = "a".repeat(47);
-// The emoji's two UTF-16 units straddle unit 48, where the shown search is cut.
-const QUERY = `${KEPT}😀 and the rest of the search`;
+const KEPT = "a".repeat(46);
+// A space follows the kept text, and the emoji's two UTF-16 units straddle unit 48, where the shown search is cut.
+const QUERY = `${KEPT} 😀 and the rest of the search`;
 
 test(
-  "A long pull request search that matches nothing ends without a broken character",
+  "A long pull request search that matches nothing ends without a broken character or a stray space",
   WEB,
   async ({ onicode, app, screen }) => {
     await onicode.project("demo");

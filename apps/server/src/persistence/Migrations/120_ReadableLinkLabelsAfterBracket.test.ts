@@ -31,7 +31,7 @@ it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))(
         const rows = yield* sql<{ readonly search_text: string | null }>`
           SELECT search_text FROM orchestration_v2_projection_messages
         `;
-        assert.equal(rows[0]?.search_text, "Compare [ this with [a[1].ts](a%5B1%5D.ts)");
+        assert.equal(rows[0]?.search_text, "Compare [ this with a[1].ts");
         const indexed = yield* sql<{ readonly message_id: string }>`
           SELECT messages.message_id
           FROM orchestration_v2_message_search AS search
