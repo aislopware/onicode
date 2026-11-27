@@ -1,4 +1,4 @@
-import JSZip from "jszip";
+import { strToU8, zipSync } from "fflate";
 import { expect, it, vi } from "vite-plus/test";
 
 import {
@@ -113,11 +113,14 @@ it.each([ARCHIVE_ENTRY_MAX_BYTES, ARCHIVE_ENTRY_MAX_BYTES + 1])(
 it.each(["Asia/Tokyo", "America/Chicago"])(
   "shows ZIP modified times as the archived wall-clock time in %s",
   async (timeZone) => {
-    const zip = new JSZip();
-    // JSZip writes the UTC parts of these dates as the entries' DOS wall-clock fields.
-    zip.file("evening.txt", "a", { date: new Date(Date.UTC(2026, 10, 25, 20, 0)) });
-    zip.file("night.txt", "b", { date: new Date(Date.UTC(2026, 10, 25, 1, 30)) });
-    const bytes = await zip.generateAsync({ type: "arraybuffer" });
+    // fflate writes the local parts of these dates as the entries' DOS wall-clock fields.
+    const bytes = zipSync(
+      {
+        "evening.txt": [strToU8("a"), { mtime: new Date(2026, 10, 25, 20, 0) }],
+        "night.txt": [strToU8("b"), { mtime: new Date(2026, 10, 25, 1, 30) }],
+      },
+      { level: 0 },
+    ).buffer;
     const previous = process.env.TZ;
     process.env.TZ = timeZone;
     try {
