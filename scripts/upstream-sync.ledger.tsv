@@ -4214,3 +4214,4 @@ cc61cdb1e4	take	applied cleanly; kept Onicode's listedCommands tap (e18b04b22b) 
 0df79074ad	take	taken as is
 147028a265	take	took upstream's withOptionalChoices form; kept Onicode's cancel (not decline) when no form can be shown (#701: no card was shown, so the user declined nothing)
 6ac4edef8c	take	taken as is (imports match after the shared tooltip port)
+ab2348acbb	take	adopted upstream's single-query GitHub detail (IssueDetailFields + IssueDetailWithStatus) over Onicode's two-query getIssue, as Onicode already did for summaries; kept Onicode's IssueSummary queries and summary RPC (no linkMetadata); 30 s shared cache keyed with the Linear workspace, applied to summary too (Onicode's linked rows and tab icon poll summary), writes and refresh invalidate both; panel owes the detail refresh then rereads the summary; graphql.ts regenerated

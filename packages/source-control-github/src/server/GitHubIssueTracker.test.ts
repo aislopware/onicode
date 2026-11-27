@@ -18,8 +18,11 @@ const DETAIL_RESPONSE = JSON.stringify({
     viewer: { login: "julius" },
     repository: {
       viewerPermission: "TRIAGE",
+      planningStatuses: null,
       issue: {
         __typename: "Issue",
+        viewerCanSetStatus: true,
+        status: null,
         number: 42,
         title: "Composer loses focus",
         url: "https://github.com/acme/web/issues/42",
@@ -448,7 +451,12 @@ describe("GitHubIssueTracker", () => {
         if (request.url === "https://api.github.com/graphql") {
           const { query, variables } = decodeVariables(text);
           const operation = query.match(/(?:query|mutation)\s+(\w+)/)?.[1];
-          if (operation === "IssueDetail") {
+          if (operation === "IssueDetailWithStatus") {
+            fixture.data.repository.planningStatuses = planningStatuses;
+            Object.assign(fixture.data.repository.issue, {
+              viewerCanSetStatus: false,
+              status: planningStatuses.nodes[1],
+            });
             response = fixture;
           } else if (operation === "IssueSummaryWithStatus") {
             response = {
@@ -562,6 +570,37 @@ describe("GitHubIssueTracker", () => {
     }),
   );
 
+  it.effect("reads an issue on github.com in one GraphQL query", () =>
+    Effect.gen(function* () {
+      const operations: string[] = [];
+      const http = HttpClient.make((request) => {
+        if (request.body._tag !== "Uint8Array") return Effect.die("Expected a JSON request.");
+        const { query } = decodeVariables(new TextDecoder().decode(request.body.body));
+        const operation = query.match(/(?:query|mutation)\s+(\w+)/)?.[1] ?? "";
+        operations.push(operation);
+        const page = { hasNextPage: false, endCursor: null };
+        const detail = JSON.parse(DETAIL_RESPONSE);
+        Object.assign(detail.data.repository.issue, {
+          labels: { pageInfo: page, nodes: [] },
+          closedByPullRequestsReferences: { pageInfo: page, nodes: [] },
+        });
+        const body = operation === "IssueStatuses" ? NO_STATUSES : detail;
+        return Effect.succeed(
+          HttpClientResponse.fromWeb(
+            request,
+            new Response(JSON.stringify(body), {
+              headers: { "content-type": "application/json" },
+            }),
+          ),
+        );
+      });
+      const api = yield* GitHubIssueTracker.make.pipe(Effect.provide(transport(http)));
+      yield* api.getIssue({ cwd: "/w", host: "github.com", scope: "acme/web", key: "42" });
+      // Each query spends the viewer's shared GraphQL allowance; the sidebar reads every linked issue.
+      expect(operations).toHaveLength(1);
+    }),
+  );
+
   it.effect("reads issues without statuses when GitHub refuses the status fields", () =>
     Effect.gen(function* () {
       const operations: string[] = [];
@@ -570,6 +609,12 @@ describe("GitHubIssueTracker", () => {
         const { query } = decodeVariables(new TextDecoder().decode(request.body.body));
         const operation = query.match(/query\s+(\w+)/)?.[1] ?? "";
         operations.push(operation);
+        const page = { hasNextPage: false, endCursor: null };
+        const detail = JSON.parse(DETAIL_RESPONSE);
+        Object.assign(detail.data.repository.issue, {
+          labels: { pageInfo: page, nodes: [] },
+          closedByPullRequestsReferences: { pageInfo: page, nodes: [] },
+        });
         const body = operation.endsWith("WithStatus")
           ? {
               data: null,
@@ -577,9 +622,9 @@ describe("GitHubIssueTracker", () => {
             }
           : operation === "IssueSummary"
             ? JSON.parse(DETAIL_RESPONSE)
-            : {
-                data: { search: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] } },
-              };
+            : operation === "IssueDetail"
+              ? detail
+              : { data: { search: { pageInfo: page, nodes: [] } } };
         return Effect.succeed(
           HttpClientResponse.fromWeb(
             request,
@@ -600,18 +645,18 @@ describe("GitHubIssueTracker", () => {
         limit: 10,
       });
       expect(listing.items).toEqual([]);
-      const summary = yield* api.getIssueSummary!({
-        cwd: "/w",
-        host: "github.com",
-        scope: "acme/web",
-        key: "42",
-      });
+      const target = { cwd: "/w", host: "github.com", scope: "acme/web", key: "42" };
+      const summary = yield* api.getIssueSummary!(target);
+      const issue = yield* api.getIssue(target);
       expect(summary.key).toBe("42");
+      expect(issue.key).toBe("42");
       expect(operations).toEqual([
         "IssueSearchWithStatus",
         "IssueSearch",
         "IssueSummaryWithStatus",
         "IssueSummary",
+        "IssueDetailWithStatus",
+        "IssueDetail",
       ]);
     }),
   );
