@@ -1957,10 +1957,9 @@ export function useComposerSend(input: ComposerSendInput) {
     const donePreparing = markSendPreparing();
     try {
       const { result: ready, draftStatus } = await waitBeforeSend(refresh);
-      if (!ready) return;
       if (!isShown()) return notifyLeftBeforeSend();
       if (draftStatus === "edited") return notifyDraftChanged();
-      if (draftStatus === "ready") return await onSendLatest(...args);
+      if (ready && draftStatus === "ready") return await onSendLatest(...args);
     } finally {
       donePreparing();
     }
