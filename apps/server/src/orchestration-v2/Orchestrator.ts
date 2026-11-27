@@ -594,6 +594,24 @@ export class OrchestratorV2 extends Context.Service<OrchestratorV2, Orchestrator
 ) {}
 
 /** The messages queued ahead of a queued run, in queue order. */
+/** An import has no runs to name its source, so its handoff names the provider thread that held it. */
+function legacyImportSource(
+  threadModelSelection: ModelSelection,
+  source: OrchestrationV2ProviderThread | undefined,
+  targetProviderThreadId: OrchestrationV2ProviderThread["id"],
+) {
+  if (source === undefined || source.id === targetProviderThreadId) {
+    return { providerThreadIds: [], instanceIds: [], modelSelections: [] };
+  }
+  return {
+    providerThreadIds: [source.id],
+    instanceIds: [source.providerInstanceId],
+    // Selection commands may already have moved the thread to the target.
+    modelSelections:
+      threadModelSelection.instanceId === source.providerInstanceId ? [threadModelSelection] : [],
+  };
+}
+
 function messagesQueuedAhead(
   projection: Pick<OrchestrationV2ThreadProjection, "runs">,
   runId: RunId,
@@ -3370,12 +3388,18 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                     }),
                 ),
               );
+      const importSource = legacyImportSource(
+        projection.thread.modelSelection,
+        activeProviderThread,
+        queuedProviderThread.id,
+      );
       const legacyImportRecoveryHandoff =
         latestCompletedRun === undefined && needsFullContext && legacyImportItems.length > 0
           ? yield* contextHandoffService
               .prepareLegacyImport({
                 threadId,
                 targetRunId: queuedRun.id,
+                fromProviderThreadIds: importSource.providerThreadIds,
                 toProviderThreadId: queuedProviderThread.id,
                 toProviderInstanceId: queuedRun.providerInstanceId,
                 items: legacyImportItems,
@@ -3567,18 +3591,22 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               contextHandoffId: activeHandoff.id,
               fromProviderThreadIds: activeHandoff.fromProviderThreadIds,
               toProviderThreadId: activeHandoff.toProviderThreadId,
-              fromProviderInstanceIds: Array.from(
-                new Set(coveredRuns.map((run) => run.providerInstanceId)),
-              ),
+              fromProviderInstanceIds:
+                handoff === null
+                  ? importSource.instanceIds
+                  : Array.from(new Set(coveredRuns.map((run) => run.providerInstanceId))),
               toProviderInstanceId: queuedRun.providerInstanceId,
-              fromModelSelections: Array.from(
-                new Map(
-                  coveredRuns.map((run) => [
-                    `${run.modelSelection.instanceId}\0${run.modelSelection.model}`,
-                    run.modelSelection,
-                  ]),
-                ).values(),
-              ),
+              fromModelSelections:
+                handoff === null
+                  ? importSource.modelSelections
+                  : Array.from(
+                      new Map(
+                        coveredRuns.map((run) => [
+                          `${run.modelSelection.instanceId}\0${run.modelSelection.model}`,
+                          run.modelSelection,
+                        ]),
+                      ).values(),
+                    ),
               toModel: queuedRun.modelSelection.model,
               strategy: activeHandoff.strategy,
               summary: activeHandoff.summaryText,
@@ -10206,6 +10234,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                   }),
               ),
             );
+    const importSource = legacyImportSource(
+      projection.thread.modelSelection,
+      activeProviderThread,
+      ensuredProviderThread.id,
+    );
     const legacyImportRecoveryHandoff =
       isProviderSwitch &&
       !canResumeAcrossInstances &&
@@ -10217,6 +10250,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             .prepareLegacyImport({
               threadId: command.threadId,
               targetRunId: runId,
+              fromProviderThreadIds: importSource.providerThreadIds,
               toProviderThreadId: ensuredProviderThread.id,
               toProviderInstanceId: modelSelection.instanceId,
               items: legacyImportItems,
@@ -10574,11 +10608,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             contextHandoffId: activeHandoff.id,
             fromProviderThreadIds: activeHandoff.fromProviderThreadIds,
             toProviderThreadId: activeHandoff.toProviderThreadId,
-            fromProviderInstanceIds: Array.from(
-              new Set(handoffSourceRuns.map((run) => run.providerInstanceId)),
-            ),
+            fromProviderInstanceIds:
+              activeHandoff === legacyImportRecoveryHandoff
+                ? importSource.instanceIds
+                : Array.from(new Set(handoffSourceRuns.map((run) => run.providerInstanceId))),
             toProviderInstanceId: modelSelection.instanceId,
-            fromModelSelections: handoffFromModelSelections,
+            fromModelSelections:
+              activeHandoff === legacyImportRecoveryHandoff
+                ? importSource.modelSelections
+                : handoffFromModelSelections,
             toModel: modelSelection.model,
             strategy: activeHandoff.strategy,
             summary: activeHandoff.summaryText,

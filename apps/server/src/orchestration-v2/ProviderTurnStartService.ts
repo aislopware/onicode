@@ -91,6 +91,7 @@ import { unsentManualContinuationSource } from "@onicode/shared/orchestrationV2M
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
 import {
   ContextHandoffBackgroundWorkError,
+  ContextHandoffPendingCompactionError,
   knownProviderFailureMessage,
   makeProviderFailure,
 } from "@onicode/provider-core/server/failure";
@@ -412,6 +413,29 @@ export const isProviderTurnStartRunStateMissingError = Schema.is(
 );
 
 const RESUME_PROMPT = "Continue where you left off.";
+
+/** `/compact`, or `/compact <instructions>` that the agent runs as its own command. */
+const compactsNativeSession = (
+  message: { readonly text: string; readonly attachments: ReadonlyArray<unknown> },
+  nativeCommand: boolean,
+) => {
+  if (message.attachments.length > 0) return false;
+  const text = message.text.trim().toLowerCase();
+  return text === "/compact" || (nativeCommand && /^\/compact\s/.test(text));
+};
+
+/** A compaction carries no inline history, so this session would summarize none of the thread. */
+const missesFullSummary = (
+  handoffs: ReadonlyArray<OrchestrationV2ContextHandoff>,
+  providerThread: OrchestrationV2ProviderThread,
+) =>
+  handoffs.some(
+    (handoff) =>
+      handoff.strategy === "full_thread_summary" &&
+      (providerThread.nativeThreadRef === null ||
+        handoff.delivery?.nativeThreadId !== providerThread.nativeThreadRef.nativeId ||
+        handoff.delivery.status === "pending"),
+  );
 
 const joinPrompt = (...parts: ReadonlyArray<string>) =>
   parts.filter((part) => part !== "").join("\n\n");
@@ -1263,19 +1287,14 @@ export const layer: Layer.Layer<
       }
       const session = sessionResult.success;
       if (!(yield* isCurrentAttemptInStatus("starting"))) return;
-      // A compaction carries no inline history, so with a full summary still pending the native
-      // session holds none of the conversation: compacting it would summarize nothing.
+      const slashCommand = isNativeCommandMessage(session, providerMessage, {
+        cwd: resolvedRuntimePolicy.cwd,
+      });
+      const compaction = compactsNativeSession(providerMessage, slashCommand);
       if (
         session.injectHistory === undefined &&
-        providerMessage.attachments.length === 0 &&
-        providerMessage.text.trim().toLowerCase() === "/compact" &&
-        handoffs.some(
-          (handoff) =>
-            handoff.strategy === "full_thread_summary" &&
-            (providerThread.nativeThreadRef === null ||
-              handoff.delivery?.nativeThreadId !== providerThread.nativeThreadRef.nativeId ||
-              handoff.delivery.status === "pending"),
-        )
+        compaction &&
+        missesFullSummary(handoffs, providerThread)
       ) {
         const now = yield* DateTime.now;
         yield* settleRunBeforeStart({
@@ -1406,9 +1425,6 @@ export const layer: Layer.Layer<
               records: providerMessage.context?.records ?? [],
             }),
           );
-      const slashCommand = isNativeCommandMessage(session, providerMessage, {
-        cwd: resolvedRuntimePolicy.cwd,
-      });
       const notesWait = (message: Parameters<typeof leavesNotesForNextPrompt>[1]) =>
         leavesNotesForNextPrompt(session, message);
       const goalDriver =
@@ -2607,6 +2623,7 @@ export const layer: Layer.Layer<
         function* (turnInput: Parameters<typeof session.startTurn>[0], compact = false) {
           const { providerThread: targetThread, retryHandoff } = deliveryTarget;
           const retryHandoffIds = new Set(retryHandoff.handoffs.map((handoff) => handoff.id));
+          let injectionDeclined = false;
           const delivery = yield* deliverContextHandoffs({
             handoffs: [...effectiveHandoffs, ...retryHandoff.handoffs],
             deferInline: compact || slashCommand,
@@ -2621,11 +2638,25 @@ export const layer: Layer.Layer<
                     session.injectHistory!({
                       providerThread: targetThread,
                       ...history,
-                    }).pipe(Effect.catchIf(refusedBeforePrompt, () => Effect.succeed(false))),
+                    }).pipe(
+                      Effect.catchIf(refusedBeforePrompt, () => Effect.succeed(false)),
+                      Effect.map((injected) => {
+                        injectionDeclined = !injected;
+                        return injected;
+                      }),
+                    ),
                 }),
             persist: persistHandoff,
           });
           if (!(yield* isCurrentAttemptInStatus("running"))) return;
+          // A session opened after the start guard, e.g. a recovery replacement, lacks the history too.
+          if (
+            (compact || compaction) &&
+            (session.injectHistory === undefined || injectionDeclined) &&
+            missesFullSummary(effectiveHandoffs, targetThread)
+          ) {
+            return yield* new ContextHandoffPendingCompactionError();
+          }
           const start = compact ? session.compactThread! : session.startTurn;
           // Like history, the side chat context waits for a turn that sends a prompt.
           const sideChatContext =
