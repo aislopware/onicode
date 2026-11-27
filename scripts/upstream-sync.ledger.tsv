@@ -4046,3 +4046,4 @@ cbc3057f59	take	kept Onicode's stricter workEntryViewedImagePath and frame style
 9ea5044aef	take	taken as is
 0180628cf7	take	FNM_MULTISHELL_PATH added beside Onicode's PNPM_HOME; kept the JAVA_HOME/PNPM_HOME loop
 82e6b02980	take	taken as is
+73c48a4341	take	kept Onicode's commandsForUnvisitedWorkspace as the last fallback after upstream's workspaceCommands, in session start and snapshotForCwd

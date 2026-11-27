@@ -290,8 +290,10 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
     draft: initialDraft,
     authRevision: 0,
   });
-  // Preserve disk-discovered skills when callbacks replace workspace commands; the registry will not rescan them.
+  // Skills from the registry's last scan of each folder. A folder without them stays pending so it is scanned.
   const discoveredSkills = new Map<string, ServerProvider["skills"]>();
+  // Commands of folders whose draft entry a skill scan dropped, so later scans still report them.
+  const workspaceCommands = new Map<string, ServerProvider["slashCommands"]>();
   const thinkingLevels = new Map<string, ThinkingConfig | null>();
   let defaultModelSlug: string | undefined;
   const observeThinkingLevels = (
@@ -491,6 +493,7 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
       const { message: _previousMessage, ...draft } = state.draft;
       const workspaces = draft.workspaceSnapshots ?? [];
       const workspace = cwd ? workspaces.find((entry) => entry.cwd === cwd) : undefined;
+      const skills = cwd ? discoveredSkills.get(cwd) : undefined;
       const next = {
         authRevision: state.authRevision + 1,
         draft: {
@@ -519,8 +522,10 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
                     checkedAt: updatedAt,
                     slashCommands:
                       workspace?.slashCommands ??
+                      workspaceCommands.get(cwd) ??
                       commandsForUnvisitedWorkspace(draft.slashCommands, cwd, discoveredSkills),
-                    skills: workspace?.skills ?? discoveredSkills.get(cwd) ?? [],
+                    skills: skills ?? workspace?.skills ?? [],
+                    ...(skills ? {} : { slashCommandsPending: true }),
                   },
                 ].slice(-MAX_WORKSPACE_SNAPSHOTS),
               }
@@ -559,6 +564,7 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
     if (!settings.enabled) return;
     const slashCommands = nativeCommands(commands);
     const updatedAt = DateTime.formatIso(yield* DateTime.now);
+    const skills = cwd ? discoveredSkills.get(cwd) : undefined;
     yield* SubscriptionRef.update(metadata, (state) => {
       if (state.draft.auth.status === "unauthenticated") return state;
       return {
@@ -575,9 +581,10 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
                     checkedAt: updatedAt,
                     slashCommands,
                     skills:
+                      skills ??
                       state.draft.workspaceSnapshots?.find((entry) => entry.cwd === cwd)?.skills ??
-                      discoveredSkills.get(cwd) ??
                       [],
+                    ...(skills ? {} : { slashCommandsPending: true }),
                   },
                 ].slice(-MAX_WORKSPACE_SNAPSHOTS),
               }
@@ -616,6 +623,7 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
     ]);
     yield* rememberRuntimeModes(previousModes, RUNTIME_MODES_WITHOUT_AUTO);
     discoveredSkills.clear();
+    workspaceCommands.clear();
     thinkingLevels.clear();
     defaultModelSlug = undefined;
   });
@@ -624,36 +632,32 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
     cwd: string,
     skills?: ServerProvider["skills"],
   ) {
+    const snapshot = yield* getSnapshot;
+    const workspace = snapshot.workspaceSnapshots?.find((entry) => entry.cwd === cwd);
     if (skills) {
       discoveredSkills.set(cwd, skills);
-      yield* SubscriptionRef.update(metadata, (state) =>
+      if (workspace) workspaceCommands.set(cwd, workspace.slashCommands);
+      // The registry keeps the folder it scans. Changing the entry mid-scan would discard the scan.
+      yield* SubscriptionRef.updateSome(metadata, (state) =>
         state.draft.workspaceSnapshots?.some((entry) => entry.cwd === cwd)
-          ? {
+          ? Option.some({
               ...state,
               draft: {
                 ...state.draft,
-                workspaceSnapshots: state.draft.workspaceSnapshots.map((entry) =>
-                  entry.cwd === cwd ? { ...entry, skills } : entry,
+                workspaceSnapshots: state.draft.workspaceSnapshots.filter(
+                  (entry) => entry.cwd !== cwd,
                 ),
               },
-            }
-          : state,
+            })
+          : Option.none(),
       );
     }
-    const snapshot = yield* getSnapshot;
-    const workspace = snapshot.workspaceSnapshots?.find((entry) => entry.cwd === cwd);
     const resolvedSkills = skills ?? workspace?.skills ?? discoveredSkills.get(cwd) ?? [];
-    return workspace
-      ? { ...snapshot, slashCommands: workspace.slashCommands, skills: resolvedSkills }
-      : {
-          ...snapshot,
-          slashCommands: commandsForUnvisitedWorkspace(
-            snapshot.slashCommands,
-            cwd,
-            discoveredSkills,
-          ),
-          skills: resolvedSkills,
-        };
+    const slashCommands =
+      workspace?.slashCommands ??
+      workspaceCommands.get(cwd) ??
+      commandsForUnvisitedWorkspace(snapshot.slashCommands, cwd, discoveredSkills);
+    return { ...snapshot, slashCommands, skills: resolvedSkills };
   });
 
   return {
