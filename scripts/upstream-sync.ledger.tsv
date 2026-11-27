@@ -4269,3 +4269,4 @@ d8f315a81f	take	taken as is
 a446449577	take	tests only; kept Onicode's IMPLIED_END/openSibling, which already passes upstream's rows
 8ac2613d78	take	only angleEnd changed; kept Onicode's PARAGRAPH_END whitespaceEnd
 84bd99210f	take	taken as is
+25f47db09e	take	taken as is
