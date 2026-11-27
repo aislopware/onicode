@@ -917,17 +917,17 @@ export function StorageCleanupSections() {
   if (!supportsStorageCleanup(connectedEnvironments)) {
     return (
       <>
-        {databaseStorageNotice}
         <SettingsSection id="storage-artifacts" title={gt("Artifacts and logs")} variant="plain">
           <StorageCleanupScopeNotice />
         </SettingsSection>
+        {databaseStorageNotice}
       </>
     );
   }
 
+  // Machines report their databases after the page renders, so the notice goes last to push nothing down.
   return (
     <>
-      {databaseStorageNotice}
       <SettingsSection id="storage-artifacts" title={gt("Artifacts and logs")}>
         <AnimatedHeight>
           <SettingsRow
@@ -969,6 +969,7 @@ export function StorageCleanupSections() {
         </AnimatedHeight>
       </SettingsSection>
       <CleanupSection />
+      {databaseStorageNotice}
     </>
   );
 }

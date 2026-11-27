@@ -12301,5 +12301,6 @@
   "efbeb3993ee2c3f5": "Na fila de {pool}",
   "0398ca6c1d24b92d": "na fila, o próximo",
   "0af6d5ffd5166214": "{count, plural, one {na fila, {count} à frente} other {na fila, {count} à frente}}",
-  "49be26a27dcb30e5": "na fila"
+  "49be26a27dcb30e5": "na fila",
+  "800966eb58181745": "Verificando quais idiomas o modelo suporta…"
 }
