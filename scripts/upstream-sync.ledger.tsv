@@ -4138,3 +4138,4 @@ be5b14d842	take	taken as is
 8515b31c8d	take	kept Onicode's DiscoveryListRow device rows (one button each) and added a trailing slot beside the row for the Stop button, since a button cannot nest in a button; took shutdown, per-environment stopping/stopErrors, Stop all devices and the tests; mobile has no stop yet (follow-up)
 6d21ad2b25	take	taken as is
 f839ab4041	take	figcaption joined Onicode's blockquote branch (after its text-box/marker heading loop)
+a03c43363b	take	kept Onicode's existing user pages (upstream's pass reintroduces removed surfaces and drops unintuitive details); adopted upstream's onboarding index and new guides, rewritten for Onicode: README index, onicode-json.md (no t3 schema), cli.md (only binCli commands), diagnostics, diffs, subagents, providers-grok, browser; unverifiable claims dropped

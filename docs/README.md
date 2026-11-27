@@ -2,13 +2,19 @@
 
 ## Using Onicode
 
+New to Onicode? Start with the [user guide](./user/README.md): how Onicode works, what you need,
+and every feature guide.
+
 - [Install Onicode](./user/install.md)
 - [Messages and context](./user/composer.md)
 - [Working with threads](./user/thread-sidebar.md)
 - [Permission modes](./user/permission-modes.md)
+- [Diffs and workspace files](./user/diffs.md)
+- [Subagents and delegation](./user/subagents.md)
 - [Terminal history](./user/terminal.md)
 - [Source control](./user/source-control.md)
 - [Project settings](./user/project-settings.md)
+- [Project file (`onicode.json`)](./user/onicode-json.md)
 - [Projects with several repositories](./user/multi-repo-projects.md)
 - [Appearance and themes](./user/appearance.md)
 - [Keyboard shortcuts](./user/keybindings.md)
@@ -16,6 +22,7 @@
 - [Text generation models](./user/text-generation.md)
 - [SnapShots](./user/snap-shot.md)
 - [Visual replies](./user/html-renders.md)
+- [Built-in browser](./user/browser.md)
 - [Import browser sessions](./user/browser-import.md)
 - [Use Onicode as your default browser](./user/default-browser.md)
 - [Devices](./user/devices.md)
@@ -27,8 +34,10 @@
 - [Mobile notifications](./user/mobile-notifications.md)
 - [Running in the background](./user/background-service.md)
 - [Updating Onicode](./user/updating.md)
+- [Maintenance, power, and diagnostics](./user/diagnostics.md)
+- [CLI reference (`onicode`)](./user/cli.md)
 - [Triage an issue](./user/triage.md)
-- Provider guides: [Codex](./user/providers-codex.md) · [Claude](./user/providers-claude.md) · [OpenCode](./user/providers-opencode.md) · [Antigravity](./user/providers-antigravity.md) · [Kiro](./user/providers-kiro.md) · [Command Code](./user/providers-command-code.md) · [Pi](./user/providers-pi.md) · [Muse Code](./user/providers-muse.md) · [fx](./user/providers-fx.md)
+- Provider guides: [Codex](./user/providers-codex.md) · [Claude](./user/providers-claude.md) · [OpenCode](./user/providers-opencode.md) · [Antigravity](./user/providers-antigravity.md) · [Grok Build](./user/providers-grok.md) · [Kiro](./user/providers-kiro.md) · [Command Code](./user/providers-command-code.md) · [Pi](./user/providers-pi.md) · [Muse Code](./user/providers-muse.md) · [fx](./user/providers-fx.md)
 
 ---
 
