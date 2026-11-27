@@ -1,5 +1,5 @@
 diff --git a/dist/device.js b/dist/device.js
-index 9b90379..1d36932 100644
+index 9b90379..82b1c03 100644
 --- a/dist/device.js
 +++ b/dist/device.js
 @@ -16,6 +16,8 @@ import { unsupported } from './support.js';
@@ -31,7 +31,7 @@ index 9b90379..1d36932 100644
          },
          async setAirplaneMode(enabled) {
              if (surface.options.platform === 'ios') {
-@@ -51,46 +57,47 @@ export function createDeviceFixture(surface, context) {
+@@ -51,67 +57,69 @@ export function createDeviceFixture(surface, context) {
                      throw unsupported(`device.setAirplaneMode(true) cuts an Android device's radios; ${IOS_OFFLINE}`);
                  return;
              }
@@ -90,9 +90,12 @@ index 9b90379..1d36932 100644
 +            return surface.installApp(appPath, options ?? {}, context.signal, budget('device.installApp', installTimeoutMs()));
          },
          async uninstallApp(app) {
-             return surface.uninstallApp(app, context.signal);
-@@ -99,19 +106,20 @@ export function createDeviceFixture(surface, context) {
-             return surface.isAppInstalled(app, context.signal);
+-            return surface.uninstallApp(app, context.signal);
++            return surface.uninstallApp(app, context.signal, budget('device.uninstallApp'));
+         },
+         async isAppInstalled(app) {
+-            return surface.isAppInstalled(app, context.signal);
++            return surface.isAppInstalled(app, context.signal, budget('device.isAppInstalled'));
          },
          async openApp(app, options) {
 -            await surface.openApp(app, options ?? {}, context.signal);
@@ -279,7 +282,7 @@ index e307753..9f21e66 100644
      remainingMs() {
          return this.endsAt - Date.now();
 diff --git a/dist/surface.js b/dist/surface.js
-index 449d286..1c5915a 100644
+index 449d286..bcd5622 100644
 --- a/dist/surface.js
 +++ b/dist/surface.js
 @@ -389,11 +389,13 @@ export class AgentDeviceSurface {
@@ -390,7 +393,8 @@ index 449d286..1c5915a 100644
 -    async presetPermissions(app, permissions, signal) {
 +    async presetPermissions(app, permissions, signal, input) {
          if (permissions === 'all') {
-             await this.permission('all', 'grant', app, signal);
+-            await this.permission('all', 'grant', app, signal);
++            await this.permission('all', 'grant', app, signal, input);
              return;
          }
          const entries = Object.entries(permissions).filter((entry) => entry[1] !== undefined);
@@ -447,6 +451,30 @@ index 449d286..1c5915a 100644
          const installed = installedIdentity(result, app, resolved, "the target's `app.bundleId` or installApp's `app` option");
          // The engine's own build, installed: without `app`, this is what `app.open()` launches from here on.
          if (engineBuild)
+@@ -817,9 +819,9 @@ export class AgentDeviceSurface {
+      * removing the build `installApp` pinned without an `app.bundleId` unpins it, so
+      * `app.open()` asks for an install instead of launching an app that is gone.
+      */
+-    async uninstallApp(app, signal) {
++    async uninstallApp(app, signal, input) {
+         const target = this.appArgument('uninstallApp', app);
+-        const result = await this.command(`uninstall ${target}`, (client) => client.apps.uninstall({ ...this.selection(), app: target }), signal);
++        const result = await this.command(`uninstall ${target}`, (client) => client.apps.uninstall({ ...this.selection(), app: target }), signal, input);
+         // agent-device resolves display names too: compare the id it removed, not only the string the caller passed.
+         const removed = typeof result['appId'] === 'string' ? result['appId'] : target;
+         // The identity may be a display name no id comparison matches, so it always goes: the next snapshot fills it again.
+@@ -835,9 +837,9 @@ export class AgentDeviceSurface {
+      * system apps included. `app` is a bundle id or package, or the exact
+      * name agent-device lists the app under.
+      */
+-    async isAppInstalled(app, signal) {
++    async isAppInstalled(app, signal, input) {
+         const target = this.appArgument('isAppInstalled', app);
+-        const apps = await this.command('list apps', (client) => client.apps.list({ ...this.selection(), appsFilter: 'all' }), signal);
++        const apps = await this.command('list apps', (client) => client.apps.list({ ...this.selection(), appsFilter: 'all' }), signal, input);
+         return apps.some((entry) => listsApp(entry, target));
+     }
+     /** The app a `device` method names, else the pinned one; neither is `INVALID_STATE`. */
 @@ -1640,15 +1642,16 @@ export class AgentDeviceSurface {
          const app = this.pinnedApp;
          if (app === undefined)

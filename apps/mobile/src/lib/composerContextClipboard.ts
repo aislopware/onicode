@@ -71,21 +71,25 @@ export function writeComposerContextClipboard(
   return nativeClipboard().writeContextClipboard(text, encoded);
 }
 
-// `[label](url)` as copyLinksAs: 'markdown' writes it, and Copy as Markdown, with an optional `!`.
-const COPIED_MARKDOWN_LINK = /!?\[((?:\\.|[^\\\]])*)\]\(<?([^\s()<>]+)>?\)/g;
+// `[label](url)` as copyLinksAs: 'markdown' and Copy as Markdown write it: `!` for an image, `\` before
+// `\[]` in the label, and a destination in `<...>` escaping `\<>`, or bare escaping `\()`.
+const COPIED_MARKDOWN_LINK =
+  /!?\[((?:\\.|[^\\\]])*)\]\((?:<((?:\\.|[^\\<>])*)>|((?:\\.|[^\\\s()<>])+))\)/g;
+const unescapeMarkdown = (text: string) => text.replace(/\\(.)/g, "$1");
 
 /**
  * A copy's text with the message's context links written as composer references and, in a plain
- * copy, every other link as its label, as copyLinksAs: 'label' would. Null when nothing changes.
+ * copy, the message's other links as their labels, as copyLinksAs: 'label' would. Text that only
+ * looks like a link, such as inline code, stays. Null when nothing changes.
  */
 export function copiedComposerContextText(
   copied: string,
   format: "plain" | "markdown",
-  markdown: string,
+  message: { markdown: string; linkUrls: ReadonlyArray<string> },
   fragment: ComposerContextClipboardFragment,
 ): { text: string; hasContext: boolean } | null {
   const referenceByHref = new Map(
-    collectComposerContextReferences(markdown).flatMap((reference) => {
+    collectComposerContextReferences(message.markdown).flatMap((reference) => {
       const record = fragment.records.find((entry) => entry.contextId === reference.contextId);
       return record
         ? [
@@ -97,19 +101,24 @@ export function copiedComposerContextText(
         : [];
     }),
   );
+  const linkUrls = new Set(message.linkUrls);
   let hasContext = false;
   let changed = false;
-  const text = copied.replace(COPIED_MARKDOWN_LINK, (link, label: string, href: string) => {
-    const reference = referenceByHref.get(href);
-    if (reference !== undefined) {
-      hasContext = true;
+  const text = copied.replace(
+    COPIED_MARKDOWN_LINK,
+    (link, label: string, bracketed: string | undefined, bare: string | undefined) => {
+      const href = unescapeMarkdown(bracketed ?? bare ?? "");
+      const reference = referenceByHref.get(href);
+      if (reference !== undefined) {
+        hasContext = true;
+        changed = true;
+        return reference;
+      }
+      if (format === "markdown" || !linkUrls.has(href)) return link;
       changed = true;
-      return reference;
-    }
-    if (format === "markdown") return link;
-    changed = true;
-    return label.replace(/\\(.)/g, "$1");
-  });
+      return unescapeMarkdown(label);
+    },
+  );
   return changed ? { text, hasContext } : null;
 }
 

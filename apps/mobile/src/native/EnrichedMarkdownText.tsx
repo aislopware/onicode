@@ -391,7 +391,12 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
   const onSelectionCopy = contextFragment
     ? ({ text, format }: SelectionCopyEvent) => {
         if (format === "imageUrls") return;
-        const copied = copiedComposerContextText(text, format, props.markdown, contextFragment);
+        const copied = copiedComposerContextText(
+          text,
+          format,
+          { markdown: props.markdown, linkUrls },
+          contextFragment,
+        );
         if (copied === null) return;
         const written = copied.hasContext
           ? writeComposerContextClipboard(copied.text, contextFragment)

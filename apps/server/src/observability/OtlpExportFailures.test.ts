@@ -12,7 +12,7 @@ import {
 import { OtlpSerialization } from "effect/observability";
 import { describe } from "vite-plus/test";
 
-import { otlpExportAttemptFailuresTotal } from "./Metrics.ts";
+import { otlpExportAttemptFailuresTotal, otlpExportDroppedTotal } from "./Metrics.ts";
 import * as OtlpExportFailures from "./OtlpExportFailures.ts";
 
 const failures = (reason: string) =>
@@ -73,6 +73,14 @@ describe("OtlpExportFailures", () => {
         ],
         [1, 1, 1, 0],
       );
+
+      // The exporter calls onDrop synchronously from its push.
+      (yield* OtlpExportFailures.onDrop("logs"))(3);
+      const dropped = (signal: "logs" | "traces") =>
+        Metric.value(Metric.withAttributes(otlpExportDroppedTotal, { signal }));
+      const logsDropped = yield* dropped("logs");
+      assert.isTrue(logsDropped.incremental);
+      assert.deepStrictEqual([logsDropped.count, (yield* dropped("traces")).count], [3, 0]);
     }).pipe(Effect.provide(layer), Effect.provideService(Metric.MetricRegistry, new Map()));
   });
 });

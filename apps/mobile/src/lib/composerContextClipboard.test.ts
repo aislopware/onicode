@@ -393,33 +393,41 @@ describe("mobile context clipboard copies", () => {
       source: { environmentId: EnvironmentId.make("source") },
       records: [image, terminal],
     };
-    const markdown = `See ${formatComposerContextReference(image)} and [the build](oni-context://v1/terminal/terminal-source).`;
+    const message = {
+      markdown: `See ${formatComposerContextReference(image)} and [the build](oni-context://v1/terminal/terminal-source).`,
+      linkUrls: [
+        "https://x.dev",
+        "https://en.wikipedia.org/wiki/C_(language)",
+        "file:///My Docs/a.ts",
+      ],
+    };
     const references = `See ${formatComposerContextReference(image)} and ${formatComposerContextReference(terminal)}`;
     // copyLinksAs: 'markdown' escapes brackets and drops the image's `!`; Copy as Markdown keeps both.
     const copy =
       "See [Check\\[out\\]](oni-context://v1/image/image-source) and [the build](<oni-context://v1/terminal/terminal-source>), [docs \\[v2\\]](https://x.dev).";
-    expect(copiedComposerContextText(copy, "plain", markdown, fragment)).toEqual({
-      text: `${references}, docs [v2].`,
-      hasContext: true,
-    });
-    expect(copiedComposerContextText(copy, "markdown", markdown, fragment)).toEqual({
-      text: `${references}, [docs \\[v2\\]](https://x.dev).`,
-      hasContext: true,
-    });
-    expect(
-      copiedComposerContextText("See [docs](https://x.dev).", "plain", markdown, fragment),
-    ).toEqual({ text: "See docs.", hasContext: false });
-    expect(
-      copiedComposerContextText("See [docs](https://x.dev).", "markdown", markdown, fragment),
-    ).toBeNull();
-    expect(
-      copiedComposerContextText(
-        "[Other](oni-context://v1/terminal/missing)",
+    const cases: ReadonlyArray<
+      [string, "plain" | "markdown", { text: string; hasContext: boolean } | null]
+    > = [
+      [copy, "plain", { text: `${references}, docs [v2].`, hasContext: true }],
+      [
+        copy,
+        "markdown",
+        { text: `${references}, [docs \\[v2\\]](https://x.dev).`, hasContext: true },
+      ],
+      ["See [docs](https://x.dev).", "plain", { text: "See docs.", hasContext: false }],
+      ["See [docs](https://x.dev).", "markdown", null],
+      [
+        "[C](https://en.wikipedia.org/wiki/C_\\(language\\)) and [a](<file:///My Docs/a.ts>)",
         "plain",
-        markdown,
-        fragment,
-      ),
-    ).toEqual({ text: "Other", hasContext: false });
-    expect(copiedComposerContextText("No links.", "plain", markdown, fragment)).toBeNull();
+        { text: "C and a", hasContext: false },
+      ],
+      // Inline code that reads like a link is not one of the message's links.
+      ["Fix [docs](https://example.com)", "plain", null],
+      ["[Other](oni-context://v1/terminal/missing)", "plain", null],
+      ["No links.", "plain", null],
+    ];
+    for (const [copied, format, expected] of cases) {
+      expect(copiedComposerContextText(copied, format, message, fragment)).toEqual(expected);
+    }
   });
 });
