@@ -4119,3 +4119,4 @@ de3ec23861	take	taken as is
 21aebbf7d9	take	applied cleanly; Onicode's hasThreadLink (oni-thread://) kept; Robolectric ComposerPasteTest not run here
 c7042abcd1	take	upstream's t3.19 tarball not taken: the inline-icon variant (pingdotgg/enriched-markdown bf8bbaf3..3757a449) was cherry-picked into aislopware/enriched-markdown 1.2.0-oni.28 (884ac07b, tag oni-v1.2.0-oni.28) and repacked; useEnrichedLinkVariants taken as is; deps README updated; native fingerprint changes (device wrap check owed)
 522b067dcd	take	blockquote branch placed after Onicode's text-box/marker heading branch
+750d81bd8d	take	kept Onicode's clearSearchOnEscape helper (same rule, shared by every settings search field) over upstream's inline handler; took the test
