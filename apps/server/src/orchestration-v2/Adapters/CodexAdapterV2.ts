@@ -1618,9 +1618,9 @@ interface CodexSubagentThreadContext {
   background: boolean;
   // The turn whose `wait` names it; one app-server serves several threads and nested children.
   awaitedBy: ActiveCodexTurnContext | null;
-  // A child stopped before its turn started has that turn interrupted; a live parent turn's
-  // input instead lets the turn reopen the settled child.
-  nextTurn: "run" | "interrupt" | "reopen";
+  // A child stopped before its turn started has that turn interrupted; input from a live turn
+  // instead lets the turn reopen the settled child under that turn, unless it is stopped first.
+  nextTurn: "run" | "interrupt" | { readonly reopenBy: ActiveCodexTurnContext };
   // A turn passed the stop checks; finalizeCodexTurn settles the child's nodes from then on.
   turnStarted: boolean;
 }
@@ -3687,6 +3687,8 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             const active = yield* Ref.get(activeTurns);
             const running = new Set(Array.from(active.values(), (context) => context.subagent));
             for (const subagent of (yield* Ref.get(subagentThreads)).values()) {
+              if (typeof subagent.nextTurn === "object" && belongs(subagent.nextTurn.reopenBy))
+                subagent.nextTurn = "interrupt";
               if (!isOrchestrationV2WorkActive(subagent.task.status)) continue;
               const parent = subagent.parentContext;
               if (!belongs(parent)) continue;
@@ -3729,15 +3731,18 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             subagent.nativeTurnIds.add(turn.nativeTurnId);
             const nextTurn = subagent.nextTurn;
             subagent.nextTurn = "run";
-            const parentNativeThreadId = yield* getNativeThreadId(
-              subagent.parentContext.providerThread,
-            );
+            const reopenBy = typeof nextTurn === "object" ? nextTurn.reopenBy : undefined;
             const parent =
-              (yield* findActiveTurnByNativeThreadId(parentNativeThreadId)) ??
+              reopenBy ??
+              (yield* findActiveTurnByNativeThreadId(
+                yield* getNativeThreadId(subagent.parentContext.providerThread),
+              )) ??
               subagent.parentContext;
             if (
               nextTurn === "interrupt" ||
-              hasCodexTurnLineageIn(parent, yield* Ref.get(terminalizedNonCompletedNativeTurns))
+              hasCodexTurnLineageIn(parent, yield* Ref.get(terminalizedNonCompletedNativeTurns)) ||
+              (reopenBy !== undefined &&
+                hasCodexTurnLineageIn(reopenBy, yield* Ref.get(interruptingNativeTurns)))
             ) {
               if (isOrchestrationV2WorkActive(subagent.task.status)) {
                 yield* emitSubagentTaskUpdate({
@@ -3823,7 +3828,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               subagent,
               status: "running",
               startedAt: turn.startedAt,
-              ...(providerTurnOrdinal > 1 || nextTurn === "reopen"
+              ...(providerTurnOrdinal > 1 || reopenBy !== undefined
                 ? { reopen: true, result: null }
                 : {}),
             });
@@ -6214,13 +6219,17 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             if (
               payload.item.type === "collabAgentToolCall" &&
               CODEX_CHILD_WAKING_TOOLS.has(payload.item.tool) &&
-              !hasCodexTurnLineageIn(context, yield* Ref.get(terminalizedNonCompletedNativeTurns))
+              !hasCodexTurnLineageIn(
+                context,
+                yield* Ref.get(terminalizedNonCompletedNativeTurns),
+              ) &&
+              !hasCodexTurnLineageIn(context, yield* Ref.get(interruptingNativeTurns))
             ) {
               const subagents = yield* Ref.get(subagentThreads);
               for (const nativeThreadId of payload.item.receiverThreadIds) {
                 const subagent = subagents.get(nativeThreadId);
                 if (subagent !== undefined && !isOrchestrationV2WorkActive(subagent.task.status))
-                  subagent.nextTurn = "reopen";
+                  subagent.nextTurn = { reopenBy: context };
               }
             }
 

@@ -35,6 +35,11 @@ import {
   WorkflowAgentError,
   WorkflowAgents,
 } from "./WorkflowAgents.ts";
+import {
+  providerOptionDescriptors,
+  refuseAgentModePick,
+  withoutAgentModePicks,
+} from "../mcp/delegatedTaskModes.ts";
 import { noteReference } from "./runReferences.ts";
 import { type IssueAddress, linkedPullRequestReferences, WorkflowForge } from "./WorkflowForge.ts";
 import { withoutRoutineSpans } from "@onicode/shared/observability";
@@ -72,6 +77,8 @@ const make = Effect.gen(function* () {
   const linked = yield* WorkflowAgentLinks.make;
   const forge = yield* WorkflowForge;
   const threadIssues = yield* ThreadIssueService.ThreadIssueService;
+  // A run acts for the owner, so only the administrator's ceiling, as in WorkflowAgentLinks, holds it.
+  const ceiling = settings.managedPolicy?.limits?.maxRuntimeMode ?? "full-access";
   // A tracker that is down must not cost the step its agent.
   const showIssue = (issue: IssueAddress | undefined, threadId: string) =>
     issue === undefined
@@ -203,16 +210,38 @@ const make = Effect.gen(function* () {
       }
       const projectId = yield* projectIdOf(input.project);
       const defaults = yield* projectDefaults(projectId);
-      const modelSelection: ModelSelection | undefined =
+      const available = yield* providers.getProviders;
+      const descriptorsOf = (instanceId: string) =>
+        providerOptionDescriptors(available.find((provider) => provider.instanceId === instanceId));
+      const defaulted =
         input.model === undefined
           ? (resolveNewThreadModelSelection({
               defaultSelection: defaults.defaultModelSelection,
               fallbackSelection: defaults.fallbackModelSelection,
-              providers: yield* providers.getProviders,
+              providers: available,
               settings: defaults,
               projectId,
               now: DateTime.toEpochMillis(yield* DateTime.now),
             }).selection ?? undefined)
+          : undefined;
+      if (input.model !== undefined && ceiling !== "full-access") {
+        yield* refuseAgentModePick({
+          callerRuntimeMode: ceiling,
+          picked: input.model.options,
+          descriptors: descriptorsOf(input.model.instanceId),
+          held: undefined,
+        }).pipe(Effect.mapError((error) => new WorkflowAgentError({ reason: error.message })));
+      }
+      const modelSelection: ModelSelection | undefined =
+        input.model === undefined
+          ? defaulted === undefined || ceiling === "full-access"
+            ? defaulted
+            : {
+                ...defaulted,
+                options:
+                  withoutAgentModePicks(defaulted.options, descriptorsOf(defaulted.instanceId)) ??
+                  [],
+              }
           : {
               instanceId: ProviderInstanceId.make(input.model.instanceId),
               model: input.model.model,

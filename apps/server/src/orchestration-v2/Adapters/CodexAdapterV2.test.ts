@@ -12239,6 +12239,42 @@ describe("CodexAdapterV2 post-settle continuation", () => {
     },
   });
 
+  const wakeChild = (
+    turnId: string,
+    receiverThreadId: string,
+  ): CodexReplay.CodexAppServerReplayEntry => ({
+    type: "emit_inbound",
+    frame: {
+      method: "item/started",
+      params: {
+        item: {
+          type: "collabAgentToolCall",
+          id: `call-codex-send-input-${turnId}`,
+          tool: "sendInput",
+          status: "inProgress",
+          senderThreadId: RESUME_NATIVE_THREAD,
+          receiverThreadIds: [receiverThreadId],
+          agentsStates: {},
+        },
+        threadId: RESUME_NATIVE_THREAD,
+        turnId,
+        startedAtMs: 1782622450000,
+      },
+    },
+  });
+
+  const childTurnInterrupt = (
+    id: number,
+    threadId: string,
+    turnId: string,
+  ): ReadonlyArray<CodexReplay.CodexAppServerReplayEntry> => [
+    {
+      type: "expect_outbound",
+      frame: { id, method: "turn/interrupt", params: { threadId, turnId } },
+    },
+    { type: "emit_inbound", frame: { id, result: {} } },
+  ];
+
   const rootMarker = (text: string, threadId: string, turnId: string) =>
     ({
       type: "emit_inbound",
@@ -12348,26 +12384,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
             ...lateChildPrefix().spawned.slice(0, -1),
             rootTurnEnded("failed"),
             ...rootTurnStart(secondTurn, secondPrompt),
-            {
-              type: "emit_inbound",
-              frame: {
-                method: "item/started",
-                params: {
-                  item: {
-                    type: "collabAgentToolCall",
-                    id: "call-codex-send-input",
-                    tool: "sendInput",
-                    status: "inProgress",
-                    senderThreadId: RESUME_NATIVE_THREAD,
-                    receiverThreadIds: [RESUME_CHILD_THREAD],
-                    agentsStates: {},
-                  },
-                  threadId: RESUME_NATIVE_THREAD,
-                  turnId: secondTurn,
-                  startedAtMs: 1782622450000,
-                },
-              },
-            },
+            wakeChild(secondTurn, RESUME_CHILD_THREAD),
             childTurnStarted(RESUME_CHILD_TURN_1),
             childTurnCompleted(RESUME_CHILD_TURN_1),
             {
@@ -12409,6 +12426,257 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         "the child's turn runs once the parent's live turn wakes it",
       );
       assert.equal(harness.subagentUpdates().at(-1)?.subagent.status, "completed");
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
+  );
+
+  const childTurnRan = (events: ReadonlyArray<ProviderAdapter.ProviderAdapterV2Event>) =>
+    events.some(
+      (event) =>
+        event.type === "provider_turn.updated" &&
+        event.providerTurn.nativeTurnRef?.nativeId === RESUME_CHILD_TURN_1,
+    );
+
+  const twoTurnInput = (
+    harness: {
+      readonly threadId: ThreadId;
+      readonly providerThread: OrchestrationV2ProviderThread;
+    },
+    index: number,
+    text: string,
+  ) =>
+    Effect.gen(function* () {
+      return {
+        ...makeCodexTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make(`attempt-codex-wake-${index}`),
+          text,
+        }),
+        runOrdinal: index,
+        providerTurnOrdinal: index,
+      };
+    });
+
+  it.effect("interrupts a woken child whose waking turn failed before the child started", () =>
+    Effect.gen(function* () {
+      const interrupted = yield* Deferred.make<void>();
+      const secondPrompt = "Ask the sub-agent again.";
+      const secondTurn = "native-codex-resume-root-turn-2";
+      const harness = yield* makeCodexReplayHarness(
+        makeCodexReplayTranscript({
+          scenario: RESUME_SCENARIO,
+          entries: [
+            ...lateChildPrefix().spawned.slice(0, -1),
+            {
+              type: "emit_inbound",
+              frame: {
+                method: "item/completed",
+                params: {
+                  threadId: RESUME_NATIVE_THREAD,
+                  turnId: RESUME_NATIVE_TURN,
+                  item: {
+                    type: "subAgentActivity",
+                    id: "activity-done",
+                    kind: "completed",
+                    agentThreadId: RESUME_CHILD_THREAD,
+                    agentPath: "/root/resume_agent",
+                  },
+                },
+              },
+            },
+            rootTurnEnded("completed"),
+            ...rootTurnStart(secondTurn, secondPrompt),
+            wakeChild(secondTurn, RESUME_CHILD_THREAD),
+            {
+              type: "emit_inbound",
+              frame: {
+                method: "turn/completed",
+                params: {
+                  threadId: RESUME_NATIVE_THREAD,
+                  turn: makeCodexReplayTurn({ id: secondTurn, status: "failed" }),
+                },
+              },
+            },
+            // The woken child starts only after the turn that woke it failed.
+            childTurnStarted(RESUME_CHILD_TURN_1),
+            ...childTurnInterrupt(5, RESUME_CHILD_THREAD, RESUME_CHILD_TURN_1),
+          ],
+        }),
+        undefined,
+        (method) =>
+          method === "turn/interrupt" ? Deferred.succeed(interrupted, undefined) : Effect.void,
+      );
+      yield* harness.runtime.startTurn(yield* twoTurnInput(harness, 1, RESUME_PROMPT));
+      yield* harness.awaitTerminal(1);
+      assert.equal(harness.subagentUpdates().at(-1)?.subagent.status, "completed");
+      yield* harness.runtime.startTurn(yield* twoTurnInput(harness, 2, secondPrompt));
+      yield* Effect.race(
+        Deferred.await(interrupted),
+        harness.until(() => childTurnRan(harness.events)),
+      );
+      assert.isFalse(childTurnRan(harness.events));
+      assert.equal(harness.subagentUpdates().at(-1)?.subagent.status, "completed");
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
+  );
+
+  it.effect(
+    "keeps a child stopped when the stopping turn sends it input before Codex confirms",
+    () =>
+      Effect.gen(function* () {
+        const childInterrupted = yield* Deferred.make<void>();
+        const harness = yield* makeCodexReplayHarness(
+          makeCodexReplayTranscript({
+            scenario: RESUME_SCENARIO,
+            entries: [
+              ...lateChildPrefix().spawned.slice(0, -1),
+              {
+                type: "expect_outbound",
+                frame: {
+                  id: 4,
+                  method: "turn/interrupt",
+                  params: { threadId: RESUME_NATIVE_THREAD, turnId: RESUME_NATIVE_TURN },
+                },
+              },
+              { type: "emit_inbound", frame: { id: 4, result: {} } },
+              // The root has not stopped yet and nudges the child the Stop just settled.
+              wakeChild(RESUME_NATIVE_TURN, RESUME_CHILD_THREAD),
+              childTurnStarted(RESUME_CHILD_TURN_1),
+              ...childTurnInterrupt(5, RESUME_CHILD_THREAD, RESUME_CHILD_TURN_1),
+            ],
+          }),
+          undefined,
+          (method, params) =>
+            method === "turn/interrupt" &&
+            typeof params === "object" &&
+            params !== null &&
+            "threadId" in params &&
+            params.threadId === RESUME_CHILD_THREAD
+              ? Deferred.succeed(childInterrupted, undefined)
+              : Effect.void,
+        );
+        yield* harness.runtime.startTurn(
+          makeCodexTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now: yield* DateTime.now,
+            attemptId: RunAttemptId.make("attempt-codex-stop-then-nudge"),
+            text: RESUME_PROMPT,
+          }),
+        );
+        yield* harness.until(() => harness.subagentUpdates().length > 0);
+        const rootTurn = harness.events.find(
+          (event) => event.type === "provider_turn.updated" && event.threadId === harness.threadId,
+        );
+        assert.equal(rootTurn?.type, "provider_turn.updated");
+        if (rootTurn?.type !== "provider_turn.updated") return;
+        const stopping = yield* harness.runtime
+          .interruptTurn({
+            providerThread: harness.providerThread,
+            providerTurnId: rootTurn.providerTurn.id,
+            requestRuntimeRestart: true,
+          })
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        yield* Effect.race(
+          Deferred.await(childInterrupted),
+          harness.until(() => childTurnRan(harness.events)),
+        );
+        assert.isFalse(childTurnRan(harness.events));
+        assert.equal(harness.subagentUpdates().at(-1)?.subagent.status, "interrupted");
+        yield* Fiber.interrupt(stopping);
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+          ),
+        ),
+      ),
+  );
+
+  it.effect("runs a grandchild a live root turn wakes after its own parent's root failed", () =>
+    Effect.gen(function* () {
+      const GRANDCHILD_THREAD = "native-codex-resume-grandchild-thread";
+      const GRANDCHILD_TURN = "native-codex-resume-grandchild-turn";
+      const secondPrompt = "Ask the grandchild again.";
+      const secondTurn = "native-codex-resume-root-turn-2";
+      const harness = yield* makeCodexReplayHarness(
+        makeCodexReplayTranscript({
+          scenario: RESUME_SCENARIO,
+          entries: [
+            ...lateChildPrefix().spawned,
+            spawnActivity({
+              id: "call-codex-grandchild-spawn",
+              agentThreadId: GRANDCHILD_THREAD,
+              agentPath: "/root/resume_agent/grandchild",
+              threadId: RESUME_CHILD_THREAD,
+              turnId: RESUME_CHILD_TURN_1,
+            }),
+            rootTurnEnded("failed"),
+            ...rootTurnStart(secondTurn, secondPrompt),
+            wakeChild(secondTurn, GRANDCHILD_THREAD),
+            {
+              type: "emit_inbound",
+              frame: {
+                method: "turn/started",
+                params: {
+                  threadId: GRANDCHILD_THREAD,
+                  turn: makeCodexReplayTurn({ id: GRANDCHILD_TURN, status: "inProgress" }),
+                },
+              },
+            },
+            rootMarker("GRANDCHILD_WOKEN", RESUME_NATIVE_THREAD, secondTurn),
+          ],
+        }),
+      );
+      yield* harness.runtime.startTurn(yield* twoTurnInput(harness, 1, RESUME_PROMPT));
+      yield* harness.awaitTerminal(1);
+      const isGrandchild = (subagent: OrchestrationV2Subagent) =>
+        subagent.title === "/root/resume_agent/grandchild";
+      assert.equal(
+        harness.subagentUpdates().findLast((update) => isGrandchild(update.subagent))?.subagent
+          .status,
+        "interrupted",
+      );
+      yield* harness.runtime.startTurn(yield* twoTurnInput(harness, 2, secondPrompt));
+      yield* harness.until(() =>
+        harness.events.some(
+          (event) => event.type === "message.updated" && event.message.text === "GRANDCHILD_WOKEN",
+        ),
+      );
+      assert.isTrue(
+        harness.events.some(
+          (event) =>
+            event.type === "provider_turn.updated" &&
+            event.providerTurn.nativeTurnRef?.nativeId === GRANDCHILD_TURN,
+        ),
+        "the grandchild's turn runs under the turn that woke it",
+      );
+      assert.equal(
+        harness.subagentUpdates().findLast((update) => isGrandchild(update.subagent))?.subagent
+          .status,
+        "running",
+      );
     }).pipe(
       Effect.provide(
         Layer.mergeAll(

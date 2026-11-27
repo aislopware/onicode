@@ -2,8 +2,15 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import {
   EnvironmentId,
   type OrchestrationV2ThreadShell,
+  type OrchestrationV2ThreadProjection,
+  type ModelSelection,
+  type Project,
   ProjectId,
+  ProviderDriverKind,
+  ProviderInstanceId,
   RunId,
+  type RuntimeMode,
+  type ServerProvider,
   ThreadId,
 } from "@onicode/contracts";
 import { assert, it } from "@effect/vitest";
@@ -82,4 +89,91 @@ it.effect("continues a thread as an agent's send, the way a linked environment d
       [["agent", "mcp"]],
     );
   }).pipe(Effect.provide(layer.pipe(Layer.provide(dependencies))));
+});
+
+it.effect("under an administrator's ceiling, a step does not take an agent's own mode", () => {
+  const projectId = ProjectId.make("project-1");
+  const agent = ProviderInstanceId.make("acp-agent");
+  const yolo = { id: "_oni/session-mode", value: "yolo" };
+  const provider = {
+    instanceId: agent,
+    driver: ProviderDriverKind.make("acpRegistry"),
+    enabled: true,
+    installed: true,
+    version: "test",
+    status: "ready",
+    auth: { status: "authenticated" },
+    checkedAt: "2026-11-27T00:00:00.000Z",
+    slashCommands: [],
+    skills: [],
+    models: [{ slug: "default", name: "Default", isCustom: false, capabilities: null }],
+  } as unknown as ServerProvider;
+  const startUnder = (ceiling: RuntimeMode, model?: { options: Array<typeof yolo> }) => {
+    const launched: Array<ModelSelection> = [];
+    const dependencies = Layer.mergeAll(
+      NodeCrypto.layer,
+      Layer.mock(ThreadManagement.ThreadManagementService)({}),
+      Layer.mock(ThreadLaunch.ThreadLaunchService)({
+        launch: (input) =>
+          Effect.sync(() => {
+            launched.push(input.modelSelection);
+            return {
+              threadId: input.threadId,
+              projection: {
+                runs: [{ id: runId, userMessageId: input.initialMessage?.messageId }],
+              } as unknown as OrchestrationV2ThreadProjection,
+            } as ThreadLaunch.ThreadLaunchResult;
+          }),
+      }),
+      Layer.mock(ProjectService.ProjectService)({
+        getById: () => Effect.succeedSome({ id: projectId } as Project),
+      }),
+      Layer.mock(ProviderRegistry.ProviderRegistry)({ getProviders: Effect.succeed([provider]) }),
+      ServerSettings.ServerSettingsService.layerTest(
+        {
+          projectSettingsFolded: true,
+          projectSettingsOverrides: {
+            [projectId]: {
+              defaultModelSelection: { instanceId: agent, model: "default", options: [yolo] },
+              providerInstances: { [agent]: { enabled: true } },
+            },
+          },
+        },
+        { organization: "Acme", lockedSettings: [], limits: { maxRuntimeMode: ceiling } },
+      ),
+      Layer.mock(ThreadIssueService.ThreadIssueService)({}),
+      Layer.mock(PeerMcpClient.PeerMcpClient)({}),
+      Layer.mock(PeerLinks.PeerLinks)({}),
+      Layer.mock(ServerEnvironment.ServerEnvironment)({
+        getEnvironmentId: Effect.succeed(EnvironmentId.make("environment-1")),
+      }),
+      Layer.succeed(WorkflowForge, {} as WorkflowForge["Service"]),
+    );
+    return Effect.gen(function* () {
+      const agents = yield* WorkflowAgents;
+      const started = yield* agents
+        .start({
+          key: "run-1/write/0",
+          origin: { runId: "run-1", workflow: "fix", step: "write" },
+          title: "fix: write",
+          prompt: "Write the fix.",
+          outputSchema: undefined,
+          model:
+            model === undefined ? undefined : { instanceId: agent, model: "default", ...model },
+          project: projectId,
+          environment: undefined,
+          thread: undefined,
+        })
+        .pipe(Effect.result);
+      return { failed: started._tag === "Failure", options: launched.map((s) => s.options) };
+    }).pipe(Effect.provide(layer.pipe(Layer.provide(dependencies))));
+  };
+  return Effect.gen(function* () {
+    assert.deepEqual(yield* startUnder("full-access"), { failed: false, options: [[yolo]] });
+    assert.deepEqual(yield* startUnder("auto"), { failed: false, options: [[]] });
+    assert.deepEqual(yield* startUnder("auto", { options: [yolo] }), {
+      failed: true,
+      options: [],
+    });
+  });
 });
