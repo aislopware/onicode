@@ -250,7 +250,7 @@ it.each([{ issueSummaries: false }, { issueSummaries: true }])(
         assignees: false,
         reactions: false,
         templates: false,
-        linkedPullRequests: false,
+        linkedPullRequests: true,
         events: false,
         search: false,
       },
@@ -263,11 +263,21 @@ it.each([{ issueSummaries: false }, { issueSummaries: true }])(
       },
       states: [],
       viewer: null,
-      body: "",
+      body: Array.from({ length: 40 }, (_, index) => `Reproduction step ${index + 1}`).join("\n\n"),
       comments: [],
       commentsCursor: null,
       events: [],
-      linkedPullRequests: [],
+      linkedPullRequests: [
+        {
+          repository: "aislopware/onicode",
+          number: 124,
+          url: "https://github.com/aislopware/onicode/pull/124",
+          title: "Fix keyboard shortcuts",
+          state: "open",
+          isDraft: false,
+          closesIssue: false,
+        },
+      ],
     } satisfies IssueDetail;
     const completedDetail = {
       ...liveDetail,
@@ -276,6 +286,9 @@ it.each([{ issueSummaries: false }, { issueSummaries: true }])(
       url: completed.url,
       title: completed.title,
       state: { category: "closed", closeReason: "completed", name: "Done" },
+      capabilities: { ...liveDetail.capabilities, linkedPullRequests: false },
+      body: "",
+      linkedPullRequests: [],
     } satisfies IssueDetail;
     const detailFor = (input: IssueRef) => {
       const isCompleted = input.key === completed.key;
@@ -377,6 +390,33 @@ it.each([{ issueSummaries: false }, { issueSummaries: true }])(
     await userEvent.click(issueRow);
     expect(router.history.location.pathname).toBe(`/${ENVIRONMENT_ID}/${linked.id}`);
     await expect.element(page.getByRole("heading", { name: liveTitle })).toBeVisible();
+    const linkedPr = page.getByRole("link", { name: /Fix keyboard shortcuts/ });
+    const issueScroller = () =>
+      linkedPr.element().closest<HTMLElement>("[data-pull-request-summary-scroll]")!;
+    const prRow = await linkedPr.findElement();
+    await expect.element(page.getByText("Reproduction step 40", { exact: true })).toBeVisible();
+    // The panel saves its position from the scroll event, which lands after scrollIntoView.
+    const scrolled = new Promise((resolve) =>
+      issueScroller().addEventListener("scroll", resolve, { once: true }),
+    );
+    prRow.scrollIntoView({ block: "center" });
+    await scrolled;
+    const issueScrollTop = issueScroller().scrollTop;
+    expect(issueScrollTop).toBeGreaterThan(0);
+    // A Linear issue's pull request opens through its repository's project, which this fixture
+    // lacks, so the pull request tab opens from the store.
+    await act(() =>
+      useRightPanelStore.getState().openPullRequest(scopeThreadRef(ENVIRONMENT_ID, linked.id), {
+        projectId: PROJECT_ID,
+        host: "github.com",
+        repository: "aislopware/onicode",
+        number: 124,
+        url: "https://github.com/aislopware/onicode/pull/124",
+      }),
+    );
+    await expect.element(linkedPr).not.toBeInTheDocument();
+    await userEvent.click(page.getByRole("button", { name: issue.key, exact: true }));
+    await vi.waitFor(() => expect(issueScroller().scrollTop).toBe(issueScrollTop));
     // Closed elsewhere: refreshing the panel also refreshes the state its tab shows.
     Object.assign(liveDetail, { state: { category: "closed", name: "Shipped" } });
     await userEvent.click(page.getByRole("button", { name: "Refresh issue" }));
