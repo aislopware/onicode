@@ -35,6 +35,7 @@ function logPathHydrationWarning(message: string, error?: unknown): void {
 const LOGIN_SHELL_ENV_NAMES = [
   "PATH",
   "__MISE_DIFF",
+  "FNM_MULTISHELL_PATH",
   "JAVA_HOME",
   "PNPM_HOME",
   "ONICODE_FEATURE_FLAGS",
@@ -58,12 +59,30 @@ function applyLoginShellEnvironment(
   fallbackPath?: string,
 ): void {
   const shellPath = shellEnvironment.PATH;
-  const mergedPath = mergePathEntries(shellPath ?? fallbackPath, env.PATH, platform);
+  // fnm gives every probe shell its own multishell folder; drop the last probe's on a re-read.
+  const multishell = shellPath ? shellEnvironment.FNM_MULTISHELL_PATH : undefined;
+  const staleMultishell = multishell ? env.FNM_MULTISHELL_PATH : undefined;
+  // The probe inherits our PATH, so the stale folder is in the shell's PATH too.
+  const withoutStale = (path: string | undefined) =>
+    staleMultishell && staleMultishell !== multishell
+      ? path
+          ?.split(":")
+          .filter((entry) => entry !== staleMultishell && !entry.startsWith(`${staleMultishell}/`))
+          .join(":")
+      : path;
+  const mergedPath = mergePathEntries(
+    withoutStale(shellPath ?? fallbackPath),
+    withoutStale(env.PATH),
+    platform,
+  );
   if (mergedPath) {
     env.PATH = mergedPath;
   }
   if (shellPath && shellEnvironment.__MISE_DIFF) {
     env.__MISE_DIFF = shellEnvironment.__MISE_DIFF;
+  }
+  if (multishell) {
+    env.FNM_MULTISHELL_PATH = multishell;
   }
   // Android SDK tools are Java programs, and a keg-only JDK (Homebrew's openjdk) is only reachable
   // through the profile's JAVA_HOME. pnpm's global commands refuse to run without PNPM_HOME.

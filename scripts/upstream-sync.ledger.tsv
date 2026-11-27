@@ -4044,3 +4044,4 @@ cbc3057f59	take	kept Onicode's stricter workEntryViewedImagePath and frame style
 03c0b31315	skip	already done: Onicode reads a SKILL.md only in child/manifest folders, and its 'scans an automatic root's children and ignores a SKILL.md in the root' test covers all four roots
 60eed627d0	take	kept Onicode's PullRequestTimelineTab (already routes through useOpenLink); only the test ported
 9ea5044aef	take	taken as is
+0180628cf7	take	FNM_MULTISHELL_PATH added beside Onicode's PNPM_HOME; kept the JAVA_HOME/PNPM_HOME loop
