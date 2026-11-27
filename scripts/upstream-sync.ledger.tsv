@@ -4665,3 +4665,4 @@ ff6ad845f0	take	taken as is
 dcac7cfed6	take	taken; conflicts kept Onicode's: issue comment card border, composer placeholder/disabled classes, mobile contract imports, translation catalogs (new keys regenerated, upstream's translations copied), Onicode's own docs layout (JSM note added to its Jira paragraph), its eval file (2 JSM cases appended), and context budget (mcpToolListJsonBytes 66343 -> 66678, upstream's same +335). Wire-compatible: every new field optional; an old client's comment stays internal on JSM as before
 38452ae605	take	conflict with Onicode's text-box model (from 8335c0951b): kept Onicode's own-line handling for paragraph-anchored ODF boxes (odfBlockTextBox), took upstream's odfInlineParagraphs for as-char boxes and note bodies; DocumentText VERSION 18 -> 19 so cached ODT text extracts again
 c2e6204332	take	taken as is
+a27ad36daa	take	fix(web): Markdown blocks keep the text direction their HTML sets (#44375)
