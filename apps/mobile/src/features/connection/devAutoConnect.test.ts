@@ -143,6 +143,7 @@ it("a remove link forgets its environment in development and routes as usual in 
   expect(harness.forget).toHaveBeenCalledExactlyOnceWith("env-1");
   expect(takeDevConnectionRemoveLink("/connections/remove/?environmentId=")).toBe(true);
   expect(takeDevConnectionRemoveLink("connections/remove")).toBe(true);
+  expect(takeDevConnectionRemoveLink("connections/remove#?environmentId=env-1")).toBe(true);
   expect(takeDevConnectionRemoveLink("connections/removed?environmentId=env-1")).toBe(false);
   expect(takeDevConnectionRemoveLink("connections/new?environmentId=env-1")).toBe(false);
   vi.stubGlobal("__DEV__", false);
