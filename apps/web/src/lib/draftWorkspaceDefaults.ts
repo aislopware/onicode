@@ -2,8 +2,6 @@ import type { ScopedProjectRef } from "@onicode/contracts";
 import { flushSync } from "react-dom";
 
 import { type DraftId, type DraftSessionState, useComposerDraftStore } from "../composerDraftStore";
-import { appAtomRegistry } from "../rpc/atomRegistry";
-import { environmentSummaries } from "../state/presentation";
 
 type DraftWorkspaceDefault = Pick<DraftSessionState, "envMode" | "startFromOrigin">;
 
@@ -56,7 +54,8 @@ export function readPendingWorkspaceDefault(draftId: DraftId): Promise<void> | n
   return acceptsWorkspaceDefault(draft, pending) ? pending.settled : null;
 }
 
-// Covers a warm read. A reconnecting machine's read never fails, so Send must not wait it out.
+// Covers a warm read. A reconnecting or newly paired machine's read may not land for a while, so
+// Send does not wait it out.
 export const WORKSPACE_DEFAULT_SEND_WAIT_MS = 3_000;
 
 /**
@@ -73,14 +72,6 @@ export function holdSendForWorkspaceDefault(draftId: DraftId): Promise<void> | n
   const giveUp = () => {
     if (pendingDefaults.get(draftId) === pending) pendingDefaults.delete(draftId);
   };
-  if (
-    !appAtomRegistry
-      .get(environmentSummaries.connectedEnvironmentIdsAtom)
-      .includes(pending.projectRef.environmentId)
-  ) {
-    giveUp();
-    return null;
-  }
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
       giveUp();

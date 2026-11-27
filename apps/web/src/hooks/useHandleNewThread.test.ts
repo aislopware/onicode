@@ -495,12 +495,20 @@ describe("useNewThreadHandler", () => {
     expect(testState.draftStore.setDraftThreadContext).not.toHaveBeenCalled();
   });
 
-  it("does not hold a send for a machine that disconnected before the read landed", async () => {
+  it("holds a send for a machine that has not reported connected until the read lands", async () => {
     testState.reset(null, { envMode: null, startFromOrigin: false });
     const opened = await openRemoteDraft();
+    testState.draftStore.setDraftThreadContext.mockClear();
 
     testState.disconnect("environment-ssh");
-    expect(holdSend(opened!.draftId)).toBeNull();
+    const pendingDefault = holdSend(opened!.draftId);
+    expect(pendingDefault).not.toBeNull();
+    testState.completeProjectFileRead({ defaultThreadEnvMode: "worktree" });
+    await pendingDefault;
+    expect(testState.draftStore.setDraftThreadContext).toHaveBeenCalledWith(opened?.draftId, {
+      envMode: "worktree",
+      startFromOrigin: false,
+    });
   });
 
   it("takes a fresh read over a cached onicode.json that is refetching or stale", async () => {
