@@ -3941,3 +3941,4 @@ c5d6aa19de	take	kept Onicode's last-wins topLevelCwd assignment, gated off for P
 5ebb275c2b	take	taken as is
 4a8f2be96a	take	kept Onicode's background flag on finished launches, boundText/command/detail in normalizeAntigravityToolCall
 95411e3cd7	take	no guest-share input/case; readMenu/run split on Onicode's hook
+3b5033a28c	take	FeedbackReport hunk dropped (feature removed); budget re-measured to 66263; kept Onicode's handlers tests and added withdraw to them; one publish per claim (Onicode already published), after the milestone as upstream

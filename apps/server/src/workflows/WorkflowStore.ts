@@ -485,14 +485,19 @@ export const make = Effect.gen(function* () {
       SELECT request_json, opened_at FROM workflow_waits WHERE run_id = ${runId} AND name = ${name}
     `.pipe(Effect.orDie);
     if (wait === undefined || wait.request_json === null) return;
-    const expired =
-      woke !== null &&
-      typeof woke === "object" &&
-      (woke as { readonly expired?: unknown }).expired === true;
+    const claim =
+      woke !== null && typeof woke === "object"
+        ? (woke as { readonly expired?: unknown; readonly withdrawn?: unknown })
+        : {};
     yield* tell(runId, `${runId}:${name}:${wait.opened_at}`, at, {
       type: "workflow.input_resolved",
       step: name,
-      resolution: expired ? "expired" : "answered",
+      resolution:
+        claim.withdrawn !== undefined
+          ? "withdrawn"
+          : claim.expired === true
+            ? "expired"
+            : "answered",
     });
   });
 
@@ -741,8 +746,8 @@ export const make = Effect.gen(function* () {
           Effect.tap((taken) =>
             taken
               ? Effect.andThen(
-                  PubSub.publish(changes, runId),
                   Effect.flatMap(now, (at) => questionClaimed(runId, name, woke, at)),
+                  PubSub.publish(changes, runId),
                 )
               : Effect.void,
           ),
@@ -807,8 +812,8 @@ export const make = Effect.gen(function* () {
           Effect.orDie,
         );
       if (outcome === "delivered") {
-        yield* PubSub.publish(changes, runId);
         yield* questionClaimed(runId, name, woke, at);
+        yield* PubSub.publish(changes, runId);
       }
       return outcome;
     }),

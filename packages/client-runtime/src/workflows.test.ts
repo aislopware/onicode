@@ -19,6 +19,7 @@ import {
   workflowAgentSummary,
   isOwnWorkflowAnswer,
   workflowAnswer,
+  workflowWithdrawal,
   workflowChip,
   workflowFlowFocus,
   workflowPausedBeat,
@@ -719,5 +720,19 @@ describe("workflowOneLine", () => {
     expect(workflowOneLine("Compare [ this with [the issue](https://x.test/2) first")).toBe(
       "Compare [ this with the issue first",
     );
+  });
+});
+
+describe("workflowWithdrawal", () => {
+  it("reads who withdrew a question, and why, off its result", () => {
+    expect(
+      workflowWithdrawal({ withdrawn: { by: "onicode CLI", reason: "settled elsewhere" } }),
+    ).toEqual({ by: "onicode CLI", reason: "settled elsewhere" });
+    expect(workflowWithdrawal({ withdrawn: { by: "run r1", reason: null } })).toEqual({
+      by: "run r1",
+      reason: null,
+    });
+    expect(workflowWithdrawal({ choice: "Ship" })).toBeNull();
+    expect(workflowWithdrawal(null)).toBeNull();
   });
 });

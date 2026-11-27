@@ -5749,5 +5749,8 @@
   ],
   "0f93532dd76391fc": "내 답변: {choice}",
   "7e1fd2eb570a372b": "{who}의 답변: {choice}",
-  "1a1beecff68a6e61": "Google 계정 확인"
+  "1a1beecff68a6e61": "Google 계정 확인",
+  "99451a5d2d40440f": "{by}에서 철회했습니다.",
+  "3ee30a50b70fffab": "{by}에서 철회했습니다: {reason}",
+  "201490988858b511": "{by}에서 철회함"
 }

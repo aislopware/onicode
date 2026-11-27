@@ -5775,5 +5775,8 @@
   ],
   "0f93532dd76391fc": "You answered {choice}",
   "7e1fd2eb570a372b": "{who} answered {choice}",
-  "1a1beecff68a6e61": "Verify Google account"
+  "1a1beecff68a6e61": "Verify Google account",
+  "99451a5d2d40440f": "Withdrawn by {by}.",
+  "3ee30a50b70fffab": "Withdrawn by {by}: {reason}",
+  "201490988858b511": "withdrawn by {by}"
 }

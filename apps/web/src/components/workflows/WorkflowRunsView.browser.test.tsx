@@ -532,6 +532,34 @@ describe("WorkflowRunsView", () => {
     await expect.element(await card("old")).toMatchTextContent("Chrome on Linux said Yes: Fine");
   });
 
+  it("says who withdrew a question that ended unanswered, and why", async () => {
+    setup(
+      {
+        runs: [run({ runId: "ship", title: "Ship", status: "completed", endedAt: at(2) })],
+        questions: [],
+      },
+      {
+        ship: [
+          step({
+            name: "wanted",
+            kind: "ask",
+            endedAt: at(1),
+            detail: "withdrawn by onicode CLI: settled elsewhere",
+            result: { withdrawn: { by: "onicode CLI", reason: "settled elsewhere" } },
+          }),
+        ],
+      },
+    );
+    await using screen = await render(page("ship"));
+
+    const flow = screen.getByRole("navigation", { name: "Steps so far" });
+    await expect.element(flow).toMatchTextContent(/wanted.*withdrawn by onicode CLI/);
+    await flow.getByRole("button", { name: /wanted/ }).click();
+    await expect
+      .element(screen.getByRole("region", { name: "wanted" }))
+      .toMatchTextContent(/withdrawn · 1m 0s.*Withdrawn by onicode CLI: settled elsewhere/);
+  });
+
   it("opens an agent's thread on an environment this server links to", async () => {
     setup(
       {

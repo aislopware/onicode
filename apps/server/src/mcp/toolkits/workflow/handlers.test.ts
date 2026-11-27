@@ -162,6 +162,7 @@ it.effect.each([
           { action: "signal", runId: "run-1", wait: "review", value: true },
           { action: "resume", runId: "run-1" },
           { action: "cancel", runId: "run-1" },
+          { action: "withdraw", runId: "run-1", wait: "review" },
           { action: "store_set", key: "seen", value: 1 },
           { action: "store_delete", key: "seen" },
           { action: "hooks" },
@@ -175,6 +176,7 @@ it.effect.each([
               signal: record("signal"),
               resume: record("resume"),
               cancel: record("cancel"),
+              withdraw: record("withdraw"),
               storeSet: record("storeSet"),
               storeDelete: record("storeDelete"),
               hooks: Effect.sync(() => {
@@ -393,4 +395,28 @@ it.effect(
       expect(result.sent).toBe(false);
       expect(named).toEqual(["onicode CLI"]);
     }),
+);
+
+it.effect("withdraw names the caller who withdrew the question and says whether it was open", () =>
+  Effect.gen(function* () {
+    const calls: Array<unknown> = [];
+    const result = yield* lastResult({
+      action: "withdraw",
+      runId: "run-1",
+      wait: "wanted",
+      reason: "settled elsewhere",
+    }).pipe(
+      Effect.provide(
+        handlersWith({
+          withdraw: (runId, name, options) =>
+            Effect.sync(() => (calls.push([runId, name, options]), "not_open" as const)),
+          get: () => Effect.succeed(emptyRun),
+        }),
+      ),
+    );
+    expect(calls).toEqual([
+      ["run-1", "wanted", { by: "onicode CLI", reason: "settled elsewhere" }],
+    ]);
+    expect(result).toEqual({ withdrawal: "not_open", steps: [], references: [] });
+  }),
 );
