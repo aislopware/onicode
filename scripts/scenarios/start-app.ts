@@ -340,6 +340,12 @@ const startApp = Effect.fn("startApp")(function* (input: {
   // device that is not this machine. Tests mint their own pairing links, so the startup one is
   // dropped.
   const [serverPort = "", metroPort = "", host = ""] = input.ports;
+  // The device's saved environments outlive the app, so a new id each run would add another.
+  // The device refuses a saved id at a new address, hence one id per port.
+  yield* fs.writeFileString(
+    path.join(input.home, "userdata/environment-id"),
+    `scenario-mobile-${serverPort}\n`,
+  );
   const metro = yield* start({
     cwd: path.join(checkout, "apps/mobile"),
     command: "npx",

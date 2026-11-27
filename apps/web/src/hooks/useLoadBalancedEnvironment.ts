@@ -9,9 +9,11 @@ import { serverEnvironment } from "../state/server";
 
 // Mirrors the freshness window in chooseLoadBalancedEnvironment.
 const HOST_RESOURCES_FRESH_MS = 15_000;
+// The server's sample cache lifetime.
+const HOST_RESOURCES_RESAMPLE_MS = 5_000;
 
 // Keyed by content: callers derive the list every render.
-const hostResourcesAtom = Atom.family((environmentIdsKey: string) =>
+export const hostResourcesAtom = Atom.family((environmentIdsKey: string) =>
   Atom.make((get) => {
     const evaluatedAt = Date.now();
     const resources = (
@@ -34,6 +36,25 @@ const hostResourcesAtom = Atom.family((environmentIdsKey: string) =>
     );
     if (Number.isFinite(nextExpiry)) {
       const timer = setTimeout(() => get.refreshSelf(), nextExpiry - evaluatedAt + 1);
+      get.addFinalizer(() => clearTimeout(timer));
+    }
+    // Queries refetch only on mount, so with every machine busy or stale nothing would sample
+    // again. Weight only ranks machines that pass, and candidates all have a positive one.
+    if (
+      resources.length > 0 &&
+      resources.every((resource) => !resource.pending && !resource.failed) &&
+      chooseLoadBalancedEnvironment(
+        resources.map((resource) => ({ ...resource, weight: 1 })),
+        evaluatedAt,
+      ) === null
+    ) {
+      // The registry, not `get`: the first refresh rebuilds this atom and disposes `get`.
+      const registry = get.registry;
+      const timer = setTimeout(() => {
+        for (const { environmentId } of resources) {
+          registry.refresh(serverEnvironment.hostResources({ environmentId, input: {} }));
+        }
+      }, HOST_RESOURCES_RESAMPLE_MS);
       get.addFinalizer(() => clearTimeout(timer));
     }
     return { evaluatedAt, resources };
@@ -69,8 +90,15 @@ export function useLoadBalancedEnvironment(
     );
     return chooseLoadBalancedEnvironment(candidates, Date.now()) as EnvironmentId | null;
   };
-  const { evaluatedAt, resources } = useAtomValue(hostResourcesAtom(environmentIds.join("\n")));
-  const pending = resources.some((resource) => resource.pending);
+  const state = useAtomValue(hostResourcesAtom(environmentIds.join("\n")));
+  return { refresh, refreshSelection, ...selectLoadBalancedEnvironment(state, weights) };
+}
+
+export function selectLoadBalancedEnvironment(
+  { evaluatedAt, resources }: Atom.Type<ReturnType<typeof hostResourcesAtom>>,
+  weights: Readonly<Record<string, number>>,
+) {
+  const checking = resources.some((resource) => resource.pending);
   const environmentId = chooseLoadBalancedEnvironment(
     resources.map((resource) => ({
       ...resource,
@@ -78,11 +106,12 @@ export function useLoadBalancedEnvironment(
     })),
     evaluatedAt,
   ) as EnvironmentId | null;
+  const failed =
+    !checking && environmentId === null && resources.some((resource) => resource.failed);
   return {
-    refresh,
-    refreshSelection,
-    pending,
+    // Busy machines are sampled again until one frees up, so the check is still running.
+    pending: checking || (environmentId === null && !failed && resources.length > 0),
     environmentId,
-    failed: !pending && environmentId === null && resources.some((resource) => resource.failed),
+    failed,
   };
 }

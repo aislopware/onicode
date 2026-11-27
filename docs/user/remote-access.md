@@ -146,8 +146,9 @@ Preferences are saved separately in each client.
 The composer checks eligible machines when choosing a draft's environment, then keeps
 that choice stable. Choose **Auto balance** again to check current resources, or choose
 a specific machine to override it. Choosing a branch or worktree also keeps the draft
-on that machine. Existing threads stay where they started. If resource checks are
-unavailable or all eligible machines are full, choose a machine manually to continue.
+on that machine. Existing threads stay where they started. While all eligible machines
+are full, the composer keeps checking until one has room. If resource checks are
+unavailable, choose a machine manually to continue.
 Mobile keeps its manual environment selection.
 
 ### Connect from your tailnet

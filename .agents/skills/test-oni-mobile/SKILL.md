@@ -76,18 +76,28 @@ arguments stored in `agent_device_command` and the Bash array
   "$agent_device_command" "${agent_device_target_args[@]}"
 ```
 
-It issues a fresh credential and opens Onicode Dev's existing pairing route
-through AgentDevice. For a backend on the device host, use
-`http://127.0.0.1:<server-port>` on iOS or `http://10.0.2.2:<server-port>`
-on Android. For a remote backend, use its reachable origin.
+It issues a fresh credential, opens Onicode Dev's existing pairing route
+through AgentDevice, and prints the backend's environment ID for teardown. For a
+backend on the device host, use `http://127.0.0.1:<server-port>` on iOS or
+`http://10.0.2.2:<server-port>` on Android. For a remote backend, use its
+reachable origin.
 
 Confirm the intended projects appear, exercise the affected flow, and capture
 evidence. Actually inspect the screenshots (`device_screenshot`) as a user using
 the feature—check layout, visual hierarchy, touch ergonomics, and flow—and
 iterate on anything that feels off until you are satisfied before handing back.
-Retain the app and environment while iterating. At teardown, remove
-the disposable connection, close the AgentDevice session, call `device_close`,
-and stop only your backend and Metro processes.
+Retain the app and environment while iterating. At teardown, remove the
+disposable connection before stopping Metro, which the dev client needs to
+handle the link. Every worktree's backend adds its own connection, and shared
+simulators and emulators keep them all:
+
+```bash
+.agents/skills/test-oni-mobile/scripts/forget-client.sh <environment-id> \
+  "$agent_device_command" "${agent_device_target_args[@]}"
+```
+
+Then close the AgentDevice session, call `device_close`, and stop only your
+backend and Metro processes.
 
 ## Accessibility audit
 

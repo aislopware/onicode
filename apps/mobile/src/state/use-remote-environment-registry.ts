@@ -62,6 +62,13 @@ export async function pairEnvironment(
   return pairingFailure(Cause.squash(result.cause));
 }
 
+/** Forgets a saved environment without asking. Removing an id that is not saved fails silently. */
+export async function forgetEnvironment(environmentId: EnvironmentId): Promise<void> {
+  await runAtomCommand(appAtomRegistry, environmentCatalog.remove, environmentId, {
+    reportFailure: false,
+  });
+}
+
 function failureReason(error: unknown): unknown {
   return error !== null && typeof error === "object" && "reason" in error
     ? error.reason

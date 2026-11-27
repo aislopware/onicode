@@ -1,3 +1,4 @@
+import { EnvironmentId } from "@onicode/contracts";
 import type { NavigationState, PartialState } from "@react-navigation/native";
 import { CommonActions, StackActions } from "@react-navigation/native";
 import { Atom } from "effect/reactivity";
@@ -7,7 +8,7 @@ import { rootNavigationRef, whenRootNavigationReady } from "../../lib/rootNaviga
 import { appAtomRegistry } from "../../state/atom-registry";
 import { leaveSettingsPage } from "../settings/settings-navigation";
 import { workspaceHasColumns } from "../layout/workspace/workspace-selection-store";
-import { pairEnvironment } from "../../state/use-remote-environment-registry";
+import { forgetEnvironment, pairEnvironment } from "../../state/use-remote-environment-registry";
 
 export type DevAutoConnectAttempt =
   | { readonly pairingUrl: string; readonly status: "connecting" }
@@ -114,6 +115,21 @@ export function startDevAutoConnect(
     appAtomRegistry.set(devAutoConnectAttemptAtom, null);
   }
   return state;
+}
+
+const REMOVE_LINK_PATH = /^\/*connections\/remove\/?(?=[?#]|$)/;
+
+/**
+ * `connections/remove?environmentId=…` forgets that saved environment without the confirm dialog,
+ * so a test session can take back the connection its pairing link added. It is gated like pairing
+ * links; elsewhere the path routes like any unknown link. Returns whether it took the link.
+ */
+export function takeDevConnectionRemoveLink(path: string): boolean {
+  if (!pairingLinksAllowed() || !REMOVE_LINK_PATH.test(path)) return false;
+  const query = /\?([^#]*)/.exec(path)?.[1] ?? "";
+  const environmentId = new URLSearchParams(query).get("environmentId")?.trim() ?? "";
+  if (environmentId.length > 0) void forgetEnvironment(EnvironmentId.make(environmentId));
+  return true;
 }
 
 /**

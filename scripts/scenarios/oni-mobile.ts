@@ -105,8 +105,7 @@ export const test = base.extend<{ onicode: MobileOni }>({
           if (!down) break;
           await load();
         }
-        // The first load bundles the app; the pairing link only works once it is on screen.
-        if (paired) return;
+        // The first load bundles the app.
         await expect(workspace.or(loadFailed)).toBeVisible({ timeout: 240_000 });
         // The error stays on screen while another load runs, so only the app tells that one worked.
         for (let attempt = 1; attempt < LOAD_ATTEMPTS; attempt += 1) {
@@ -115,6 +114,8 @@ export const test = base.extend<{ onicode: MobileOni }>({
           await workspace.waitFor({ state: "visible", timeout: 60_000 }).catch(() => {});
         }
         await expect(workspace).toBeVisible();
+        // The pairing link only works once the app is on screen.
+        if (paired) return;
         const query = new URLSearchParams({
           pairingUrl: await runPromise(pairingUrl),
           autoConnect: "1",
