@@ -1153,10 +1153,13 @@ function ResourceTelemetryDiagnosticsBody({
               value={allOni ? String(allOni.processCount) : "..."}
               detail={
                 allOni
-                  ? gt("{processStarts} starts · {processExits} exits", {
-                      processStarts: allOni.processStarts,
-                      processExits: allOni.processExits,
-                    })
+                  ? gt(
+                      "{processStarts, plural, one {{processStarts} start} other {{processStarts} starts}} · {processExits, plural, one {{processExits} exit} other {{processExits} exits}}",
+                      {
+                        processStarts: allOni.processStarts,
+                        processExits: allOni.processExits,
+                      },
+                    )
                   : undefined
               }
             />
