@@ -9,6 +9,7 @@ import { compactBeforeSendTokens } from "@onicode/client-runtime/state/context-w
 import { threadRuntimeIsActive } from "@onicode/client-runtime/state/shell";
 import {
   nativeGoalsFor,
+  runStopRequested,
   threadSteersDuringCompaction,
 } from "@onicode/client-runtime/state/thread-workflows";
 import { resolvePendingHandoff } from "@onicode/client-runtime/handoff";
@@ -419,7 +420,10 @@ export function useThreadComposerState(input: {
     run: selectedThreadProjection?.projection.runs.find((run) => run.id === activeRunId),
     messages: selectedThreadMessages,
   });
-  const canSteerActiveTurn = queueWorkflow?.canPromoteToSteer === true && !compactionBlocksSteer;
+  const canSteerActiveTurn =
+    queueWorkflow?.canPromoteToSteer === true &&
+    !compactionBlocksSteer &&
+    !runStopRequested(selectedThreadProjection?.projection, activeRunId);
   // A stop or a restart holds the queue, completion wakes included, until it
   // is resumed; the queue sheet lists only the user's own messages.
   const queueHeld = queueWorkflow?.isHeld === true;

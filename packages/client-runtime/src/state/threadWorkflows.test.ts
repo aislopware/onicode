@@ -60,6 +60,7 @@ describe("thread workflows", () => {
     ],
     // The provider turn ended; the server would start the steer as a turn of its own.
     ["run waiting for its checkpoint", { steer: true }, { waiting: true }, false],
+    ["a run Stop has reached", { steer: true }, { stopRequested: true }, false],
   ] as const)("gates composer steering for %s", (_, turns, compaction, expected) => {
     const projection = {
       thread: { id: "thread", activeProviderThreadId: "provider-thread" },
@@ -78,6 +79,8 @@ describe("thread workflows", () => {
         { id: "other", status: "ready", capabilities: capabilities({ steer: true }) },
       ],
       messages: [],
+      turnItems:
+        "stopRequested" in compaction ? [{ runId: "active", type: "run_interrupt_request" }] : [],
     } as unknown as OrchestrationV2ThreadProjection;
     expect(
       threadCanSteer(projection, {
