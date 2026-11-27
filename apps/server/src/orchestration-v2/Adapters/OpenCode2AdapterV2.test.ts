@@ -2891,15 +2891,35 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),
   );
 
+  it.effect("prompts again without checking the server after OpenCode refused a prompt", () =>
+    Effect.gen(function* () {
+      const { runtime, thread } = yield* resumed([
+        out("session.prompt", { sessionID: SESSION, text: "<any>" }),
+        reply("session.prompt", {
+          status: 502,
+          body: { _tag: "SkillLoadError", skill: "review", message: "bad frontmatter" },
+        }),
+        out("session.prompt", { sessionID: SESSION, text: "<any>" }),
+        promptAccepted,
+      ]);
+      const ended = yield* terminals(runtime, 1);
+      yield* runtime.startTurn(turnInput(thread)).pipe(Effect.ignore);
+      yield* runtime.startTurn(secondTurn(thread));
+      const [first] = yield* Fiber.join(ended);
+      assert.equal(first?.status, "failed");
+    }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),
+  );
+
   // regression: #14744 continuations hung after a reconnect took a Stop's end
   it.effect("still checks the server when a failed prompt's execution starts late", () =>
     Effect.gen(function* () {
       const offered = yield* Deferred.make<void>();
       const { runtime, thread } = yield* resumed([
         out("session.prompt", { sessionID: SESSION, text: "<any>" }),
+        // A status session.prompt does not declare, so the client fails before reading the body.
         reply("session.prompt", {
-          status: 502,
-          body: { _tag: "UnknownError", message: "bad gateway" },
+          status: 503,
+          body: { _tag: "UnknownError", message: "service unavailable" },
         }),
         event("session.execution.started", { sessionID: SESSION }),
         out("session.active"),
