@@ -3915,3 +3915,4 @@ d50a43e642	take	taken as is (shared ACP core; Antigravity/ACP tests pass)
 af276ccbb2	take	Cargo.lock regenerated for Onicode's sysinfo 0.40.4 (windows 0.62.2 already locked); Windows build left to CI (no local msvc target)
 6632511cd8	take	taken as is
 7be3a767cc	take	upstream migration 117 → Onicode 126_WorkflowMailSender; kept Onicode's AuthSessionState without sessionMethod (only optional sessionId added); kept Onicode's client label rule (label, else OS; no browser metadata) and moved it into EnvironmentAuth.clientSessionLabel; added clientLabel to Onicode's withThreadTools; dropped guest-share test entry; old mobile answering a requireReason choice without a reason is refused
+283de2e4d4	take	taken as is
