@@ -67,6 +67,7 @@ it("tokenizes like highlights.wasm", () => {
     const source = NodeFS.readFileSync(sourcePath);
     for (const language of ["c", "markdown"] as const) {
       const id = HIGHLIGHTS_LANGUAGE_IDS[language];
+      if (id === undefined) throw new Error(`no lexer for ${language}`);
       const native = NodeChildProcess.execFileSync(binary, [sourcePath, String(id)], {
         encoding: "utf8",
       })

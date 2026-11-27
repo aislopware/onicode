@@ -1295,7 +1295,6 @@ function TaskForm({
                 <DateTimePicker
                   value={timePickerValue(draft.schedule.timeOfDay)}
                   mode="time"
-                  is24Hour={is24Hour}
                   display={Platform.OS === "ios" ? "spinner" : "default"}
                   onDismiss={() => setTimePickerOpen(false)}
                   onValueChange={(_, selected) => {
@@ -1394,7 +1393,6 @@ function TaskForm({
                     <DateTimePicker
                       value={runAt}
                       mode={field}
-                      is24Hour={is24Hour}
                       display={Platform.OS === "ios" ? "spinner" : "default"}
                       onDismiss={() => setRunAtPicker(null)}
                       onValueChange={(_, selected) => {

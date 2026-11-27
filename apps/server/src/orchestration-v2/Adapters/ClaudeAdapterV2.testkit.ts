@@ -837,7 +837,7 @@ function makeReplayQueryRunner(
               type: "query.set_permission_mode",
               mode,
             });
-          }),
+          }).pipe(Effect.as(undefined)),
         // Recorded sessions already hold their title, and no replay asserts rename frames.
         renameSession: () => Effect.void,
         stopTask: (taskId) =>

@@ -766,9 +766,10 @@ export interface ClaudeAgentSdkQuerySession {
   readonly applyFlagSettings: (
     settings: ClaudeFlagSettings,
   ) => Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
+  /** Resolves with the mode now in effect when Claude Code names it; it can differ from `mode`. */
   readonly setPermissionMode: (
     mode: PermissionMode,
-  ) => Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
+  ) => Effect.Effect<PermissionMode | undefined, ClaudeAgentSdkQueryRunnerError>;
   readonly renameSession: (title: string) => Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
   /** Tells Claude Code the person is typing the next prompt. Absent when the runner cannot say so. */
   readonly draftActivity?: Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
@@ -2222,6 +2223,7 @@ export const layerQueryRunner: Layer.Layer<
             try: () => queryRuntime.setPermissionMode(mode),
             catch: (cause) => queryRunnerError(cause, "setPermissionMode"),
           }).pipe(
+            Effect.map((response) => response?.mode),
             Effect.tap(() =>
               logProtocolEvent({
                 direction: "outgoing",
@@ -12600,12 +12602,12 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 }),
               })).permissionMode;
               liveQuery.permissionMode = yield* liveQuery.query.setPermissionMode(target).pipe(
-                Effect.as(target),
+                Effect.map((mode) => mode ?? target),
                 Effect.catchTags({
                   ClaudeAgentSdkQueryRunnerError: () =>
                     liveQuery.query
                       .setPermissionMode("default")
-                      .pipe(Effect.as("default" as const)),
+                      .pipe(Effect.map((mode) => mode ?? "default")),
                 }),
                 Effect.catchTags({
                   ClaudeAgentSdkQueryRunnerError: (error) =>
@@ -15183,13 +15185,13 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               live.permissionMode = yield* live.query
                 .setPermissionMode(live.openedPermissionMode)
                 .pipe(
-                  Effect.as(live.openedPermissionMode),
+                  Effect.map((mode) => mode ?? live.openedPermissionMode),
                   Effect.catchTags({
                     ClaudeAgentSdkQueryRunnerError: (error) =>
                       live.openedPermissionMode === "bypassPermissions"
                         ? live.query
                             .setPermissionMode("default")
-                            .pipe(Effect.as("default" as const))
+                            .pipe(Effect.map((mode) => mode ?? "default"))
                         : Effect.fail(error),
                   }),
                 );

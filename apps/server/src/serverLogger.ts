@@ -58,15 +58,22 @@ const makeLayer = Effect.fn("ServerLogger.makeLayer")(function* (
   const layerMinimumLogLevel = Layer.succeed(References.MinimumLogLevel, config.logLevel);
 
   const logs = config.otlpLogsExport;
+  const otlpLogsUrl = config.otlpLogsUrl;
   const otlpLogger =
-    config.otlpLogsUrl === undefined
+    otlpLogsUrl === undefined
       ? undefined
-      : OtlpLogger.make({
-          url: config.otlpLogsUrl,
-          exportInterval: `${logs.exportIntervalMs} millis`,
-          headers: logs.headers,
-          resource: ServerConfig.otlpResource(config, hostName),
-        }).pipe(Effect.map(redactingCredentials));
+      : OtlpExportFailures.onDrop("logs").pipe(
+          Effect.flatMap((onDrop) =>
+            OtlpLogger.make({
+              url: otlpLogsUrl,
+              exportInterval: `${logs.exportIntervalMs} millis`,
+              headers: logs.headers,
+              resource: ServerConfig.otlpResource(config, hostName),
+              onDrop,
+            }),
+          ),
+          Effect.map(redactingCredentials),
+        );
 
   // Logger.layer replaces the whole set; name every logger here.
   // OTLP includes traced messages as log records, so also using tracerLogger would duplicate in-span exports.
