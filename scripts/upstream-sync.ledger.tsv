@@ -4371,3 +4371,4 @@ e07c80889e	take	last hunk applied with Onicode's wrapped throw
 49a6653db6	take	applied cleanly; two new keys in all 10 web locales, i18n:check green
 f08bafe07f	take	applied cleanly
 cc29be0f66	take	kept Onicode's synchronous archiveText read (its archive is not JSZip); took upstream's heading fallback; test builds the archive as Onicode's Map
+09f27413eb	take	applied cleanly
