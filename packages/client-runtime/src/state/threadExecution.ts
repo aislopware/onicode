@@ -41,7 +41,7 @@ import {
   resolveSelectableModel,
   withLegacyUltracodeEffort,
 } from "@onicode/shared/model";
-import { formatDuration } from "@onicode/shared/orchestrationTiming";
+import { formatDuration } from "@onicode/shared/orchestrationTimingCopy";
 import * as DateTime from "effect/DateTime";
 
 import {
@@ -425,7 +425,10 @@ export function formatProviderSubagentStatus(
       ? Number.NaN
       : Date.parse(status.completedAt);
   if (!Number.isFinite(start) || !Number.isFinite(end)) return label;
-  const elapsed = formatDuration(Math.max(1_000, Math.floor((end - start) / 1_000) * 1_000));
+  const elapsed = formatDuration(
+    Math.max(1_000, Math.floor((end - start) / 1_000) * 1_000),
+    resolve,
+  );
   return live
     ? resolve(msg("{label} {elapsed}", { label, elapsed }))
     : resolve(msg("{label} in {elapsed}", { label, elapsed }));
@@ -894,7 +897,7 @@ export function presentProviderGoal(
     );
   }
   if (goal.timeUsedSeconds !== undefined && goal.timeUsedSeconds >= 60) {
-    usage.push(formatDuration(goal.timeUsedSeconds * 1_000));
+    usage.push(formatDuration(goal.timeUsedSeconds * 1_000, resolve));
   }
   if (goal.checks !== undefined && goal.checks > 0) {
     usage.push(
