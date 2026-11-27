@@ -1,4 +1,7 @@
-import { assistantCitationsToPlainText } from "@onicode/shared/assistantCitations";
+import {
+  assistantCitationsToPlainText,
+  splitsSurrogatePair,
+} from "@onicode/shared/assistantCitations";
 import { parseThreadLinkHref } from "@onicode/shared/threadLinks";
 import {
   isAttachmentOnlyBootstrapPrompt,
@@ -100,7 +103,9 @@ export function markdownPlainText(markdown: string): string {
 function markdownMinimapPreview(markdown: string | null) {
   if (markdown === null) return null;
   // NFC, as file chips show names that macOS writes decomposed.
-  const compact = markdownNodeText(markdownTree(markdown.slice(0, 1_500)))
+  const compact = markdownNodeText(
+    markdownTree(markdown.slice(0, splitsSurrogatePair(markdown, 1_500) ? 1_499 : 1_500)),
+  )
     .replace(/\s+/g, " ")
     .trim()
     .normalize("NFC");

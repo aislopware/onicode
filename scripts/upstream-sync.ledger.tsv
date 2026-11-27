@@ -3908,3 +3908,4 @@ e7f1f81a21	skip	net no-op with 17e1e01dbe (restores the import it dropped); Onic
 4da8d19d08	take	taken as is
 1a58fa61a6	take	adopted upstream's integer-ns window over Onicode's msToUnixNano(sinceMs): exact at epoch scale; kept Onicode's endNs comparison for numeric end times (exact where upstream compares float ms)
 d50a43e642	take	taken as is (shared ACP core; Antigravity/ACP tests pass)
+6667f3c089	take	kept Onicode's NFC-normalized minimap preview, added upstream's surrogate-safe slice
