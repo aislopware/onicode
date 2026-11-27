@@ -1,5 +1,5 @@
 import { expect } from "e2e";
-import JSZip from "jszip";
+import { strToU8, zipSync } from "fflate";
 
 import { test, WEB } from "./onicode.ts";
 
@@ -7,19 +7,21 @@ test(
   "An ODT preview keeps the first item's explicit number",
   WEB,
   async ({ onicode, app, screen, browser }) => {
-    const odt = await new JSZip()
-      .file("mimetype", "application/vnd.oasis.opendocument.text", { compression: "STORE" })
-      .file(
-        "content.xml",
-        `<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" office:version="1.3">
+    const odt = zipSync(
+      {
+        mimetype: strToU8("application/vnd.oasis.opendocument.text"),
+        "content.xml": strToU8(
+          `<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" office:version="1.3">
         <office:automatic-styles><text:list-style style:name="Steps"><text:list-level-style-number text:level="1" style:num-format="1"/></text:list-style></office:automatic-styles>
         <office:body><office:text><text:list text:style-name="Steps">
           <text:list-item text:start-value="4"><text:p>Review the draft</text:p></text:list-item>
           <text:list-item><text:p>Send the draft</text:p></text:list-item>
         </text:list></office:text></office:body>
       </office:document-content>`,
-      )
-      .generateAsync({ type: "uint8array" });
+        ),
+      },
+      { level: 0 },
+    );
     const project = await onicode.project("demo", { "steps.odt": odt });
     const thread = await onicode.thread({ project, title: "Review steps", messages: ["Start"] });
     await onicode.open(thread);
