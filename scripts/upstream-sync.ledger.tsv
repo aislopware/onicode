@@ -4377,3 +4377,4 @@ cc29be0f66	take	kept Onicode's synchronous archiveText read (its archive is not 
 eadd4e7ddc	take	steering test imports keep Onicode's makeProviderFailure and vi; all source hunks merged cleanly on the ported chain
 8994fe6db4	take	applied cleanly
 0a329e0472	take	wordsHast import keeps Onicode's resolveChangeRequestFileHref beside expandIndentedCodeTabs
+d023407be8	take	applied cleanly; adopted as a checkpoint-capture performance fix
