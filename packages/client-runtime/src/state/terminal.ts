@@ -241,6 +241,27 @@ export interface TerminalSessionAtoms {
   readonly close: EnvironmentCommand<TerminalCloseInput>;
 }
 
+/**
+ * Releases the server's hold on an interrupted split write. Servers older than paste phases reject
+ * the empty write while decoding it, a defect that only means they hold nothing to release.
+ */
+export function abortTerminalPlainWrite(
+  registry: AtomRegistry.AtomRegistry,
+  write: EnvironmentCommand<TerminalWriteInput>,
+  target: {
+    readonly environmentId: EnvironmentId;
+    readonly input: Pick<TerminalWriteInput, "threadId" | "terminalId" | "expectedPid">;
+  },
+) {
+  const input: TerminalWriteInput = { ...target.input, data: "", plainWrite: "abort" };
+  return runAtomCommand(
+    registry,
+    write,
+    { environmentId: target.environmentId, input },
+    { reportFailure: false, reportDefect: false },
+  );
+}
+
 export interface TerminalSessionOptions {
   readonly target: {
     readonly environmentId: EnvironmentId;

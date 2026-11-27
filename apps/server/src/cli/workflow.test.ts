@@ -273,3 +273,27 @@ it.effect("list --tag and questions --kind ask the server for only those", () =>
     assert.include((yield* TestConsole.logLines).join("\n"), "run-1  wanted  feature");
   }),
 );
+
+it.effect("show reads a queue step as one", () =>
+  Effect.gen(function* () {
+    const queued = {
+      name: "build",
+      kind: "queue",
+      status: "running",
+      attempts: 1,
+      detail: "builders",
+      threadId: null,
+      environmentId: null,
+      result: null,
+      said: null,
+      ahead: 2,
+      startedAt: "2026-11-20T00:00:01.000Z",
+      endedAt: null,
+    };
+    const { error } = yield* runCli(["show", "run-1"], () =>
+      Effect.succeed({ structuredContent: { run: makeRun("running"), steps: [queued] } }),
+    );
+    assert.isUndefined(error);
+    assert.include(yield* TestConsole.logLines, "  running    queue  build  builders");
+  }),
+);

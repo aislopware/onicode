@@ -398,6 +398,31 @@ it.effect("a peer that answers the same page again fails the reply instead of as
       assert.match(error.reason, /answered the same page of thread thread-1 again/);
       assert.isTrue(there.calls.filter((call) => call.tool === "oni_thread_read").length <= 3);
     }
+
+    // A long reply whose next piece starts where the last one did.
+    const piece = { text: "again", textTruncated: true, nextTextOffset: 6 };
+    const long = peer({
+      oni_thread_wait: [{ ...waited, timedOut: false, output: { head: "abc" } }],
+      oni_thread_read: [
+        run("completed"),
+        {
+          recentRuns: [],
+          items: [{ ...assistant("turn-1", "Done, "), ...piece, text: "Done, ", itemId: "i" }],
+        },
+        ...Array.from({ length: 4 }, () => ({ recentRuns: [], items: [piece] })),
+      ],
+    });
+    const stalled = yield* Effect.provide(
+      Effect.flatMap(WorkflowAgentLinks.make, (links) =>
+        links.result({ threadId: "thread-1", turnId: "turn-1" }, "env-b"),
+      ),
+      long.layer,
+    ).pipe(Effect.flip);
+    assert.match(stalled.reason, /answered the same page of thread thread-1 again/);
+    assert.deepStrictEqual(
+      long.calls.flatMap((call) => call.arguments.textOffset ?? []),
+      [6],
+    );
   }),
 );
 

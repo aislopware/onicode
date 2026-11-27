@@ -10,6 +10,7 @@ import {
   squashAtomCommandFailure,
 } from "@onicode/client-runtime/state/runtime";
 import {
+  abortTerminalPlainWrite,
   INITIAL_TERMINAL_OUTPUT_CURSOR,
   readTerminalOutputUpdate,
   type TerminalOutputCursor,
@@ -1060,7 +1061,10 @@ function TerminalSessionViewport({
               // Only releases the server's hold, which also ends when that process exits.
               const current = appAtomRegistry.get(terminalSessionAtom);
               if (current.lifecycleVersion !== lifecycleVersion) return true;
-              await writeInputChunk("", undefined, { plainWrite: "abort", ...pidGuard });
+              await abortTerminalPlainWrite(appAtomRegistry, terminalEnvironment.write, {
+                environmentId,
+                input: { threadId, terminalId, ...pidGuard },
+              });
               return true;
             }
             if (!canWriteInput()) return false;

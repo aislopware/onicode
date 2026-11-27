@@ -1618,6 +1618,8 @@ interface CodexSubagentThreadContext {
   background: boolean;
   // The turn whose `wait` names it; one app-server serves several threads and nested children.
   awaitedBy: ActiveCodexTurnContext | null;
+  // Settled before its first turn started; that turn is interrupted whichever parent turn is live.
+  stoppedBeforeStart: boolean;
 }
 
 const approvalOwnerCodexTurn = (
@@ -1648,6 +1650,42 @@ const isDescendantCodexTurn = (
   }
   return false;
 };
+
+const hasCodexTurnLineageIn = (
+  context: ActiveCodexTurnContext,
+  nativeTurnIds: ReadonlySet<string>,
+): boolean => {
+  for (
+    let turn: ActiveCodexTurnContext | undefined = context;
+    turn !== undefined;
+    turn = turn.subagent?.parentContext
+  ) {
+    if (nativeTurnIds.has(turn.nativeTurnId)) return true;
+  }
+  return false;
+};
+
+const codexSubagentCardNode = (
+  subagent: CodexSubagentThreadContext,
+  status: OrchestrationV2ExecutionNode["status"],
+  completedAt: DateTime.Utc,
+): OrchestrationV2ExecutionNode => ({
+  id: subagent.subagentNodeId,
+  threadId: subagent.cardContext.projectionThreadId,
+  runId: subagent.cardContext.projectionRunId,
+  parentNodeId: subagent.cardContext.itemParentNodeId,
+  rootNodeId: subagent.cardContext.rootNodeId,
+  kind: "subagent",
+  status,
+  countsForRun: false,
+  providerThreadId: subagent.providerThread.id,
+  providerTurnId: subagent.cardContext.providerTurnId,
+  nativeItemRef: subagent.task.nativeTaskRef,
+  runtimeRequestId: null,
+  checkpointScopeId: null,
+  startedAt: subagent.startedAt,
+  completedAt,
+});
 
 interface PendingCodexSubagentTurnStarted {
   readonly nativeTurnId: string;
@@ -3561,6 +3599,36 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             input.subagent.task = task;
             if (input.startedAt !== undefined) input.subagent.startedAt = input.startedAt;
 
+            // No turn means no finalizeCodexTurn to settle the child's nodes. They go first:
+            // subagent.updated can end the parent run's ingestion.
+            if (!settled && completedAt !== null && input.subagent.nativeTurnIds.size === 0) {
+              yield* emitProviderEvent({
+                type: "node.updated",
+                driver: CODEX_PROVIDER,
+                node: {
+                  id: input.subagent.childRootNodeId,
+                  threadId: input.subagent.childThreadId,
+                  runId: null,
+                  parentNodeId: null,
+                  rootNodeId: input.subagent.childRootNodeId,
+                  kind: "root_turn",
+                  status,
+                  countsForRun: false,
+                  providerThreadId: input.subagent.providerThread.id,
+                  providerTurnId: null,
+                  nativeItemRef: task.nativeTaskRef,
+                  runtimeRequestId: null,
+                  checkpointScopeId: null,
+                  startedAt: input.subagent.startedAt,
+                  completedAt,
+                },
+              });
+              yield* emitProviderEvent({
+                type: "node.updated",
+                driver: CODEX_PROVIDER,
+                node: codexSubagentCardNode(input.subagent, status, completedAt),
+              });
+            }
             yield* emitProviderEvent({
               type: "subagent.updated",
               driver: CODEX_PROVIDER,
@@ -3598,8 +3666,9 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             });
           });
 
-        // A spawned child with no turn yet would stay running. Once its parent is stopped,
-        // emitSubagentProviderTurnStarted interrupts a first turn that starts late.
+        // A spawned child with no turn yet would stay running. Callers hold
+        // turnTerminalizationPermit so a turn/started cannot land between the check and the stop;
+        // emitSubagentProviderTurnStarted interrupts a first turn that starts after it.
         const stopUnstartedSubagents = Effect.fn("CodexAdapterV2.stopUnstartedSubagents")(
           function* (
             belongs: (parent: ActiveCodexTurnContext) => boolean,
@@ -3610,6 +3679,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               if (!isOrchestrationV2WorkActive(subagent.task.status)) continue;
               if (!belongs(subagent.parentContext)) continue;
               if (running.some((context) => context.subagent === subagent)) continue;
+              subagent.stoppedBeforeStart = true;
               yield* Ref.update(terminalizedNonCompletedNativeTurns, (current) =>
                 new Set(current).add(subagent.parentContext.nativeTurnId),
               );
@@ -3642,46 +3712,46 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           ) {
             if (subagent.nativeTurnIds.has(turn.nativeTurnId)) return;
             subagent.nativeTurnIds.add(turn.nativeTurnId);
+            const stoppedBeforeStart = subagent.stoppedBeforeStart;
+            subagent.stoppedBeforeStart = false;
             const parentNativeThreadId = yield* getNativeThreadId(
               subagent.parentContext.providerThread,
             );
             const currentParent = yield* findActiveTurnByNativeThreadId(parentNativeThreadId);
             if (currentParent !== undefined) subagent.parentContext = currentParent;
-            const terminalizedNativeTurns = yield* Ref.get(terminalizedNonCompletedNativeTurns);
-            let ancestor: ActiveCodexTurnContext | undefined = subagent.parentContext;
-            while (ancestor !== undefined) {
-              if (terminalizedNativeTurns.has(ancestor.nativeTurnId)) {
-                const nativeThreadId = yield* getNativeThreadId(subagent.providerThread);
-                // Fork requests off the notification reader so it can read their responses.
-                yield* client
-                  .request("turn/interrupt", {
-                    threadId: nativeThreadId,
-                    turnId: turn.nativeTurnId,
-                  })
-                  .pipe(
-                    Effect.catch((cause) =>
-                      Effect.logWarning("orchestration-v2.codex-late-subagent-interrupt-failed", {
+            if (
+              stoppedBeforeStart ||
+              hasCodexTurnLineageIn(
+                subagent.parentContext,
+                yield* Ref.get(terminalizedNonCompletedNativeTurns),
+              )
+            ) {
+              const nativeThreadId = yield* getNativeThreadId(subagent.providerThread);
+              // Fork requests off the notification reader so it can read their responses.
+              yield* client
+                .request("turn/interrupt", {
+                  threadId: nativeThreadId,
+                  turnId: turn.nativeTurnId,
+                })
+                .pipe(
+                  Effect.catch((cause) =>
+                    Effect.logWarning("orchestration-v2.codex-late-subagent-interrupt-failed", {
+                      nativeThreadId,
+                      nativeTurnId: turn.nativeTurnId,
+                      cause,
+                    }),
+                  ),
+                  Effect.timeoutOrElse({
+                    duration: "10 seconds",
+                    orElse: () =>
+                      Effect.logWarning("orchestration-v2.codex-late-subagent-interrupt-timeout", {
                         nativeThreadId,
                         nativeTurnId: turn.nativeTurnId,
-                        cause,
                       }),
-                    ),
-                    Effect.timeoutOrElse({
-                      duration: "10 seconds",
-                      orElse: () =>
-                        Effect.logWarning(
-                          "orchestration-v2.codex-late-subagent-interrupt-timeout",
-                          {
-                            nativeThreadId,
-                            nativeTurnId: turn.nativeTurnId,
-                          },
-                        ),
-                    }),
-                    Effect.forkIn(scope),
-                  );
-                return;
-              }
-              ancestor = ancestor.subagent?.parentContext;
+                  }),
+                  Effect.forkIn(scope),
+                );
+              return;
             }
             const providerTurnId = idAllocator.derive.providerTurn({
               driver: CODEX_PROVIDER,
@@ -3997,6 +4067,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               task,
               background: true,
               awaitedBy: null,
+              stoppedBeforeStart: false,
             } satisfies CodexSubagentThreadContext;
 
             yield* Ref.update(subagentThreads, (current) => {
@@ -7617,16 +7688,10 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                   return updated;
                 });
                 const stopped = yield* Ref.get(terminalizedNonCompletedNativeTurns);
-                yield* stopUnstartedSubagents((parent) => {
-                  for (
-                    let ancestor: ActiveCodexTurnContext | undefined = parent;
-                    ancestor !== undefined;
-                    ancestor = ancestor.subagent?.parentContext
-                  ) {
-                    if (stopped.has(ancestor.nativeTurnId)) return true;
-                  }
-                  return false;
-                }, input.completedAt);
+                yield* stopUnstartedSubagents(
+                  (parent) => hasCodexTurnLineageIn(parent, stopped),
+                  input.completedAt,
+                );
               }
               yield* agentMessageDeltas.flushTurn(input.nativeTurnId);
               yield* reasoningDeltas.flushTurn(input.nativeTurnId);
@@ -7740,23 +7805,11 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 yield* emitProviderEvent({
                   type: "node.updated",
                   driver: CODEX_PROVIDER,
-                  node: {
-                    id: input.context.subagent.subagentNodeId,
-                    threadId: input.context.subagent.cardContext.projectionThreadId,
-                    runId: input.context.subagent.cardContext.projectionRunId,
-                    parentNodeId: input.context.subagent.cardContext.itemParentNodeId,
-                    rootNodeId: input.context.subagent.cardContext.rootNodeId,
-                    kind: "subagent",
-                    status: input.status,
-                    countsForRun: false,
-                    providerThreadId: input.context.providerThread.id,
-                    providerTurnId: input.context.subagent.cardContext.providerTurnId,
-                    nativeItemRef: input.context.subagent.task.nativeTaskRef,
-                    runtimeRequestId: null,
-                    checkpointScopeId: null,
-                    startedAt: input.context.subagent.startedAt,
-                    completedAt: input.completedAt,
-                  },
+                  node: codexSubagentCardNode(
+                    input.context.subagent,
+                    input.status,
+                    input.completedAt,
+                  ),
                 });
                 yield* emitSubagentTaskUpdate({
                   subagent: input.context.subagent,
@@ -9186,6 +9239,14 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             function* (unloadInput) {
               const nativeThreadId = yield* getNativeThreadId(unloadInput.providerThread);
               sessionApprovals.delete(nativeThreadId);
+              const completedAt = yield* DateTime.now;
+              // Before the request: a child's first turn can start while it is in flight.
+              yield* turnTerminalizationPermit.withPermits(1)(
+                stopUnstartedSubagents(
+                  (parent) => turnBelongsToProviderThread(parent, unloadInput.providerThread.id),
+                  completedAt,
+                ),
+              );
               // Archive also unloads, inline and without thread/closed; resumeNativeThread
               // unarchives it on the next turn.
               if (unloadInput.archive === true) {
@@ -9197,11 +9258,6 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 }
                 yield* client.request("thread/unsubscribe", { threadId: nativeThreadId });
               }
-              const completedAt = yield* DateTime.now;
-              yield* stopUnstartedSubagents(
-                (parent) => turnBelongsToProviderThread(parent, unloadInput.providerThread.id),
-                completedAt,
-              );
               // Unloading stops notifications for this thread, so unknown-outcome commands cannot keep turns pinned.
               yield* turnTerminalizationPermit.withPermits(1)(
                 Effect.gen(function* () {
@@ -9276,6 +9332,15 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               const [activeTurnContexts, settledTurnContexts] =
                 yield* turnTerminalizationPermit.withPermits(1)(
                   Effect.gen(function* () {
+                    // In the snapshot's permit: a child turn starts either before it, as a
+                    // target, or after the stop, interrupted as it starts.
+                    if (turnInput.requestRuntimeRestart === true) {
+                      yield* stopUnstartedSubagents(
+                        (parent) =>
+                          turnBelongsToProviderThread(parent, turnInput.providerThread.id),
+                        yield* DateTime.now,
+                      );
+                    }
                     return [
                       Array.from((yield* Ref.get(activeTurns)).values()),
                       Array.from((yield* Ref.get(settledTurns)).values()),
@@ -9315,12 +9380,6 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                   (candidate) => candidate !== activeTurn && inLineage(candidate),
                 ),
               ];
-              if (turnInput.requestRuntimeRestart === true) {
-                yield* stopUnstartedSubagents(
-                  (parent) => turnBelongsToProviderThread(parent, turnInput.providerThread.id),
-                  yield* DateTime.now,
-                );
-              }
               if (interruptTargetContexts.length === 0) {
                 if (turnInput.requestRuntimeRestart === true) return;
                 return yield* toProtocolError(

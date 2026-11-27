@@ -81,6 +81,7 @@ import {
 } from "@onicode/provider-core/server/subagentProjection";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
+import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
 
 const DEFAULT_IDLE_TIMEOUT_MS = 2 * 60 * 1000;
 // Without native resume, a released session comes back as a summary of the thread, so it stays longer.
@@ -476,6 +477,7 @@ export const layerWithOptions = (
   | ProviderEventIngestor.ProviderEventIngestorV2
   | ProviderAdapterRegistry.ProviderAdapterRegistryV2
   | ProviderInstallationGate.ProviderInstallationGate
+  | TurnItemPositionStore.TurnItemPositionStoreV2
 > =>
   Layer.effect(
     ProviderSessionManagerV2,
@@ -497,6 +499,7 @@ export const layerWithOptions = (
       const idAllocator = yield* IdAllocator.IdAllocatorV2;
       const providerEventIngestor = yield* ProviderEventIngestor.ProviderEventIngestorV2;
       const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
+      const turnItemPositions = yield* TurnItemPositionStore.TurnItemPositionStoreV2;
       const agentScope = yield* AgentScope;
       const installationGate = yield* ProviderInstallationGate.ProviderInstallationGate;
       // Labs flag, read live: Codex per turn (its shared session outlives a toggle), Claude per query.
@@ -3189,6 +3192,46 @@ export const layerWithOptions = (
         return false;
       });
 
+      // An item keeps the place it was reported at, whichever writer lands first: a direct
+      // session-scoped write can commit while a run's queue still holds earlier items.
+      const reservedTurnItemIds = new WeakMap<
+        LiveSessionEntry,
+        Set<OrchestrationV2TurnItem["id"]>
+      >();
+      const reserveTurnItemPosition = (entry: LiveSessionEntry, item: OrchestrationV2TurnItem) => {
+        let reserved = reservedTurnItemIds.get(entry);
+        if (reserved === undefined) {
+          reserved = new Set();
+          reservedTurnItemIds.set(entry, reserved);
+        }
+        const seen = reserved;
+        return seen.has(item.id)
+          ? Effect.void
+          : turnItemPositions
+              .allocate({
+                threadId: item.threadId,
+                turnItemId: item.id,
+                runId: item.runId,
+                keepExisting: true,
+              })
+              .pipe(
+                Effect.tap(() =>
+                  Effect.sync(() => {
+                    // Allocation is idempotent; the set only skips repeat lookups.
+                    if (seen.size >= 4096) seen.clear();
+                    seen.add(item.id);
+                  }),
+                ),
+                // Ingestion allocates it anyway, only without the ordering guarantee.
+                Effect.catch((cause) =>
+                  Effect.logWarning("orchestration-v2.turn-item-position-reserve-failed", {
+                    turnItemId: item.id,
+                    cause,
+                  }),
+                ),
+              );
+      };
+
       const startEventPump = (entry: LiveSessionEntry) => {
         let stoppedByProvider = false;
         let lastSessionStatus = entry.runtime.providerSession.status;
@@ -3272,6 +3315,8 @@ export const layerWithOptions = (
             ),
             Effect.andThen(
               Effect.gen(function* () {
+                if (event.type === "turn_item.updated")
+                  yield* reserveTurnItemPosition(entry, event.turnItem);
                 if (
                   event.type === "provider_thread.updated" &&
                   event.providerThread.status === "error"
