@@ -37,6 +37,7 @@
   },
   "dependencies": {
     "@effect/atom-react": "catalog:",
+    "@exodus/bytes": "1.16.0",
     "@expo-google-fonts/dm-sans": "^0.4.2",
     "@expo/metro-runtime": "~58.0.17",
     "@expo/ui": "58.0.29",

@@ -273,6 +273,7 @@ catalogs:
 
 overrides:
   react-native-image-viewing: 0.2.2
+  '@exodus/bytes': 1.16.0
   mdast-util-math: 3.0.0
   micromark: 4.0.3
   mdast-util-to-hast: 13.2.2
@@ -357,6 +358,7 @@ patchedDependencies:
   '@e2e-dev/web@0.16.1': d4a718e516e19ad4db63cddd1e97439910bb260100dcde5de6213ecf75bc5b6b
   '@effect/platform-node-shared@4.1.5': 5c85315aa18de2923bf58387cc351322ad3761bc580e467f7a197ba7865268b8
   '@effect/vitest@4.1.5': 78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7
+  '@exodus/bytes@1.16.0': ceab67463db8cb74dcb2ced48eff4cc8ae9de925ae4cd2173a59a0dfba667bd8
   '@expo/metro-config@58.0.23': 90fa980e8b6480631fb2fbb04559834e3c612db40c550cd828f11be297d8d760
   '@expo/ui@58.0.29': 7d96dca3621b6a757f4fbf854cf85948e00dd4070398f4d9dc94ebb37cdf33aa
   '@ff-labs/fff-node@0.11.0': febc131287f6c71cd2a0c8bbdada299a22f16a9ce1fd720815c8d0083bcb86a0
@@ -504,6 +506,9 @@ importers:
       '@effect/atom-react':
         specifier: 4.1.5
         version: 4.1.5(effect@4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a))(react@19.3.0)(scheduler@0.28.0)
+      '@exodus/bytes':
+        specifier: 1.16.0
+        version: 1.16.0(patch_hash=ceab67463db8cb74dcb2ced48eff4cc8ae9de925ae4cd2173a59a0dfba667bd8)(@noble/hashes@2.4.0)
       '@expo-google-fonts/dm-sans':
         specifier: ^0.4.2
         version: 0.4.2
@@ -13005,7 +13010,7 @@ snapshots:
     dependencies:
       '@types/json-schema': 7.0.15
 
-  '@exodus/bytes@1.16.0(@noble/hashes@2.4.0)':
+  '@exodus/bytes@1.16.0(patch_hash=ceab67463db8cb74dcb2ced48eff4cc8ae9de925ae4cd2173a59a0dfba667bd8)(@noble/hashes@2.4.0)':
     optionalDependencies:
       '@noble/hashes': 2.4.0
 
@@ -18346,7 +18351,7 @@ snapshots:
 
   html-encoding-sniffer@7.0.0(@noble/hashes@2.4.0):
     dependencies:
-      '@exodus/bytes': 1.16.0(@noble/hashes@2.4.0)
+      '@exodus/bytes': 1.16.0(patch_hash=ceab67463db8cb74dcb2ced48eff4cc8ae9de925ae4cd2173a59a0dfba667bd8)(@noble/hashes@2.4.0)
     transitivePeerDependencies:
       - '@noble/hashes'
 
@@ -18543,7 +18548,7 @@ snapshots:
 
   jsdom@31.0.1(@napi-rs/canvas@1.2.0)(@noble/hashes@2.4.0):
     dependencies:
-      '@exodus/bytes': 1.16.0(@noble/hashes@2.4.0)
+      '@exodus/bytes': 1.16.0(patch_hash=ceab67463db8cb74dcb2ced48eff4cc8ae9de925ae4cd2173a59a0dfba667bd8)(@noble/hashes@2.4.0)
       bcp-47: 2.1.2
       bcp-47-match: 2.0.3
       data-urls: 8.0.0(@noble/hashes@2.4.0)
@@ -21666,7 +21671,7 @@ snapshots:
 
   whatwg-url@17.3.0(@noble/hashes@2.4.0):
     dependencies:
-      '@exodus/bytes': 1.16.0(@noble/hashes@2.4.0)
+      '@exodus/bytes': 1.16.0(patch_hash=ceab67463db8cb74dcb2ced48eff4cc8ae9de925ae4cd2173a59a0dfba667bd8)(@noble/hashes@2.4.0)
       tr46: 7.0.0
       webidl-conversions: 8.0.1
     transitivePeerDependencies:
