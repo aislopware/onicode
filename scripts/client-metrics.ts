@@ -1332,13 +1332,12 @@ const measurePass = Effect.fn("clientMetrics.measurePass")(function* (options: M
       mobile: false,
     });
   });
-  if (options.renders) {
-    // The window loaded before the probe existed, so it loads again with it.
-    yield* browserPromise("render probe", async () => {
-      await page.addInitScript(RENDER_PROBE);
-      await page.reload();
-    });
-  }
+  // The window chose the welcome page on the empty, unseeded workspace, so it loads the app's root
+  // again (with the render probe, which did not exist at its first load).
+  yield* browserPromise("reload the seeded app", async () => {
+    if (options.renders) await page.addInitScript(RENDER_PROBE);
+    await page.goto(`${APP_ORIGIN}/#/`);
+  });
   const h: Harness = {
     page,
     seeded,
