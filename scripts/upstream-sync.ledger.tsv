@@ -4670,3 +4670,4 @@ a27ad36daa	take	fix(web): Markdown blocks keep the text direction their HTML set
 9644ac48a5	take	fix(client-runtime): NDJSON tool output keeps JSON highlighting (#44372)
 8f6ea40953	take	Test-row conflict: kept Onicode's extra RTF rows beside upstream's nested-cells row
 0a63dfe23a	take	Adopted upstream's Effect 4.1.6 proxy process over Onicode's launcher (release/flush/group-leader changes retired; Effect leaves unreferenced commands running and never kills a lost one); kept Onicode's sync isLauncher/isServerChild, now read from ProxyProcess.currentPid; dropped Onicode's SqlClient patch hunk (in Effect 4.1.6); relay test skipped (removed surface)
+641d082b11	take	Adapted: upstream's listable-link rule applied by hand to Onicode's directory listing (Onicode resolves link kinds through resolveLinkTarget); readOnly is optional in contracts; mobile has no file editor
