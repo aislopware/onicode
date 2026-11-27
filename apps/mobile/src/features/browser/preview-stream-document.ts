@@ -4,6 +4,7 @@ import type {
   PreviewStreamControl,
   PreviewStreamDownload,
   PreviewStreamFileChooser,
+  PreviewStreamSelectMenu,
 } from "@onicode/client-runtime/preview/server-browser-stream";
 
 /** The global the generated preview stream script defines. */
@@ -40,6 +41,7 @@ export type PreviewStreamMessage =
   | { readonly type: "clipboard"; readonly text: string }
   | ({ readonly type: "download" } & PreviewStreamDownload)
   | { readonly type: "fileChooser"; readonly chooser: PreviewStreamFileChooser | null }
+  | { readonly type: "selectMenu"; readonly menu: PreviewStreamSelectMenu | null }
   | {
       readonly type: "pictureInPicture";
       readonly supported: boolean;
