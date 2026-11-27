@@ -96,7 +96,7 @@ export function shouldRedirectInputToComposer(event: Event, pane?: Element | nul
   return true;
 }
 
-export function hasFloatingLayerOver(pane?: Element | null): boolean {
+function hasFloatingLayerOver(pane?: Element | null): boolean {
   return [...document.querySelectorAll(TYPE_TO_FOCUS_FLOATING_LAYER_SELECTOR)].some(
     (layer) => !pane || !layer.contains(pane),
   );
