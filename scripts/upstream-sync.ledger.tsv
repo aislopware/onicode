@@ -4632,3 +4632,4 @@ a7b4502c41	take	taken as is
 270fb2a654	take	applied cleanly; Sidebar divergence checked: the new state lives in useSidebarThreads (not Sidebar's hook body) and Sidebar.browser.test.tsx passes in full (17) including 'does not re-render thread rows when the sidebar renders with nothing changed'; motion layout key now joins each folder's shown thread keys (a string join per render, cheap); web catalogs regenerated (existing translated keys reordered only), i18n:check passes
 a183b71cd7	take	taken as is
 dedcc91fee	take	taken as is
+4610497a62	take	taken as is
