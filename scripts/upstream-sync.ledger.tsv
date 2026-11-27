@@ -4542,3 +4542,4 @@ c2b86cd5e7	take	import conflict only (Onicode keeps its own preview pieces, no S
 3de7e376c6	take	adapted: kept Onicode's desktopCdp reuse (upstream moved PDF/Chrome setup after the tab; Onicode's moved block now passes handleAuthRequests: !desktop); stalled-frames overlay hides under an auth dialog; agentContextBudget keeps Onicode's numbers, re-measured in the gate; i18n tails unioned; wire: authChallengeId optional; an old mobile build sees an auth dialog without fields and its Dismiss is refused (navigating away still dismisses); preview_dialog description is upstream's (eval owed)
 8124f2e973	take	clean; shared by web and mobile
 74707f256a	take	adopted upstream's comment placement and test rows; logic already identical from Onicode a6e2733464
+83b6c4cd13	take	clean; Antigravity first-tier: tests run in the batch gate
