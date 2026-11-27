@@ -21,6 +21,7 @@ import { Argument, Command, Flag } from "effect/cli";
 import { ChildProcess } from "effect/process";
 
 import { defaultDevMemoryLimitBytes, enforceDevMemoryLimit } from "./lib/dev-memory-limit.ts";
+import { acquireDevRunnerLock } from "./lib/dev-runner-lock.ts";
 import { loadRepoEnv } from "./lib/public-config.ts";
 
 Object.assign(process.env, loadRepoEnv());
@@ -697,6 +698,13 @@ export const runDevRunnerWithInput = Effect.fn("dev-runner.runDevRunnerWithInput
   if (input.dryRun) {
     return;
   }
+
+  // Same state directory as the server's deriveServerPaths, so a second runner never seeds it.
+  const path = yield* Path.Path;
+  yield* acquireDevRunnerLock(
+    env.ONICODE_HOME ? path.join(env.ONICODE_HOME, "userdata") : path.join(baseDir, "dev"),
+    `pid ${String(process.pid)}, ${input.mode}, server port ${String(env.ONICODE_PORT)}, web port ${String(env.PORT)}`,
+  );
 
   yield* prepareFirstStart({
     mode: input.mode,
