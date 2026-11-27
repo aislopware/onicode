@@ -215,17 +215,20 @@ export function collectComposerContextReferences(
   const fences = fencedCodeRanges(text);
   let fenceIndex = 0;
   for (const match of text.matchAll(CONTEXT_LINK)) {
-    const start = match.index;
-    const end = start + match[0].length;
-    while (fenceIndex < fences.length && fences[fenceIndex]!.end <= start) fenceIndex += 1;
-    if (fences[fenceIndex] !== undefined && end > fences[fenceIndex]!.start) continue;
     const parsed = parseComposerContextHref(match[3]!);
     if (!parsed) continue;
+    // Only image references are written with `!`; before any other kind it is the text's own.
+    const image = match[1] === "!" && parsed.kind === "image";
+    const bang = match[1] === "!" && !image ? 1 : 0;
+    const start = match.index + bang;
+    const end = match.index + match[0].length;
+    while (fenceIndex < fences.length && fences[fenceIndex]!.end <= start) fenceIndex += 1;
+    if (fences[fenceIndex] !== undefined && end > fences[fenceIndex]!.start) continue;
     occurrences.push({
       ...parsed,
       label: sanitizeComposerContextLabel(match[2]!, parsed.kind),
-      image: match[1] === "!",
-      source: match[0],
+      image,
+      source: match[0].slice(bang),
       start,
       end,
     });

@@ -49,6 +49,12 @@ export const otlpExportAttemptFailuresTotal = Metric.counter(
   },
 );
 
+// The exporter buffers at most 2048 pending items and drops new ones past that, logging nothing.
+export const otlpExportDroppedTotal = Metric.counter("oni_otlp_export_dropped_total", {
+  description: "OTLP items dropped by signal because the exporter's pending queue was full.",
+  incremental: true,
+});
+
 export const providerSessionsTotal = Metric.counter("oni_provider_sessions_total", {
   description: "Total provider session lifecycle operations.",
   incremental: true,

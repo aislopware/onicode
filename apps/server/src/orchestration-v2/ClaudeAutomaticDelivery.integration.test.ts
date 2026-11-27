@@ -238,7 +238,7 @@ it.effect.each(deliveries)(
                 }),
               setModel: () => Effect.void,
               applyFlagSettings: () => Effect.void,
-              setPermissionMode: () => Effect.void,
+              setPermissionMode: () => Effect.undefined,
               renameSession: () => Effect.void,
               backgroundTasks: () => Effect.succeed(false),
               mcpServerStatus: Effect.succeed([]),
@@ -570,7 +570,7 @@ it.effect("applies an effort change to the running Claude query without waiting 
               Effect.sync(() => {
                 flagSettings.push(flags);
               }),
-            setPermissionMode: () => Effect.void,
+            setPermissionMode: () => Effect.undefined,
             renameSession: () => Effect.void,
             backgroundTasks: () => Effect.succeed(false),
             mcpServerStatus: Effect.succeed([]),
@@ -692,7 +692,7 @@ const renamedClaudeSessionTitles = (options: { readonly renameDuringStartup: boo
             offer: () => Effect.void,
             setModel: () => Effect.void,
             applyFlagSettings: () => Effect.void,
-            setPermissionMode: () => Effect.void,
+            setPermissionMode: () => Effect.undefined,
             renameSession: (title) =>
               Effect.sync(() => {
                 renames.push(title);
@@ -930,7 +930,7 @@ it.effect("offers a continuation for a later wake after a queued continuation is
                 offer: () => Effect.void,
                 setModel: () => Effect.void,
                 applyFlagSettings: () => Effect.void,
-                setPermissionMode: () => Effect.void,
+                setPermissionMode: () => Effect.undefined,
                 renameSession: () => Effect.void,
                 backgroundTasks: () => Effect.succeed(false),
                 mcpServerStatus: Effect.succeed([]),
@@ -1194,7 +1194,7 @@ it.effect.each([
             offer: (message) => Effect.sync(() => void offers.push(message)),
             setModel: () => Effect.void,
             applyFlagSettings: () => Effect.void,
-            setPermissionMode: () => Effect.void,
+            setPermissionMode: () => Effect.undefined,
             renameSession: () => Effect.void,
             backgroundTasks: () => Effect.succeed(false),
             cancelQueuedMessage: (uuid) =>
@@ -2193,7 +2193,7 @@ const exitWhileIdle = (options: {
                       Effect.sync(() => void offers.push(message)),
                     setModel: () => Effect.void,
                     applyFlagSettings: () => Effect.void,
-                    setPermissionMode: () => Effect.void,
+                    setPermissionMode: () => Effect.undefined,
                     renameSession: () => Effect.void,
                     backgroundTasks: () => Effect.succeed(false),
                     mcpServerStatus: Effect.succeed([]),

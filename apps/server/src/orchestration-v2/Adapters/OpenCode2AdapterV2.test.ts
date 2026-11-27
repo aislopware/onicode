@@ -2891,22 +2891,45 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),
   );
 
-  // regression: #14744 continuations hung after a reconnect took a Stop's end
-  it.effect("still checks the server when a failed prompt's execution starts late", () =>
+  it.effect("prompts again without checking the server after OpenCode refused a prompt", () =>
     Effect.gen(function* () {
-      const offered = yield* Deferred.make<void>();
       const { runtime, thread } = yield* resumed([
         out("session.prompt", { sessionID: SESSION, text: "<any>" }),
         reply("session.prompt", {
           status: 502,
-          body: { _tag: "UnknownError", message: "bad gateway" },
+          body: { _tag: "SkillLoadError", skill: "review", message: "bad frontmatter" },
         }),
-        event("session.execution.started", { sessionID: SESSION }),
-        out("session.active"),
-        reply("session.active", { data: { [SESSION]: { type: "running" } } }),
-        out("session.interrupt", { sessionID: SESSION }),
-        reply("session.interrupt", { interrupted: true }),
-      ]).pipe(
+        out("session.prompt", { sessionID: SESSION, text: "<any>" }),
+        promptAccepted,
+      ]);
+      const ended = yield* terminals(runtime, 1);
+      yield* runtime.startTurn(turnInput(thread)).pipe(Effect.ignore);
+      yield* runtime.startTurn(secondTurn(thread));
+      const [first] = yield* Fiber.join(ended);
+      assert.equal(first?.status, "failed");
+    }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),
+  );
+
+  // regression: #14744 continuations hung after a reconnect took a Stop's end
+  it.effect("still checks the server when a failed prompt's execution starts late", () =>
+    Effect.gen(function* () {
+      const offered = yield* Deferred.make<void>();
+      const gate = makeProviderReplayGate(["late-start"]);
+      const { runtime, thread } = yield* resumed(
+        [
+          out("session.prompt", { sessionID: SESSION, text: "<any>" }),
+          reply("session.prompt", {
+            status: 502,
+            body: { _tag: "UnknownError", message: "bad gateway" },
+          }),
+          event("session.execution.started", { sessionID: SESSION }, "late-start"),
+          out("session.active"),
+          reply("session.active", { data: { [SESSION]: { type: "running" } } }),
+          out("session.interrupt", { sessionID: SESSION }),
+          reply("session.interrupt", { interrupted: true }),
+        ],
+        { replayGate: gate },
+      ).pipe(
         Effect.provideService(ProviderContinuationRequests.ProviderContinuationRequests, {
           offer: () => Deferred.succeed(offered, undefined).pipe(Effect.asVoid),
           take: Effect.never,
@@ -2914,6 +2937,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       );
       const ended = yield* terminals(runtime, 2);
       yield* runtime.startTurn(turnInput(thread)).pipe(Effect.ignore);
+      gate.release("late-start");
       yield* Deferred.await(offered);
       yield* runtime.startTurn(secondTurn(thread));
       const [first, second] = yield* Fiber.join(ended);

@@ -63,6 +63,14 @@ enum OniComposerClipboard {
     UIPasteboard.general.items = [items]
   }
 
+  // Keeps the item's other types, such as the HTML and RTF a selection copy carries.
+  static func replaceText(_ text: String) {
+    let board = UIPasteboard.general
+    var item = board.items.first ?? [:]
+    item["public.utf8-plain-text"] = text
+    board.items = [item]
+  }
+
   static func read() -> [String: String] {
     let board = UIPasteboard.general
     return [
@@ -80,6 +88,12 @@ public class OniComposerEditorModule: Module {
   @MainActor
   func writeContextClipboard(text: String, fragment: String) async {
     OniComposerClipboard.write(text: text, fragment: fragment)
+  }
+
+  @JS
+  @MainActor
+  func replaceClipboardText(text: String) async {
+    OniComposerClipboard.replaceText(text)
   }
 
   public func definition() -> ModuleDefinition {

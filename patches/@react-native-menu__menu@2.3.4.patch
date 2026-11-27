@@ -93,10 +93,10 @@ index 33d27c5..359cd19 100644
 +
  }
 diff --git a/ios/NewArch/FabricViewImplementationProtocol.swift b/ios/NewArch/FabricViewImplementationProtocol.swift
-index 56ce653..71b05dd 100644
+index 1da8d6c..785399a 100644
 --- a/ios/NewArch/FabricViewImplementationProtocol.swift
 +++ b/ios/NewArch/FabricViewImplementationProtocol.swift
-@@ -9,4 +9,5 @@ import Foundation
+@@ -10,4 +10,5 @@ import Foundation
      var onPressAction: ((String) -> Void)? { get set }
      var onCloseMenu: (() -> Void)? { get set }
      var onOpenMenu: (() -> Void)? { get set }
@@ -622,7 +622,7 @@ index b941eb2..40255b9 100644
      title?: string;
      isAnchoredToRight?: boolean;
 diff --git a/lib/typescript/src/types.d.ts b/lib/typescript/src/types.d.ts
-index 78cc73e..6176bd5 100644
+index 6220ce4..926d90d 100644
 --- a/lib/typescript/src/types.d.ts
 +++ b/lib/typescript/src/types.d.ts
 @@ -113,6 +113,12 @@ type MenuComponentPropsBase = {
@@ -638,7 +638,7 @@ index 78cc73e..6176bd5 100644
      /**
       * Actions to be displayed in the menu.
       */
-@@ -181,6 +187,7 @@ export type NativeMenuComponentProps = {
+@@ -188,6 +194,7 @@ export type NativeMenuComponentProps = {
      onPressAction?: ({ nativeEvent }: NativeActionEvent) => void;
      onCloseMenu?: () => void;
      onOpenMenu?: () => void;
@@ -702,7 +702,7 @@ index 7f44611..2b8eae3 100644
  	actionsHash: string; // just a workaround to make sure we don't have to manually compare MenuActions manually in C++ (since it's a struct and that's a pain)
  	title?: string;
 diff --git a/src/types.ts b/src/types.ts
-index 7034f47..5246c44 100644
+index 80e9dcf..18d45a6 100644
 --- a/src/types.ts
 +++ b/src/types.ts
 @@ -123,6 +123,12 @@ type MenuComponentPropsBase = {
@@ -718,7 +718,7 @@ index 7034f47..5246c44 100644
  	/**
  	 * Actions to be displayed in the menu.
  	 */
-@@ -200,6 +206,7 @@ export type NativeMenuComponentProps = {
+@@ -207,6 +213,7 @@ export type NativeMenuComponentProps = {
  	onPressAction?: ({ nativeEvent }: NativeActionEvent) => void;
  	onCloseMenu?: () => void;
  	onOpenMenu?: () => void;

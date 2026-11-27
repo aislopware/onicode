@@ -92,6 +92,7 @@ import {
 } from "@onicode/shared/composerContextReferences";
 import { ComposerContextSheet } from "../../components/ComposerContextSheet";
 import { writeComposerContextClipboard } from "../../lib/composerContextClipboard";
+import { composerContextLinkMarkdown } from "../../lib/composerContextLinks";
 import type { CodexArtifactTemplate } from "@onicode/shared/codexArtifactTemplates";
 import { codexArtifactTemplatePresentationLabel } from "@onicode/shared/codexArtifactTemplatesCopy";
 import { resolveAssetUrl } from "@onicode/client-runtime/state/assets";
@@ -2870,10 +2871,9 @@ function UserMessageContent(props: UserMessageContentProps) {
     ),
   );
   const threadIcons = useThreadChipIcons(props.environmentId, liveText, props.context?.records);
-  const text = replaceComposerContextReferences(liveText, (ref) => {
+  const text = composerContextLinkMarkdown(liveText, (ref) => {
     const available = props.context?.records.some((record) => record.contextId === ref.contextId);
-    const label = available ? ref.label : gt("{label} (unavailable)", { label: ref.label });
-    return `[${label}](oni-context://v1/${ref.kind}/${ref.contextId})`;
+    return available ? ref.label : gt("{label} (unavailable)", { label: ref.label });
   });
   const onLinkPress = (href: string) => {
     const reference = parseComposerContextHref(href);

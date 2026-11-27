@@ -62,8 +62,7 @@ it.each(["leadingItems", "trailingItems", "toolbarItems"] as const)(
         const nativeItems = (bridge.ios as StackHeaderConfigProps["ios"])?.[placement];
         expect(nativeItems).toHaveLength(2);
         for (const item of nativeItems ?? []) {
-          if (item.type !== "item" || "render" in item)
-            throw new Error("Expected a native bar item");
+          if (item.type !== "button") throw new Error("Expected a native bar item");
           // RNSStackHeaderContentFactory sets UIBarButtonItem.enabled to !item.disabled.
           expect(!item.disabled).toBe(!disabled);
         }

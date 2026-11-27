@@ -1,19 +1,3 @@
-diff --git a/android/src/main/java/expo/modules/network/NetworkModule.kt b/android/src/main/java/expo/modules/network/NetworkModule.kt
-index 5e51327..f7353c3 100644
---- a/android/src/main/java/expo/modules/network/NetworkModule.kt
-+++ b/android/src/main/java/expo/modules/network/NetworkModule.kt
-@@ -89,6 +89,11 @@ class NetworkModule : Module() {
-       }
-     }
- 
-+    // Android reports a lifted network block only through this callback.
-+    override fun onBlockedStatusChanged(network: android.net.Network, blocked: Boolean) {
-+      asyncEmitNetworkState(DELAY_MS)
-+    }
-+
-     override fun onCapabilitiesChanged(network: android.net.Network, networkCapabilities: NetworkCapabilities) {
-       asyncEmitNetworkState(DELAY_MS)
-     }
 diff --git a/ios/NetworkModule.swift b/ios/NetworkModule.swift
 index ce150f7..ec1d2cd 100644
 --- a/ios/NetworkModule.swift

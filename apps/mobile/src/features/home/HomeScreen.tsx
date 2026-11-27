@@ -174,9 +174,11 @@ function HomeScrollView(props: ComponentProps<typeof ScrollView>) {
   return (
     <ScrollViewMarker
       style={{ flex: 1 }}
-      scrollEdgeEffects={{
-        ...nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version),
-        top: Number.parseInt(String(Platform.Version), 10) >= 27 ? "automatic" : "soft",
+      ios={{
+        scrollEdgeEffects: {
+          ...nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version),
+          top: Number.parseInt(String(Platform.Version), 10) >= 27 ? "automatic" : "soft",
+        },
       }}
     >
       <ScrollView

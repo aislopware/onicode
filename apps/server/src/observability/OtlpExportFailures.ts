@@ -7,7 +7,7 @@ import { HttpClient } from "effect/http";
 import type { HttpBody } from "effect/http";
 import { OtlpSerialization } from "effect/observability";
 
-import { otlpExportAttemptFailuresTotal } from "./Metrics.ts";
+import { otlpExportAttemptFailuresTotal, otlpExportDroppedTotal } from "./Metrics.ts";
 
 /**
  * Re-provides the HttpClient and OtlpSerialization one OTLP exporter uses, counting its failed
@@ -52,3 +52,10 @@ export const layer = (signal: OtlpSignal) =>
       );
     }),
   );
+
+/** The exporter's `onDrop`, counting the items its full queue turned away. */
+export const onDrop = (signal: OtlpSignal) =>
+  Effect.map(Effect.context<never>(), (context) => {
+    const dropped = Metric.withAttributes(otlpExportDroppedTotal, { signal });
+    return (count: number) => dropped.updateUnsafe(count, context);
+  });

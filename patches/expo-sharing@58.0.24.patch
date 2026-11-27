@@ -93,7 +93,7 @@ index 3381c5f..88984c7 100644
      }
    }
 diff --git a/build/Sharing.types.d.ts b/build/Sharing.types.d.ts
-index 74544e0..92bd2f5 100644
+index 213447a..ec64951 100644
 --- a/build/Sharing.types.d.ts
 +++ b/build/Sharing.types.d.ts
 @@ -100,6 +100,11 @@ export type SharePayload = {
@@ -175,7 +175,7 @@ index 943c263..3a99a18 100644
  
    if (mainGroupUuid && sharedGroupUuid) {
 diff --git a/src/Sharing.types.ts b/src/Sharing.types.ts
-index 18af320..3a52b70 100644
+index 1393ffa..6a346f7 100644
 --- a/src/Sharing.types.ts
 +++ b/src/Sharing.types.ts
 @@ -108,6 +108,12 @@ export type SharePayload = {

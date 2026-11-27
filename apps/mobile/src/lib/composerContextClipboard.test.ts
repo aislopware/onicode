@@ -61,7 +61,10 @@ vi.mock("./composerImages", () => ({
 }));
 vi.mock("./uuid", () => ({ uuidv4: () => `import-${++mocks.sequence}` }));
 
-import { importComposerContextClipboard } from "./composerContextClipboard";
+import {
+  copiedComposerContextText,
+  importComposerContextClipboard,
+} from "./composerContextClipboard";
 import { createComposerContextHistory } from "./composerContext";
 
 const image = {
@@ -380,5 +383,67 @@ describe("mobile context clipboard imports", () => {
         new AbortController().signal,
       ),
     ).toBeNull();
+  });
+});
+
+describe("mobile context clipboard copies", () => {
+  it("writes a copied selection's context links as the references the composer pastes", () => {
+    const fragment = {
+      version: 1 as const,
+      source: { environmentId: EnvironmentId.make("source") },
+      records: [image, terminal],
+    };
+    const message = {
+      markdown: `See ${formatComposerContextReference(image)} and [the build](oni-context://v1/terminal/terminal-source).`,
+      linkUrls: [
+        "https://x.dev",
+        "https://en.wikipedia.org/wiki/C_(language)",
+        "file:///My Docs/a.ts",
+      ],
+    };
+    const references = `See ${formatComposerContextReference(image)} and ${formatComposerContextReference(terminal)}`;
+    // copyLinksAs: 'markdown' escapes the brackets in a label.
+    const copy =
+      "See [Check\\[out\\]](oni-context://v1/image/image-source) and [the build](<oni-context://v1/terminal/terminal-source>), [docs \\[v2\\]](https://x.dev).";
+    const cases: ReadonlyArray<
+      [string, "plain" | "markdown", { text: string; hasContext: boolean } | null]
+    > = [
+      [copy, "plain", { text: `${references}, docs [v2].`, hasContext: true }],
+      [
+        copy,
+        "markdown",
+        { text: `${references}, [docs \\[v2\\]](https://x.dev).`, hasContext: true },
+      ],
+      ["See [docs](https://x.dev).", "plain", { text: "See docs.", hasContext: false }],
+      ["See [docs](https://x.dev).", "markdown", null],
+      [
+        "[C](https://en.wikipedia.org/wiki/C_\\(language\\)) and [a](<file:///My Docs/a.ts>)",
+        "plain",
+        { text: "C and a", hasContext: false },
+      ],
+      [
+        "Use [option or [docs](https://x.dev)",
+        "plain",
+        { text: "Use [option or docs", hasContext: false },
+      ],
+      ["Done![docs](https://x.dev)", "plain", { text: "Done!docs", hasContext: false }],
+      [
+        "Look![Check\\[out\\]](oni-context://v1/image/image-source)",
+        "plain",
+        { text: `Look!${formatComposerContextReference(image)}`, hasContext: true },
+      ],
+      [
+        "Look![Checkout](oni-context://v1/image/image-source)",
+        "markdown",
+        { text: `Look!${formatComposerContextReference(image)}`, hasContext: true },
+      ],
+      // Inline code that reads like a link is not one of the message's links.
+      ["Fix [docs](https://example.com)", "plain", null],
+      ["[Other](oni-context://v1/terminal/missing)", "plain", null],
+      ["No links.", "plain", null],
+    ];
+    for (const [copied, format, expected] of cases) {
+      expect(copiedComposerContextText(copied, format, message, fragment)).toEqual(expected);
+    }
   });
 });

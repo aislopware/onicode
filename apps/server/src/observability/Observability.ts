@@ -65,6 +65,7 @@ export const layer = Layer.unwrap(
                 exportInterval: `${traces.exportIntervalMs} millis`,
                 headers: traces.headers,
                 resource,
+                onDrop: yield* OtlpExportFailures.onDrop("traces"),
               }).pipe(Effect.provide(OtlpExportFailures.layer("traces")));
 
         const sentryDelegate =

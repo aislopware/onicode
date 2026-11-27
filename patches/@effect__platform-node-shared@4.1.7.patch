@@ -32,15 +32,15 @@ index ac7b044..0ad793f 100644
      readonly currentPid: Effect.Effect<Option.Option<ProcessId>>;
  }>;
 diff --git a/dist/NodeChildProcessSpawner.js b/dist/NodeChildProcessSpawner.js
-index 0257098..f166bc3 100644
+index ebae69a..fbaf7df 100644
 --- a/dist/NodeChildProcessSpawner.js
 +++ b/dist/NodeChildProcessSpawner.js
-@@ -88,20 +88,36 @@ const isProcessAlive = (command, childProcess) => {
+@@ -88,14 +88,30 @@ const isProcessAlive = (command, childProcess) => {
      return isUnsignallableProcessGroup(error);
    }
  };
 -const taskkill = (childProcess, onExit = () => {}) => {
-+const taskkill = (childProcess, spawnProcess, onExit = () => {}) => {
++const taskkill = (childProcess, onExit = () => {}, spawnProcess) => {
    if (hasExited(childProcess)) {
      onExit(null);
      return;
@@ -67,7 +67,9 @@ index 0257098..f166bc3 100644
 +  killer.on("error", finish);
 +  killer.on("exit", code => finish(code === 0 ? null : new Error(`taskkill exited with code ${code}`)));
  };
- const spawnDirect = (command, args, options) => NodeChildProcess.spawn(command, args, options);
+ const spawnDirect = (command, args, options, halfOpen) => {
+   const childProcess = NodeChildProcess.spawn(command, args, options);
+@@ -108,7 +124,7 @@ const spawnDirect = (command, args, options, halfOpen) => {
  // Returns the function that launches a command. The proxy process layer waits
  // here, interruptibly, for a proxy process that is ready, since the launch
  // itself cannot be interrupted.
@@ -76,28 +78,35 @@ index 0257098..f166bc3 100644
    const fs = yield* FileSystem.FileSystem;
    const path = yield* Path.Path;
    const resolveWorkingDirectory = Effect.fnUntraced(function* (options) {
-@@ -372,7 +388,7 @@ const makeWith = /*#__PURE__*/Effect.fnUntraced(function* (prepareSpawn) {
-   const killProcessGroup = (command, childProcess, signal) => {
-     if (globalThis.process.platform === "win32") {
-       return Effect.callback(resume => {
--        taskkill(childProcess, error => {
-+        taskkill(childProcess, killSpawn, error => {
-           if (error) {
-             resume(Effect.fail(toPlatformError("kill", toError(error), command)));
+@@ -381,7 +397,7 @@ const makeWith = /*#__PURE__*/Effect.fnUntraced(function* (prepareSpawn) {
            } else {
-@@ -813,6 +829,7 @@ export class ProxyProcess extends /*#__PURE__*/Context.Service()("@effect/platfo
-  * @category layers
-  * @since 4.1.6
+             resume(Effect.void);
+           }
+-        });
++        }, killSpawn);
+       });
+     }
+     return Effect.try({
+@@ -700,6 +716,14 @@ const makeWith = /*#__PURE__*/Effect.fnUntraced(function* (prepareSpawn) {
+  * @since 4.0.0
   */
-+export const layerWithSpawn = spawnProcess => Layer.effect(ChildProcessSpawner, makeWith(Effect.succeed(spawnProcess), spawnProcess));
- export const layerProxyProcess = options => Layer.effectContext(Effect.gen(function* () {
-   if (globalThis.process.platform === "win32") {
-     return yield* Effect.fail(PlatformError.systemError({
+ export const layer = /*#__PURE__*/Layer.effect(ChildProcessSpawner, /*#__PURE__*/makeWith(/*#__PURE__*/Effect.succeed(spawnDirect)));
++export const layerWithSpawn = spawnProcess => Layer.effect(ChildProcessSpawner, makeWith(Effect.succeed((command, args, options, halfOpen) => {
++  const childProcess = spawnProcess(command, args, options);
++  for (const fd of halfOpen) {
++    const stream = childProcess.stdio[fd];
++    if (stream && "allowHalfOpen" in stream) stream.allowHalfOpen = true;
++  }
++  return childProcess;
++}), spawnProcess));
+ /**
+  * Service that reports the proxy process started by {@link layerProxyProcess}.
+  *
 diff --git a/dist/internal/proxyProcess.js b/dist/internal/proxyProcess.js
-index edd291c..a70868f 100644
+index 2819a2b..42fccf2 100644
 --- a/dist/internal/proxyProcess.js
 +++ b/dist/internal/proxyProcess.js
-@@ -164,6 +164,7 @@ class Proxy {
+@@ -168,6 +168,7 @@ class Proxy {
    child;
    // Bounds the wait for `Ready`, and for the reply to each sent request
    timers = /*#__PURE__*/new Map();
@@ -105,7 +114,7 @@ index edd291c..a70868f 100644
    constructor(options) {
      this.options = options;
      try {
-@@ -295,14 +296,20 @@ class Proxy {
+@@ -299,14 +300,20 @@ class Proxy {
    }
    startTimer(key) {
      const millis = this.options.responseTimeoutMillis;
@@ -134,7 +143,7 @@ index edd291c..a70868f 100644
    }
    stopTimer(key) {
      clearTimeout(this.timers.get(key));
-@@ -322,6 +329,7 @@ class Proxy {
+@@ -326,6 +333,7 @@ class Proxy {
      }
    }
    receive(message) {

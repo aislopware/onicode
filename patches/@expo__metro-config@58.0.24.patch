@@ -1,8 +1,8 @@
 diff --git a/build/serializer/sourceMap.js b/build/serializer/sourceMap.js
-index 2a58f57..a90ce77 100644
+index 938517a..dd22448 100644
 --- a/build/serializer/sourceMap.js
 +++ b/build/serializer/sourceMap.js
-@@ -177,6 +177,58 @@ function repairInvalidNegativeIndices(map) {
+@@ -253,6 +253,58 @@ function repairInvalidNegativeIndices(map) {
          mappings: encode(decoded)
      } : map;
  }
@@ -61,7 +61,7 @@ index 2a58f57..a90ce77 100644
  function composeSourceMaps(maps) {
      if (maps.length < 1) {
          throw new Error('composeSourceMaps: Expected at least one map');
-@@ -192,7 +244,7 @@ function composeSourceMaps(maps) {
+@@ -268,7 +320,7 @@ function composeSourceMaps(maps) {
          };
      });
      // Metro convention is original-first; remapping is most-recent first.

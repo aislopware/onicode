@@ -759,6 +759,7 @@ const CLEAR_PROMPT_REJECTIONS: ReadonlySet<string> = new Set([
   "UnauthorizedError",
   "CommandNotFoundError",
   "SkillNotFoundError",
+  "SkillLoadError",
 ]);
 
 export const OPENCODE_2_STILL_STOPPING =

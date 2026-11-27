@@ -664,11 +664,14 @@ describe("MessagesTimeline messages", () => {
     // A screen reader scrolls the heading it moves to into view.
     const expectHeadingInView = async (text: string, neighbour: string) => {
       await act(() => headingFor(text)!.scrollIntoView({ block: "start" }));
-      await vi.waitFor(() => expect(screen.text()).toContain(neighbour));
-      const row = headingFor(text)!.parentElement!.getBoundingClientRect();
-      const view = viewport.getBoundingClientRect();
-      expect(row.top).toBeLessThan(view.bottom);
-      expect(row.bottom).toBeGreaterThan(view.top);
+      // The list re-measures the rows it mounts after the jump, which can move the heading.
+      await vi.waitFor(() => {
+        expect(screen.text()).toContain(neighbour);
+        const row = headingFor(text)!.parentElement!.getBoundingClientRect();
+        const view = viewport.getBoundingClientRect();
+        expect(row.top).toBeLessThan(view.bottom);
+        expect(row.bottom).toBeGreaterThan(view.top);
+      });
     };
 
     await vi.waitFor(() => expect(screen.text()).toContain("Turn 118:"));

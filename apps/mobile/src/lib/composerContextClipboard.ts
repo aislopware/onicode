@@ -16,6 +16,9 @@ import {
   encodeComposerContextFragment,
 } from "@onicode/shared/composerContextClipboard";
 import {
+  collectComposerContextReferences,
+  formatComposerContextHref,
+  formatComposerContextReference,
   threadContextsOutsideEnvironment,
   threadLinkContextReferences,
 } from "@onicode/shared/composerContextReferences";
@@ -54,7 +57,12 @@ function checkAborted(signal: AbortSignal): void {
 const nativeClipboard = () =>
   requireNativeModule<{
     writeContextClipboard: (text: string, fragment: string) => Promise<void>;
+    replaceClipboardText: (text: string) => Promise<void>;
   }>("OniComposerEditor");
+
+/** Replaces only the clipboard's plain text, keeping the rich text a selection copy wrote. */
+export const replaceClipboardText = (text: string): Promise<void> =>
+  nativeClipboard().replaceClipboardText(text);
 
 export function writeComposerContextClipboard(
   text: string,
@@ -66,6 +74,64 @@ export function writeComposerContextClipboard(
       new Error(m(msg("This context selection is too large to copy. Select fewer items."))),
     );
   return nativeClipboard().writeContextClipboard(text, encoded);
+}
+
+// `[label](url)` as copyLinksAs: 'markdown' and Copy as Markdown write it: `\` before `\[]` in the
+// label, and a destination in `<...>` escaping `\<>`, or bare escaping `\()`. Messages render context
+// references as links, never images, so a `!` before one is the text's own.
+const COPIED_MARKDOWN_LINK =
+  /(!?)\[((?:\\.|[^\\[\]])*)\]\((?:<((?:\\.|[^\\<>])*)>|((?:\\.|[^\\\s()<>])+))\)/g;
+const unescapeMarkdown = (text: string) => text.replace(/\\(.)/g, "$1");
+
+/**
+ * A copy's text with the message's context links written as composer references and, in a plain
+ * copy, the message's other links as their labels, as copyLinksAs: 'label' would. Text that only
+ * looks like a link, such as inline code, stays. Null when nothing changes.
+ */
+export function copiedComposerContextText(
+  copied: string,
+  format: "plain" | "markdown",
+  message: { markdown: string; linkUrls: ReadonlyArray<string> },
+  fragment: ComposerContextClipboardFragment,
+): { text: string; hasContext: boolean } | null {
+  const referenceByHref = new Map(
+    collectComposerContextReferences(message.markdown).flatMap((reference) => {
+      const record = fragment.records.find((entry) => entry.contextId === reference.contextId);
+      return record
+        ? [
+            [
+              formatComposerContextHref(reference.kind, reference.contextId),
+              formatComposerContextReference({ ...reference, label: record.label }),
+            ] as const,
+          ]
+        : [];
+    }),
+  );
+  const linkUrls = new Set(message.linkUrls);
+  let hasContext = false;
+  let changed = false;
+  const text = copied.replace(
+    COPIED_MARKDOWN_LINK,
+    (
+      link,
+      bang: string,
+      label: string,
+      bracketed: string | undefined,
+      bare: string | undefined,
+    ) => {
+      const href = unescapeMarkdown(bracketed ?? bare ?? "");
+      const reference = referenceByHref.get(href);
+      if (reference !== undefined) {
+        hasContext = true;
+        changed = true;
+        return bang + reference;
+      }
+      if (format === "markdown" || !linkUrls.has(href)) return link;
+      changed = true;
+      return bang + unescapeMarkdown(label);
+    },
+  );
+  return changed ? { text, hasContext } : null;
 }
 
 export async function importComposerContextClipboard(

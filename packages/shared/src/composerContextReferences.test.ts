@@ -70,7 +70,8 @@ describe("labels and reference links", () => {
 
   it("collects occurrences in document order with offsets, sharing a payload", () => {
     const text =
-      "See ![a.png](oni-context://v1/image/ctx_1) then [T1](oni-context://v1/terminal/ctx_2) and again [a](oni-context://v1/image/ctx_1).";
+      // A `!` before a reference other than an image is the text's own.
+      "See ![a.png](oni-context://v1/image/ctx_1) then![T1](oni-context://v1/terminal/ctx_2) and again [a](oni-context://v1/image/ctx_1).";
     const occurrences = collectComposerContextReferences(text);
     expect(occurrences.map((o) => [o.kind, o.contextId, o.label, o.image])).toEqual([
       ["image", "ctx_1", "a.png", true],
@@ -80,6 +81,7 @@ describe("labels and reference links", () => {
     for (const occurrence of occurrences) {
       expect(text.slice(occurrence.start, occurrence.end)).toBe(occurrence.source);
     }
+    expect(occurrences[1]?.source).toBe("[T1](oni-context://v1/terminal/ctx_2)");
     const reference = "[#30296](oni-context://v1/review-comment/ctx_pr)";
     expect(collectComposerContextReferences(`[${reference}]`)[0]).toMatchObject({
       label: "#30296",
