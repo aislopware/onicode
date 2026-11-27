@@ -11960,8 +11960,13 @@ describe("CodexAdapterV2 post-settle continuation", () => {
   });
 
   // The child's nodes as of its latest subagent.updated, which can end the parent run's ingestion.
-  const childNodeStatuses = (events: ReadonlyArray<ProviderAdapter.ProviderAdapterV2Event>) => {
-    const latest = events.findLastIndex((event) => event.type === "subagent.updated");
+  const childNodeStatuses = (
+    events: ReadonlyArray<ProviderAdapter.ProviderAdapterV2Event>,
+    matches: (subagent: OrchestrationV2Subagent) => boolean = () => true,
+  ) => {
+    const latest = events.findLastIndex(
+      (event) => event.type === "subagent.updated" && matches(event.subagent),
+    );
     const update = events[latest];
     const subagent = update?.type === "subagent.updated" ? update.subagent : undefined;
     return Object.fromEntries(
@@ -12197,6 +12202,286 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         "the stopped child's turn must not run under the next parent turn",
       );
       yield* Deferred.await(interrupted);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
+  );
+
+  const spawnActivity = (input: {
+    readonly id: string;
+    readonly agentThreadId: string;
+    readonly agentPath: string;
+    readonly threadId: string;
+    readonly turnId: string;
+  }): CodexReplay.CodexAppServerReplayEntry => ({
+    type: "emit_inbound",
+    frame: {
+      method: "item/completed",
+      params: {
+        item: {
+          type: "subAgentActivity",
+          id: input.id,
+          kind: "started",
+          agentThreadId: input.agentThreadId,
+          agentPath: input.agentPath,
+        },
+        threadId: input.threadId,
+        turnId: input.turnId,
+        completedAtMs: 1782622445000,
+      },
+    },
+  });
+
+  const rootMarker = (text: string, threadId: string, turnId: string) =>
+    ({
+      type: "emit_inbound",
+      frame: {
+        method: "item/completed",
+        params: {
+          item: {
+            type: "agentMessage",
+            id: `marker-${text}`,
+            text,
+            phase: "commentary",
+            memoryCitation: null,
+          },
+          threadId,
+          turnId,
+          completedAtMs: 1782622446000,
+        },
+      },
+    }) satisfies CodexReplay.CodexAppServerReplayEntry;
+
+  it.effect("settles a grandchild whose first turn is interrupted under a failed root", () =>
+    Effect.gen(function* () {
+      const GRANDCHILD_THREAD = "native-codex-resume-grandchild-thread";
+      const GRANDCHILD_TURN = "native-codex-resume-grandchild-turn";
+      const harness = yield* makeCodexReplayHarness(
+        makeCodexReplayTranscript({
+          scenario: RESUME_SCENARIO,
+          entries: [
+            ...lateChildPrefix().spawned,
+            rootTurnEnded("failed"),
+            // The child keeps running and spawns a grandchild after its root failed.
+            spawnActivity({
+              id: "call-codex-grandchild-spawn",
+              agentThreadId: GRANDCHILD_THREAD,
+              agentPath: "/root/resume_agent/grandchild",
+              threadId: RESUME_CHILD_THREAD,
+              turnId: RESUME_CHILD_TURN_1,
+            }),
+            {
+              type: "emit_inbound",
+              frame: {
+                method: "turn/started",
+                params: {
+                  threadId: GRANDCHILD_THREAD,
+                  turn: makeCodexReplayTurn({ id: GRANDCHILD_TURN, status: "inProgress" }),
+                },
+              },
+            },
+            {
+              type: "expect_outbound",
+              frame: {
+                id: 4,
+                method: "turn/interrupt",
+                params: { threadId: GRANDCHILD_THREAD, turnId: GRANDCHILD_TURN },
+              },
+            },
+            { type: "emit_inbound", frame: { id: 4, result: {} } },
+            rootMarker("GRANDCHILD_MARKER", RESUME_CHILD_THREAD, RESUME_CHILD_TURN_1),
+          ],
+        }),
+      );
+      yield* harness.runtime.startTurn(
+        makeCodexTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make("attempt-codex-grandchild-failed-root"),
+          text: RESUME_PROMPT,
+        }),
+      );
+      yield* harness.until(() =>
+        harness.events.some(
+          (event) => event.type === "message.updated" && event.message.text === "GRANDCHILD_MARKER",
+        ),
+      );
+      const isGrandchild = (subagent: OrchestrationV2Subagent) =>
+        subagent.title === "/root/resume_agent/grandchild";
+      assert.equal(
+        harness.subagentUpdates().findLast((update) => isGrandchild(update.subagent))?.subagent
+          .status,
+        "interrupted",
+      );
+      assert.deepEqual(childNodeStatuses(harness.events, isGrandchild), {
+        card: "interrupted",
+        child: "interrupted",
+      });
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
+  );
+
+  it.effect("runs a stopped child's turn once a live parent turn sends it input", () =>
+    Effect.gen(function* () {
+      const secondPrompt = "Ask the sub-agent again.";
+      const secondTurn = "native-codex-resume-root-turn-2";
+      const harness = yield* makeCodexReplayHarness(
+        makeCodexReplayTranscript({
+          scenario: RESUME_SCENARIO,
+          entries: [
+            ...lateChildPrefix().spawned.slice(0, -1),
+            rootTurnEnded("failed"),
+            ...rootTurnStart(secondTurn, secondPrompt),
+            {
+              type: "emit_inbound",
+              frame: {
+                method: "item/started",
+                params: {
+                  item: {
+                    type: "collabAgentToolCall",
+                    id: "call-codex-send-input",
+                    tool: "sendInput",
+                    status: "inProgress",
+                    senderThreadId: RESUME_NATIVE_THREAD,
+                    receiverThreadIds: [RESUME_CHILD_THREAD],
+                    agentsStates: {},
+                  },
+                  threadId: RESUME_NATIVE_THREAD,
+                  turnId: secondTurn,
+                  startedAtMs: 1782622450000,
+                },
+              },
+            },
+            childTurnStarted(RESUME_CHILD_TURN_1),
+            childTurnCompleted(RESUME_CHILD_TURN_1),
+            {
+              type: "emit_inbound",
+              frame: {
+                method: "turn/completed",
+                params: {
+                  threadId: RESUME_NATIVE_THREAD,
+                  turn: makeCodexReplayTurn({ id: secondTurn, status: "completed" }),
+                },
+              },
+            },
+          ],
+        }),
+      );
+      const turnInput = (index: number, text: string) =>
+        Effect.gen(function* () {
+          return {
+            ...makeCodexTestTurnInput({
+              threadId: harness.threadId,
+              providerThread: harness.providerThread,
+              now: yield* DateTime.now,
+              attemptId: RunAttemptId.make(`attempt-codex-woken-child-${index}`),
+              text,
+            }),
+            runOrdinal: index,
+            providerTurnOrdinal: index,
+          };
+        });
+      yield* harness.runtime.startTurn(yield* turnInput(1, RESUME_PROMPT));
+      yield* harness.awaitTerminal(1);
+      assert.equal(harness.subagentUpdates().at(-1)?.subagent.status, "interrupted");
+      yield* harness.runtime.startTurn(yield* turnInput(2, secondPrompt));
+      yield* harness.awaitTerminal(2);
+      assert.isTrue(
+        harness.events.some(
+          (event) => event.type === "provider_turn.updated" && event.threadId !== harness.threadId,
+        ),
+        "the child's turn runs once the parent's live turn wakes it",
+      );
+      assert.equal(harness.subagentUpdates().at(-1)?.subagent.status, "completed");
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
+  );
+
+  it.effect("keeps a running root's child activity when its Stop is not yet confirmed", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeCodexReplayHarness(
+        makeCodexReplayTranscript({
+          scenario: RESUME_SCENARIO,
+          entries: [
+            ...lateChildPrefix().spawned.slice(0, -1),
+            {
+              type: "expect_outbound",
+              frame: {
+                id: 4,
+                method: "turn/interrupt",
+                params: { threadId: RESUME_NATIVE_THREAD, turnId: RESUME_NATIVE_TURN },
+              },
+            },
+            // Codex acknowledges the Stop but the root keeps working.
+            { type: "emit_inbound", frame: { id: 4, result: {} } },
+            spawnActivity({
+              id: "call-codex-second-spawn",
+              agentThreadId: "native-codex-second-child-thread",
+              agentPath: "/root/second_agent",
+              threadId: RESUME_NATIVE_THREAD,
+              turnId: RESUME_NATIVE_TURN,
+            }),
+            rootMarker("ROOT_STILL_RUNNING", RESUME_NATIVE_THREAD, RESUME_NATIVE_TURN),
+          ],
+        }),
+      );
+      yield* harness.runtime.startTurn(
+        makeCodexTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make("attempt-codex-unconfirmed-root-stop"),
+          text: RESUME_PROMPT,
+        }),
+      );
+      yield* harness.until(() => harness.subagentUpdates().length > 0);
+      const rootTurn = harness.events.find(
+        (event) => event.type === "provider_turn.updated" && event.threadId === harness.threadId,
+      );
+      assert.equal(rootTurn?.type, "provider_turn.updated");
+      if (rootTurn?.type !== "provider_turn.updated") return;
+      const stopping = yield* harness.runtime
+        .interruptTurn({
+          providerThread: harness.providerThread,
+          providerTurnId: rootTurn.providerTurn.id,
+          requestRuntimeRestart: true,
+        })
+        .pipe(Effect.forkChild({ startImmediately: true }));
+      yield* harness.until(() =>
+        harness.events.some(
+          (event) =>
+            event.type === "message.updated" && event.message.text === "ROOT_STILL_RUNNING",
+        ),
+      );
+      assert.isTrue(
+        harness.subagentUpdates().some((update) => update.subagent.title === "/root/second_agent"),
+        "a child the still-running root spawns after Stop is tracked",
+      );
+      yield* Fiber.interrupt(stopping);
     }).pipe(
       Effect.provide(
         Layer.mergeAll(
@@ -13198,6 +13483,8 @@ describe("CodexAdapterV2 post-settle continuation", () => {
   it.effect.each([
     ["pendingInit", "pending"],
     ["shutdown", "cancelled"],
+    ["errored", "failed"],
+    ["notFound", "failed"],
     ["activity-completed", "completed"],
     ["late-activity-completed", "completed"],
     ["stale-running", "completed"],
@@ -13339,6 +13626,21 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         yield* Deferred.await(marker);
         const latest = harness.subagentUpdates().at(-1)!.subagent;
         assert.equal(latest.status, expectedStatus);
+        // The child never started a turn, so this update is what settles its nodes.
+        const nodeStatus = expectedStatus === "pending" ? "running" : expectedStatus;
+        assert.deepEqual(childNodeStatuses(harness.events), {
+          card: nodeStatus,
+          child: nodeStatus,
+        });
+        if (expectedStatus === "pending") {
+          assert.deepEqual(
+            yield* Effect.all([
+              harness.hasPendingBackgroundWork,
+              harness.runtime.hasPendingBackgroundWorkForThread!(harness.providerThread),
+            ]),
+            [true, true],
+          );
+        }
         if (nativeStatus === "duplicate-completed") {
           const first = harness.subagentUpdates().find((e) => e.subagent.status === "completed")!;
           assert.equal(

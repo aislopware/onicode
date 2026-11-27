@@ -77,3 +77,39 @@ it.effect("places a run-start item ahead of the run's items, then appends once t
     assert.equal(yield* allocate("item:reply"), message + 2);
   }).pipe(Effect.provide(layerTest)),
 );
+
+it.effect("reserves a run's unplaced items in order, and none before the run is projected", () =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const positions = yield* TurnItemPositionStore.TurnItemPositionStoreV2;
+    const threadId = ThreadId.make("thread:reserve");
+    const runId = RunId.make("run:reserve");
+    const reserve = positions.reserve({
+      threadId,
+      runId,
+      turnItemIds: ["item:earlier", "item:placed", "item:later"].map((id) => TurnItemId.make(id)),
+    });
+    const ordinals = sql<{ readonly turn_item_id: string; readonly ordinal: number }>`
+      SELECT turn_item_id, ordinal
+      FROM orchestration_v2_turn_item_positions
+      WHERE thread_id = ${threadId}
+      ORDER BY ordinal
+    `;
+
+    yield* reserve;
+    assert.deepStrictEqual(yield* ordinals, []);
+
+    yield* sql`
+      INSERT INTO orchestration_v2_projection_runs
+        (run_id, thread_id, ordinal, provider, status, requested_at, payload_json)
+      VALUES (${runId}, ${threadId}, 2, 'codex', 'running', '2026-01-01', '{}')
+    `;
+    yield* positions.allocate({ threadId, turnItemId: TurnItemId.make("item:placed"), runId });
+    yield* reserve;
+    assert.deepStrictEqual(yield* ordinals, [
+      { turn_item_id: "item:placed", ordinal: 2_000_001 },
+      { turn_item_id: "item:earlier", ordinal: 2_000_002 },
+      { turn_item_id: "item:later", ordinal: 2_000_003 },
+    ]);
+  }).pipe(Effect.provide(layerTest)),
+);

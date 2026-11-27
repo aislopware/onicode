@@ -125,6 +125,8 @@ export interface EventSinkV2Shape {
     >;
     readonly guardPendingUserInputCancellations?: boolean;
     readonly guardCommandStatusRegressions?: boolean;
+    /** Placed first in the same transaction, so this write cannot take a place ahead of them. */
+    readonly reserveTurnItemPositions?: TurnItemPositionStore.TurnItemPositionReservation;
     readonly commandId?: CommandId;
     readonly events: ReadonlyArray<OrchestrationV2DomainEvent>;
   }) => Effect.Effect<ReadonlyArray<OrchestrationV2StoredEvent>, EventSinkV2Error>;
@@ -665,7 +667,8 @@ const layerBase: Layer.Layer<
     });
 
     const writeEffect = Effect.fn("orchestrationV2.EventSink.write")(function* (
-      input: Parameters<EventSinkV2Shape["writeWithEffects"]>[0],
+      input: Parameters<EventSinkV2Shape["writeWithEffects"]>[0] &
+        Pick<Parameters<EventSinkV2Shape["write"]>[0], "reserveTurnItemPositions">,
     ) {
       yield* Effect.annotateCurrentSpan({
         "orchestration_v2.command_id": input.commandId ?? null,
@@ -697,6 +700,8 @@ const layerBase: Layer.Layer<
           const events = input.updateDelegatedCompletionOnly
             ? yield* updateDelegatedCompletionOnly(input.events, () => true)
             : input.events;
+          if (input.reserveTurnItemPositions !== undefined)
+            yield* turnItemPositions.reserve(input.reserveTurnItemPositions);
           const normalized = yield* normalizeEvents(
             input.guardPendingUserInputCancellations === true ||
               input.guardCommandStatusRegressions === true

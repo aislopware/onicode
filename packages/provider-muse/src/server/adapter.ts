@@ -719,6 +719,14 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
           completedAt,
           updatedAt: time,
         };
+        // The card settling can end the parent run's ingestion, so the child settles first.
+        if (context) {
+          if (context.status !== status) yield* publishChildRoot(context, status, time);
+          if (settled && result?.trim() && context.result !== result) {
+            context.result = result;
+            yield* publishChildMessage(context, "assistant", result, "result", time);
+          }
+        }
         yield* emit({ type: "subagent.updated", driver: MUSE_PROVIDER, subagent });
         yield* emit({
           type: "node.updated",
@@ -760,13 +768,6 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
             result,
           },
         });
-        if (context) {
-          if (context.status !== status) yield* publishChildRoot(context, status, time);
-          if (settled && result?.trim() && context.result !== result) {
-            context.result = result;
-            yield* publishChildMessage(context, "assistant", result, "result", time);
-          }
-        }
       });
       const syncBackground = Effect.fnUntraced(function* () {
         yield* updateThread({

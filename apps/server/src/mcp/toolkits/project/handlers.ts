@@ -40,7 +40,11 @@ import {
 } from "@onicode/shared/projectSettings";
 import { parseOniProjectFile } from "@onicode/shared/oniProjectFile";
 import { resolveProjectScripts } from "@onicode/shared/projectScripts";
-import { resolveRuntimeMode } from "../../delegatedTaskModes.ts";
+import {
+  providerOptionDescriptors,
+  resolveRuntimeMode,
+  withoutAgentModePicks,
+} from "../../delegatedTaskModes.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as OrchestrationMcp from "../../OrchestratorMcpService.ts";
@@ -418,22 +422,43 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
         // project's effective defaults, as the composer does. Its mode stays
         // within the ceiling it was approved with.
         const projectDefaults = caller === undefined ? projectSettings : undefined;
-        const modelSelection =
-          validatedModelSelection ??
-          launchedModel ??
-          caller?.modelSelection ??
-          (projectDefaults
+        const defaultedProviders =
+          (validatedModelSelection ?? launchedModel ?? caller?.modelSelection ?? !projectDefaults)
+            ? undefined
+            : yield* ProviderRegistry.ProviderRegistry.pipe(
+                Effect.flatMap((registry) => registry.getProviders),
+              );
+        const projectDefault =
+          projectDefaults && defaultedProviders
             ? resolveNewThreadModelSelection({
                 defaultSelection: projectDefaults.defaultModelSelection,
                 fallbackSelection: projectDefaults.fallbackModelSelection,
-                providers: yield* ProviderRegistry.ProviderRegistry.pipe(
-                  Effect.flatMap((registry) => registry.getProviders),
-                ),
+                providers: defaultedProviders,
                 settings: projectDefaults,
                 projectId,
                 now: DateTime.toEpochMillis(yield* DateTime.now),
               }).selection
-            : null) ??
+            : null;
+        const modelSelection =
+          validatedModelSelection ??
+          launchedModel ??
+          caller?.modelSelection ??
+          // A default a full-access user saved may set the agent's own mode, which only a
+          // full-access caller may start a thread in.
+          (projectDefault?.options && context.limits.runtimeMode !== "full-access"
+            ? {
+                ...projectDefault,
+                options:
+                  withoutAgentModePicks(
+                    projectDefault.options,
+                    providerOptionDescriptors(
+                      defaultedProviders?.find(
+                        (provider) => provider.instanceId === projectDefault.instanceId,
+                      ),
+                    ),
+                  ) ?? [],
+              }
+            : projectDefault) ??
           undefined;
         if (modelSelection === undefined)
           return yield* new OrchestratorMcpFailure({

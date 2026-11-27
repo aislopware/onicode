@@ -102,6 +102,7 @@ const clientLaunchHarness = (input: {
             projectSettingsOverrides: {
               [projectId]: {
                 defaultModelSelection: input.overrideModel,
+                providerInstances: { [input.overrideModel.instanceId]: { enabled: true } },
                 ...(input.overrideScripts === undefined
                   ? {}
                   : { defaultProjectScripts: input.overrideScripts }),
@@ -557,47 +558,57 @@ it.effect(
 it.effect("only a full-access client may pick the agent's own mode at launch", () =>
   Effect.gen(function* () {
     const agent = ProviderInstanceId.make("acp-agent");
-    const launchAs = (runtimeModeCeiling: "approval-required" | "full-access") =>
+    const yolo = {
+      instanceId: agent,
+      model: "default",
+      options: [{ id: "_oni/session-mode", value: "yolo" }],
+    };
+    const providers: ReadonlyArray<ServerProvider> = [
+      {
+        instanceId: agent,
+        driver: ProviderDriverKind.make("acpRegistry"),
+        enabled: true,
+        installed: true,
+        status: "ready",
+        version: null,
+        auth: { status: "authenticated" },
+        checkedAt: "2026-01-01T00:00:00Z",
+        models: [
+          {
+            slug: "default",
+            name: "Default",
+            isCustom: false,
+            capabilities: {
+              optionDescriptors: [
+                {
+                  id: "_oni/session-mode",
+                  label: "Mode",
+                  type: "select",
+                  options: [
+                    { id: "default", label: "Default" },
+                    { id: "yolo", label: "YOLO" },
+                  ],
+                  currentValue: "default",
+                },
+              ],
+            },
+          },
+        ],
+        slashCommands: [],
+        skills: [],
+      },
+    ];
+    const launch = (
+      runtimeModeCeiling: "approval-required" | "full-access",
+      modelSelection: ModelSelection | undefined,
+    ) =>
       Effect.gen(function* () {
         const launched: Array<ThreadLaunch.ThreadLaunchInput> = [];
         const { projectId, dependencies } = clientLaunchHarness({
           runtimeModeCeiling,
           launched,
-          providers: [
-            {
-              instanceId: agent,
-              driver: ProviderDriverKind.make("acpRegistry"),
-              enabled: true,
-              installed: true,
-              status: "ready",
-              version: null,
-              auth: { status: "authenticated" },
-              checkedAt: "2026-01-01T00:00:00Z",
-              models: [
-                {
-                  slug: "default",
-                  name: "Default",
-                  isCustom: false,
-                  capabilities: {
-                    optionDescriptors: [
-                      {
-                        id: "_oni/session-mode",
-                        label: "Mode",
-                        type: "select",
-                        options: [
-                          { id: "default", label: "Default" },
-                          { id: "yolo", label: "YOLO" },
-                        ],
-                        currentValue: "default",
-                      },
-                    ],
-                  },
-                },
-              ],
-              slashCommands: [],
-              skills: [],
-            },
-          ],
+          providers,
+          ...(modelSelection === undefined ? { overrideModel: yolo } : {}),
         });
         const toolkit = yield* ProjectToolkit.pipe(
           Effect.provide(
@@ -611,11 +622,7 @@ it.effect("only a full-access client may pick the agent's own mode at launch", (
             projectId,
             title: "Fix",
             message: "Fix the bug",
-            modelSelection: {
-              instanceId: agent,
-              model: "default",
-              options: [{ id: "_oni/session-mode", value: "yolo" }],
-            },
+            ...(modelSelection === undefined ? {} : { modelSelection }),
           })
           .pipe(
             Stream.unwrap,
@@ -625,13 +632,24 @@ it.effect("only a full-access client may pick the agent's own mode at launch", (
           );
         return { result, launched };
       });
+    const launchAs = (runtimeModeCeiling: "approval-required" | "full-access") =>
+      Effect.gen(function* () {
+        const picked = yield* launch(runtimeModeCeiling, yolo);
+        const defaulted = (yield* launch(runtimeModeCeiling, undefined)).launched;
+        return { ...picked, defaulted };
+      });
 
     const supervised = yield* launchAs("approval-required");
     expect(supervised.result).toMatchObject({ code: "runtime_mode_escalation_denied" });
     expect(supervised.launched).toHaveLength(0);
+    // A project default only a full-access user could save does not hand its mode on.
+    expect(supervised.defaulted.map((launch) => launch.modelSelection.options)).toEqual([[]]);
 
     const fullAccess = yield* launchAs("full-access");
     expect(fullAccess.launched.map((launch) => launch.modelSelection.options)).toEqual([
+      [{ id: "_oni/session-mode", value: "yolo" }],
+    ]);
+    expect(fullAccess.defaulted.map((launch) => launch.modelSelection.options)).toEqual([
       [{ id: "_oni/session-mode", value: "yolo" }],
     ]);
   }),

@@ -37,6 +37,7 @@ import * as IdAllocator from "@onicode/provider-core/server/IdAllocator";
 import * as ProviderAdapter from "@onicode/provider-core/server/ProviderAdapter";
 import { makeProviderFailureTurnItem } from "@onicode/provider-core/server/failure";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
+import type * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
 import { stripUnservedToolOutputImageBytes } from "./toolOutputImageBytes.ts";
 import { boundFileChangeForStorage } from "./WireProjection.ts";
 
@@ -209,6 +210,8 @@ export interface ProviderEventIngestorV2Shape {
     input: ProviderEventIngestInput & {
       /** True when ingested directly by the session pump rather than a run's event subscriber. */
       readonly sessionScoped?: boolean;
+      /** Only a write without writeIf* conditions, as session-scoped writes are, honors it. */
+      readonly reserveTurnItemPositions?: TurnItemPositionStore.TurnItemPositionReservation;
       readonly writeIfRunCurrent?: {
         readonly runId: RunId;
         readonly activeAttemptId: RunAttemptId;
@@ -833,6 +836,9 @@ export const layer: Layer.Layer<
                   guardPendingUserInputCancellations: true,
                   guardCommandStatusRegressions,
                   ...(input.commandId === undefined ? {} : { commandId: input.commandId }),
+                  ...(input.reserveTurnItemPositions === undefined
+                    ? {}
+                    : { reserveTurnItemPositions: input.reserveTurnItemPositions }),
                   events,
                 })
                 .pipe(retryLockTimeout, Effect.mapError(mapWriteError));

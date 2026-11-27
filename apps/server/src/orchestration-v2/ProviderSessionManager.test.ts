@@ -60,7 +60,6 @@ import * as EventSink from "./EventSink.ts";
 import * as EventStore from "./EventStore.ts";
 import * as IdAllocator from "@onicode/provider-core/server/IdAllocator";
 import * as ProjectionStore from "./ProjectionStore.ts";
-import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ProviderEventIngestor from "./ProviderEventIngestor.ts";
 import * as ProviderInstallationGate from "../provider/ProviderInstallationGate.ts";
@@ -805,7 +804,6 @@ function layerTest(input: {
           layerProviderEventIngestorTest,
           layerConfiguredMcpRegistry,
           layerTestStores,
-          TurnItemPositionStore.layer.pipe(Layer.provide(layerTestDatabase)),
           input.installationGateLayer ?? ProviderInstallationGate.layer,
           ...(input.serverSettingsLayer === undefined ? [] : [input.serverSettingsLayer]),
           ...(input.projectServiceLayer === undefined ? [] : [input.projectServiceLayer]),
@@ -5621,6 +5619,36 @@ it.effect(
         const subscription = yield* runtime.subscribeEvents!;
         const runId = idAllocator.derive.run({ threadId, ordinal: 1 });
         const rootNodeId = idAllocator.derive.rootNode({ runId });
+        yield* eventSink.write({
+          events: [
+            {
+              id: yield* idAllocator.allocate.event({ threadId }),
+              type: "run.created",
+              threadId,
+              runId,
+              nodeId: rootNodeId,
+              driver: CODEX_DRIVER,
+              occurredAt: now,
+              payload: {
+                id: runId,
+                threadId,
+                ordinal: 1,
+                providerInstanceId: modelSelection.instanceId,
+                modelSelection,
+                providerThreadId: providerThread.id,
+                userMessageId: MessageId.make("message:provider-session-manager-late-order"),
+                rootNodeId,
+                activeAttemptId: null,
+                status: "running",
+                requestedAt: now,
+                startedAt: now,
+                completedAt: null,
+                checkpointId: null,
+                contextHandoffId: null,
+              },
+            },
+          ],
+        });
         const nodeId = idAllocator.derive.nodeFromProviderItem({
           driver: CODEX_DRIVER,
           nativeItemId: "cmd-race",
@@ -5871,9 +5899,11 @@ it.effect(
           { status: "completed", exitCode: 0, output: "done\n" },
         );
         // The session-scoped result committed first, yet each item keeps the place it was reported at.
-        assert.isBelow(
-          projection.turnItems.find((item) => item.id === earlierItemEvent.turnItem.id)!.ordinal,
-          projection.turnItems.find((item) => item.id === turnItemId)!.ordinal,
+        assert.deepStrictEqual(
+          [earlierItemEvent.turnItem.id, turnItemId].map(
+            (id) => projection.turnItems.find((item) => item.id === id)?.ordinal,
+          ),
+          [1_000_001, 1_000_002],
         );
         assert.equal(
           projection.nodes.find((candidate) => candidate.id === nodeId)?.status,

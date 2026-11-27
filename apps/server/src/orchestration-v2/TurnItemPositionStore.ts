@@ -16,6 +16,13 @@ export class TurnItemPositionStoreError extends Schema.TaggedError<TurnItemPosit
 
 const isTurnItemPositionStoreError = Schema.is(TurnItemPositionStoreError);
 
+export interface TurnItemPositionReservation {
+  readonly threadId: ThreadId;
+  readonly runId: RunId;
+  /** In report order. */
+  readonly turnItemIds: ReadonlyArray<TurnItemId>;
+}
+
 export interface TurnItemPositionStoreV2Shape {
   readonly allocate: (input: {
     readonly threadId: ThreadId;
@@ -27,6 +34,13 @@ export interface TurnItemPositionStoreV2Shape {
     // Keep an existing position even when it lies outside the run's range.
     readonly keepExisting?: boolean;
   }) => Effect.Effect<number, TurnItemPositionStoreError>;
+  /**
+   * Places the items that have no position yet at the end of their run's range, in order.
+   * Does nothing until the run is projected, so no item is fixed in the runless range.
+   */
+  readonly reserve: (
+    input: TurnItemPositionReservation,
+  ) => Effect.Effect<void, TurnItemPositionStoreError>;
   readonly normalize: (
     item: OrchestrationV2TurnItem,
     runOrdinal?: number,
@@ -140,8 +154,48 @@ export const layer: Layer.Layer<TurnItemPositionStoreV2, never, SqlClient.SqlCli
           ),
       );
 
+    // Runs only before a rare session-scoped write; the enclosing write owns the span.
+    const reserve: TurnItemPositionStoreV2Shape["reserve"] = Effect.fnUntraced(function* ({
+      threadId,
+      runId,
+      turnItemIds,
+    }) {
+      const first = turnItemIds[0];
+      if (first === undefined) return;
+      const failed = (turnItemId: TurnItemId) => (cause: unknown) =>
+        new TurnItemPositionStoreError({ threadId, turnItemId, cause });
+      const runRows = yield* sql<{ readonly ordinal: number }>`
+        SELECT ordinal
+        FROM orchestration_v2_projection_runs
+        WHERE thread_id = ${threadId} AND run_id = ${runId}
+        LIMIT 1
+      `.pipe(Effect.mapError(failed(first)));
+      const runOrdinal = runRows[0]?.ordinal;
+      if (runOrdinal === undefined) return;
+      const placed = yield* sql<{ readonly turn_item_id: string }>`
+        SELECT turn_item_id
+        FROM orchestration_v2_turn_item_positions
+        WHERE thread_id = ${threadId} AND turn_item_id IN ${sql.in(turnItemIds)}
+      `.pipe(Effect.mapError(failed(first)));
+      const placedIds = new Set(placed.map((row) => row.turn_item_id));
+      const lowerBound = runOrdinal * 1_000_000;
+      for (const turnItemId of turnItemIds) {
+        if (placedIds.has(turnItemId)) continue;
+        yield* sql`
+          INSERT INTO orchestration_v2_turn_item_positions (thread_id, turn_item_id, ordinal)
+          SELECT ${threadId}, ${turnItemId}, COALESCE(MAX(ordinal), ${lowerBound}) + 1
+          FROM orchestration_v2_turn_item_positions
+          WHERE thread_id = ${threadId}
+            AND ordinal >= ${lowerBound}
+            AND ordinal <= ${lowerBound + 999_999}
+          ON CONFLICT(thread_id, turn_item_id) DO NOTHING
+        `.pipe(Effect.mapError(failed(turnItemId)));
+      }
+    });
+
     return TurnItemPositionStoreV2.of({
       allocate,
+      reserve,
       // Per-event normalization shares the enclosing orchestration span.
       normalize: Effect.fnUntraced(function* (item, runOrdinal) {
         return yield* allocate({

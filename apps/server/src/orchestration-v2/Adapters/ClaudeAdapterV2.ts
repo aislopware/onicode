@@ -9633,6 +9633,30 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             });
             if ((yield* Ref.get(sessionSubagentsByTaskId)).get(input.taskId) !== subagent) return;
           }
+          // The card settling can end the parent run's ingestion, so the result lands first.
+          const resultAlreadyShown =
+            input.status === "completed" &&
+            input.result !== undefined &&
+            normalizeClaudeResultText(subagent.lastAssistantText ?? "") ===
+              normalizeClaudeResultText(input.result);
+          if (
+            input.result !== undefined &&
+            input.result.trim().length > 0 &&
+            input.status !== "running" &&
+            !resultAlreadyShown
+          ) {
+            const resultItemOrdinal = subagent.resultItemOrdinal ?? ++subagent.nextChildItemOrdinal;
+            subagent.resultItemOrdinal = resultItemOrdinal;
+            yield* emitSubagentConversationMessage({
+              nativeItemId: subagent.resultNativeItemId,
+              threadId: childThreadId,
+              rootNodeId: childRootNodeId,
+              role: "assistant",
+              text: input.result,
+              ordinal: resultItemOrdinal,
+              now,
+            });
+          }
           yield* emitProviderEvent({
             type: "turn_item.updated",
             driver: CLAUDE_PROVIDER,
@@ -9667,30 +9691,6 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           if (input.nativeOutcome !== undefined && subagent.confirmedOutcome !== undefined) {
             const outcome = subagentStopOutcomes.get(input.taskId);
             if (outcome !== undefined) yield* Deferred.succeed(outcome, subagent.confirmedOutcome);
-          }
-
-          const resultAlreadyShown =
-            input.status === "completed" &&
-            input.result !== undefined &&
-            normalizeClaudeResultText(subagent.lastAssistantText ?? "") ===
-              normalizeClaudeResultText(input.result);
-          if (
-            input.result !== undefined &&
-            input.result.trim().length > 0 &&
-            input.status !== "running" &&
-            !resultAlreadyShown
-          ) {
-            const resultItemOrdinal = subagent.resultItemOrdinal ?? ++subagent.nextChildItemOrdinal;
-            subagent.resultItemOrdinal = resultItemOrdinal;
-            yield* emitSubagentConversationMessage({
-              nativeItemId: subagent.resultNativeItemId,
-              threadId: childThreadId,
-              rootNodeId: childRootNodeId,
-              role: "assistant",
-              text: input.result,
-              ordinal: resultItemOrdinal,
-              now,
-            });
           }
         });
 

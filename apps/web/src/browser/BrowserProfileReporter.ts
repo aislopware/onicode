@@ -54,7 +54,8 @@ export function startBrowserProfileReporting(): () => void {
         appAtomRegistry,
         previewEnvironment.reportProfiles,
         { environmentId, input },
-        { reportFailure: false },
+        // Pushed on every settings change; a server without it answers with a defect.
+        { reportFailure: false, reportDefect: false },
       );
     }
   };

@@ -2023,7 +2023,7 @@ describe("MuseAdapterV2", () => {
     }).pipe(Effect.scoped, Effect.provide(testLayer)),
   );
 
-  it.effect("opens a prompt-and-result child thread for a native subagent", () =>
+  it.effect("opens a prompt-and-result child thread for a subagent outliving its turn", () =>
     Effect.gen(function* () {
       const fake = yield* makeFakeMuse();
       const harness = yield* makeHarness(fake);
@@ -2045,6 +2045,9 @@ describe("MuseAdapterV2", () => {
       });
       const created = yield* harness.takeEvent("app_thread.created");
       const childThreadId = created.appThread.id;
+      yield* fake.emit("turn/completed", { turnId: nativeId, terminal: "completed" });
+      const terminal = yield* harness.takeEvent("turn.terminal");
+      assert.strictEqual(terminal.status, "completed");
       yield* fake.emit("item/updated", {
         turnId: nativeId,
         item: {
@@ -2065,14 +2068,26 @@ describe("MuseAdapterV2", () => {
         (event) => event.subagent.status === "completed",
       );
       assert.strictEqual(completed.subagent.title, created.appThread.title);
-      const result = yield* harness.takeEvent(
-        "message.updated",
-        (event) => event.message.threadId === childThreadId && event.message.role === "assistant",
+      // The card settling can end the parent run's ingestion; the child must settle before it.
+      const cardSettled = harness.allEvents.findIndex(
+        (event) =>
+          (event.type === "subagent.updated" && event.subagent.status === "completed") ||
+          (event.type === "turn_item.updated" &&
+            event.turnItem.type === "subagent" &&
+            event.turnItem.status === "completed"),
       );
-      assert.strictEqual(result.message.text, "All done");
-      yield* fake.emit("turn/completed", { turnId: nativeId, terminal: "completed" });
-      const terminal = yield* harness.takeEvent("turn.terminal");
-      assert.strictEqual(terminal.status, "completed");
+      assert.deepStrictEqual(
+        harness.allEvents
+          .slice(0, cardSettled)
+          .flatMap((event) =>
+            event.type === "node.updated" && event.node.threadId === childThreadId
+              ? [`${event.node.kind}:${event.node.status}`]
+              : event.type === "message.updated" && event.message.threadId === childThreadId
+                ? [`${event.message.role}:${event.message.text}`]
+                : [],
+          ),
+        ["root_turn:running", "user:Check the thing", "root_turn:completed", "assistant:All done"],
+      );
     }).pipe(Effect.scoped, Effect.provide(testLayer)),
   );
 
