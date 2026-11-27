@@ -3996,3 +3996,4 @@ aacdaba15c	take	taken as is
 d2a9b77499	skip	already solved differently: Onicode's WorkflowAgentLinks.reply scans forward from afterPosition -1 and linked cursorless reads page forward since 0c5c01eab8, so a reply on an older page is never missed
 8f5fd287a4	take	taken as is
 19a6e5b57b	take	taken as is
+f1efcfb494	skip	removed surface: agent feedback reports to T3 through telemetry; feedbackRequest.ts does not exist in Onicode
