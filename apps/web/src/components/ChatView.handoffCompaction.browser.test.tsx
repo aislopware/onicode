@@ -140,11 +140,7 @@ it("sends a Codex follow-up on a cold Claude thread without compacting first", a
 
 it("drops the compact offer on a cold Claude thread while /clear is armed", async () => {
   // At phone width, dismissing the fresh-session notice collapses the composer and hides the chip.
-  const viewport = { width: window.innerWidth, height: window.innerHeight };
   await page.viewport(1280, 800);
-  await using _viewport = {
-    [Symbol.asyncDispose]: () => page.viewport(viewport.width, viewport.height),
-  };
   // The first test's model pick stays on thread-claude's draft, so this one uses its own thread.
   const thread = coldClaudeThread("thread-claude-cleared");
   using _environment = installFakeEnvironment([thread], { providers: [CLAUDE_PROVIDER] });

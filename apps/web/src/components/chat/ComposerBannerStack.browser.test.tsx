@@ -126,11 +126,7 @@ it("shows the details button while text or nested text is cut, until it fits aga
 });
 
 it("opens the details of a long notice right above its button", async () => {
-  const viewport = { width: window.innerWidth, height: window.innerHeight };
   await page.viewport(1280, 800);
-  await using _viewport = {
-    [Symbol.asyncDispose]: () => page.viewport(viewport.width, viewport.height),
-  };
   const script = Array.from({ length: 400 }, (_, line) => `echo "line ${line}"`).join("\n");
   const container = document.createElement("div");
   container.style.cssText = "position: fixed; bottom: 4rem; right: 4rem;";

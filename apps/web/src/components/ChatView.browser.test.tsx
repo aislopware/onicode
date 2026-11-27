@@ -882,11 +882,7 @@ it.each([
 it("a file picked after the phone composer collapses still attaches", async () => {
   const thread = threadWithHistory("thread-40993", 1);
   using _environment = installFakeEnvironment([thread]);
-  const viewport = { width: window.innerWidth, height: window.innerHeight };
   await page.viewport(390, 844);
-  await using _viewport = {
-    [Symbol.asyncDispose]: () => page.viewport(viewport.width, viewport.height),
-  };
   __setClientSettingsForTests({
     ...DEFAULT_CLIENT_SETTINGS,
     onboardingCompletedAt: "2026-01-01T00:00:00.000Z",

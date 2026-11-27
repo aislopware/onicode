@@ -571,15 +571,9 @@ function MobileSheetProbe() {
   );
 }
 
-async function usePhoneViewport() {
-  const viewport = { width: window.innerWidth, height: window.innerHeight };
-  await page.viewport(390, 844);
-  return { [Symbol.asyncDispose]: () => page.viewport(viewport.width, viewport.height) };
-}
-
 describe("sidebar thread menu on a phone", () => {
   it("closes the sheet when New thread on branch starts the thread", async () => {
-    await using _viewport = await usePhoneViewport();
+    await page.viewport(390, 844);
     const activeProject = project("active");
     const thread = makeThreadFixture({
       environmentId: EnvironmentId.make("local"),
@@ -626,7 +620,7 @@ describe("sidebar thread menu on a phone", () => {
   });
 
   it("closes the sheet when Add project opens the picker, as New thread does", async () => {
-    await using _viewport = await usePhoneViewport();
+    await page.viewport(390, 844);
     using _useProjects = vi.mocked(useProjects).mockReturnValue([]);
     using _useQuietThreadShells = vi.mocked(useQuietThreadShells).mockReturnValue([]);
     using _useThreadRouteTarget = vi.mocked(useThreadRouteTarget).mockReturnValue(null);
