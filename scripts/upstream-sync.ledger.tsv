@@ -4010,3 +4010,4 @@ b4a5a4927f	take	the width seed was already in from the 9b671699d4 follow-up; ups
 e045a127e7	take	kept Onicode's anchorOpenHandlers in a small WebSearchResultLink (remote-safe system opens, middle click); upstream's MessagesTimeline mock-wiring test dropped
 c14e9f9717	take	taken as is; cleared.pendingControlSequence is optional, old mobile only loses the replay
 3373a78606	take	scenario ported to desktop with Settings scoped to the sidebar
+acd4fc67b9	take	test fixture uses Onicode's loopback auth and no relayManaged; scenario ported to desktop
