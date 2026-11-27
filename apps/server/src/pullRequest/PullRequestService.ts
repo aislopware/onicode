@@ -1274,9 +1274,15 @@ export const make = Effect.gen(function* () {
 
   const addressedProjects: PullRequestService["Service"]["addressedProjects"] =
     listWorkspaceProjects({}).pipe(
-      Effect.map(({ projects, addressed }) =>
-        projects.map((project) => addressProject(project, addressed.get(project))),
-      ),
+      Effect.map(({ projects, addressed }) => {
+        // Each root precedes the tracked repositories that stand in for it while listing.
+        const seen = new Set<ProjectId>();
+        return projects.flatMap((project) => {
+          if (seen.has(project.id)) return [];
+          seen.add(project.id);
+          return [addressProject(project, addressed.get(project))];
+        });
+      }),
     );
 
   const changes: PullRequestService["Service"]["changes"] = (input) =>
