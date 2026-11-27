@@ -4036,3 +4036,4 @@ b1360538c1	take	taken as is
 2313dfadad	take	startSettled passed through Onicode's withWorkspaceLease signature; only Cursor implements nativeTurnKept
 f84c716839	take	taken as is
 487a29b916	take	row walk skips HIDDEN plus caption via a hoisted Set
+93b8dc3465	take	taken as is; visibleWhen is an optional annotation
