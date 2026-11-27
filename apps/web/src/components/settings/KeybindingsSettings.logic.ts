@@ -71,6 +71,7 @@ const CORE_WHEN_VARIABLES = [
   "terminalFocus",
   "terminalOpen",
   "previewOpen",
+  "composerEmpty",
   "true",
   "false",
 ] as const;
