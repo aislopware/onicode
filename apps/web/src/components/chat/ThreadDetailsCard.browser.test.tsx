@@ -187,6 +187,7 @@ it("keeps full density when many automations make the content tall", async () =>
 it.each([
   ["the expanded server list", "data-thread-details-server-overflow"],
   ["the context breakdown", "data-thread-details-context-breakdown"],
+  ["the expanded linked issues", "data-thread-details-issue-list"],
 ])("stays full while %s overflows", async (_name, marker) => {
   using fixture = setup();
   await using _screen = await render(

@@ -3978,3 +3978,4 @@ e8fb0a0d43	take	entry skills wired at Onicode's registry-root push; no claimedPl
 21a96989b0	take	kept PULL_REQUESTS_PANEL_REF import
 f99eceb76d	take	kept Onicode's notice branch; both reasoning previews use sliceThoughtPreviewSource
 dca3ab2025	take	taken as is
+3a63e0ca37	take	tests only: Onicode's issue list already carries data-thread-details-issue-list outside density; added it to the overflow it.each
