@@ -4533,3 +4533,4 @@ dc37556a93	take	clean
 1f7cb36e06	take	documentTextWorker chain; tests userInputAttachments xlsx
 3fcfcaee23	take	clean
 d2c7c73ab5	take	clean
+5340fcfc5f	take	adapted: release-smoke.ts hunk dropped (T3 release pipeline); i18n tails unioned; docs/user keeps Onicode's text plus a Jira Cloud paragraph; @muse-code/sdk stays 1.4.25; mobile keeps onDisconnected and adds upstream's drafts reset; lockfile regenerated in a follow-up commit; wire: new fields optional, old mobile shows Jira without site/email and the server answers 'Jira needs its site too'
