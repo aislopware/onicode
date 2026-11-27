@@ -4504,3 +4504,4 @@ bb312b12b7	take	clean; shared by desktop and mobile
 e0fd8f67f5	take	clean
 0404f700e8	take	kept Onicode's own ZIP reader (no JSZip): the directory scan reports encrypted entries (checkZipDirectory) and boundedZip routes them to upstream's zip.js readEncryptedZip with the same limits; officeArchive/openDocumentEncryption/epubPreview adapted to OfficeArchive (OpenDocument parts stay bytes); kept Onicode's lazyPreviewDependencies with the @noble entries added (one list pre-bundles lazy worker deps for dev and browser tests); officeEncryption Hash typed as CHash for @noble/hashes 2; composer.md says the desktop app (no web app); mobile ZIP and Android PDF unlock as upstream, iOS PDF unchanged; passwords stay on the device
 07b8554188	take	clean; preview browser is an Onicode desktop feature agents drive over MCP
+985d59e326	take	clean; ends the documentTextWorker chain
