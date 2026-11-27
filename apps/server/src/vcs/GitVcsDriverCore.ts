@@ -52,7 +52,7 @@ import { removeEmptyDirectory, type RemoveEmptyDirectoryError } from "./removeEm
 import { VcsAutomaticFetchInterval } from "./VcsAutomaticFetchInterval.ts";
 import { gitConfigEnv, serverGitConfigEnv, unsetInheritedRepositoryEnv } from "./VcsProcess.ts";
 import { makeWorktreeCheckoutCache } from "./worktreeCheckoutCache.ts";
-import { removeLinkedWorktree } from "./worktreeRemoval.ts";
+import { removeLinkedWorktree, WORKTREE_REMOVE_TIMEOUT_MS } from "./worktreeRemoval.ts";
 import { resolveWorktreesDirectory } from "../worktreesDirectory.ts";
 import {
   parseRemoteNames,
@@ -82,7 +82,6 @@ const backgroundGitProcesses = Semaphore.makeUnsafe(2);
 // the last fetch; on busy repositories that alone outlasts the 30s default.
 const FETCH_REMOTE_TIMEOUT_MS = Duration.toMillis(Duration.minutes(5));
 const WORKTREE_INDEX_REFRESH_TIMEOUT_MS = Duration.toMillis(Duration.minutes(5));
-const WORKTREE_REMOVE_TIMEOUT_MS = Duration.toMillis(Duration.minutes(5));
 const DEFAULT_MAX_OUTPUT_BYTES = 1_000_000;
 const REF_SNAPSHOT_MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 const OUTPUT_TRUNCATED_MARKER = "\n\n[truncated]";
@@ -7650,7 +7649,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     "removeWorktree",
   )(function* (input) {
     // Git also matches a worktree by its short name, which can name a different
-    // folder than this path. Resolving it once keeps Git, the Windows deletion
+    // folder than this path. Resolving it once keeps Git, the folder deletion
     // in removeLinkedWorktree, and the leftover cleanup below on one directory.
     const target = path.resolve(input.cwd, input.path);
     yield* stopIndexRefresh(target);
@@ -7660,8 +7659,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       worktreePath: target,
       force: input.force === true,
       execute,
-      run: (args) =>
-        executeGitWithStableDiagnostics("GitVcsDriver.removeWorktree", input.cwd, args, {
+      run: (args, cwd) =>
+        executeGitWithStableDiagnostics("GitVcsDriver.removeWorktree", cwd, args, {
           timeoutMs: WORKTREE_REMOVE_TIMEOUT_MS,
           allowNonZeroExit: true,
         }).pipe(Effect.map((result) => ({ ...result, args }))),
