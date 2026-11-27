@@ -96,6 +96,7 @@ import {
   type DescriptionDraft,
 } from "@onicode/client-runtime/pull-request-editing";
 import { setMarkdownTaskChecked } from "@onicode/shared/markdownTaskEdits";
+import { parseUrl } from "@onicode/shared/url";
 import { PullRequestMarkdown } from "./PullRequestMarkdown";
 import { PullRequestCommentBody } from "./PullRequestCommentBody";
 import { PullRequestMoreReplies } from "./PullRequestMoreReplies";
@@ -111,6 +112,7 @@ import { PullRequestConversationGhost } from "./PullRequestGhosts";
 import { sectionCollapseAnchorScrollTop } from "./pullRequestSummaryScroll.logic";
 
 import { changeRequestTermKind } from "./changeRequestTerm";
+import { WorkflowRunsAbout } from "../workflows/WorkflowRunsAbout";
 
 function reviewerKey(login: string): string {
   return login.toLowerCase();
@@ -1041,6 +1043,18 @@ export const PullRequestSummaryTab = memo(function PullRequestSummaryTab({
             </PullRequestMetaRow>
           ) : null}
         </div>
+        <WorkflowRunsAbout
+          environmentId={environmentId}
+          item={{
+            subject: detail.url,
+            pullRequest: {
+              projectId: reference.projectId,
+              repository: reference.repository,
+              number: reference.number,
+              host: reference.host ?? parseUrl(detail.url)?.hostname,
+            },
+          }}
+        />
       </section>
 
       <PullRequestSection

@@ -5757,5 +5757,6 @@
   "7150557773b3818b": "대기 중",
   "efbeb3993ee2c3f5": "{pool} 대기 중",
   "0398ca6c1d24b92d": "대기 중, 다음 차례",
-  "0af6d5ffd5166214": "{count, plural, other {대기 중, 앞에 {count}개}}"
+  "0af6d5ffd5166214": "{count, plural, other {대기 중, 앞에 {count}개}}",
+  "46d614fa7b4bf1e5": "워크플로 실행"
 }
