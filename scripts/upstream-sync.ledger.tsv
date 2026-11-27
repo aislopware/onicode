@@ -4651,3 +4651,4 @@ e70368d582	take	styles.xml read from Onicode's OfficeArchive (string or bytes); 
 b2387ca103	take	taken as is
 f3e36337ce	take	taken as is
 0c8b397b81	take	taken as is
+4bc38b1c5e	take	adapted: DocumentText VERSION 17 -> 18 so cached EPUB sidecars extract again
