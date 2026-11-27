@@ -11611,10 +11611,26 @@
   "a16b48709357a5a7": "Hantera användning",
   "a00e74aaa421c524": "kvar",
   "0e34c3076c08feb2": [
-    { "t": "span", "i": 1, "c": ["↻ +", { "i": 2, "k": "_gt_value_2", "v": "v" }, "%"] },
+    {
+      "t": "span",
+      "i": 1,
+      "c": [
+        "↻ +",
+        {
+          "i": 2,
+          "k": "_gt_value_2",
+          "v": "v"
+        },
+        "%"
+      ]
+    },
     " ",
     "om ",
-    { "i": 3, "k": "_gt_value_3", "v": "v" }
+    {
+      "i": 3,
+      "k": "_gt_value_3",
+      "v": "v"
+    }
   ],
   "8bd6f07136317c8f": "Ingen leverantör i de valda miljöerna rapporterar abonnemangsgränser.",
   "87f5d0c61b335f38": "Visa användning i ChatGPT med ditt anslutna konto.",
@@ -12215,5 +12231,66 @@
   "4032a03ee5301037": "Den sparade anslutningen och dess autentiseringsuppgifter tas bort från den här miljön.",
   "07408a1ca3f33d8b": "Mediekontroller",
   "43878fb3f7e42f0e": "Anpassa till skärmen",
-  "10ead3798109659b": "Verklig storlek"
+  "10ead3798109659b": "Verklig storlek",
+  "4e96712d839ccbff": "{who} svarade {choice}",
+  "19097cfb8f5a79cf": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " svarade",
+    " ",
+    {
+      "t": "span",
+      "i": 2,
+      "c": {
+        "i": 3,
+        "k": "_gt_value_3",
+        "v": "v"
+      }
+    },
+    "."
+  ],
+  "e7bbf693910057bf": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " svarade",
+    " ",
+    {
+      "t": "span",
+      "i": 2,
+      "c": {
+        "i": 3,
+        "k": "_gt_value_3",
+        "v": "v"
+      }
+    },
+    ": ",
+    {
+      "i": 4,
+      "k": "_gt_value_4",
+      "v": "v"
+    }
+  ],
+  "3759768c5d342c22": [
+    "besvarad",
+    " ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
+  "e114d37b32ab0dc7": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " kräver en anledning."
+  ]
 }

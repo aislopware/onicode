@@ -11603,10 +11603,26 @@
   "a16b48709357a5a7": "Gérer l’utilisation",
   "a00e74aaa421c524": "restant",
   "0e34c3076c08feb2": [
-    { "t": "span", "i": 1, "c": ["↻ +", { "i": 2, "k": "_gt_value_2", "v": "v" }, "%"] },
+    {
+      "t": "span",
+      "i": 1,
+      "c": [
+        "↻ +",
+        {
+          "i": 2,
+          "k": "_gt_value_2",
+          "v": "v"
+        },
+        "%"
+      ]
+    },
     " ",
     "dans ",
-    { "i": 3, "k": "_gt_value_3", "v": "v" }
+    {
+      "i": 3,
+      "k": "_gt_value_3",
+      "v": "v"
+    }
   ],
   "8bd6f07136317c8f": "Aucun fournisseur des environnements sélectionnés ne signale de limites d’abonnement.",
   "87f5d0c61b335f38": "Consultez l’utilisation dans ChatGPT avec votre compte connecté.",
@@ -12208,5 +12224,66 @@
   "4032a03ee5301037": "La connexion enregistrée et ses identifiants sont supprimés de cet environnement.",
   "07408a1ca3f33d8b": "Commandes du média",
   "43878fb3f7e42f0e": "Ajuster à l’écran",
-  "10ead3798109659b": "Taille réelle"
+  "10ead3798109659b": "Taille réelle",
+  "4e96712d839ccbff": "{who} a répondu {choice}",
+  "19097cfb8f5a79cf": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " a répondu",
+    " ",
+    {
+      "t": "span",
+      "i": 2,
+      "c": {
+        "i": 3,
+        "k": "_gt_value_3",
+        "v": "v"
+      }
+    },
+    "."
+  ],
+  "e7bbf693910057bf": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " a répondu",
+    " ",
+    {
+      "t": "span",
+      "i": 2,
+      "c": {
+        "i": 3,
+        "k": "_gt_value_3",
+        "v": "v"
+      }
+    },
+    ": ",
+    {
+      "i": 4,
+      "k": "_gt_value_4",
+      "v": "v"
+    }
+  ],
+  "3759768c5d342c22": [
+    "répondue",
+    " ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
+  "e114d37b32ab0dc7": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " nécessite une raison."
+  ]
 }

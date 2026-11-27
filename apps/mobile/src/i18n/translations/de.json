@@ -5725,5 +5725,50 @@
   "fc9c3a00cfc18b55": "Alle Arten",
   "e4d1316c85ed7066": "Keine Fragen dieser Art warten auf dich.",
   "45a94c724845ec1d": "Sonstige",
-  "d71048f4fb9cf44a": "Wartet auf Synchronisierung"
+  "d71048f4fb9cf44a": "Wartet auf Synchronisierung",
+  "a3c43735e1a81498": "Begründung für {title}",
+  "bfad234f016cfa3f": "Warum, in einem Satz. Gilt für die Antwort, die du wählst.",
+  "e114d37b32ab0dc7": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " braucht eine Begründung."
+  ],
+  "235902a19e95833b": [
+    "von dir,",
+    " ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
+  "3759768c5d342c22": [
+    "beantwortet",
+    " ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
+  "8afa4fbe16f95bcf": [
+    "von ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    ",",
+    " ",
+    {
+      "i": 2,
+      "k": "_gt_value_2",
+      "v": "v"
+    }
+  ],
+  "0f93532dd76391fc": "Du hast {choice} geantwortet",
+  "7e1fd2eb570a372b": "{who} hat {choice} geantwortet"
 }

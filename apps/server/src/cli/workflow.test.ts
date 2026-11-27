@@ -2,6 +2,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { AuthSessionId, type WorkflowRun } from "@onicode/contracts";
+import * as HostProcess from "@onicode/shared/HostProcess";
 import * as NetService from "@onicode/shared/Net";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as DateTime from "effect/DateTime";
@@ -22,17 +23,26 @@ import {
 } from "../serverRuntimeState.ts";
 import { workflowCommand } from "./workflow.ts";
 
+/** The label of each MCP session the CLI opened, in order. */
+const sessionLabels: Array<string> = [];
+
 vi.mock("../auth/EnvironmentAuth.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../auth/EnvironmentAuth.ts")>();
   return {
     ...actual,
     layerRuntime: Layer.mock(actual.EnvironmentAuth)({
-      issueMcpClientSession: () =>
-        Effect.map(DateTime.now, (expiresAt) => ({
-          sessionId: AuthSessionId.make("test-session"),
-          token: "synthetic-token",
-          expiresAt,
-        })),
+      issueMcpClientSession: (input) =>
+        Effect.map(
+          DateTime.now,
+          (expiresAt) => (
+            sessionLabels.push(input.label),
+            {
+              sessionId: AuthSessionId.make("test-session"),
+              token: "synthetic-token",
+              expiresAt,
+            }
+          ),
+        ),
       revokeSession: () => Effect.succeed(true),
     }),
   };
@@ -60,6 +70,7 @@ const makeRun = (status: WorkflowRun["status"]): WorkflowRun => ({
 const runCli = (
   args: ReadonlyArray<string>,
   call: McpBridge.McpToolSession["call"] = () => Effect.die("no tool call expected"),
+  env: NodeJS.ProcessEnv = {},
 ) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
@@ -99,6 +110,8 @@ const runCli = (
     return { error, calls, errors: yield* TestConsole.errorLines };
   }).pipe(
     Effect.scoped,
+    // Not this process's own: a test run inside an agent's thread would answer as that thread.
+    Effect.provideService(HostProcess.Environment, env),
     Effect.provide(
       Layer.mergeAll(
         NodeServices.layer,
@@ -194,6 +207,40 @@ it.effect("signal sends only one complete address to the server", () =>
       );
       assert.strictEqual(error?._tag, sent ? undefined : "ThreadUsageError");
       assert.lengthOf(calls, sent ? 1 : 0);
+    }
+  }),
+);
+
+it.effect("signal from an agent's shell answers in the name of the agent's thread", () =>
+  Effect.gen(function* () {
+    const answer = ["signal", '{"choice":"Ship"}', "--run", "run-1", "--wait", "approve"];
+    const delivered = Effect.succeed({ structuredContent: { delivery: "delivered" } });
+    const read = (tool: string) =>
+      tool === "oni_thread_read"
+        ? Effect.succeed({ structuredContent: { thread: { title: "Release reviewer agent" } } })
+        : delivered;
+
+    sessionLabels.length = 0;
+    const fromThread = yield* runCli(answer, read, { ONICODE_THREAD_ID: "thread-7" });
+    assert.isUndefined(fromThread.error);
+    assert.deepStrictEqual(fromThread.calls.at(0), { threadId: "thread-7", limit: 1, runLimit: 1 });
+    assert.strictEqual(sessionLabels.at(-1), "Release reviewer agent");
+
+    // A thread it cannot read, or no thread at all, answers as the command.
+    for (const [env, call] of [
+      [
+        { ONICODE_THREAD_ID: "gone" },
+        (tool: string) =>
+          tool === "oni_thread_read"
+            ? Effect.fail(new McpBridge.AcpMcpBridgeError({ message: "Thread not found." }))
+            : delivered,
+      ],
+      [{}, () => delivered],
+    ] as const) {
+      sessionLabels.length = 0;
+      const { error } = yield* runCli(answer, call, env);
+      assert.isUndefined(error);
+      assert.strictEqual(sessionLabels.at(-1), "onicode workflow signal");
     }
   }),
 );

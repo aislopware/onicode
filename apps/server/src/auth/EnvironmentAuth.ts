@@ -102,6 +102,10 @@ export interface McpClientSession {
   readonly linkExpiresAt?: DateTime.Utc;
 }
 
+/** What Connections calls a client session: its label, or its system. */
+export const clientSessionLabel = (client: AuthClientMetadata | undefined): string =>
+  client?.label?.trim() || client?.os?.trim() || "Onicode client";
+
 export interface AuthenticatedSession {
   readonly sessionId: AuthSessionId;
   readonly subject: string;
@@ -565,6 +569,7 @@ export const make = Effect.gen(function* () {
             authenticated: true,
             auth: descriptor,
             ...authScopeResponse(session.scopes),
+            sessionId: session.sessionId,
             ...(session.expiresAt ? { expiresAt: DateTime.toUtc(session.expiresAt) } : {}),
           }) satisfies AuthSessionState,
       ),

@@ -518,6 +518,10 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))(
         });
         const rejected = yield* Effect.flip(authenticate(outsideAgent.token));
         expect(rejected._tag).toBe("ServerAuthInvalidCredentialError");
+        // A client learns which session is its own, to tell its answers from another client's.
+        const owner = yield* serverAuth.issueSession();
+        const own = yield* serverAuth.getSessionState(makeBearerRequest(owner.token));
+        expect(own.sessionId).toBe(owner.sessionId);
         const threadCli = yield* issue("thread-cli");
         const outsideMcp = yield* Effect.flip(
           serverAuth.authenticateHttpRequest(makeBearerRequest(threadCli.token)),

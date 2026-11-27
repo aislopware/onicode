@@ -14,6 +14,7 @@ import * as Stream from "effect/Stream";
 import WorkflowsMigration from "../../apps/server/src/persistence/Migrations/114_Workflows.ts";
 import { workflowHooks } from "../../apps/server/src/persistence/Migrations/119_RestoreWebhooks.ts";
 import WorkflowRunTagsMigration from "../../apps/server/src/persistence/Migrations/124_WorkflowRunTags.ts";
+import WorkflowMailSenderMigration from "../../apps/server/src/persistence/Migrations/126_WorkflowMailSender.ts";
 import type { WorkflowDefinition } from "../../apps/server/src/workflows/workflow.ts";
 import {
   type AgentResult,
@@ -80,6 +81,7 @@ const world = Effect.fn("gradeWorkflow.world")(function* (
     WorkflowsMigration.pipe(
       Effect.andThen(workflowHooks),
       Effect.andThen(WorkflowRunTagsMigration),
+      Effect.andThen(WorkflowMailSenderMigration),
     ),
     database,
   );
