@@ -4438,3 +4438,4 @@ f38b7dbb86	take	hand-ported into Onicode's resumable scanMarkdown: upstream's li
 ee5b8469be	take	applied cleanly
 da0c243658	take	conflict in useComposerSend: kept Onicode's toast notices and preparing indicator in place of upstream's reportDraftChangedBeforeSend thread error; a 'moved' checkout outcome ends the send with Onicode's draft-changed notice; Onicode's detached (voice) send treats 'moved' like its own moved state; hold type follows CheckoutOutcome; draftWorkspaceDefaults and the PR actions applied cleanly; scenario ported as is and typechecked
 78de9d80ed	skip	only touches guest attachments (apps/server/src/guest), removed with guest links
+270fb873f4	take	applied cleanly beside Onicode's scan-slot return; Onicode's slot test now uses a shorter transcript for its unrecordable changed session, since a longer one is now recorded into a thread with no runs
