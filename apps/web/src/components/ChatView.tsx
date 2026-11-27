@@ -4250,9 +4250,7 @@ export default function ChatView(props: ChatViewProps) {
                     ? { onCheckoutPullRequestRequest: openPullRequestDialogStable }
                     : {})}
                   onComposerFocusRequest={scheduleComposerFocusStable}
-                  {...(isServerThread && isGitRepo
-                    ? { onOpenChanges: openChangesFromThreadPanelStable }
-                    : {})}
+                  {...(isGitRepo ? { onOpenChanges: openChangesFromThreadPanelStable } : {})}
                   onRunProjectScript={runProjectScriptStable}
                   onAddProjectScript={saveProjectScriptStable}
                   onUpdateProjectScript={updateProjectScriptStable}
@@ -4348,7 +4346,7 @@ export default function ChatView(props: ChatViewProps) {
           onAddSideChat={sideChatsOffered ? openSideChatStable : undefined}
           browserAvailable={canOperatePreview && browserAvailable}
           terminalAvailable={activeProject !== null && canOperateTerminal}
-          diffAvailable={isServerThread && diffAvailable}
+          diffAvailable={diffAvailable}
           filesAvailable={activeProject !== null}
           pullRequestAvailable={pullRequestSurfaceAvailable}
           pullRequestsAvailable={linkedItemsSurfaceAvailable}
