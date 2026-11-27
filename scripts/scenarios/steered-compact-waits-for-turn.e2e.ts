@@ -69,6 +69,8 @@ test(
       await runPromise(state.cli(["thread", "send", waiting.threadId, "Then tidy up"]));
       await runPromise(state.cli(["thread", "send", waiting.threadId, "/compact"]));
       await onicode.open(waiting);
+      // The CLI sends land one after another, so wait for both rows before hovering the command's.
+      await expect(screen.getByRole("button", "Send now")).toHaveCount(2);
       await screen.getByRole("button", "Send now").last().hover();
       await expect(
         screen.getByText("Move this command to the front of the queue", { exact: false }),
