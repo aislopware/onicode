@@ -367,6 +367,7 @@ function* paragraphs(node: XmlNode): Generator<TextPart, void> {
       yield* text(child);
       yield LINE_START;
     } else if (["p", "h"].includes(child.name) || /^h[1-6]$/.test(child.name)) {
+      yield THEMATIC_BREAK;
       // Only the paragraph's own properties: not a text box's, nor a tracked change's old style.
       const properties = children(child).find((node) => node.name === "pPr");
       const style = children(properties).find((node) => node.name === "pStyle")?.attrs.val ?? "";
