@@ -4491,3 +4491,4 @@ ec2777c370	take	follows 0e08cf3404's EPUB styles test
 3e76d0a36f	take	clean; mobile key 694e089caefce25f -> 4aa6f8d0d5800dca in all locales
 5dc88e4708	take	contracts PullRequestCommit.changedFiles optional (wire-safe); GitLab per-commit scope falls back to loaded count, follow-up
 bb263b9d8a	take	clean; mobile has no theme-copy naming
+8e622f9801	take	documentTextWorker chain after 7a5f9c2ecc
