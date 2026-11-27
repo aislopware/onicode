@@ -225,6 +225,7 @@ function TimelinePreviewHarness({
   return (
     <ChatCanvas
       store={store}
+      rightPanelOpen={false}
       threadRef={activeThreadRef}
       preview={preview}
       composerOverlayElement={null}
