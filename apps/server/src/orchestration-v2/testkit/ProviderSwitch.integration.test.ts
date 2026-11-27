@@ -114,6 +114,8 @@ function makeTestAdapter(input: {
   readonly refuseStarts?: Ref.Ref<number>;
   readonly refusalCause?: unknown;
   readonly failInjectionOnce?: Ref.Ref<boolean>;
+  /** Answers every injection as not taken, so the history must go inline. */
+  readonly declineInjection?: boolean;
   /** Refuses injections with this cause while starts are being refused. */
   readonly injectionRefusalCause?: unknown;
   readonly nativeThreadGeneration?: Ref.Ref<number>;
@@ -324,7 +326,7 @@ function makeTestAdapter(input: {
                                 input.driver,
                                 "lost injection acknowledgement",
                               );
-                            return true;
+                            return input.declineInjection !== true;
                           }),
                         ),
                       ),
@@ -1835,6 +1837,17 @@ describe("orchestration v2 provider switching", () => {
             codexRun?.contextHandoffId,
           );
           assert.equal(handoffItem?.title, "Imported context");
+          // The imported session is the source, so the divider names where the context came from.
+          assert.deepInclude(handoffItem, {
+            fromProviderThreadIds: [providerThread.id],
+            fromProviderInstanceIds: [CLAUDE_MODEL_SELECTION.instanceId],
+            fromModelSelections: [CLAUDE_MODEL_SELECTION],
+          });
+          assert.deepEqual(
+            projection.contextHandoffs.find((handoff) => handoff.id === codexRun?.contextHandoffId)
+              ?.fromProviderThreadIds,
+            [providerThread.id],
+          );
         }
         assert.notInclude(claudeTurn?.text ?? "", "Remember the code word PELICAN.");
       }).pipe(
@@ -2256,6 +2269,7 @@ describe("orchestration v2 provider switching", () => {
       readonly dispatchRequest: (
         ordinal: number,
         selection: ModelSelection,
+        text?: string,
       ) => ReturnType<Orchestrator.OrchestratorV2["Service"]["dispatch"]>;
       readonly awaitSettled: (
         ordinal: number,
@@ -2288,7 +2302,7 @@ describe("orchestration v2 provider switching", () => {
           return yield* body({
             orchestrator,
             worker,
-            dispatchRequest: (ordinal, selection) =>
+            dispatchRequest: (ordinal, selection, text = `Request ${ordinal}`) =>
               orchestrator.dispatch({
                 type: "message.dispatch",
                 commandId: CommandId.make(`unverified-replacement:${ordinal}`),
@@ -2296,7 +2310,7 @@ describe("orchestration v2 provider switching", () => {
                 messageId: MessageId.make(`unverified-replacement:${ordinal}`),
                 createdBy: "user",
                 creationSource: "web",
-                text: `Request ${ordinal}`,
+                text,
                 attachments: [],
                 modelSelection: selection,
                 dispatchMode: { type: "start_immediately" },
@@ -2557,6 +2571,111 @@ describe("orchestration v2 provider switching", () => {
             for (const turn of turns.slice(1)) {
               assert.notEqual(turn.nativeThreadId, turns[0]!.nativeThreadId);
             }
+          }),
+      );
+    }),
+  );
+
+  it.live("compacts nothing in a replacement session that lacks the thread's history", () =>
+    Effect.gen(function* () {
+      const capturedTurns = yield* Ref.make<ReadonlyArray<CapturedTurn>>([]);
+      const failResumeOnce = yield* Ref.make(false);
+      yield* unverifiedReplacementHarness(
+        "replacement-compact",
+        [
+          makeTestAdapter({
+            instanceId: CLAUDE_MODEL_SELECTION.instanceId,
+            driver: CLAUDE_DRIVER,
+            capabilities: ClaudeProviderCapabilitiesV2,
+            modelSelection: CLAUDE_MODEL_SELECTION,
+            responseByRunOrdinal: {},
+            capturedTurns,
+            failResumeOnce,
+            nativeThreadGeneration: yield* Ref.make(0),
+          }),
+        ],
+        ({ orchestrator, worker, dispatchRequest, awaitSettled }) =>
+          Effect.gen(function* () {
+            yield* dispatchRequest(1, CLAUDE_MODEL_SELECTION);
+            yield* awaitSettled(1);
+            const providerSessionId = (yield* orchestrator.getThreadProjection(threadId))
+              .providerThreads[0]?.providerSessionId;
+            if (providerSessionId == null) return yield* Effect.die("Expected a provider session.");
+            yield* orchestrator.dispatch({
+              type: "provider-session.detach",
+              commandId: CommandId.make("replacement-compact:detach"),
+              threadId,
+              providerSessionId,
+            });
+            yield* worker.drain();
+            yield* Ref.set(failResumeOnce, true);
+            yield* dispatchRequest(2, CLAUDE_MODEL_SELECTION, "/compact");
+            yield* awaitSettled(2);
+            const compacted = yield* orchestrator.getThreadProjection(threadId);
+            assert.equal(compacted.runs.at(-1)?.status, "failed");
+            const failure = compacted.turnItems.findLast((item) => item.type === "error");
+            assert.include(
+              failure?.type === "error" ? failure.failure.message : "",
+              "Nothing to compact yet",
+            );
+            assert.lengthOf(yield* Ref.get(capturedTurns), 1);
+
+            yield* dispatchRequest(3, CLAUDE_MODEL_SELECTION);
+            yield* awaitSettled(3);
+            const turns = yield* Ref.get(capturedTurns);
+            assert.lengthOf(turns, 2);
+            assert.notEqual(turns[1]!.nativeThreadId, turns[0]!.nativeThreadId);
+            assert.include(turns[1]!.text, "Request 1");
+          }),
+      );
+    }),
+  );
+
+  it.live("compacts nothing in a session that declined the thread's history", () =>
+    Effect.gen(function* () {
+      const capturedTurns = yield* Ref.make<ReadonlyArray<CapturedTurn>>([]);
+      yield* unverifiedReplacementHarness(
+        "declined-injection-compact",
+        [
+          makeTestAdapter({
+            instanceId: CLAUDE_MODEL_SELECTION.instanceId,
+            driver: CLAUDE_DRIVER,
+            capabilities: ClaudeProviderCapabilitiesV2,
+            modelSelection: CLAUDE_MODEL_SELECTION,
+            responseByRunOrdinal: {},
+            capturedTurns,
+          }),
+          makeTestAdapter({
+            instanceId: CODEX_MODEL_SELECTION.instanceId,
+            driver: CODEX_DRIVER,
+            capabilities: CodexProviderCapabilitiesV2,
+            modelSelection: CODEX_MODEL_SELECTION,
+            responseByRunOrdinal: {},
+            capturedTurns,
+            injectedHistory: yield* Ref.make<ReadonlyArray<unknown>>([]),
+            declineInjection: true,
+          }),
+        ],
+        ({ orchestrator, dispatchRequest, awaitSettled }) =>
+          Effect.gen(function* () {
+            yield* dispatchRequest(1, CLAUDE_MODEL_SELECTION);
+            yield* awaitSettled(1);
+            yield* dispatchRequest(2, CODEX_MODEL_SELECTION, "/compact");
+            yield* awaitSettled(2);
+            const compacted = yield* orchestrator.getThreadProjection(threadId);
+            assert.equal(compacted.runs.at(-1)?.status, "failed");
+            const failure = compacted.turnItems.findLast((item) => item.type === "error");
+            assert.include(
+              failure?.type === "error" ? failure.failure.message : "",
+              "Nothing to compact yet",
+            );
+            assert.lengthOf(yield* Ref.get(capturedTurns), 1);
+
+            yield* dispatchRequest(3, CODEX_MODEL_SELECTION);
+            yield* awaitSettled(3);
+            const turns = yield* Ref.get(capturedTurns);
+            assert.lengthOf(turns, 2);
+            assert.include(turns[1]!.text, "Request 1");
           }),
       );
     }),
@@ -7601,11 +7720,20 @@ describe("orchestration v2 provider switching", () => {
   );
 
   // regression: #44279 a portable fork's first /compact reached a fresh native session without the fork's history.
-  it.live(
-    "compacts a portable fork's first turn only after its session has the inherited history",
-    () =>
+  it.live.each([
+    { name: "portable", text: "/compact", source: CODEX_MODEL_SELECTION },
+    {
+      name: "instructions",
+      text: "/compact keep the release marker",
+      source: CODEX_MODEL_SELECTION,
+    },
+    // The native fork fails, so the turn falls back to a fresh session after the start guard.
+    { name: "native-fork-fallback", text: "/compact", source: CLAUDE_MODEL_SELECTION },
+  ])(
+    "compacts a fork's first turn only after its session has the inherited history ($name)",
+    ({ name, text, source: sourceSelection }) =>
       Effect.gen(function* () {
-        const cwd = yield* checkpointWorkspace("fork-first-compact");
+        const cwd = yield* checkpointWorkspace(`fork-first-compact-${name}`);
         const capturedTurns = yield* Ref.make<ReadonlyArray<CapturedTurn>>([]);
         const layerRegistry = ProviderAdapterRegistry.layerFromAdapters([
           makeTestAdapter({
@@ -7622,6 +7750,9 @@ describe("orchestration v2 provider switching", () => {
             driver: CLAUDE_DRIVER,
             capabilities: ClaudeProviderCapabilitiesV2,
             modelSelection: CLAUDE_MODEL_SELECTION,
+            responseByThreadId: {
+              "thread:fork-first-compact:source": { 1: "The release marker is violet." },
+            },
             responseByRunOrdinal: {},
             capturedTurns,
           }),
@@ -7662,13 +7793,13 @@ describe("orchestration v2 provider switching", () => {
             threadId: sourceThreadId,
             projectId,
             title: "Fork first compact",
-            modelSelection: CODEX_MODEL_SELECTION,
+            modelSelection: sourceSelection,
             runtimeMode: "full-access",
             interactionMode: "default",
             branch: null,
             worktreePath: null,
           });
-          yield* send(sourceThreadId, "source", "Prompt source", CODEX_MODEL_SELECTION);
+          yield* send(sourceThreadId, "source", "Prompt source", sourceSelection);
           const source = yield* settle(sourceThreadId);
           yield* orchestrator.dispatch({
             type: "thread.fork",
@@ -7680,7 +7811,7 @@ describe("orchestration v2 provider switching", () => {
             sourcePoint: { type: "run", runId: source.runs[0]!.id },
             title: "Fork",
           });
-          yield* send(forkThreadId, "compact", "/compact", CLAUDE_MODEL_SELECTION);
+          yield* send(forkThreadId, "compact", text, CLAUDE_MODEL_SELECTION);
           const compacted = yield* settle(forkThreadId);
           const forkTurns = () =>
             Ref.get(capturedTurns).pipe(
@@ -7689,13 +7820,21 @@ describe("orchestration v2 provider switching", () => {
           // Compacting the fork's empty native session would summarize nothing.
           assert.isEmpty(yield* forkTurns());
           assert.equal(compacted.runs.at(-1)?.status, "failed");
-          // Shown as a failed compaction, like a provider's own, not as a thread error.
-          assert.isTrue(
-            compacted.turnItems.some(
-              (item) => item.type === "compaction" && item.status === "failed",
-            ),
-          );
-          assert.isFalse(compacted.turnItems.some((item) => item.type === "error"));
+          if (name === "native-fork-fallback") {
+            const failure = compacted.turnItems.findLast((item) => item.type === "error");
+            assert.include(
+              failure?.type === "error" ? failure.failure.message : "",
+              "Nothing to compact yet",
+            );
+          } else {
+            // Shown as a failed compaction, like a provider's own, not as a thread error.
+            assert.isTrue(
+              compacted.turnItems.some(
+                (item) => item.type === "compaction" && item.status === "failed",
+              ),
+            );
+            assert.isFalse(compacted.turnItems.some((item) => item.type === "error"));
+          }
 
           yield* send(forkThreadId, "next", "Continue", CLAUDE_MODEL_SELECTION);
           yield* settle(forkThreadId);
@@ -7706,7 +7845,7 @@ describe("orchestration v2 provider switching", () => {
           Effect.provide(
             ProviderReplayHarness.layerWithRegistry(
               {
-                name: "fork-first-compact",
+                name: `fork-first-compact-${name}`,
                 runtimePolicyOverride: {
                   cwd,
                   approvalPolicy: "never",

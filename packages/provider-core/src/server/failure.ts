@@ -38,6 +38,15 @@ export class ContextHandoffBackgroundWorkError extends Schema.TaggedError<Contex
   }
 }
 
+export class ContextHandoffPendingCompactionError extends Schema.TaggedError<ContextHandoffPendingCompactionError>()(
+  "ContextHandoffPendingCompactionError",
+  {},
+) {
+  override get message() {
+    return "Nothing to compact yet. This thread's earlier conversation reaches the agent with your next message. Send a message before compacting.";
+  }
+}
+
 export const MAX_PROVIDER_FAILURE_MESSAGE_LENGTH = 4_096;
 const MAX_PROVIDER_FAILURE_CODE_LENGTH = 128;
 
@@ -133,6 +142,11 @@ function curatedCauseMessages(cause: unknown): {
         case "ContextHandoffBackgroundWorkError":
           return {
             known: new ContextHandoffBackgroundWorkError().message,
+            category: categoryMessage(),
+          };
+        case "ContextHandoffPendingCompactionError":
+          return {
+            known: new ContextHandoffPendingCompactionError().message,
             category: categoryMessage(),
           };
         case "AcpModelSelectionError":
