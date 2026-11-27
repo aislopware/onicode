@@ -1,6 +1,5 @@
 import { StackActions, useNavigation } from "@react-navigation/native";
 import { createContext, use } from "react";
-import { Platform } from "react-native";
 
 import { resolveMobileSideThreadPresentation } from "@onicode/client-runtime/side-thread";
 
@@ -37,7 +36,7 @@ export function useOpenThreadInspector() {
     target: ThreadInspectorTarget,
   ) => {
     const presentation = resolveMobileSideThreadPresentation({
-      inspectorAvailable: Platform.OS === "ios" && fileInspector.supported,
+      inspectorAvailable: fileInspector.supported,
     });
     if (presentation === "full-screen") return false;
     if (openInInspector) openInInspector(target);
