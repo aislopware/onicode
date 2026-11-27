@@ -4651,7 +4651,7 @@ e70368d582	take	styles.xml read from Onicode's OfficeArchive (string or bytes); 
 b2387ca103	take	taken as is
 f3e36337ce	take	taken as is
 0c8b397b81	take	taken as is
-4bc38b1c5e	take	adapted: DocumentText VERSION 17 -> 18 so cached EPUB sidecars extract again
+4bc38b1c5e	take	kept Onicode's versioned DocumentText sidecars (upstream never re-extracts cached text): VERSION 17 -> 18 so cached EPUB text extracts again
 910c72ed99	take	taken as is
 c042549955	take	taken as is
-de4328bfb5	take	adapted: Onicode's getThreadsWithPullRequests has no includeArchived option, so only the active branch; comment names migration 118, Onicode's active_shell_idx
+de4328bfb5	take	adopted upstream's index-walking sweep filter; kept Onicode's getPullRequestLinkKeys for archived PR keys (json_each in SQL returns 4 fields instead of decoding archived payloads), so no includeArchived branch; comment names migration 118, Onicode's active_shell_idx
