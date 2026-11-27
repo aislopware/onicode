@@ -15,7 +15,9 @@ export function backgroundTaskLaunch(
   // A Claude approval card shares its tool call's native id, so only launch types match.
   const item = turnItems.findLast((candidate) =>
     task.itemId === undefined
-      ? (candidate.type === "command_execution" || candidate.type === "dynamic_tool") &&
+      ? (candidate.type === "command_execution" ||
+          candidate.type === "dynamic_tool" ||
+          candidate.type === "subagent") &&
         (candidate.nativeItemRef?.nativeId || candidate.id) === nativeId
       : candidate.id === task.itemId,
   );

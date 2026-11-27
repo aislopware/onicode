@@ -4704,3 +4704,4 @@ f513ffe6f9	take	adapted: kept Onicode's refined-host match in requireProject acr
 51f9ca9280	skip	kept Onicode's verbatim startup directory (e3c7b60759): it already opens relative directories with leading spaces, and upstream's trimEnd would bring back the folder-ending-in-a-space bug Onicode fixed
 b9c1337a84	take	taken as is
 40264a28dd	take	adapted: workspace keeps Onicode's keyboard-controller 1.24.0 and pdf-jsi pins; lockfile regenerated
+ee99fee188	take	adapted: web keeps Onicode's backgroundTaskLaunch lookup (launch types only, so an approval card sharing the native id never wins) and adds subagent items to it; mobile lookup filters to subagent items for the same reason
