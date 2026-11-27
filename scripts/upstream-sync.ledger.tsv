@@ -4380,3 +4380,4 @@ eadd4e7ddc	take	steering test imports keep Onicode's makeProviderFailure and vi;
 d023407be8	take	applied cleanly; adopted as a checkpoint-capture performance fix
 b0e87e0f90	take	applied cleanly; key already in every web locale
 e66a0063aa	take	kept Onicode's interrupted-steer note restore (a different event; composes): restoreCompacted = compacted && !compactionKeepsAdditionalContext, notes-only restore otherwise
+340d4e812a	take	applied cleanly
