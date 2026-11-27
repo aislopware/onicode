@@ -4212,3 +4212,4 @@ cc61cdb1e4	take	applied cleanly; kept Onicode's listedCommands tap (e18b04b22b) 
 5fda4f7bff	take	kept Onicode's sender-keyed auto-send barrier (e90d520d3b: agentSenderKey, projection-first reads) and added the explicitQueue filter to it; explicitQueue optional on the run and dispatch command (wire-compatible)
 12c1152924	take	taken as is
 0df79074ad	take	taken as is
+147028a265	take	took upstream's withOptionalChoices form; kept Onicode's cancel (not decline) when no form can be shown (#701: no card was shown, so the user declined nothing)
