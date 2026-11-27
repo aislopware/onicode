@@ -473,7 +473,6 @@ describe("bounded binary previews", () => {
         await userEvent.keyboard("{Escape}");
       } finally {
         URL.revokeObjectURL(src);
-        await page.viewport(1280, 800);
       }
     },
   );
