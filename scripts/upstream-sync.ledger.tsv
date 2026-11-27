@@ -4107,3 +4107,4 @@ bf20415ea6	take	taken as is
 9f96e22f39	take	image description early return before Onicode's TEXT_BOXES branch; Onicode's heading-marker loop (f456fb8cc0) flushes the marker before a leading image description (else <h2><img alt=Logo>Title</h2> gave 'Logo## Title'), with a test row
 150a3c9699	take	taken as is
 7cfca0252c	take	taken as is
+17bc259705	take	taken as is
