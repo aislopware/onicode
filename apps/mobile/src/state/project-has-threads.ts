@@ -17,14 +17,13 @@ export function makeProjectHasThreadsAtom(sources: {
     environmentId: EnvironmentId,
   ) => Atom.Atom<{ readonly counts: ReadonlyMap<ProjectId, number> } | null>;
 }) {
-  return Atom.family((environmentId: EnvironmentId) =>
-    Atom.family((projectId: ProjectId) =>
-      Atom.make(
-        (get) =>
-          (get(sources.olderSettled(environmentId))?.counts.get(projectId) ?? 0) > 0 ||
-          (get(sources.threadRefsByProject(environmentId)).get(projectId)?.length ?? 0) > 0,
-      ).pipe(Atom.withLabel(`mobile:project-has-threads:${environmentId}:${projectId}`)),
-    ),
+  // Keyed by the pair: a nested family is held only weakly, so a held atom would not keep it.
+  return Atom.family(([environmentId, projectId]: readonly [EnvironmentId, ProjectId]) =>
+    Atom.make(
+      (get) =>
+        (get(sources.olderSettled(environmentId))?.counts.get(projectId) ?? 0) > 0 ||
+        (get(sources.threadRefsByProject(environmentId)).get(projectId)?.length ?? 0) > 0,
+    ).pipe(Atom.withLabel(`mobile:project-has-threads:${environmentId}:${projectId}`)),
   );
 }
 
@@ -43,6 +42,6 @@ export function useProjectHasThreads(
   return useAtomValue(
     project === null
       ? NO_PROJECT_HAS_THREADS
-      : projectHasThreadsAtom(project.environmentId)(project.id),
+      : projectHasThreadsAtom([project.environmentId, project.id] as const),
   );
 }

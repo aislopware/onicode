@@ -11,11 +11,11 @@ import { environmentSession, usePreparedConnection } from "./session";
 
 export const deviceEnvironment = createDeviceEnvironmentAtoms(connectionAtomRuntime);
 
-// Hub tickets are single use, so each viewer resolves its own access: a new
-// viewer (a reload, a device switch, a return to the screen) never reuses a
-// ticket an earlier connection already spent.
-const deviceHubAccessAtom = Atom.family((environmentId: EnvironmentId) =>
-  Atom.family((_viewer: string) =>
+// Hub tickets are single use, so each viewer resolves its own access and never reuses a spent
+// ticket. Keyed by the pair: a nested family is held only weakly, and a collected one would
+// resolve a second ticket for a viewer that already has one.
+const deviceHubAccessAtom = Atom.family(
+  ([environmentId, _viewer]: readonly [EnvironmentId, string]) =>
     connectionAtomRuntime
       .atom((get) => {
         const prepared = Option.getOrNull(
@@ -26,12 +26,11 @@ const deviceHubAccessAtom = Atom.family((environmentId: EnvironmentId) =>
           : resolveDeviceHubAccess({ prepared, hubBasePath: "/api/device-hub" });
       })
       .pipe(Atom.withLabel(`mobile-device-hub-access:${environmentId}`)),
-  ),
 );
 
 export function useDeviceHubAccess(environmentId: EnvironmentId, hostId: string, viewer: string) {
   const prepared = usePreparedConnection(environmentId);
-  const query = useEnvironmentQuery(deviceHubAccessAtom(environmentId)(viewer));
+  const query = useEnvironmentQuery(deviceHubAccessAtom([environmentId, viewer] as const));
   const access =
     query.data && query.error === null && Option.isSome(prepared)
       ? { ...query.data, query: { ...query.data.query, hostId } }

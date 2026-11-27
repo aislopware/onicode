@@ -1019,8 +1019,9 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       detail({ ...target, input: { ...target.input, allowStale: undefined } }),
       detail({ ...target, input: { ...target.input, allowStale: false } }),
     ].filter((atom) => registry.getNodes().has(atom));
-  const detailReadVersions = Atom.family((source: ReturnType<typeof detail>) =>
-    Atom.family((answer: ReturnType<typeof detailAnswers>) =>
+  // Keyed by the pair: a nested family is held only weakly, and a rebuilt atom loses its version.
+  const detailReadVersions = Atom.family(
+    ([source, answer]: readonly [ReturnType<typeof detail>, ReturnType<typeof detailAnswers>]) =>
       Atom.make((get) => {
         const result = get(source);
         const latest = get(answer);
@@ -1028,10 +1029,9 @@ export function createPullRequestEnvironmentAtoms<R, E>(
           ? latest.version
           : Option.getOrElse(get.self<number>(), () => 0);
       }).pipe(Atom.setIdleTTL(5 * 60_000)),
-    ),
   );
   const detailReadVersion = normalizePullRequestQuery((target) =>
-    detailReadVersions(detail(target))(detailAnswers(target)),
+    detailReadVersions([detail(target), detailAnswers(target)] as const),
   );
   const previewPersistence = persistQuery(PullRequestPreview);
   const previewQuery = (label: string) =>
