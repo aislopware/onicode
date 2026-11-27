@@ -4030,3 +4030,4 @@ a3a4592cf5	take	adopted upstream over Onicode's interruptedPasteRecovery (deskto
 6bb4e3d9d6	take	kept Onicode's anchorOpenHandlers code; only the tests ported (IssueDetailPanel test file created, mocks keep the real helper)
 e36800e61b	take	taken as is
 3b827b4fb3	take	taken as is
+9df77f2125	take	taken as is
