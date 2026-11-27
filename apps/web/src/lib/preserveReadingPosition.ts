@@ -20,6 +20,8 @@ export function preserveReadingPosition(
       anchor = null;
       return;
     }
+    // Capture reads layout anyway, so a scroll before the observer's first report seeds the width.
+    width ??= scroller.clientWidth;
     if (scroller.clientWidth !== width) return;
     anchor = null;
     if (scroller.scrollTop === 0) return;
