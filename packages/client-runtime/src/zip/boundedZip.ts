@@ -59,7 +59,7 @@ export async function boundedZip(
         total >
           Math.max(limits.ratioFloor ?? 0, Math.max(1, bytes.byteLength) * ARCHIVE_MAX_RATIO) ||
         length > entryLimit ||
-        (entry.name.endsWith(".xml") && length > (limits.xmlLimit ?? 8 * 1024 * 1024))
+        (entry.name.toLowerCase().endsWith(".xml") && length > (limits.xmlLimit ?? 8 * 1024 * 1024))
       )
         throw new ZipError({ code: "archive-expanded-too-large" });
       chunks.push(chunk);

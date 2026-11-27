@@ -114,7 +114,7 @@ export async function unlockOpenDocument(archive: OfficeArchive, password?: stri
     throw new PreviewError({ code: "office-decryption-limit" });
   if (
     total > OFFICE_PREVIEW_MAX_BYTES ||
-    parts.some((part) => part.path.endsWith(".xml") && part.size > 8 * 1024 * 1024)
+    parts.some((part) => part.path.toLowerCase().endsWith(".xml") && part.size > 8 * 1024 * 1024)
   )
     throw new PreviewError({ code: "office-too-large-expanded" });
   const utf8 = new TextEncoder().encode(password);
