@@ -60,6 +60,7 @@ import * as EventSink from "./EventSink.ts";
 import * as EventStore from "./EventStore.ts";
 import * as IdAllocator from "@onicode/provider-core/server/IdAllocator";
 import * as ProjectionStore from "./ProjectionStore.ts";
+import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ProviderEventIngestor from "./ProviderEventIngestor.ts";
 import * as ProviderInstallationGate from "../provider/ProviderInstallationGate.ts";
@@ -804,6 +805,7 @@ function layerTest(input: {
           layerProviderEventIngestorTest,
           layerConfiguredMcpRegistry,
           layerTestStores,
+          TurnItemPositionStore.layer.pipe(Layer.provide(layerTestDatabase)),
           input.installationGateLayer ?? ProviderInstallationGate.layer,
           ...(input.serverSettingsLayer === undefined ? [] : [input.serverSettingsLayer]),
           ...(input.projectServiceLayer === undefined ? [] : [input.projectServiceLayer]),
@@ -5695,7 +5697,22 @@ it.effect(
           driver: CODEX_DRIVER,
           turnItem: makeItem("running"),
         };
+        // Reported before the raced command, so it must stay ahead of it.
+        const earlierItemEvent = {
+          type: "turn_item.updated" as const,
+          driver: CODEX_DRIVER,
+          turnItem: {
+            ...makeItem("running"),
+            id: idAllocator.derive.turnItemFromProviderItem({
+              driver: CODEX_DRIVER,
+              nativeItemId: "cmd-earlier",
+            }),
+            nodeId: null,
+            nativeItemRef: { driver: CODEX_DRIVER, nativeId: "cmd-earlier", strength: "strong" },
+          } satisfies OrchestrationV2TurnItem,
+        };
         yield* Queue.offerAll(adapterEvents!, [
+          earlierItemEvent,
           runningNodeEvent,
           runningItemEvent,
           {
@@ -5726,7 +5743,7 @@ it.effect(
         yield* Fiber.join(completedPersisted);
         // Drain the run subscription after the session-scoped result already committed.
         const received = Array.from(
-          yield* subscription.events.pipe(Stream.take(6), Stream.runCollect),
+          yield* subscription.events.pipe(Stream.take(7), Stream.runCollect),
         );
         assert.deepEqual(
           received.map((event) =>
@@ -5737,6 +5754,7 @@ it.effect(
                 : [event.type],
           ),
           [
+            ["item", "running", false],
             ["node", "running", false],
             ["item", "running", false],
             ["node", "cancelled", true],
@@ -5747,6 +5765,7 @@ it.effect(
         );
         // Simulate a lagging subscriber flushing earlier running/cancelled updates after completed.
         for (const staleEvent of [
+          earlierItemEvent,
           runningNodeEvent,
           runningItemEvent,
           { type: "node.updated" as const, driver: CODEX_DRIVER, node: makeNode("cancelled") },
@@ -5850,6 +5869,11 @@ it.effect(
         assert.deepInclude(
           projection.turnItems.find((item) => item.id === turnItemId),
           { status: "completed", exitCode: 0, output: "done\n" },
+        );
+        // The session-scoped result committed first, yet each item keeps the place it was reported at.
+        assert.isBelow(
+          projection.turnItems.find((item) => item.id === earlierItemEvent.turnItem.id)!.ordinal,
+          projection.turnItems.find((item) => item.id === turnItemId)!.ordinal,
         );
         assert.equal(
           projection.nodes.find((candidate) => candidate.id === nodeId)?.status,

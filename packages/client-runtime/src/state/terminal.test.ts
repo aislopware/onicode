@@ -8,9 +8,10 @@ import {
 } from "@onicode/contracts";
 import * as Effect from "effect/Effect";
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
-import { expect, it } from "vite-plus/test";
+import { expect, it, vi } from "vite-plus/test";
 
 import {
+  abortTerminalPlainWrite,
   createTerminalSession,
   INITIAL_TERMINAL_LIFECYCLE,
   transitionTerminalLifecycle,
@@ -432,4 +433,27 @@ it("keeps one attached driver, so a remount before release keeps its state", () 
   emit({ status: "exited", version: 2 });
   expect(of("close")).toHaveLength(1);
   expect(exits).toHaveLength(1);
+});
+
+it("releases a split write's hold without reporting an older server's decode defect", async () => {
+  using error = vi.spyOn(console, "error").mockImplementation(() => {});
+  using warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const inputs: Array<TerminalWriteInput> = [];
+  const write = {
+    label: "write",
+    run: (_registry: AtomRegistry.AtomRegistry, value: { readonly input: TerminalWriteInput }) => {
+      inputs.push(value.input);
+      return Effect.die('Expected a value with a length of at least 1, got ""');
+    },
+  };
+  const result = await abortTerminalPlainWrite(AtomRegistry.make(), write, {
+    environmentId,
+    input: { threadId, terminalId: "term-1", expectedPid: 42 },
+  });
+  expect(inputs).toEqual([
+    { threadId, terminalId: "term-1", expectedPid: 42, data: "", plainWrite: "abort" },
+  ]);
+  expect(result._tag).toBe("Failure");
+  expect(error).not.toHaveBeenCalled();
+  expect(warn).not.toHaveBeenCalled();
 });
