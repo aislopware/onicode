@@ -57,6 +57,7 @@ import {
 } from "@onicode/shared/toolActivity";
 import { getModelSelectionStringOptionValue, modelSelectionsEqual } from "@onicode/shared/model";
 import { appendGeneratedImageEmbeds } from "@onicode/shared/generatedImageMarkdown";
+import { parseSemver } from "@onicode/shared/semver";
 import { resolveSpawnCommand } from "@onicode/shared/shell";
 import { mcpToolResultOutput } from "@onicode/shared/toolOutput";
 import { oauthCallbackUrl } from "@onicode/shared/oauthCallback";
@@ -2259,7 +2260,9 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             else next.delete(threadId);
             return [{ context, changed, previous: current.get(threadId) }, next] as const;
           });
-        // Codex drops client developer messages during compaction but only resends additionalContext
+        // Codex 0.171 began keeping additionalContext in the compacted history; restoring it there duplicates it.
+        let compactionKeepsAdditionalContext = false;
+        // Older Codex drops client developer messages during compaction but only resends additionalContext
         // when it changes. Restore after turn/completed: items injected mid-turn make the turn sample again.
         const restoreAdditionalContext = Effect.fn("CodexAdapterV2.restoreAdditionalContext")(
           function* (threadId: string, notesOnly: boolean) {
@@ -2349,6 +2352,10 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 }),
               );
             const version = userAgent && /\/(\S+)/u.exec(userAgent)?.[1];
+            const parsedVersion = version ? parseSemver(version) : null;
+            if (parsedVersion)
+              compactionKeepsAdditionalContext =
+                parsedVersion.major > 0 || parsedVersion.minor >= 171;
             const advisory =
               version && adapterOptions.compatibility
                 ? yield* adapterOptions.compatibility(version)
@@ -8153,10 +8160,11 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               next.delete(payload.threadId);
               return [true, next] as const;
             });
-            if (compacted || (steered && payload.turn.status === "interrupted"))
+            const restoreCompacted = compacted && !compactionKeepsAdditionalContext;
+            if (restoreCompacted || (steered && payload.turn.status === "interrupted"))
               // Fork requests off the notification reader so it can read their responses.
               // An interrupt drops only steers, whose new context is app notes.
-              yield* restoreAdditionalContext(payload.threadId, !compacted).pipe(
+              yield* restoreAdditionalContext(payload.threadId, !restoreCompacted).pipe(
                 Effect.forkIn(scope, { startImmediately: true }),
               );
             const context = (yield* Ref.get(activeTurns)).get(payload.turn.id);
