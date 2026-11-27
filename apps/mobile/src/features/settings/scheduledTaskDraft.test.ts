@@ -10,6 +10,7 @@ import {
   type ScheduledTask,
 } from "@onicode/contracts";
 import {
+  changeDraftProject,
   createDraft,
   editDraft,
   hasScheduledTaskDraftChanges,
@@ -393,5 +394,28 @@ describe("scheduled task worktree base", () => {
       editDraft({ ...rootTask, workspaceStrategy: { type: "worktree", baseRef: "release" } })
         .baseRef,
     ).toBe("release");
+  });
+
+  it("clears the old project's base branch and checkout when the project changes", () => {
+    const other = ProjectId.make("other");
+    const worktree = editDraft({
+      ...rootTask,
+      workspaceStrategy: { type: "worktree", baseRef: "release", startFromOrigin: false },
+    });
+    expect(changeDraftProject(worktree, rootTask.projectId)).toBe(worktree);
+    expect(changeDraftProject(worktree, other)).toMatchObject({
+      projectId: other,
+      workspace: "worktree",
+      baseRef: "",
+      startFromOrigin: false,
+    });
+    const checkout = editDraft({
+      ...rootTask,
+      workspaceStrategy: { type: "existing_worktree", worktreePath: "/work/project-a" },
+    });
+    expect(changeDraftProject(checkout, other)).toMatchObject({
+      workspace: "existing_worktree",
+      checkoutPath: "",
+    });
   });
 });
