@@ -10,9 +10,8 @@ test(
     const project = await onicode.project("demo");
     const thread = await onicode.thread({ project, title: "Current work", messages: ["Start"] });
 
-    await onicode.open(thread);
-    await screen.getByText("Start", { exact: true }).waitFor({ timeout: 30_000 });
-    await browser.evaluate(() => {
+    // Installed before the app loads: the thread's Git actions query discovery as they mount.
+    await browser.addInitScript(() => {
       const send = WebSocket.prototype.send;
       WebSocket.prototype.send = function (data) {
         const request = typeof data === "string" ? JSON.parse(data) : null;
@@ -66,8 +65,9 @@ test(
         }
         return send.call(this, data);
       };
-      return null;
     });
+    await onicode.open(thread);
+    await screen.getByText("Start", { exact: true }).waitFor({ timeout: 30_000 });
 
     await browser.keyboard.press("ControlOrMeta+k");
     const palette = screen.getByRole("dialog", "Command palette");
