@@ -74,6 +74,7 @@ import * as EffectOutbox from "./EffectOutbox.ts";
 import * as IdAllocator from "@onicode/provider-core/server/IdAllocator";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as TaskFolders from "../workspace/TaskFolders.ts";
+import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import {
   approveLayoutCommands,
   layerTaskFoldersWithGit,
@@ -3806,6 +3807,7 @@ const concurrentTaskFolderUses = [
   "side chat",
   "side chat without a run",
   "independent launch",
+  "independent launch while removal waits",
 ] as const;
 
 it.live.each(concurrentTaskFolderUses)("cancels task folder setup with %s", (concurrent) => {
@@ -3902,6 +3904,35 @@ it.live.each(concurrentTaskFolderUses)("cancels task folder setup with %s", (con
       );
       assert.match(stages[1]?.detail ?? "", /\(2 of 2\)$/);
 
+      if (concurrent === "independent launch while removal waits") {
+        // A repository being added holds the folder's lease, so removal waits behind it.
+        const held = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        const lease = yield* Effect.forkChild(
+          withWorkspaceLease(
+            fileSystem,
+            path,
+            taskFolder!.projectPath,
+            Deferred.succeed(held, undefined).pipe(Effect.andThen(Deferred.await(release))),
+          ),
+        );
+        yield* Deferred.await(held);
+        const cancelling = yield* Effect.forkChild(tracker.cancel(launched.threadId));
+        const checkoutPath = taskFolder!.repositories[0]!.worktreePath;
+        yield* launches.launch(
+          launchInput({
+            command: "launch:existing-checkout-while-removing",
+            thread: "thread:existing-checkout-while-removing",
+            workspace: { type: "existing_worktree", worktreePath: checkoutPath },
+          }),
+        );
+        yield* Deferred.succeed(release, undefined);
+        yield* Fiber.join(lease);
+        assert.isTrue(yield* Fiber.join(cancelling));
+        assert.equal((yield* taskFolders.find(taskFolder!.root))?.root, taskFolder!.root);
+        assert.isTrue(yield* fileSystem.exists(checkoutPath));
+        return;
+      }
       if (concurrent === "independent launch") {
         const checkoutPath = taskFolder!.repositories[0]!.worktreePath;
         const sentinel = path.join(checkoutPath, "sentinel.txt");

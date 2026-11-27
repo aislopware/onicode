@@ -1230,8 +1230,14 @@ const make = Effect.gen(function* () {
             const removedPath = createdWorktreePath;
             const removedBranch = createdBranch;
             const removedTaskFolder = createdTaskFolder;
+            // False when another thread now uses the checkout, which then stays.
             const remove = Effect.suspend(
-              (): Effect.Effect<void, GitCommandError | TaskFolderError> =>
+              (): Effect.Effect<
+                boolean,
+                | GitCommandError
+                | TaskFolderError
+                | Effect.Error<ReturnType<typeof worktreeIsShared>>
+              > =>
                 removedTaskFolder === null
                   ? git
                       .removeWorktree({
@@ -1251,37 +1257,38 @@ const make = Effect.gen(function* () {
                                 })
                                 .pipe(Effect.ignoreCause({ log: true })),
                         ),
+                        Effect.as(true),
                       )
                   : // The lease a repository being added holds: removal waits for it to land.
                     withWorkspaceLease(
                       fileSystem,
                       path,
                       removedPath,
-                      taskFolders.remove({
-                        root: removedTaskFolder,
-                        force: true,
-                        forget: true,
-                        projectCommands: projectCommandsNow,
-                        deleteBranch: removedBranch ?? undefined,
+                      Effect.gen(function* () {
+                        // Checked under the lease, since a launch can bind a repository inside
+                        // the folder while removal waits for it.
+                        if (yield* worktreeIsShared(removedTaskFolder, threadId)) return false;
+                        const { kept } = yield* taskFolders.remove({
+                          root: removedTaskFolder,
+                          force: true,
+                          forget: true,
+                          projectCommands: projectCommandsNow,
+                          deleteBranch: removedBranch ?? undefined,
+                        });
+                        if (kept.length === 0) return true;
+                        return yield* new TaskFolderError({
+                          operation: "remove",
+                          detail: `Kept ${kept.map((entry) => entry.path).join(", ")}.`,
+                        });
                       }),
-                    ).pipe(
-                      Effect.flatMap(({ kept }) =>
-                        kept.length === 0
-                          ? Effect.void
-                          : Effect.fail(
-                              new TaskFolderError({
-                                operation: "remove",
-                                detail: `Kept ${kept.map((entry) => entry.path).join(", ")}.`,
-                              }),
-                            ),
-                      ),
                     ),
             );
             yield* Effect.gen(function* () {
-              // An explicit launch can bind a repository inside a task folder during setup.
-              if (yield* worktreeIsShared(removedTaskFolder ?? removedPath, threadId)) return;
+              if (removedTaskFolder === null && (yield* worktreeIsShared(removedPath, threadId))) {
+                return;
+              }
               // Keep the binding if removal fails so a retry can find the checkout.
-              yield* remove;
+              if (!(yield* remove)) return;
               yield* threads
                 .dispatch({
                   type: "thread.metadata.update",
