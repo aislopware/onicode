@@ -270,7 +270,8 @@ export function restorePastedMarkdownLinks(plain: string, html: string): string 
 
 function markdownAnchor(label: string, href: string, inTableCell: boolean): string {
   const destination = escapeTablePipes(href.replace(/[\\()]/g, "\\$&"), inTableCell);
-  return `[${label}](${destination})`;
+  // A label trimmed of trailing space can end in a backslash that would escape the bracket.
+  return `[${label.replace(/(?<!\\)((?:\\\\)*)\\$/, "$1\\\\")}](${destination})`;
 }
 
 // Serialization is synchronous, so a counter tells text it sits inside a link label.

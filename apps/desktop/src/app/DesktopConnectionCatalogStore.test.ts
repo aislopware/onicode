@@ -335,6 +335,7 @@ describe("DesktopConnectionCatalogStore", () => {
       assert.isTrue(yield* writer.set(emptyCatalog));
       const readerKey = yield* Ref.make("regenerated-key");
       const checks = yield* Ref.make(0);
+      const firstChecked = yield* Deferred.make<void>();
       const bothChecked = yield* Deferred.make<void>();
       const taken = yield* Deferred.make<void>();
       const store = yield* DesktopConnectionCatalogStore.DesktopConnectionCatalogStore.pipe(
@@ -350,6 +351,7 @@ describe("DesktopConnectionCatalogStore", () => {
                   ? Effect.gen(function* () {
                       const exists = yield* fileSystem.exists(entryPath);
                       if ((yield* Ref.updateAndGet(checks, (count) => count + 1)) === 1) {
+                        yield* Deferred.succeed(firstChecked, undefined);
                         yield* Deferred.await(bothChecked);
                       } else {
                         yield* Deferred.succeed(bothChecked, undefined);
@@ -362,7 +364,9 @@ describe("DesktopConnectionCatalogStore", () => {
           ),
         ),
       );
+      // The first read to check is the one joined first, before the other may finish.
       const first = yield* Effect.forkChild(store.get);
+      yield* Deferred.await(firstChecked);
       const second = yield* Effect.forkChild(store.get);
       assert.deepStrictEqual(yield* Fiber.join(first), Option.none());
       assert.isTrue(Option.isSome(yield* store.takeResetBackupPath));
