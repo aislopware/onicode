@@ -1715,6 +1715,7 @@ it.effect("a project update or create that is refused tells the agent why", () =
 it.effect("creating a project from a title refuses a model default instead of dropping it", () =>
   Effect.gen(function* () {
     const harness = clientLaunchHarness({ runtimeModeCeiling: "full-access", launched: [] });
+    const named: Array<{ readonly scripts?: readonly unknown[] }> = [];
     const dependencies = Layer.merge(
       harness.dependencies,
       Layer.mergeAll(
@@ -1724,11 +1725,13 @@ it.effect("creating a project from a title refuses a model default instead of dr
         }),
         Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
           namedProjectsRoot: "/projects",
-          createNamedProject: () =>
-            Effect.succeed({
-              projectId: harness.projectId,
-              workspaceRoot: "/projects/client-target",
-            }),
+          createNamedProject: (input) =>
+            Effect.sync(() => named.push(input)).pipe(
+              Effect.as({
+                projectId: harness.projectId,
+                workspaceRoot: "/projects/client-target",
+              }),
+            ),
         }),
       ),
     );
@@ -1759,5 +1762,14 @@ it.effect("creating a project from a title refuses a model default instead of dr
       id: harness.projectId,
       defaultModelSelection: null,
     });
+
+    // An empty scripts list is an override (no scripts), not a request for the defaults.
+    for (const empty of [{ scripts: [] }, { trackedFolders: [] }]) {
+      const created = yield* toolkit
+        .handle("oni_project_create", { title: "client-target", ...empty })
+        .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(dependencies));
+      expect(created.at(-1)?.result).toMatchObject({ id: harness.projectId });
+    }
+    expect(named.slice(-2).map((input) => input.scripts)).toEqual([[], undefined]);
   }),
 );

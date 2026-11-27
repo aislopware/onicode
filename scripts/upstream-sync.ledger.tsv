@@ -4714,3 +4714,4 @@ c9a0613fa9	take	adapted: kept Onicode's dialog footer spacing and radius, added 
 98b18bed3e	take	taken as is; scenarios ported
 316095659c	take	adapted: Claude usage-only check reads email and workspace from the Agent SDK account and keeps no reset credits (kept Onicode's Agent-SDK-only Claude, 4c47939f9d); probe flags inlined for the Effect lint; cliproxyApi imports Option. limitsOnly is optional, so older clients and servers fall back to a full refresh
 6bc6c4b572	take	adapted: test runs to Onicode's 104 (upstream 100 is Onicode's 105_TurnStartReadIndexes); Onicode-only 082_RemoveGuestShares also skips thread payloads that are not JSON, which the new test hit
+9f83ba58ce	take	adapted: test hunks applied to Onicode's matching create test (the merge had placed them in an unrelated launch test)
