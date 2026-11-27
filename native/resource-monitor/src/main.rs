@@ -494,7 +494,7 @@ impl Collector {
             .keys()
             .any(|pid| !keep.contains(pid))
         {
-            self.system = System::new();
+            self.system = new_system();
             let keep = keep.into_iter().collect::<Vec<_>>();
             self.system.refresh_processes_specifics(
                 ProcessesToUpdate::Some(&keep),

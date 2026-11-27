@@ -1570,6 +1570,16 @@ export const make = Effect.gen(function* () {
               if (!withinBudget) return null;
             }
 
+            // A full rollout that fills the budget is only usable if it ends here.
+            if (
+              compressed &&
+              prefix === undefined &&
+              bytesRead === readBytes &&
+              Option.isSome(yield* readChunk(1))
+            ) {
+              return null;
+            }
+
             if (
               recordStarted &&
               !(yield* Effect.try({
