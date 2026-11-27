@@ -119,18 +119,20 @@ it.each([
 ])(
   "formats archived ZIP dates and local TAR instants in $timeZone",
   async ({ timeZone, tarEvening, tarNight }) => {
-    // fflate writes the local parts of these dates as the entries' DOS wall-clock fields.
-    const bytes = zipSync(
-      {
-        "evening.txt": [strToU8("a"), { mtime: new Date(2026, 10, 25, 20, 0) }],
-        "night.txt": [strToU8("b"), { mtime: new Date(2026, 10, 25, 1, 30) }],
-        "dst-midnight.txt": [strToU8("c"), { mtime: new Date(2026, 2, 28, 23, 30) }],
-      },
-      { level: 0 },
-    ).buffer;
     const previous = process.env.TZ;
-    process.env.TZ = timeZone;
+    // fflate writes the local parts of these dates as the entries' DOS wall-clock fields;
+    // UTC has every wall-clock time, whatever the host's zone skips.
+    process.env.TZ = "UTC";
     try {
+      const bytes = zipSync(
+        {
+          "evening.txt": [strToU8("a"), { mtime: new Date(2026, 10, 25, 20, 0) }],
+          "night.txt": [strToU8("b"), { mtime: new Date(2026, 10, 25, 1, 30) }],
+          "dst-midnight.txt": [strToU8("c"), { mtime: new Date(2026, 2, 28, 23, 30) }],
+        },
+        { level: 0 },
+      ).buffer;
+      process.env.TZ = timeZone;
       const request = await startWorker();
       const result = await request({ type: "open", kind: "archive", name: "times.zip", bytes });
       if (result.type !== "archive") throw new Error("Expected archive");
