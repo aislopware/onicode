@@ -34,12 +34,17 @@ function toOniProjectFile(
 export async function readOniProjectFile(
   environmentId: EnvironmentId,
   workspaceRoot: string,
-  options: { readonly refresh?: boolean } = {},
+  options: { readonly refresh?: boolean; readonly signal?: AbortSignal | undefined } = {},
 ): Promise<OniProjectFile | null> {
   const result = await executeAtomQuery(
     appAtomRegistry,
     getProjectFileQueryAtom(environmentId, workspaceRoot, ONICODE_PROJECT_FILE_NAME),
-    { reportDefect: false, reportFailure: false, refresh: options.refresh ?? false },
+    {
+      reportDefect: false,
+      reportFailure: false,
+      refresh: options.refresh ?? false,
+      signal: options.signal,
+    },
   );
   return toOniProjectFile(
     environmentId,
