@@ -18,7 +18,7 @@ Nothing is sent until you choose one: open **Settings → Voice** and set
 On a new device, the microphone or dictation shortcut opens that setting from the composer.
 Microphone audio recorded on this device is sent to that environment over your
 authenticated connection, transcribed there, and discarded. The choice is saved
-on this device only, so every computer and browser you use asks for it once.
+on this device only, so every device you use asks for it once.
 Set it back to **Off** at any time; a recording in progress is discarded.
 
 If the chosen environment goes offline, voice input waits for it. Onicode never
@@ -170,9 +170,7 @@ time it is seen, so nothing changes until you move it up. If a preferred
 microphone is unplugged, the next connected one is used.
 
 **Test microphone** records from that microphone for up to ten seconds and
-plays it back in your browser; the audio stays on this device and is never transcribed, so silent playback
+plays it back; the audio stays on this device and is never transcribed, so silent playback
 points at the microphone. **Test model** on the selected model shows a transcript using the
 same environment, language, and dictionary as the composer, but skips transcript
-cleanup even when it is on, so you see what the model heard. Browser recording
-needs HTTPS or localhost and microphone permission; for a remote server over
-plain HTTP, use the desktop app.
+cleanup even when it is on, so you see what the model heard.

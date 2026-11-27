@@ -491,6 +491,8 @@ export interface ComposerDraftWorkspaceSelection {
    * server's default applies.
    */
   readonly repositories?: ReadonlyArray<string>;
+  /** User-chosen mode or start point; a moved draft without it takes the new project's default. */
+  readonly explicit?: boolean;
 }
 
 export type ComposerDraftSettingsUpdate = Pick<
@@ -511,6 +513,7 @@ const ComposerDraftWorkspaceSelectionSchema = Schema.Struct({
   pullRequestReference: Schema.optional(Schema.String),
   followsCurrentCheckout: Schema.optional(Schema.Boolean),
   repositories: Schema.optional(Schema.Array(Schema.String)),
+  explicit: Schema.optional(Schema.Boolean),
 });
 
 const ComposerDraftProjectSchema = Schema.Struct({
@@ -1864,10 +1867,21 @@ export function retargetNewTaskDraft(
     }
     const { workspaceSelection, ...retained } = normalizeDraft(existing);
     // The PR checkout is recreated on the target machine, so only the old local path is dropped.
+    // A picked mode and start point carry over; branches and paths belong to the old project.
     const keptWorkspaceSelection =
       options?.keepPullRequestWorkspace && workspaceSelection?.pullRequestReference !== undefined
         ? { ...workspaceSelection, worktreePath: null }
-        : undefined;
+        : workspaceSelection?.explicit
+          ? {
+              mode: workspaceSelection.mode,
+              branch: null,
+              worktreePath: null,
+              ...(workspaceSelection.startFromOrigin !== undefined
+                ? { startFromOrigin: workspaceSelection.startFromOrigin }
+                : {}),
+              explicit: true,
+            }
+          : undefined;
     // Keep bytes across environment moves but drop server-specific upload stamps.
     const attachments = retained.attachments.map((attachment) =>
       attachment.uploadEnvironmentId !== undefined &&

@@ -333,6 +333,7 @@ it("owns a status stream only while the draft is active, retaining draft choices
     branch: "feature",
     worktreePath: null,
     startFromOrigin: true,
+    explicit: true,
   });
 
   await screen.render(false);

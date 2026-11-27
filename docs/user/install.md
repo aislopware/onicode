@@ -175,7 +175,7 @@ before sharing.
 
 ## Providers
 
-Open **Settings → Providers** in the web or desktop app, select the environment,
+Open **Settings → Providers** in the desktop app, select the environment,
 and enable the provider you want. Installation, login, and configuration belong
 to that environment's machine, even when you connect from a phone or another
 computer.

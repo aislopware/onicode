@@ -4,7 +4,7 @@ Muse Code is disabled by default. Install
 [Muse Code](https://dev.meta.ai/docs/muse-code) on the machine hosting your
 environment, then run `muse login` as the account that runs Onicode.
 
-Open **Settings → Providers** in the web or desktop app, select the environment,
+Open **Settings → Providers** in the desktop app, select the environment,
 and enable **Muse Code**. Set **Binary path** if Muse is not on the host's `PATH`.
 Refresh provider status after installation or login, then select Muse in a
 thread's model picker.

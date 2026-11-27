@@ -227,7 +227,7 @@ Set `kind` to `session`, `weekly`, `monthly`, or `other`. Use a percentage from 
 omit `resetsAt` when the reset time is unknown. Your quota server handles the upstream provider
 credentials and APIs. Set the optional `providerInstanceId` to the exact instance ID configured for that environment
 in **Settings → Providers**. The account’s quota windows then appear in the
-thread details usage card on web and desktop when that instance is selected. Accounts without
+thread details usage card on desktop when that instance is selected. Accounts without
 a binding still appear in **Usage → Limits**.
 
 ## Subscription usage widget

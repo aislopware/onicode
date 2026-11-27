@@ -51,7 +51,7 @@ Uploads begin when you add an attachment. All uploads must finish before the
 message can send. Retry or remove a failed upload. On desktop, reloading
 before an upload finishes requires you to attach that file again.
 
-You can drag or paste images into the web or desktop composer. HEIC and HEIF
+You can drag or paste images into the desktop composer. HEIC and HEIF
 photos are converted to JPEG there and when selected from the mobile photo
 library; photos over the image limit are also resized to fit. On mobile, you can
 also send files to Onicode through another app's system share sheet.

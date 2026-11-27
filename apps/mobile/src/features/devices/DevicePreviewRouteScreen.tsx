@@ -5,6 +5,7 @@ import {
   deviceToolVersionLabels,
   deviceToolUpdateOwnership,
   deviceToolUpdatePolicy,
+  stoppableDevices,
 } from "@onicode/client-runtime/state/device";
 import { useIsFocused, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { EnvironmentId, ThreadId } from "@onicode/contracts";
@@ -102,7 +103,9 @@ export function DevicePreviewScreen({
   const [inputConnected, setInputConnected] = useState(false);
   const gt = useGT();
   const [streamAttempt, setStreamAttempt] = useState(0);
-  const [pendingAction, setPendingAction] = useState<"close" | "shutdown" | null>(null);
+  const [pendingAction, setPendingAction] = useState<"close" | "shutdown" | "shutdown-all" | null>(
+    null,
+  );
   const [controlsVisible, setControlsVisible] = useState(true);
   const retryHost = useAtomCommand(deviceEnvironment.list);
   const shutdown = useAtomCommand(deviceEnvironment.shutdown, { reportFailure: false });
@@ -111,6 +114,7 @@ export function DevicePreviewScreen({
   const state = useEnvironmentQuery(deviceEnvironment.state({ environmentId, input: {} }));
   const previews = threadDevicePreviews(state.data, threadId);
   const preview = selectedThreadDevicePreview(previews, selectedKey);
+  const stoppable = stoppableDevices(state.data);
   const onInputConnected = async (connected: boolean) => {
     setInputConnected(connected);
     if (!connected) setControlsVisible(true);
@@ -137,7 +141,7 @@ export function DevicePreviewScreen({
   });
 
   const shutDownDevice = async () => {
-    if (!preview || pendingAction) return;
+    if (!preview || preview.physical || pendingAction) return;
     setPendingAction("shutdown");
     const result = await shutdown({
       environmentId,
@@ -149,6 +153,23 @@ export function DevicePreviewScreen({
     }).finally(() => setPendingAction(null));
     if (result._tag === "Failure") {
       Dialog.alert(m(msg("Could not shut down device")), String(Cause.squash(result.cause)));
+    }
+  };
+
+  const shutDownAllDevices = async () => {
+    if (pendingAction) return;
+    setPendingAction("shutdown-all");
+    const results = await Promise.all(
+      stoppable.map((device) =>
+        shutdown({
+          environmentId,
+          input: { hostId: device.hostId, deviceId: device.id, platform: device.platform },
+        }),
+      ),
+    ).finally(() => setPendingAction(null));
+    const failure = results.find((result) => result._tag === "Failure");
+    if (failure?._tag === "Failure") {
+      Dialog.alert(m(msg("Could not shut down every device")), String(Cause.squash(failure.cause)));
     }
   };
 
@@ -164,7 +185,7 @@ export function DevicePreviewScreen({
       },
     }).finally(() => setPendingAction(null));
     if (result._tag === "Failure") {
-      Dialog.alert("Could not close device", String(Cause.squash(result.cause)));
+      Dialog.alert(m(msg("Could not close device")), String(Cause.squash(result.cause)));
     }
   };
 
@@ -260,19 +281,37 @@ export function DevicePreviewScreen({
       : []),
     {
       id: "close",
-      title: pendingAction === "close" ? "Closing…" : "Close device",
-      subtitle: "Keeps it running",
+      title: pendingAction === "close" ? gt("Closing…") : gt("Close device"),
+      subtitle: gt("Keeps it running"),
       icon: "xmark",
       disabled: !preview || pendingAction !== null,
       onPress: () => void closeDevice(),
     },
-    {
-      id: "shutdown",
-      title: pendingAction === "shutdown" ? gt("Shutting down…") : gt("Shut down device"),
-      icon: "power",
-      disabled: !preview || pendingAction !== null,
-      onPress: () => void shutDownDevice(),
-    },
+    ...(preview?.physical
+      ? []
+      : [
+          {
+            id: "shutdown",
+            title: pendingAction === "shutdown" ? gt("Shutting down…") : gt("Shut down device"),
+            icon: "power",
+            disabled: !preview || pendingAction !== null,
+            onPress: () => void shutDownDevice(),
+          },
+        ]),
+    // Only when it reaches a device beyond the one "Shut down device" already covers.
+    ...(stoppable.some((device) => JSON.stringify([device.hostId, device.id]) !== preview?.key)
+      ? [
+          {
+            id: "shutdown-all",
+            title:
+              pendingAction === "shutdown-all" ? gt("Shutting down…") : gt("Shut down all devices"),
+            subtitle: gt("{count} running, in any thread", { count: stoppable.length }),
+            icon: "power",
+            disabled: pendingAction !== null,
+            onPress: () => void shutDownAllDevices(),
+          },
+        ]
+      : []),
   ];
   const pressHome = () => streamRef.current?.home();
   const menuItems: AppBarMenuItem[] = [

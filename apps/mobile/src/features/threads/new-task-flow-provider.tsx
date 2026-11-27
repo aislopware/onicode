@@ -707,6 +707,7 @@ export function NewTaskFlowProvider(
         ...(mode === "local" && localSelection.awaitsCurrentBranch
           ? { followsCurrentCheckout: true }
           : {}),
+        explicit: true,
       },
     });
   };
@@ -726,6 +727,7 @@ export function NewTaskFlowProvider(
         }),
         ...(draftStartFromOrigin !== undefined ? { startFromOrigin: draftStartFromOrigin } : {}),
         ...(draftRepositories !== undefined ? { repositories: draftRepositories } : {}),
+        ...(selectedProjectDraft.workspaceSelection?.explicit ? { explicit: true } : {}),
       },
     });
   };
@@ -744,6 +746,7 @@ export function NewTaskFlowProvider(
         ...(selectedBranchName === null && workspaceSelection.followsCurrentCheckout
           ? { followsCurrentCheckout: true }
           : {}),
+        explicit: true,
       },
     });
   };

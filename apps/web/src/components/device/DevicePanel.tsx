@@ -1,4 +1,5 @@
 import { DeviceHostUpdates } from "./DeviceHostUpdates";
+import { stoppableDevices } from "@onicode/client-runtime/state/device";
 import type {
   DevicePlatform,
   DeviceServiceState,
@@ -111,7 +112,7 @@ export function DevicePanel(props: {
     : undefined;
 
   const grouped = groupDevices(state);
-  const stoppable = state.devices.filter((device) => device.booted && !device.physical);
+  const stoppable = stoppableDevices(state);
 
   const startOperation = (pending: DeviceSummary | null) => {
     const started = { scope, pending, error: null };
