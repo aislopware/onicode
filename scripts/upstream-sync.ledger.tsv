@@ -3906,3 +3906,4 @@ b530e1f304	take	applied to Onicode's react-native-keyboard-controller@1.24.0 pat
 e77d460e41	take	taken as is
 e7f1f81a21	skip	net no-op with 17e1e01dbe (restores the import it dropped); Onicode's BrowserSession.test.ts keeps its single HostProcess import throughout
 4da8d19d08	take	taken as is
+1a58fa61a6	take	adopted upstream's integer-ns window over Onicode's msToUnixNano(sinceMs): exact at epoch scale; kept Onicode's endNs comparison for numeric end times (exact where upstream compares float ms)
