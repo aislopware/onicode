@@ -115,6 +115,12 @@ it("shows the number error in the UI language when the thread has no repository"
   initializeI18n(() => {});
   linking.changeLink.mockReset().mockResolvedValue(undefined);
   appAtomRegistry.reset();
+  // Runs after the unmount below, even when an assertion fails.
+  using cleanup = new DisposableStack();
+  cleanup.defer(() => {
+    initializeI18n(() => {});
+    appAtomRegistry.reset();
+  });
   const translations = await getTranslationsSnapshot("de");
   await using _screen = await render(
     <RegistryContext.Provider value={appAtomRegistry}>
@@ -141,6 +147,4 @@ it("shows the number error in the UI language when the thread has no repository"
     )
     .toBeVisible();
   expect(page.getByText(/this thread has no repository/).query()).toBeNull();
-  initializeI18n(() => {});
-  appAtomRegistry.reset();
 });

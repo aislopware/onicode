@@ -591,11 +591,15 @@ describe("sidebar thread menu on a phone", () => {
     const threadRef = { environmentId: activeProject.environmentId, threadId: thread.id };
     const show = vi.fn().mockResolvedValue("new-thread-on-branch");
     const startThread = vi.fn().mockResolvedValue(null);
-    vi.mocked(readLocalApi).mockReturnValue({ contextMenu: { show } } as unknown as LocalApi);
-    vi.mocked(useProjects).mockReturnValue([activeProject]);
-    vi.mocked(useQuietThreadShells).mockReturnValue([thread]);
-    vi.mocked(useThreadRouteTarget).mockReturnValue({ kind: "server", threadRef });
-    vi.mocked(useHandleNewThread).mockReturnValue({
+    using _readLocalApi = vi
+      .mocked(readLocalApi)
+      .mockReturnValue({ contextMenu: { show } } as unknown as LocalApi);
+    using _useProjects = vi.mocked(useProjects).mockReturnValue([activeProject]);
+    using _useQuietThreadShells = vi.mocked(useQuietThreadShells).mockReturnValue([thread]);
+    using _useThreadRouteTarget = vi
+      .mocked(useThreadRouteTarget)
+      .mockReturnValue({ kind: "server", threadRef });
+    using _useHandleNewThread = vi.mocked(useHandleNewThread).mockReturnValue({
       activeDraftThread: null,
       activeThread: null,
       defaultProjectRef: {
@@ -623,10 +627,10 @@ describe("sidebar thread menu on a phone", () => {
 
   it("closes the sheet when Add project opens the picker, as New thread does", async () => {
     await using _viewport = await usePhoneViewport();
-    vi.mocked(useProjects).mockReturnValue([]);
-    vi.mocked(useQuietThreadShells).mockReturnValue([]);
-    vi.mocked(useThreadRouteTarget).mockReturnValue(null);
-    vi.mocked(useHandleNewThread).mockReturnValue({
+    using _useProjects = vi.mocked(useProjects).mockReturnValue([]);
+    using _useQuietThreadShells = vi.mocked(useQuietThreadShells).mockReturnValue([]);
+    using _useThreadRouteTarget = vi.mocked(useThreadRouteTarget).mockReturnValue(null);
+    using _useHandleNewThread = vi.mocked(useHandleNewThread).mockReturnValue({
       activeDraftThread: null,
       activeThread: null,
       defaultProjectRef: null,
