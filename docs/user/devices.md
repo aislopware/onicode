@@ -146,10 +146,8 @@ localhost without forwarding or another reachable address.
 Android emulators across machines. If you run a Simlock gateway, Onicode can lease
 devices from it. Simlock is new and unreleased, so this integration is an
 alpha: it may change or stop working with a newer Simlock. Onicode does not install
-or manage Simlock; set up the gateway and its workers yourself. It needs a
-gateway and workers built from Simlock's `main` at
-[6316e10](https://github.com/callstackincubator/simlock/commit/6316e10) or
-later, the first with a lease holder's screen and input.
+or manage Simlock; set up the gateway and its workers yourself. It needs
+Simlock 0.9.0 or later.
 
 Turn on **Settings → Labs → Simlock device hosts (alpha)** and **Use devices**
 in Settings → Devices, then choose **Add source → Simlock pool** with an **agent token**
@@ -165,8 +163,8 @@ and workers need `capabilities.stream.enabled` and `capabilities.input.enabled`
 for the live screen and for input.
 
 The picker lists the models your workers can make. Opening one takes a lease;
-closing it with **Return device to the pool**, or removing the host, returns it
-wiped. The panel keeps a watched device leased up to the host's lease limit.
+closing it with **Return device to the pool**, or removing the host, returns it.
+Simulators and emulators go back wiped. The panel keeps a watched device leased up to the host's lease limit.
 You can tap, swipe, type, and press Home, and Back and Recents on Android.
 Rotation, appearance, text size, device tools, and screenshots are not offered
 for Simlock devices; agents can still do them through `device_open`. On iOS 27
@@ -176,6 +174,22 @@ version as Onicode (see Device tool updates), and agent-device accepts app insta
 for a lease only from the folder it was opened from, which `device_open`
 names. A device cannot reach development servers on your machine through
 localhost; use an address its worker can reach.
+
+### Enrolled phones and tablets
+
+Phones and tablets enrolled in Simlock, and ready on a connected worker that is
+not drained, appear beside the simulators and emulators, marked **Physical**,
+one entry per model and OS version. Simlock's
+[Use a real phone](https://incubator.callstack.com/simlock/docs/using-devices/agent-device#use-a-real-phone)
+covers setting up the worker.
+
+A phone is not wiped when its lease ends. Simlock removes the apps that were not
+on it when it was enrolled, except App Store and TestFlight apps on an iPhone;
+settings, files, accounts, keychain items and the data of every other app stay
+for whoever leases it next. A leased phone has no stop button in the list: open
+it and choose **Return device to the pool**. An iPhone's screen needs iOS 27 or
+later and a worker on Xcode 27 or later, and it takes no taps or typing from the
+panel; agents can still drive it.
 
 ## Device tool updates
 
