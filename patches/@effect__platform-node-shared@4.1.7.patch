@@ -1,0 +1,104 @@
+diff --git a/dist/NodeChildProcessSpawner.d.ts b/dist/NodeChildProcessSpawner.d.ts
+index ac7b044..0ad793f 100644
+--- a/dist/NodeChildProcessSpawner.d.ts
++++ b/dist/NodeChildProcessSpawner.d.ts
+@@ -35,6 +35,8 @@
+  * @stability unstable
+  * @since 4.0.0
+  */
++import type * as NodeChildProcess from "node:child_process";
++import type { Readable, Writable } from "node:stream";
+ import type * as Arr from "effect/Array";
+ import * as Context from "effect/Context";
+ import * as Duration from "effect/Duration";
+@@ -54,6 +56,19 @@ import { ChildProcessSpawner, ProcessId } from "effect/process/ChildProcessSpawn
+  * @since 4.0.0
+  */
+ export declare const layer: Layer.Layer<ChildProcessSpawner, never, FileSystem.FileSystem | Path.Path>;
++export interface SpawnedChildProcess extends NodeJS.EventEmitter {
++    readonly pid?: number | undefined;
++    readonly exitCode: number | null;
++    readonly signalCode: NodeJS.Signals | null;
++    readonly stdin: Writable | null;
++    readonly stdout: Readable | null;
++    readonly stderr: Readable | null;
++    readonly stdio: ReadonlyArray<Readable | Writable | null | undefined>;
++    kill(signal?: NodeJS.Signals | number): boolean;
++    ref(): void;
++    unref(): void;
++}
++export declare const layerWithSpawn: (spawnProcess: (command: string, args: ReadonlyArray<string>, options: NodeChildProcess.SpawnOptions) => SpawnedChildProcess) => Layer.Layer<ChildProcessSpawner, never, FileSystem.FileSystem | Path.Path>;
+ declare const ProxyProcess_base: Context.ServiceClass<ProxyProcess, "@effect/platform-node/NodeChildProcessSpawner/ProxyProcess", {
+     readonly currentPid: Effect.Effect<Option.Option<ProcessId>>;
+ }>;
+diff --git a/dist/NodeChildProcessSpawner.js b/dist/NodeChildProcessSpawner.js
+index ebae69a..fbaf7df 100644
+--- a/dist/NodeChildProcessSpawner.js
++++ b/dist/NodeChildProcessSpawner.js
+@@ -88,14 +88,30 @@ const isProcessAlive = (command, childProcess) => {
+     return isUnsignallableProcessGroup(error);
+   }
+ };
+-const taskkill = (childProcess, onExit = () => {}) => {
++const taskkill = (childProcess, onExit = () => {}, spawnProcess) => {
+   if (hasExited(childProcess)) {
+     onExit(null);
+     return;
+   }
+-  NodeChildProcess.execFile("taskkill", ["/pid", String(childProcess.pid), "/T", "/F"], {
++  if (spawnProcess === undefined) {
++    NodeChildProcess.execFile("taskkill", ["/pid", String(childProcess.pid), "/T", "/F"], {
++      windowsHide: true
++    }, onExit);
++    return;
++  }
++  // Starts taskkill through the injected spawner so it gets the same off-thread launch as commands.
++  let done = false;
++  const finish = error => {
++    if (done) return;
++    done = true;
++    onExit(error);
++  };
++  const killer = spawnProcess("taskkill", ["/pid", String(childProcess.pid), "/T", "/F"], {
++    stdio: "ignore",
+     windowsHide: true
+-  }, onExit);
++  });
++  killer.on("error", finish);
++  killer.on("exit", code => finish(code === 0 ? null : new Error(`taskkill exited with code ${code}`)));
+ };
+ const spawnDirect = (command, args, options, halfOpen) => {
+   const childProcess = NodeChildProcess.spawn(command, args, options);
+@@ -108,7 +124,7 @@ const spawnDirect = (command, args, options, halfOpen) => {
+ // Returns the function that launches a command. The proxy process layer waits
+ // here, interruptibly, for a proxy process that is ready, since the launch
+ // itself cannot be interrupted.
+-const makeWith = /*#__PURE__*/Effect.fnUntraced(function* (prepareSpawn) {
++const makeWith = /*#__PURE__*/Effect.fnUntraced(function* (prepareSpawn, killSpawn) {
+   const fs = yield* FileSystem.FileSystem;
+   const path = yield* Path.Path;
+   const resolveWorkingDirectory = Effect.fnUntraced(function* (options) {
+@@ -381,7 +397,7 @@ const makeWith = /*#__PURE__*/Effect.fnUntraced(function* (prepareSpawn) {
+           } else {
+             resume(Effect.void);
+           }
+-        });
++        }, killSpawn);
+       });
+     }
+     return Effect.try({
+@@ -700,6 +716,14 @@ const makeWith = /*#__PURE__*/Effect.fnUntraced(function* (prepareSpawn) {
+  * @since 4.0.0
+  */
+ export const layer = /*#__PURE__*/Layer.effect(ChildProcessSpawner, /*#__PURE__*/makeWith(/*#__PURE__*/Effect.succeed(spawnDirect)));
++export const layerWithSpawn = spawnProcess => Layer.effect(ChildProcessSpawner, makeWith(Effect.succeed((command, args, options, halfOpen) => {
++  const childProcess = spawnProcess(command, args, options);
++  for (const fd of halfOpen) {
++    const stream = childProcess.stdio[fd];
++    if (stream && "allowHalfOpen" in stream) stream.allowHalfOpen = true;
++  }
++  return childProcess;
++}), spawnProcess));
+ /**
+  * Service that reports the proxy process started by {@link layerProxyProcess}.
+  *

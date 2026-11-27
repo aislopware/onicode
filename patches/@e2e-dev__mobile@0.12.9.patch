@@ -1,8 +1,8 @@
 diff --git a/dist/device.js b/dist/device.js
-index 819e3a8294724e95a5deb934e443f9615b92f0d9..fc16c76704977dad0e2fdafab3c081a7e7ca1d8f 100644
+index 9b90379..1d36932 100644
 --- a/dist/device.js
 +++ b/dist/device.js
-@@ -15,6 +15,8 @@ import { unsupported } from './support.js';
+@@ -16,6 +16,8 @@ import { unsupported } from './support.js';
   * the wanted state, so a cleanup hook shared with Android still passes.
   */
  const IOS_OFFLINE = "on iOS agent-device can only repaint a simulator's status bar, since the simulator shares the Mac's network, and cannot switch an iPhone's radios, so the app would stay online";
@@ -11,7 +11,7 @@ index 819e3a8294724e95a5deb934e443f9615b92f0d9..fc16c76704977dad0e2fdafab3c081a7
  /** The raw driver session a surface is bound to: `device.unstable_raw`, and what `unstable_deviceSession()` hands a custom tool. */
  export function rawSession(surface) {
      const { session, deviceId, deviceName } = surface.boundDevice;
-@@ -31,6 +33,10 @@ export function rawSession(surface) {
+@@ -32,6 +34,10 @@ export function rawSession(surface) {
  }
  /** Builds the device fixture for one attempt. */
  export function createDeviceFixture(surface, context) {
@@ -22,7 +22,7 @@ index 819e3a8294724e95a5deb934e443f9615b92f0d9..fc16c76704977dad0e2fdafab3c081a7
      const device = {
          get unstable_raw() {
              return rawSession(surface);
-@@ -42,7 +48,7 @@ export function createDeviceFixture(surface, context) {
+@@ -43,7 +49,7 @@ export function createDeviceFixture(surface, context) {
                      throw unsupported(`device.setNetwork('offline') turns off an Android device's Wi-Fi; ${IOS_OFFLINE}`);
                  return;
              }
@@ -31,7 +31,7 @@ index 819e3a8294724e95a5deb934e443f9615b92f0d9..fc16c76704977dad0e2fdafab3c081a7
          },
          async setAirplaneMode(enabled) {
              if (surface.options.platform === 'ios') {
-@@ -50,57 +56,59 @@ export function createDeviceFixture(surface, context) {
+@@ -51,46 +57,47 @@ export function createDeviceFixture(surface, context) {
                      throw unsupported(`device.setAirplaneMode(true) cuts an Android device's radios; ${IOS_OFFLINE}`);
                  return;
              }
@@ -66,6 +66,10 @@ index 819e3a8294724e95a5deb934e443f9615b92f0d9..fc16c76704977dad0e2fdafab3c081a7
 +            const input = budget('device.setOrientation');
 +            await surface.screenCommand('device.setOrientation', (client) => input.send(() => client.command.orientation({ ...surface.selection(), orientation })), context.signal);
          },
+         async viewport() {
+             const operation = context.operation();
+             return surface.viewport(operation, surface.inputBudget('device.viewport', operation));
+         },
          async fold(pose) {
 -            await surface.fold(pose, context.signal);
 +            await surface.fold(pose, context.signal, budget('device.fold'));
@@ -84,6 +88,11 @@ index 819e3a8294724e95a5deb934e443f9615b92f0d9..fc16c76704977dad0e2fdafab3c081a7
          async installApp(appPath, options) {
 -            return surface.installApp(appPath, options ?? {}, context.signal);
 +            return surface.installApp(appPath, options ?? {}, context.signal, budget('device.installApp', installTimeoutMs()));
+         },
+         async uninstallApp(app) {
+             return surface.uninstallApp(app, context.signal);
+@@ -99,19 +106,20 @@ export function createDeviceFixture(surface, context) {
+             return surface.isAppInstalled(app, context.signal);
          },
          async openApp(app, options) {
 -            await surface.openApp(app, options ?? {}, context.signal);
@@ -108,7 +117,7 @@ index 819e3a8294724e95a5deb934e443f9615b92f0d9..fc16c76704977dad0e2fdafab3c081a7
              if ('package' in state)
                  return { name: state.package, bundleId: state.package };
              return {
-@@ -109,23 +117,28 @@ export function createDeviceFixture(surface, context) {
+@@ -120,34 +128,40 @@ export function createDeviceFixture(surface, context) {
              };
          },
          async home() {
@@ -121,6 +130,17 @@ index 819e3a8294724e95a5deb934e443f9615b92f0d9..fc16c76704977dad0e2fdafab3c081a7
 +            const input = budget('device.back');
 +            await surface.screenCommand('device.back', (client) => input.send(() => client.command.back({ ...surface.settleOptions })), context.signal);
          },
+         async pressRemote(key) {
+             requireRemoteKey(key);
+-            const input = surface.inputBudget('device.pressRemote', { timeoutMs: context.timeouts.action, signal: context.signal });
++            const input = budget('device.pressRemote');
+             await surface.screenCommand('device.pressRemote', (client) => input.send(() => pressRemote(client, key, surface.selection())), context.signal);
+         },
+         async shake() {
+-            await surface.screenCommand('device.shake', (client) => client.command.shake(surface.selection()), context.signal);
++            const input = budget('device.shake');
++            await surface.screenCommand('device.shake', (client) => input.send(() => client.command.shake(surface.selection())), context.signal);
+         },
          async alert(action) {
 -            await surface.screenCommand('device.alert', (client) => client.command.alert({ ...surface.selection(), action }), context.signal);
 +            const input = budget('device.alert');
@@ -129,6 +149,9 @@ index 819e3a8294724e95a5deb934e443f9615b92f0d9..fc16c76704977dad0e2fdafab3c081a7
          async dismissKeyboard() {
 -            await surface.dismissKeyboard(context.signal, surface.inputBudget('device.dismissKeyboard', { timeoutMs: context.timeouts.action, signal: context.signal }));
 +            await surface.dismissKeyboard(context.signal, budget('device.dismissKeyboard'));
+         },
+         async isKeyboardShown() {
+             return surface.keyboardShown(context.signal, surface.inputBudget('device.isKeyboardShown', { timeoutMs: context.timeouts.action, signal: context.signal }));
          },
          async clipboard() {
 -            const result = await surface.command('device.clipboard', (client) => client.command.clipboard({ ...surface.selection(), action: 'read' }), context.signal);
@@ -143,17 +166,17 @@ index 819e3a8294724e95a5deb934e443f9615b92f0d9..fc16c76704977dad0e2fdafab3c081a7
          },
      };
      const action = { kind: 'resource' };
-@@ -140,7 +153,7 @@ export function createDeviceFixture(surface, context) {
+@@ -163,7 +177,7 @@ export function createDeviceFixture(surface, context) {
          fold: { ...action, label: (pose) => pose },
          setBiometrics: action,
          enrollBiometrics: action,
 -        installApp: { ...action, label: (appPath) => appPath ?? surface.appPath ?? 'appPath' },
 +        installApp: { ...action, timeout: installTimeoutMs, label: (appPath) => appPath ?? surface.appPath ?? 'appPath' },
+         uninstallApp: { ...action, label: (app) => appLabel(app ?? surface.pinnedApp ?? 'app') },
+         isAppInstalled: { ...action, label: (app) => appLabel(app ?? surface.pinnedApp ?? 'app') },
          openApp: { ...action, label: (app) => appLabel(app) },
-         openLink: { ...action, label: (url) => linkLabel(url) },
-         closeApp: action,
 diff --git a/dist/support.js b/dist/support.js
-index 91d50ca0a3a10f1798f2f3d83e45da56de77351a..119b1861ca32300f45dd09180dec7e7f98319c4c 100644
+index e307753..9f21e66 100644
 --- a/dist/support.js
 +++ b/dist/support.js
 @@ -1,4 +1,5 @@
@@ -256,10 +279,10 @@ index 91d50ca0a3a10f1798f2f3d83e45da56de77351a..119b1861ca32300f45dd09180dec7e7f
      remainingMs() {
          return this.endsAt - Date.now();
 diff --git a/dist/surface.js b/dist/surface.js
-index 8511c8b53486d1fb9573d6d97d00add242afc0b2..5d21cf8fb1a963ec01d6cb3e7df4e3a07ec48a13 100644
+index 449d286..1c5915a 100644
 --- a/dist/surface.js
 +++ b/dist/surface.js
-@@ -363,11 +363,13 @@ export class AgentDeviceSurface {
+@@ -389,11 +389,13 @@ export class AgentDeviceSurface {
      /**
       * Runs one agent-device command under an operation budget and translates
       * its failure. Contributed-fixture methods route through here too, so the
@@ -276,7 +299,7 @@ index 8511c8b53486d1fb9573d6d97d00add242afc0b2..5d21cf8fb1a963ec01d6cb3e7df4e3a0
      }
      /**
       * Runs a fixture command that changes the screen (a back, the home screen,
-@@ -377,9 +379,9 @@ export class AgentDeviceSurface {
+@@ -403,9 +405,9 @@ export class AgentDeviceSurface {
       * `device.back()` followed by a tap lands where the returning screen has
       * not yet arrived.
       */
@@ -288,7 +311,7 @@ index 8511c8b53486d1fb9573d6d97d00add242afc0b2..5d21cf8fb1a963ec01d6cb3e7df4e3a0
          this.markAction(before);
          return result;
      }
-@@ -477,7 +479,7 @@ export class AgentDeviceSurface {
+@@ -503,7 +505,7 @@ export class AgentDeviceSurface {
          }
          else if (dangling !== undefined) {
              await this.settleInflight(context.signal).catch(() => undefined);
@@ -297,7 +320,7 @@ index 8511c8b53486d1fb9573d6d97d00add242afc0b2..5d21cf8fb1a963ec01d6cb3e7df4e3a0
          }
      }
      // --- video ---
-@@ -514,7 +516,7 @@ export class AgentDeviceSurface {
+@@ -540,7 +542,7 @@ export class AgentDeviceSurface {
              quality: 'medium',
              recordingScope: 'device',
              ...(this.hideTouches ? { hideTouches: true } : {}),
@@ -306,7 +329,7 @@ index 8511c8b53486d1fb9573d6d97d00add242afc0b2..5d21cf8fb1a963ec01d6cb3e7df4e3a0
          // The device confirmed: it is recording from about now.
          recording.startedAt = new Date().toISOString();
      }
-@@ -529,7 +531,7 @@ export class AgentDeviceSurface {
+@@ -555,7 +557,7 @@ export class AgentDeviceSurface {
          if (video.kind === 'lease') {
              return [await this.stopLeaseRecording(video, operation.signal)];
          }
@@ -315,7 +338,7 @@ index 8511c8b53486d1fb9573d6d97d00add242afc0b2..5d21cf8fb1a963ec01d6cb3e7df4e3a0
          // The device may finalize the file under a path of its own choosing; the
          // artifact must live where the attempt directory expects it.
          const written = typeof result.outPath === 'string' ? result.outPath : video.absolute;
-@@ -545,10 +547,10 @@ export class AgentDeviceSurface {
+@@ -571,10 +573,10 @@ export class AgentDeviceSurface {
       * whatever the test opened in it since, so the session is then as
       * `closeApp` leaves it.
       */
@@ -328,7 +351,7 @@ index 8511c8b53486d1fb9573d6d97d00add242afc0b2..5d21cf8fb1a963ec01d6cb3e7df4e3a0
                  if (this.recording === video)
                      this.recording = undefined;
                  if (result.recordOnlySession === true)
-@@ -640,7 +642,7 @@ export class AgentDeviceSurface {
+@@ -666,7 +668,7 @@ export class AgentDeviceSurface {
       * open it as a URL, and `openLink` is the path that carries the
       * navigation rule.
       */
@@ -337,9 +360,9 @@ index 8511c8b53486d1fb9573d6d97d00add242afc0b2..5d21cf8fb1a963ec01d6cb3e7df4e3a0
          assertAppId(app);
          if (options.permissions !== undefined)
              assertPermissions('device.openApp({ permissions })', options.permissions, 'INVALID_ARGUMENT');
-@@ -652,17 +654,17 @@ export class AgentDeviceSurface {
-         const launchArguments = options.launchArguments ?? (configured ? this.app.launchArguments : undefined);
-         const permissions = options.permissions ?? (configured ? this.app.permissions : undefined);
+@@ -678,18 +680,18 @@ export class AgentDeviceSurface {
+         const launchArguments = launchArgumentsForOpen(this.options.platform, options.launchArguments) ?? (configured ? (this.app.launchArgumentValues ?? this.app.launchArguments) : undefined);
+         const permissions = options.permissions ?? (configured ? configuredPermissions(this.app) : undefined);
          if (permissions !== undefined)
 -            await this.presetPermissions(app, permissions, signal);
 -        await this.open(app, relaunch, launchArguments, signal);
@@ -349,22 +372,27 @@ index 8511c8b53486d1fb9573d6d97d00add242afc0b2..5d21cf8fb1a963ec01d6cb3e7df4e3a0
      /** One `open` of an app, remembered as the session's app and as the screen's replacement. */
 -    async open(app, relaunch, launchArguments, signal) {
 +    async open(app, relaunch, launchArguments, signal, input) {
+         const launchArgs = launchArgumentList(this.options.platform, launchArguments);
          const result = await this.command(`open ${app}`, (client) => client.apps.open({
              app,
              ...this.selection(),
              ...(relaunch ? { relaunch: true } : {}),
-             ...(launchArguments === undefined || launchArguments.length === 0 ? {} : { launchArgs: [...launchArguments] }),
+             ...(launchArgs === undefined ? {} : { launchArgs: [...launchArgs] }),
 -        }), signal);
 +        }), signal, input);
          this.launched(result.appBundleId ?? result.appName ?? app);
      }
      /**
-@@ -671,23 +673,23 @@ export class AgentDeviceSurface {
-      * permission was revoked, so a change after the launch would leave the
-      * test on no screen.
+@@ -699,27 +701,27 @@ export class AgentDeviceSurface {
+      * test on no screen. `'all'` is one agent-device `all` grant on either
+      * platform; `LaunchPermissions` says what it grants on each.
       */
 -    async presetPermissions(app, permissions, signal) {
 +    async presetPermissions(app, permissions, signal, input) {
+         if (permissions === 'all') {
+             await this.permission('all', 'grant', app, signal);
+             return;
+         }
          const entries = Object.entries(permissions).filter((entry) => entry[1] !== undefined);
          for (const [permission, state] of entries)
 -            await this.permission(permission, state, app, signal);
@@ -389,7 +417,7 @@ index 8511c8b53486d1fb9573d6d97d00add242afc0b2..5d21cf8fb1a963ec01d6cb3e7df4e3a0
      }
      /**
       * Opens a link on the device, into `app` (the pinned app when none is
-@@ -747,9 +749,9 @@ export class AgentDeviceSurface {
+@@ -779,9 +781,9 @@ export class AgentDeviceSurface {
       * the pinned one; with neither known there is nothing to terminate and
       * only the session ends.
       */
@@ -401,7 +429,7 @@ index 8511c8b53486d1fb9573d6d97d00add242afc0b2..5d21cf8fb1a963ec01d6cb3e7df4e3a0
          this.screenReplaced();
      }
      /**
-@@ -757,7 +759,7 @@ export class AgentDeviceSurface {
+@@ -789,7 +791,7 @@ export class AgentDeviceSurface {
       * named by `options.app` (else the pinned app) first, so the build starts
       * with no data; a plain install replaces the binary and keeps its data.
       */
@@ -410,16 +438,16 @@ index 8511c8b53486d1fb9573d6d97d00add242afc0b2..5d21cf8fb1a963ec01d6cb3e7df4e3a0
          const build = appPath ?? this.app.appPath;
          if (build === undefined)
              throw invalidState("installApp needs a build: pass a path, or name one with the target's app.appPath");
-@@ -770,7 +772,7 @@ export class AgentDeviceSurface {
+@@ -802,7 +804,7 @@ export class AgentDeviceSurface {
          }
          const result = await this.command(`install ${resolved}`, (client) => options.reinstall === true && app !== undefined
              ? client.apps.reinstall({ ...selection, app, appPath: resolved })
 -            : client.apps.install({ ...selection, ...(app === undefined ? {} : { app }), appPath: resolved }), signal);
 +            : client.apps.install({ ...selection, ...(app === undefined ? {} : { app }), appPath: resolved }), signal, input);
-         const identity = result.bundleId ?? result.package ?? result.appId;
-         const opensBy = identity ?? app;
-         if (opensBy === undefined) {
-@@ -1481,15 +1483,16 @@ export class AgentDeviceSurface {
+         const installed = installedIdentity(result, app, resolved, "the target's `app.bundleId` or installApp's `app` option");
+         // The engine's own build, installed: without `app`, this is what `app.open()` launches from here on.
+         if (engineBuild)
+@@ -1640,15 +1642,16 @@ export class AgentDeviceSurface {
          const app = this.pinnedApp;
          if (app === undefined)
              throw unsupported(`launching the app needs the target's \`app.bundleId\`, or ${UNINSTALLED_BUILD}`);
@@ -439,7 +467,7 @@ index 8511c8b53486d1fb9573d6d97d00add242afc0b2..5d21cf8fb1a963ec01d6cb3e7df4e3a0
      }
      /**
       * Sends a foldable simulator's or emulator's hinge to a pose; agent-device
-@@ -1498,19 +1501,19 @@ export class AgentDeviceSurface {
+@@ -1657,19 +1660,19 @@ export class AgentDeviceSurface {
       * another panel, so it counts as an action like a rotation. A device
       * without a hinge comes back from agent-device as `UNSUPPORTED_OPERATION`.
       */
@@ -464,27 +492,27 @@ index 8511c8b53486d1fb9573d6d97d00add242afc0b2..5d21cf8fb1a963ec01d6cb3e7df4e3a0
      /**
       * A redacted screenshot artifact. The device paints secure fields as dots,
 diff --git a/dist/tools.js b/dist/tools.js
-index 97850b9d8e5a026757b0e698c428adb04491ba42..d60b0b60e3339e26bb2469619b59a37130164447 100644
+index 3981784..3e51d05 100644
 --- a/dist/tools.js
 +++ b/dist/tools.js
-@@ -12,6 +12,8 @@ import { EngineError, TestError } from '@e2e-dev/core/engine';
- import { rawSession } from './device.js';
+@@ -14,6 +14,8 @@ import { rawSession } from './device.js';
  import { surfaceOf } from './engine.js';
  import { isAppNotInstalled } from './errors.js';
+ import { pressRemote, REMOTE_KEYS } from './remote.js';
 +/** A tool call has no operation budget, so a busy iOS runner is waited out for as long as the default action timeout. */
 +const RUNNER_BUSY_TOOL_MS = 30_000;
  /**
   * Types a tool the way the SDK's `tool()` does, without importing it: `ai`
   * is an optional peer dependency, and this module loads with the project's
-@@ -83,6 +85,7 @@ export function mobileTools(...engines) {
-         platforms,
-     });
-     const abort = (options) => options.abortSignal;
-+    const budget = (surface, label, options) => surface.inputBudget(label, { timeoutMs: RUNNER_BUSY_TOOL_MS, signal: abort(options) ?? new AbortController().signal });
-     return {
-         open_app: defineTool(deviceTool({
-             description: 'Bring an app to the foreground. Omit app to return to the app under test, e.g. after a system sheet or another app took over the screen; pass a bundle id, package, or display name (e.g. "Settings") only for another app. Set relaunch to restart it fresh. Takes an app, not a URL: a link is refused.',
-@@ -91,7 +94,7 @@ export function mobileTools(...engines) {
+@@ -65,6 +67,7 @@ function appUnderTest(surface) {
+     return app;
+ }
+ const abort = (options) => options.abortSignal;
++const budget = (surface, label, options) => surface.inputBudget(label, { timeoutMs: RUNNER_BUSY_TOOL_MS, signal: abort(options) ?? new AbortController().signal });
+ /** What every tool of a pack shares: the surface whose attempt is running, and the platforms the pack is offered on. */
+ function pack(engines) {
+     const surfaces = engines.map(requireSurface);
+@@ -96,7 +99,7 @@ export function mobileTools(...engines) {
                  const surface = active();
                  const target = app ?? appUnderTest(surface);
                  try {
@@ -493,7 +521,7 @@ index 97850b9d8e5a026757b0e698c428adb04491ba42..d60b0b60e3339e26bb2469619b59a371
                  }
                  catch (error) {
                      if (app === undefined || !isAppNotInstalled(error))
-@@ -108,7 +111,8 @@ export function mobileTools(...engines) {
+@@ -113,7 +116,8 @@ export function mobileTools(...engines) {
                  to: z.object({ x: z.number(), y: z.number() }),
              }),
              execute: async ({ from, to }, options) => {
@@ -503,7 +531,7 @@ index 97850b9d8e5a026757b0e698c428adb04491ba42..d60b0b60e3339e26bb2469619b59a371
                  return `Swiped from (${from.x}, ${from.y}) to (${to.x}, ${to.y}).`;
              },
          }), annotate(true)),
-@@ -117,7 +121,7 @@ export function mobileTools(...engines) {
+@@ -122,7 +126,7 @@ export function mobileTools(...engines) {
              inputSchema: z.object({ action: z.enum(['accept', 'dismiss']) }),
              execute: async ({ action }, options) => {
                  const surface = active();
@@ -512,3 +540,13 @@ index 97850b9d8e5a026757b0e698c428adb04491ba42..d60b0b60e3339e26bb2469619b59a371
                  return `Alert ${action}ed.`;
              },
          }), annotate(true)),
+@@ -145,7 +149,8 @@ export function tvTools(...engines) {
+                 const surface = active();
+                 const signal = abort(options) ?? new AbortController().signal;
+                 for (let pressed = 0; pressed < times; pressed += 1) {
+-                    await surface.screenCommand('tv_remote', (client) => pressRemote(client, key, surface.selection()), signal);
++                    const input = budget(surface, 'tv_remote', options);
++                    await surface.screenCommand('tv_remote', (client) => input.send(() => pressRemote(client, key, surface.selection())), signal);
+                 }
+                 return times === 1 ? `Pressed ${key} on the remote.` : `Pressed ${key} on the remote ${String(times)} times.`;
+             },
