@@ -37,6 +37,7 @@ import {
 } from "./WorkflowAgents.ts";
 import { noteReference } from "./runReferences.ts";
 import { type IssueAddress, linkedPullRequestReferences, WorkflowForge } from "./WorkflowForge.ts";
+import { withoutRoutineSpans } from "@onicode/shared/observability";
 
 // A turn can run for hours. Each look is bounded so a wait that lost its event is asked again.
 const WAIT_SLICE = Duration.minutes(10);
@@ -155,7 +156,7 @@ const make = Effect.gen(function* () {
     return found.value.id;
   });
 
-  return WorkflowAgents.of({
+  const agents = WorkflowAgents.of({
     start: Effect.fn("WorkflowAgentThreads.start")(function* (input) {
       const id = yield* idOf(input.key);
       const environment = elsewhere(input.environment);
@@ -353,6 +354,21 @@ const make = Effect.gen(function* () {
         .pipe(Effect.orElseSucceed(() => null));
       if (shell === null) return undefined;
       return { instanceId: shell.modelSelection.instanceId, model: shell.modelSelection.model };
+    }),
+  });
+  // Thread launches and sends are user work, not engine bookkeeping, so they are never sampled.
+  return WorkflowAgents.of({
+    start: Effect.fnUntraced(function* (input) {
+      return yield* withoutRoutineSpans(agents.start(input));
+    }),
+    result: Effect.fnUntraced(function* (turn, options) {
+      return yield* withoutRoutineSpans(agents.result(turn, options));
+    }),
+    interrupt: Effect.fnUntraced(function* (target) {
+      return yield* withoutRoutineSpans(agents.interrupt(target));
+    }),
+    model: Effect.fnUntraced(function* (target) {
+      return yield* withoutRoutineSpans(agents.model(target));
     }),
   });
 });
