@@ -35,6 +35,7 @@ import {
   type ThreadId,
   type TurnItemId,
   isRuntimeModeAbove,
+  parseGoalCommand,
   type TurnTokenUsage,
 } from "@onicode/contracts";
 import { AgentScope, AgentScopeThreadId } from "@onicode/shared/AgentScope";
@@ -10284,6 +10285,11 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             threadId: context.input.threadId,
             providerTurn: turn,
           });
+          // A native /goal ends with the prompt that set it.
+          const goalEnded =
+            context.input.providerThread.goal != null ||
+            (yield* Ref.get(providerThreadByNativeSessionId)).get(context.nativeThreadId)?.goal !=
+              null;
           const updatedProviderThread: OrchestrationV2ProviderThread = {
             ...context.input.providerThread,
             providerSessionId: input.providerSessionId,
@@ -10293,6 +10299,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               context.input.providerThread.firstRunOrdinal ?? context.input.runOrdinal,
             contextUsage: context.contextUsage,
             nativeMetadata: context.nativeMetadata,
+            ...(goalEnded ? { goal: null } : {}),
             updatedAt: now,
           };
           yield* Ref.update(providerThreadByNativeSessionId, (current) =>
@@ -11402,12 +11409,22 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                 threadId: turnInput.threadId,
                 providerTurn: runningTurn,
               });
+              // ACP reports no goal state: a native /goal runs for as long as the prompt that set it.
+              const goalCommand =
+                (yield* readCapabilities).turns.supportsNativeGoals === true
+                  ? parseGoalCommand(turnInput.message)
+                  : null;
               const activeProviderThread: OrchestrationV2ProviderThread = {
                 ...turnInput.providerThread,
                 providerSessionId: input.providerSessionId,
                 status: "active",
                 contextUsage: context.contextUsage,
                 nativeMetadata: context.nativeMetadata,
+                ...(goalCommand?.type === "set"
+                  ? { goal: { objective: goalCommand.objective, status: "active" as const } }
+                  : turnInput.providerThread.goal == null
+                    ? {}
+                    : { goal: null }),
                 updatedAt: startedAt,
               };
               yield* Ref.update(providerThreadByNativeSessionId, (current) =>
