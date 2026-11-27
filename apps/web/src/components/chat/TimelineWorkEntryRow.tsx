@@ -280,7 +280,7 @@ export function ViewedImagesTimelineRow({
   if (!threadRef) return null;
   return (
     <div className="flex flex-wrap items-start gap-2 px-0.5" data-image-gallery>
-      {row.paths.map((path) => {
+      {row.images.map(({ path, pending }) => {
         const image = resolveViewedImageAsset(path, {
           threadId: threadRef.threadId,
           workspaceRoot,
@@ -290,6 +290,7 @@ export function ViewedImagesTimelineRow({
             key={path}
             environmentId={threadRef.environmentId}
             resource={image.resource}
+            pending={pending}
             alt={image.alt}
             srcFragment={image.srcFragment}
             workspaceRoot={workspaceRoot}

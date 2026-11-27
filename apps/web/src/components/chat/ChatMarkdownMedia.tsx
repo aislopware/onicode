@@ -383,6 +383,8 @@ export function assetMediaActionsSource(input: {
   readonly workspaceRoot?: string | undefined;
   readonly originalUrl?: string | undefined;
   readonly downloadable?: boolean | undefined;
+  /** The file may not exist yet: keep only actions that do not read it. */
+  readonly pending?: boolean | undefined;
 }): MediaActionSource {
   const { environmentId, resource } = input;
   const path =
@@ -401,9 +403,13 @@ export function assetMediaActionsSource(input: {
     kind: input.kind,
     name: input.name,
     src: input.src,
-    ...(input.downloadable === false ? {} : { asset: { environmentId, resource } }),
+    ...(input.downloadable === false || input.pending
+      ? {}
+      : { asset: { environmentId, resource } }),
     ...(reference ? { reference } : {}),
-    ...(relativePath && (resource._tag === "media-file" || resource._tag === "workspace-file")
+    ...(relativePath &&
+    !input.pending &&
+    (resource._tag === "media-file" || resource._tag === "workspace-file")
       ? {
           onOpenFile: () =>
             useRightPanelStore
@@ -417,6 +423,8 @@ export function assetMediaActionsSource(input: {
 export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props: {
   readonly environmentId: EnvironmentId;
   readonly resource: ChatMarkdownAssetResource;
+  /** Hold the loading frame without asking for the file, which may not exist yet. */
+  readonly pending?: boolean | undefined;
   readonly kind?: "image" | "video";
   readonly alt: string;
   readonly copyMarkdown?: string;
@@ -444,7 +452,11 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
     resource._tag === "media-file" || resource._tag === "workspace-file"
       ? workspaceMutationId
       : undefined;
-  const assetUrl = useAssetUrlState(props.environmentId, resource, urlRevision);
+  const assetUrl = useAssetUrlState(
+    props.environmentId,
+    props.pending ? null : resource,
+    urlRevision,
+  );
   const refreshAssetUrl = useAssetUrlRefresh(props.environmentId, resource);
   const fallbackSrc = assetUrl._tag === "Failure" ? props.fallbackSrc : undefined;
   const missingFileAccess =
@@ -480,6 +492,7 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
     workspaceRoot: props.workspaceRoot,
     originalUrl: props.originalUrl,
     downloadable: fallbackSrc === undefined,
+    pending: props.pending,
   });
 
   if (props.kind === "video") {
