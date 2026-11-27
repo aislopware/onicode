@@ -3509,7 +3509,7 @@ describe("PiAdapterV2", () => {
         const cases = [
           {
             toolName: "read",
-            args: { path: "/workspace/screens/shot.png" },
+            args: { path: "@/workspace/screens/shot.png" },
             result: { content, structuredContent: { ...image, note } },
             expected: { content },
           },
