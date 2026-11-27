@@ -91,10 +91,8 @@ import {
   formatComposerContextReference,
 } from "@onicode/shared/composerContextReferences";
 import { ComposerContextSheet } from "../../components/ComposerContextSheet";
-import {
-  composerContextLinkMarkdown,
-  writeComposerContextClipboard,
-} from "../../lib/composerContextClipboard";
+import { writeComposerContextClipboard } from "../../lib/composerContextClipboard";
+import { composerContextLinkMarkdown } from "../../lib/composerContextLinks";
 import type { CodexArtifactTemplate } from "@onicode/shared/codexArtifactTemplates";
 import { codexArtifactTemplatePresentationLabel } from "@onicode/shared/codexArtifactTemplatesCopy";
 import { resolveAssetUrl } from "@onicode/client-runtime/state/assets";
