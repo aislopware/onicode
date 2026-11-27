@@ -4561,3 +4561,4 @@ f7d8d3a89c	take	clean; mobile does not apply theme CSS
 c53d40ff83	take	clean
 3d441d72f4	take	clean
 ba72661837	take	clean
+bd0c128791	take	adapted: tests keep zipFixture (no JSZip); Onicode-only RTF expectations (font code page, \cpg0 row) updated to data-rtf-whitespace
