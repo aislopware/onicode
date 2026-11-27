@@ -359,7 +359,11 @@ function* paragraphs(node: XmlNode): Generator<TextPart, void> {
     if (typeof child === "string") yield child;
     else if (["br", "line-break", "cr"].includes(child.name)) yield "\n";
     else if (["tbl", "table"].includes(child.name)) yield* table(child);
-    else if (["p", "h"].includes(child.name) || /^h[1-6]$/.test(child.name)) {
+    else if (child.name === "pre" && child.hasText) {
+      yield LINE_START;
+      yield* text(child);
+      yield LINE_START;
+    } else if (["p", "h"].includes(child.name) || /^h[1-6]$/.test(child.name)) {
       // Only the paragraph's own properties: not a text box's, nor a tracked change's old style.
       const properties = children(child).find((node) => node.name === "pPr");
       const style = children(properties).find((node) => node.name === "pStyle")?.attrs.val ?? "";
