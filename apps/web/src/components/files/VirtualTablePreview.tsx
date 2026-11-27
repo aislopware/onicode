@@ -1,5 +1,5 @@
 /* oxlint-disable react/no-array-index-key -- Positions identify source rows and columns. */
-import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
+import { useContext, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import { useClientSettings } from "~/hooks/useSettings";
 import { observeResize } from "~/lib/observeResize";
 import { PREVIEW_PAGE_ROWS } from "./largeTextProtocol";
@@ -11,6 +11,9 @@ import {
   useMoreCharactersLabel,
 } from "./shownText";
 import { SharedTooltipTrigger } from "~/components/ui/shared-tooltip";
+import { createPositionMemory, PreviewPositionKey } from "./previewPosition";
+
+const savedFirstRows = createPositionMemory<number>();
 
 export default function VirtualTablePreview(props: {
   readonly name: string;
@@ -330,6 +333,8 @@ function ScaledRows(
   const restoredTop = useRef<{ exact: number; actual: number } | null>(null);
   // Downward pixels past the tail start, held until the tail renders and the DOM can scroll that far.
   const pendingTailPixels = useRef(0);
+  const positionKey = useContext(PreviewPositionKey);
+  const pendingRestore = useRef(savedFirstRows.get(positionKey));
   const position = { top, height: props.viewportHeight };
   const scrollHeight = Math.min(8_000_000, props.count * 29);
   // Chromium caps a scroll surface at 33 million pixels. Scale the track for
@@ -398,6 +403,19 @@ function ScaledRows(
     pendingReveal.current = { row, attempts: 0 };
     handledReveal.current = key;
   }, [props.revealLine, props.revealRequestId, props.count, headerRows, scale]);
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- Return a reopened file to its saved row once that row has streamed in.
+  useLayoutEffect(() => {
+    const row = pendingRestore.current;
+    const node = ref.current;
+    if (row === undefined || !node || (props.revealLine == null && row >= props.count)) return;
+    pendingRestore.current = undefined;
+    // A pending line reveal owns the scroll position.
+    if (props.revealLine != null) return;
+    node.scrollTop = Math.max(0, (row - headerRows) * 29) * scale;
+    setTop(node.scrollTop);
+    pendingTailPixels.current = 0;
+    pendingReveal.current = { row, attempts: 0 };
+  }, [props.revealLine, props.count, headerRows, scale]);
   const atStart = position.top === 0;
   const rowHeight = (row: number) =>
     contentRef.current?.querySelector<HTMLElement>(`[data-preview-row="${row}"]`)?.offsetHeight ||
@@ -773,7 +791,13 @@ function ScaledRows(
       onScroll={(event) => {
         const scrollTop = event.currentTarget.scrollTop;
         if (restoredTop.current?.actual !== scrollTop) restoredTop.current = null;
-        setTop(restoredTop.current?.exact ?? scrollTop);
+        const logicalTop = restoredTop.current?.exact ?? scrollTop;
+        setTop(logicalTop);
+        pendingRestore.current = undefined;
+        savedFirstRows.set(
+          positionKey,
+          Math.min(maxFirst, Math.floor(logicalTop / scale / 29)) + headerRows,
+        );
       }}
     >
       <div className="relative" style={{ height: scrollHeight }}>
