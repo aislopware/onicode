@@ -4602,3 +4602,4 @@ a9ad9afa09	take	test fixture conflict (Onicode's zipFixture map); same epub:type
 cbcc74737d	take	fileName uses Onicode's NonBlankString over upstream's Schema.NonEmptyString: keeps trailing spaces, and still rejects a blank name as old mobile decoders do (they trim, so trailing spaces stay wire-compatible)
 a515034c59	skip	only serves telemetry (ProviderUsageAnalytics reads observedModel from turnTokenUsage.models; ProviderDimensions effort suffix), both removed in Onicode; the executed model already reaches turn.model via 345843cb15
 8458f00788	take	test conflict only: kept Onicode's turn-end capture case beside upstream's antigravity-default case
+fc7cfe96f1	take	taken as is; scenario ported as is (WEB = desktop target), typechecked at the batch check
