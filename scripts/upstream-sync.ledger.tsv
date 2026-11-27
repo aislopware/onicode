@@ -4494,3 +4494,4 @@ bb263b9d8a	take	clean; mobile has no theme-copy naming
 8e622f9801	take	documentTextWorker chain after 7a5f9c2ecc
 0ce6663f32	take	clean on both web and mobile changeDraftProject
 75f768bca6	take	applies cleanly
+9b586010f6	take	right after 8e622f9801; renames epubNavigation to epubBlock
