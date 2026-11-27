@@ -4085,3 +4085,4 @@ f8b2fcbee5	skip	only touches infra/relay/ (T3 relay Worker), removed in Onicode
 6b09aea61d	take	imports merged next to Onicode's ./service/ launcher (no ./cloud/); one auto-pull sweep per fetch interval, skipped on constrained hosts
 4f04b70bf8	take	mechanical merges only (mock agent env, new tests beside Onicode's port-discovery test); tightens auto-accept-edits to paths inside cwd/writable roots for every ACP flavor; Antigravity's Onicode-MCP allow-first and withSentRawInputPaths unchanged
 1485712d69	skip	already done in Onicode (1a4f3d2b64): PR reply/load-error links route through useOpenLink + anchorOpenHandlers, which also handles middle click; upstream's tests only check click wiring that passes on HEAD
+152342da7d	take	taken as is
