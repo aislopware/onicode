@@ -1,5 +1,4 @@
 import { decodeComposerContextFragment } from "@onicode/shared/composerContextClipboard";
-import * as Clipboard from "expo-clipboard";
 import {
   markdownForNativeRendering,
   markdownWithFileEmbeds,
@@ -33,6 +32,7 @@ import { useRetryingImageSource } from "./useRetryingImageSource";
 import * as Dialog from "../components/ui/Dialog";
 import {
   copiedComposerContextText,
+  replaceClipboardText,
   writeComposerContextClipboard,
 } from "../lib/composerContextClipboard";
 import { copyTextWithHaptic } from "../lib/copyTextWithHaptic";
@@ -400,7 +400,7 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
         if (copied === null) return;
         const written = copied.hasContext
           ? writeComposerContextClipboard(copied.text, contextFragment)
-          : Clipboard.setStringAsync(copied.text);
+          : replaceClipboardText(copied.text);
         written.catch((error: unknown) =>
           console.error("Failed to copy the message's context to the clipboard.", error),
         );

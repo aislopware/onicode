@@ -57,7 +57,12 @@ function checkAborted(signal: AbortSignal): void {
 const nativeClipboard = () =>
   requireNativeModule<{
     writeContextClipboard: (text: string, fragment: string) => Promise<void>;
+    replaceClipboardText: (text: string) => Promise<void>;
   }>("OniComposerEditor");
+
+/** Replaces only the clipboard's plain text, keeping the rich text a selection copy wrote. */
+export const replaceClipboardText = (text: string): Promise<void> =>
+  nativeClipboard().replaceClipboardText(text);
 
 export function writeComposerContextClipboard(
   text: string,

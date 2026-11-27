@@ -92,6 +92,23 @@ class ComposerPasteTest {
   }
 
   @Test
+  fun replacingTheTextKeepsTheSelectionHtml() {
+    val html = "<p><a href=\"https://x.dev\">docs</a></p>"
+    clipboard.setPrimaryClip(ClipData.newHtmlText("selection", "[docs](https://x.dev)", html))
+
+    OniComposerClipboard.replaceText(context, "docs")
+
+    val item = requireNotNull(clipboard.primaryClip).getItemAt(0)
+    assertEquals("docs", item.text.toString())
+    assertEquals(html, item.htmlText)
+
+    clipboard.setPrimaryClip(ClipData.newPlainText("selection", "[a](https://x.dev)"))
+    OniComposerClipboard.replaceText(context, "a")
+    assertEquals("a", requireNotNull(clipboard.primaryClip).getItemAt(0).text.toString())
+    assertNull(requireNotNull(clipboard.primaryClip).getItemAt(0).htmlText)
+  }
+
+  @Test
   fun shortcutKeepsLargeTextInlineAndUndoable() {
     val pasted = "x".repeat(32 * 1024)
     clipboard.setPrimaryClip(ClipData.newPlainText("test", pasted))

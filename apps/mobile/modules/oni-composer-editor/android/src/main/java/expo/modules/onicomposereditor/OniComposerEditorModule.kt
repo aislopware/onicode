@@ -60,6 +60,19 @@ internal object OniComposerClipboard {
     )
   }
 
+  // Keeps the HTML a selection copy carries.
+  @Synchronized
+  fun replaceText(context: Context, text: String) {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    val clip = clipboard.primaryClip
+    val html = if (clip != null && clip.itemCount > 0) clip.getItemAt(0).htmlText else null
+    copiedContext = null
+    clipboard.setPrimaryClip(
+      if (html == null) ClipData.newPlainText("Onicode", text)
+      else ClipData.newHtmlText("Onicode", text, html)
+    )
+  }
+
   @Synchronized
   fun read(context: Context): Map<String, String> {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -87,6 +100,10 @@ class OniComposerEditorModule : Module() {
 
     AsyncFunction("writeContextClipboard") { text: String, fragment: String ->
       OniComposerClipboard.write(requireNotNull(appContext.reactContext), text, fragment)
+    }
+
+    AsyncFunction("replaceClipboardText") { text: String ->
+      OniComposerClipboard.replaceText(requireNotNull(appContext.reactContext), text)
     }
 
     View(OniComposerEditorView::class) {
