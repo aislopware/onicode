@@ -24,7 +24,7 @@ test(
       runPromise(
         Effect.gen(function* () {
           const client = yield* rpcClient(ONICODE_HOME, app.baseUrl ?? "");
-          const previous = (yield* client["server.getSettings"]({})).defaultRuntimeMode;
+          const previous = (yield* client["server.getConfig"]({})).settings.defaultRuntimeMode;
           yield* client["server.updateSettings"]({ patch: { defaultRuntimeMode: mode } });
           return previous;
         }).pipe(Effect.scoped),
