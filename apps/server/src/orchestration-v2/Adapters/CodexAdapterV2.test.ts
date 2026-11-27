@@ -7936,7 +7936,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         ),
         [
           ["running", false],
-          ["cancelled", false],
+          ["cancelled", true],
           ["completed", true],
         ],
       );
@@ -7948,7 +7948,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         ),
         [
           ["running", false],
-          ["cancelled", false],
+          ["cancelled", true],
           ["completed", true],
         ],
       );
@@ -11697,6 +11697,108 @@ describe("CodexAdapterV2 post-settle continuation", () => {
       rootFinished: entries.slice(rootCompleted - 1, rootCompleted + 1),
     };
   };
+
+  it.effect("counts a spawned native child as pending before its first turn starts", () =>
+    Effect.gen(function* () {
+      const prefix = lateChildPrefix();
+      const harness = yield* makeCodexReplayHarness(
+        makeCodexReplayTranscript({
+          scenario: RESUME_SCENARIO,
+          entries: [...prefix.spawned.slice(0, -1), ...prefix.rootFinished],
+        }),
+      );
+      yield* harness.runtime.startTurn(
+        makeCodexTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make("attempt-codex-unstarted-child"),
+          text: RESUME_PROMPT,
+        }),
+      );
+      yield* harness.awaitTerminal(1);
+      assert.deepEqual(
+        yield* Effect.all([
+          harness.hasPendingBackgroundWork,
+          harness.runtime.hasPendingBackgroundWorkForThread!(harness.providerThread),
+        ]),
+        [true, true],
+      );
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
+  );
+
+  it.effect("stops a native child still running after its parent's turn settled", () =>
+    Effect.gen(function* () {
+      const interrupts: unknown[] = [];
+      const prefix = lateChildPrefix();
+      const harness = yield* makeCodexReplayHarness(
+        makeCodexReplayTranscript({
+          scenario: RESUME_SCENARIO,
+          entries: [
+            ...prefix.spawned,
+            ...prefix.rootFinished,
+            {
+              type: "expect_outbound",
+              frame: {
+                id: 4,
+                method: "turn/interrupt",
+                params: { threadId: RESUME_CHILD_THREAD, turnId: RESUME_CHILD_TURN_1 },
+              },
+            },
+            { type: "emit_inbound", frame: { id: 4, result: {} } },
+            {
+              type: "emit_inbound",
+              frame: {
+                method: "turn/completed",
+                params: {
+                  threadId: RESUME_CHILD_THREAD,
+                  turn: makeCodexReplayTurn({ id: RESUME_CHILD_TURN_1, status: "interrupted" }),
+                },
+              },
+            },
+          ],
+        }),
+        undefined,
+        (method, params) =>
+          method === "turn/interrupt" ? Effect.sync(() => interrupts.push(params)) : Effect.void,
+      );
+      yield* harness.runtime.startTurn(
+        makeCodexTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make("attempt-codex-stop-late-child"),
+          text: RESUME_PROMPT,
+        }),
+      );
+      yield* harness.awaitTerminal(1);
+      yield* harness.runtime.interruptTurn({
+        providerThread: harness.providerThread,
+        providerTurnId: harness.terminalEvents()[0]!.providerTurnId,
+        requestRuntimeRestart: true,
+      });
+      assert.lengthOf(interrupts, 1);
+      assert.equal(harness.subagentUpdates().at(-1)?.subagent.status, "interrupted");
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
+  );
 
   it.effect.each(["completed", "failed", "interrupted", "starting", "replied-last"] as const)(
     "handles a late native child after the capacity retry %s",

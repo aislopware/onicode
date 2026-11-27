@@ -13,10 +13,10 @@ import {
 
 // Modal dialogs, popovers and fullscreen elements paint above any z-index, so the cursors live in
 // the top layer as manual popovers and move back to its front whenever the page adds to it.
-// Important, or a more specific page rule such as `[popover]:popover-open` outranks them. `all`
-// stays normal: important, it would also reset the inline transform and opacity.
+// Important, or a more specific page rule such as `[popover]:popover-open` outranks them; the
+// inline display, transform and opacity are important too, so `all` cannot reset them.
 const CURSOR_BASE =
-  "margin:0;padding:0;border:0;background:transparent;overflow:visible;inset:auto;animation:none;transition:none;position:fixed;left:0;top:0;pointer-events:none;z-index:2147483647;display:none;";
+  "all:initial;margin:0;padding:0;border:0;background:transparent;overflow:visible;inset:auto;animation:none;transition:none;position:fixed;left:0;top:0;pointer-events:none;z-index:2147483647;display:none;";
 const important = (declarations: string) =>
   declarations
     .split(";")
@@ -34,7 +34,7 @@ export function installRecordingCursor(
   // Constructed sheets are exempt from the page's CSP style-src; <style> elements and style attrs are not.
   const styleSheet = new CSSStyleSheet();
   styleSheet.replaceSync(
-    `html, html * { cursor: none !important; } [data-onicode-recording-cursor] { all:initial;${important(`${CURSOR_BASE}width:16px;height:24px;`)} } [data-onicode-recording-agent-cursor] { all:initial;${important(`${CURSOR_BASE}width:20px;height:20px;filter:drop-shadow(0 1px 2px #0003);transition:transform 150ms ease-out,opacity 150ms ease-out;`)} } [data-onicode-recording-cursor]::backdrop, [data-onicode-recording-agent-cursor]::backdrop { display: none !important; } [data-onicode-recording-agent-cursor] > svg { transform: translate(-2px, -2px) !important; } @media (prefers-reduced-motion: reduce) { [data-onicode-recording-agent-cursor] { transition: none !important; } }`,
+    `html, html * { cursor: none !important; } [data-onicode-recording-cursor] { ${important(`${CURSOR_BASE}width:16px;height:24px;`)} } [data-onicode-recording-agent-cursor] { ${important(`${CURSOR_BASE}width:20px;height:20px;filter:drop-shadow(0 1px 2px #0003);transition:transform 150ms ease-out,opacity 150ms ease-out;`)} } [data-onicode-recording-cursor]::backdrop, [data-onicode-recording-agent-cursor]::backdrop { display: none !important; } [data-onicode-recording-agent-cursor] > svg { transform: translate(-2px, -2px) !important; } @media (prefers-reduced-motion: reduce) { [data-onicode-recording-agent-cursor] { transition: none !important; } }`,
   );
   document.adoptedStyleSheets = [...document.adoptedStyleSheets, styleSheet];
   const cursor = document.createElement("div");
@@ -67,14 +67,19 @@ export function installRecordingCursor(
   };
   document.addEventListener("toggle", toggle, true);
   document.addEventListener("fullscreenchange", raise);
-  // Inline and important, so it outranks the sheet's hidden default and any page rule.
+  // Inline and important, so it outranks the sheet's defaults and any page rule.
+  const draw = (
+    element: HTMLElement,
+    property: "display" | "transform" | "opacity",
+    value: string,
+  ) => element.style.setProperty(property, value, "important");
   const show = (element: HTMLElement, shown: boolean) =>
-    element.style.setProperty("display", shown ? "block" : "none", "important");
+    draw(element, "display", shown ? "block" : "none");
   let controller: "human" | "agent" | "none" = "none";
   let humanPoint: { readonly x: number; readonly y: number } | null = null;
   const drawHuman = () => {
     if (!humanPoint) return;
-    cursor.style.transform = `translate(${humanPoint.x}px, ${humanPoint.y}px)`;
+    draw(cursor, "transform", `translate(${humanPoint.x}px, ${humanPoint.y}px)`);
     show(cursor, true);
   };
   let agentActive = false;
@@ -87,7 +92,7 @@ export function installRecordingCursor(
     controller = next;
     if (next === "agent") show(cursor, false);
     if (next === "human") drawHuman();
-    if (!agentActive) agentCursor.style.opacity = next === "human" ? "0.18" : "0.35";
+    if (!agentActive) draw(agentCursor, "opacity", next === "human" ? "0.18" : "0.35");
   };
   const setTheme = (
     theme: Pick<DesktopPreviewAnnotationTheme, "primary" | "background"> | null,
@@ -142,14 +147,14 @@ export function installRecordingCursor(
     point: { readonly x: number; readonly y: number },
     phase: "move" | "click" = "move",
   ) => {
-    agentCursor.style.transform = `translate(${point.x}px, ${point.y}px)`;
+    draw(agentCursor, "transform", `translate(${point.x}px, ${point.y}px)`);
     show(agentCursor, true);
-    agentCursor.style.opacity = "1";
+    draw(agentCursor, "opacity", "1");
     agentActive = true;
     window.clearTimeout(agentTimer);
     agentTimer = window.setTimeout(() => {
       agentActive = false;
-      agentCursor.style.opacity = controller === "human" ? "0.18" : "0.35";
+      draw(agentCursor, "opacity", controller === "human" ? "0.18" : "0.35");
     }, 700);
     pointer(point, phase);
   };

@@ -41,7 +41,12 @@ export function isInSideChatPane(target: EventTarget | null): boolean {
   ];
   const panes = roots.filter((root) => root.matches(SIDE_CHAT_PANE_SELECTOR));
   if (panes.length === 0) return false;
-  const portals = roots.filter((root) => !root.matches(SIDE_CHAT_PANE_SELECTOR));
+  // A portal nested in another is already searched with it.
+  const portals = roots.filter(
+    (root) =>
+      !root.matches(SIDE_CHAT_PANE_SELECTOR) &&
+      root.parentElement?.closest(FLOATING_PORTAL_SELECTOR) == null,
+  );
   const visited = new Set<Element>();
   const pending: Element[] = [target];
   while (pending.length > 0) {
