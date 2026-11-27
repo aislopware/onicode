@@ -4731,3 +4731,4 @@ b70db32d72	take	adapted: DocumentText VERSION 20 -> 21 (also covers ce56dfe956's
 7791f327e2	take	taken as is
 ce56dfe956	take	taken as is (shared notebookOutput under @onicode/shared; DocumentText bump done with b70db32d72)
 73949c0bf8	take	adapted: applied to Onicode's fflate/zip.js paths (JSZip stream hunks dropped); tests build archives with fflate and a Map
+40dc3232fe	take	taken as is (other forge)
