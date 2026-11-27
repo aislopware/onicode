@@ -4333,3 +4333,4 @@ b990a32fb7	take	taken as is
 a77493caa5	take	kept Onicode's "ocd" context row; upstream's four rows added
 d9e28d4640	take	kept Onicode's balanced-bracket FILE_LINK_LABEL_CHAR, now counting &#91;/&#93; as one unit; kept Onicode's readableLabel (legacy \[id\] labels, migration 115), extended to decode the entities in the same pass; dropped upstream's whole-link-to-label replace. Wire: older mobile shows a newly sent [TODO].md mention as a plain link
 38f3bdb7f9	take	taken as is
+6eb817e521	take	kept Onicode's border-border; test keeps the fflate fixture (no jszip) with the DST-midnight entry and upstream's Nuuk table
