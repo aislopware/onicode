@@ -34,9 +34,10 @@ simslim --help 2>&1 | grep '^  clone ' > /dev/null || brew upgrade mobai-app/tap
 template="$name template ${runtime##*.} ${type##*.} $keep"
 preparing="$name preparing ${runtime##*.} ${type##*.} $keep"
 xcrun simctl list devices -j |
-  jq -r --arg runtime "$runtime" --arg prefix "$name template ${runtime##*.} ${type##*.} " \
+  jq -r --arg runtime "$runtime" --arg base "$name template ${runtime##*.} ${type##*.}" \
     --arg name "$template" \
-    '.devices[$runtime][]? | select((.name | startswith($prefix)) and .name != $name) | .udid' |
+    '.devices[$runtime][]?
+      | select((.name == $base or (.name | startswith($base + " "))) and .name != $name) | .udid' |
   while read -r udid; do xcrun simctl delete "$udid"; done
 template_udid="$(xcrun simctl list devices -j | jq -r --arg runtime "$runtime" --arg name "$template" \
   'first(.devices[$runtime][]? | select(.name == $name and .isAvailable) | .udid) // empty')"
