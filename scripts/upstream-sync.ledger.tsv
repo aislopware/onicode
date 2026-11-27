@@ -4116,3 +4116,4 @@ b888f3c3ba	take	kept Onicode's markdownMathRanges argument and its titleSeed cal
 de3ec23861	take	taken as is
 6378cabd19	take	taken as is
 65585f336a	take	taken as is; controller tests pass (Kotlin unit test not run here)
+21aebbf7d9	take	applied cleanly; Onicode's hasThreadLink (oni-thread://) kept; Robolectric ComposerPasteTest not run here
