@@ -4000,3 +4000,4 @@ f1efcfb494	skip	removed surface: agent feedback reports to T3 through telemetry;
 7814c9f884	skip	already solved differently: Onicode's wslServiceRegistered reads the service keys through the native WindowsRegistry (advapi32), which the reg.exe policy cannot block
 6cca0b1864	take	taken as is
 172309c39c	take	kept Onicode's useStableCallback + minimapRequested dedupe; measurement now uses the lane's side gutter
+9de5a941ea	take	taken as is
