@@ -4425,3 +4425,4 @@ a71d749335	take	applied cleanly
 382f4b2c6c	take	3-way merge kept Onicode's isPickableProjectMember filter; both folder-name sites use workspaceFolderName
 d034b66f99	take	applied cleanly; every adapter helper it calls exists
 9534f2aab7	take	applied cleanly on the ported document worker chain
+1bd40a6427	take	applied cleanly; new test listed in the mobile react project
