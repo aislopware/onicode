@@ -4522,3 +4522,4 @@ f22ff0003b	take	desktop renderer taken (captions, TTML to WebVTT, SMIL read-alon
 958c26f0bf	take	kept Onicode's link label that also excludes [ and added upstream's capture group; kept Onicode's borrowed-checkout cwd and full-strength video border; kind probe is one Range: bytes=0-0 request per unknown GitHub upload, works over LAN/Tailscale/Funnel; GitLab has no mediaUrl
 ee385281f6	take	clean
 a1ea15e360	take	clean; web and mobile share ThreadUndo.restoresAfterDeviceCancel
+f4c5267d9a	take	test rebuilt with fflate zipSync and local dates (Onicode has no JSZip); mobile zipTree shows no dates

@@ -84,7 +84,7 @@ import { zipEntries, zipFixture } from "../../../test/zip";
 import { boundedZip } from "@onicode/client-runtime/zip/bounded-zip";
 import BinaryViewer from "./BinaryViewer";
 import { decodeImagePreview } from "./decodeImagePreview";
-import type { BinaryWorkerResult } from "./binaryPreviewProtocol";
+import { formatArchiveModifiedDate, type BinaryWorkerResult } from "./binaryPreviewProtocol";
 import type { TextPreviewResult } from "./largeTextProtocol";
 import type { ReactElement } from "react";
 import type { OfficeWorkerRequest, OfficeWorkerResult } from "./officePreviewProtocol";
@@ -317,6 +317,31 @@ describe("bounded binary previews", () => {
           ["empty.txt", "0 bytes"],
           ["readme.txt", "1 KB"],
         ]);
+      }, 10_000);
+    } finally {
+      URL.revokeObjectURL(src);
+    }
+  });
+
+  it("dates an archive folder by its own ZIP record when its children come first", async () => {
+    // fflate writes DOS dates in local time, so the dates are local too.
+    const fileDate = new Date(2022, 0, 2);
+    const zip = zipSync({
+      "docs/readme.txt": [strToU8("a".repeat(1024)), { mtime: fileDate }],
+      "docs/sub/nested.txt": [strToU8("b".repeat(1024)), { mtime: fileDate }],
+      "docs/": [new Uint8Array(), { mtime: new Date(2024, 9, 19) }],
+      "docs/sub/": [new Uint8Array(), { mtime: new Date(2023, 6, 8) }],
+      "docs/later.txt": [strToU8("c".repeat(1024)), { mtime: new Date(2025, 4, 6) }],
+    });
+    const src = URL.createObjectURL(new Blob([zip]));
+    try {
+      await using screen = await render(<BinaryViewer src={src} name="dates.zip" kind="archive" />);
+      await vi.waitFor(() => {
+        expect(
+          [...screen.container.querySelectorAll("tbody td")].map((cell) =>
+            cell.textContent?.trim(),
+          ),
+        ).toEqual(["docs", "3 KB", formatArchiveModifiedDate("2024-10-19T00:00:00.000")]);
       }, 10_000);
     } finally {
       URL.revokeObjectURL(src);
