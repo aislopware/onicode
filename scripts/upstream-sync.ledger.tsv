@@ -3890,3 +3890,163 @@ b6869fad67	take	feat(terminal): Add keybindings for cycling through terminals (#
 4065801a00	take	fix(web): pressing the Usage shortcut again closes Usage (#30459)
 39a8d1f33e	take	fix(scenarios): editor and no-model shims run on Windows (#42533)
 7e0d1cb9ba	take	fix(web): Link PR dialog stops duplicate Enter submits and locks input (#42548)
+801b32f3a6	take	kept Onicode's minimap request-ref (no setState per measure) with upstream's left/width hit strip; kept Onicode's narrowed rail transition-[left,right,translate] over transition-all
+e7a2d9fcea	take	taken as is
+f46f17e46f	take	kept Onicode's button size scale (hairline pass); compact/xs already had gap-1.5, applied only micro gap-1.5
+66a4d99d1d	take	taken as is
+b294e1096a	skip	kept Onicode's enriched-markdown fork (oni.27 from aislopware main): same software-mansion base 3a2c1ade as t3.19, Onicode syncs from the original upstream
+b530e1f304	take	applied to Onicode's react-native-keyboard-controller@1.24.0 patch (upstream patches 1.23.0)
+02d104f7e0	take	dropped relay telemetry IPC/env keys and npm release schemas from conflicts (removed surfaces/better-update); kept Onicode splash logo
+8576520f5f	take	taken as is
+1a3c772c65	take	kept Onicode's desktop catalog conflict side; rekeyed the 4 'Onicode' strings to Onicode's source hashes; dropped the duplicate HostProcess import upstream fixes in 17e1e01dbe/e7f1f81a21
+62e8042b21	take	taken as is
+36d6333885	take	dropped the BrowserSession.test.ts hunk (would delete Onicode's only HostProcess import); merged the onlyTestFiles mock into Onicode's test harness
+17e1e01dbe	skip	net no-op with e7f1f81a21; 1a3c772c65 was ported without upstream's duplicate HostProcess import, so Onicode's single import already matches upstream's end state
+3d4fd8346e	skip	kept Onicode's truncateSearchText in _chat.pull-requests.tsx: same fix, also covers host and selectedUrl, tested by pullRequestsRouteSearch.browser.test.ts
+e77d460e41	take	taken as is
+e7f1f81a21	skip	net no-op with 17e1e01dbe (restores the import it dropped); Onicode's BrowserSession.test.ts keeps its single HostProcess import throughout
+4da8d19d08	take	taken as is
+1a58fa61a6	take	adopted upstream's integer-ns window over Onicode's msToUnixNano(sinceMs): exact at epoch scale; kept Onicode's endNs comparison for numeric end times (exact where upstream compares float ms)
+d50a43e642	take	taken as is (shared ACP core; Antigravity/ACP tests pass)
+6667f3c089	take	kept Onicode's NFC-normalized minimap preview, added upstream's surrogate-safe slice
+89047261b1	take	taken as is
+4e6b1fa771	take	taken as is
+87479a6951	take	taken as is
+af276ccbb2	take	Cargo.lock regenerated for Onicode's sysinfo 0.40.4 (windows 0.62.2 already locked); Windows build left to CI (no local msvc target)
+6632511cd8	take	taken as is
+7be3a767cc	take	upstream migration 117 → Onicode 126_WorkflowMailSender; kept Onicode's AuthSessionState without sessionMethod (only optional sessionId added); kept Onicode's client label rule (label, else OS; no browser metadata) and moved it into EnvironmentAuth.clientSessionLabel; added clientLabel to Onicode's withThreadTools; dropped guest-share test entry; old mobile answering a requireReason choice without a reason is refused
+283de2e4d4	take	taken as is
+fbd939eb4c	take	taken as is
+03fa7cfc10	take	taken as is
+a03bbfc44a	take	taken as is
+2b84f4862c	take	taken as is
+e2c3c4250d	take	anchor reads Onicode's connectionRef viewport (no viewportRef); desktop menu renders every option on click, not virtualized (follow-up)
+20a3bed880	take	taken as is
+f43b1c19c8	take	taken as is
+3e74a0aac5	take	kept Onicode's boundedRedactedTail and redacted failure codes; verificationUrl is optionalKey (old mobile ignores it)
+22d9e73c0c	take	taken as is
+c925b9ab19	skip	only serves removed telemetry: Onicode has no AnalyticsService or relay tracing; isCiEnvironment would have no consumer
+2c95b69f25	take	taken as is
+471088cea1	take	taken as is
+5f1fcf789a	take	native fix (pingdotgg/react-native-screens 8083b77a9, header built on screen attach) cherry-picked onto aislopware/react-native-screens main as 5.0.0-oni.58 (tag oni-v5.0.0-oni.58) instead of the t3.63 tarball; new iOS fingerprint
+c8014ad590	take	taken as is
+282a1faea4	take	taken as is
+ef4a1643ed	skip	telemetry only: Onicode removed AnalyticsService, relay tracing and telemetry forwarding; nothing for DO_NOT_TRACK to switch off
+359e8c2723	take	taken as is
+39a154ff85	take	taken as is
+91f0b32e2d	take	dropped guestShare json_remove and sweep clause (guest links removed, 082 strips it); merged Onicode's turn-start cancellation with upstream's continue/title cancellation on thread.delete
+79be5ad616	take	kept Onicode's slot refunds and shared importBytes/decodedBytes budget (same fix already on main; upstream's second decompression budget doubles bytes read per scan); took upstream's 100-unreadable-sessions test, which passes
+c5d6aa19de	take	kept Onicode's last-wins topLevelCwd assignment, gated off for Pi
+80659c54a3	take	taken as is
+5ebb275c2b	take	taken as is
+4a8f2be96a	take	kept Onicode's background flag on finished launches, boundText/command/detail in normalizeAntigravityToolCall
+95411e3cd7	take	no guest-share input/case; readMenu/run split on Onicode's hook
+3b5033a28c	take	FeedbackReport hunk dropped (feature removed); budget re-measured to 66263; kept Onicode's handlers tests and added withdraw to them; one publish per claim (Onicode already published), after the milestone as upstream
+221953fbf3	take	kept Onicode's motion-reduce:transition-none on the positioner
+c6c8b20566	take	taken as is
+9b671699d4	take	gt patches rebuilt for format@0.1.11/gt-i18n@1.0.45; legendapp patch kept Onicode index lines; editor no longer remounts per draft (audited Inner state: only citation/isEmpty reset needed); PR panel keeps Onicode's … strings, colours, openLink/anchor handlers, markdown context headSha/borrowedCheckout
+6adff22d1a	take	taken as is
+ca81b7b97a	take	taken as is
+d8354f83e4	take	taken as is
+024da4f7bf	take	taken as is
+9827aba4b4	skip	T3 release version bump; Onicode versions through better-update
+4c8e6a0022	take	taken as is
+7dc7b29086	take	test placed before Onicode's capacity-retry test
+16acd71825	take	taken as is
+462596a0f7	take	migration upstream 118 -> Onicode 127; kept Onicode's per-step model read and added ahead; queue step kind is a wire break for old mobile on runs using pools (accepted, opt-in)
+2fbb071e0c	take	taken as is
+072611f65f	take	taken as is
+a05a8518f9	take	taken as is
+9eaac040de	skip	kept Onicode's injected clock in createSidebarShiftGuard; the race is already fixed
+9dc807ffde	take	taken as is
+d41f231a1f	take	taken as is
+b2f56cc0aa	take	taken as is
+07276c4197	take	taken as is
+feecca53e4	take	kept Onicode's per-package npm outdated fallback; added the registry probe timeout to it
+d38dcccef8	take	taken as is
+226113fee0	take	taken as is
+b125918f4b	take	test uses Onicode's fflate zip fixture (files override) instead of JSZip
+341864854b	take	applied to service/bootService.ts (moved from cloud/); span renamed service.boot_service.*
+c8b4a49b2b	take	taken as is
+b042e4ee75	take	taken as is
+a686952304	take	test keeps Onicode's Map archive fixture
+009ae578d0	take	taken as is
+f9da246cd5	take	adopted upstream's start at position 0 for the delegation scan; readThread no longer retries -1; kept readFromStartOrRetry for agent-forwarded oni_thread_read
+4a34889e28	take	taken as is
+e8fb0a0d43	take	entry skills wired at Onicode's registry-root push; no claimedPluginNames (Onicode has no synced bucket); inline and archive roots unchanged
+45a3880ce1	take	taken as is
+21a96989b0	take	kept PULL_REQUESTS_PANEL_REF import
+f99eceb76d	take	kept Onicode's notice branch; both reasoning previews use sliceThoughtPreviewSource
+dca3ab2025	take	taken as is
+3a63e0ca37	take	tests only: Onicode's issue list already carries data-thread-details-issue-list outside density; added it to the overflow it.each
+f7d6796019	take	added code page 54936 and its row; kept Onicode's streaming 64 KiB RTF buffer (no output cap tied to buffer size; gb18030-raw case covers long runs)
+0f9bb6e0e7	take	Swift hunks re-applied to Onicode's react-native-keyboard-controller 1.24.0 patch (rebuilt against pristine 1.24.0); lockfile from vp i; native change, needs a store build
+c478fde9fe	take	taken as is
+cef38e408d	take	taken as is
+91d6c05ac4	take	taken as is
+2f7b7f03e3	skip	already done: Onicode's IssueDetailPanel routes the issue number through anchorOpenHandlers(openLink, url), which also handles middle click
+e849afabb4	take	taken as is
+f7ec366acd	take	taken as is
+1c3f0ee88f	skip	removed surface: only touches the relay ManagedEndpointRuntime, which Onicode removed
+c991a91ec6	take	code page added to Onicode's rtfCodePage; scenario ported to desktop (ControlOrMeta+p)
+e6738fd8bc	take	kept Onicode's withWorkspaceLease(fileSystem, path, cwd, ...) and added the snapshot map; new fields optional and opt-in, old mobile unaffected
+25bbfb34c8	skip	T3 release pipeline and server-served web UI: the asset manifest is read only by upstream's static web serving, which Onicode removed
+e3f7eb5085	take	taken as is
+aacdaba15c	take	taken as is
+d2a9b77499	skip	already solved differently: Onicode's WorkflowAgentLinks.reply scans forward from afterPosition -1 and linked cursorless reads page forward since 0c5c01eab8, so a reply on an older page is never missed
+8f5fd287a4	take	taken as is
+19a6e5b57b	take	taken as is
+f1efcfb494	skip	removed surface: agent feedback reports to T3 through telemetry; feedbackRequest.ts does not exist in Onicode
+7814c9f884	skip	already solved differently: Onicode's wslServiceRegistered reads the service keys through the native WindowsRegistry (advapi32), which the reg.exe policy cannot block
+6cca0b1864	take	taken as is
+172309c39c	take	kept Onicode's useStableCallback + minimapRequested dedupe; measurement now uses the lane's side gutter
+9de5a941ea	take	taken as is
+8783b9d2ea	take	only the toast key swapped in each locale (guest-share context removed)
+9301770ae9	take	taken as is
+80cac28f5a	take	taken as is
+45c011e218	take	taken as is
+b61af8a5d2	take	taken as is
+b4a5a4927f	take	the width seed was already in from the 9b671699d4 follow-up; upstream's comment and test (as a second it, with using disposal) adopted
+e045a127e7	take	kept Onicode's anchorOpenHandlers in a small WebSearchResultLink (remote-safe system opens, middle click); upstream's MessagesTimeline mock-wiring test dropped
+c14e9f9717	take	taken as is; cleared.pendingControlSequence is optional, old mobile only loses the replay
+3373a78606	take	scenario ported to desktop with Settings scoped to the sidebar
+acd4fc67b9	take	test fixture uses Onicode's loopback auth and no relayManaged; scenario ported to desktop
+aef22ed239	skip	T3 Connect CLI, removed in Onicode
+831f240882	take	taken as is
+14cc3d1d38	take	taken as is
+83a7c75b88	take	kept Onicode's archived-copy guard in the picker; scenario ported to desktop
+2891419b93	take	taken as is
+b20bb177b5	take	LINE_START yield placed in Onicode's paragraphs() non-p branch
+0f55a0dc37	take	archive test builds its zip with fflate (no JSZip in Onicode)
+9e385083d6	take	stop check added after Onicode's waiting-run guard; row added to Onicode's compaction-object table
+67918f51cc	take	selector keeps Onicode's context-breakdown list and adds repository overflow
+a76e554784	take	taken as is
+867a9f0aec	take	taken as is
+4122ddbb16	take	taken as is
+4568a1b741	take	kept Onicode's text-ui size
+41d5875e5d	take	kept Onicode's recordActiveModel in start and passes the resumed flag; driver test case added beside Onicode's build-refresh test
+a3a4592cf5	take	adopted upstream over Onicode's interruptedPasteRecovery (desktop half of 5db9717004): the conditional expectedPid write covers Onicode's case and also drops the retain that held reply ownership; scenario ported to desktop
+1c4622955a	take	taken as is
+6bb4e3d9d6	take	kept Onicode's anchorOpenHandlers code; only the tests ported (IssueDetailPanel test file created, mocks keep the real helper)
+e36800e61b	take	taken as is
+3b827b4fb3	take	taken as is
+9df77f2125	take	taken as is
+b1360538c1	take	taken as is
+7d8c03fd99	take	adopted upstream's paste session write over Onicode's input/enqueue (mobile half of 5db9717004); Onicode's restart-drop test kept with the abort write; binary mouse reports keep ordering but send no phases; scenario ported to desktop
+2313dfadad	take	startSettled passed through Onicode's withWorkspaceLease signature; only Cursor implements nativeTurnKept
+f84c716839	take	taken as is
+487a29b916	take	row walk skips HIDDEN plus caption via a hoisted Set
+93b8dc3465	take	taken as is; visibleWhen is an optional annotation
+667cb3b255	skip	only serves T3 Connect: works around Cloudflare replacing 502 bodies; Onicode has no Cloudflare hop and no client branches on these statuses
+e242ed0e1a	take	kept Onicode's banner text; only the condition changed
+cbc3057f59	take	kept Onicode's stricter workEntryViewedImagePath and frame styles; adopted the pending loading frame (inProgress becomes pending) and the pending props; scenario ported to desktop
+09385a33ce	take	taken as is
+03c0b31315	skip	already done: Onicode reads a SKILL.md only in child/manifest folders, and its 'scans an automatic root's children and ignores a SKILL.md in the root' test covers all four roots
+60eed627d0	take	kept Onicode's PullRequestTimelineTab (already routes through useOpenLink); only the test ported
+9ea5044aef	take	taken as is
+0180628cf7	take	FNM_MULTISHELL_PATH added beside Onicode's PNPM_HOME; kept the JAVA_HOME/PNPM_HOME loop
+82e6b02980	take	taken as is
+73c48a4341	take	kept Onicode's commandsForUnvisitedWorkspace as the last fallback after upstream's workspaceCommands, in session start and snapshotForCwd
+dc5ae5ce63	take	test builds the ODS from a Map like its neighbours (no JSZip in Onicode)
+cecbe8a89a	take	taken as is
+96423cb5e2	take	server keyring dependency dropped (desktop keeps it for ChromiumKeys); lockfile regenerated; Onicode's local Antigravity token-usage readers stay. Removes Antigravity quota windows from Usage → Limits, hub pools and limit routing (Google allows only ACP clients)

@@ -2,6 +2,7 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import type * as NodeHttp from "node:http";
 import type * as NodeStream from "node:stream";
+import type { DatabaseMigrationProgress, ServerStartupStatus } from "@onicode/contracts";
 
 export function guardHttpResponseWriteErrors<T extends NodeHttp.Server>(
   server: T,
@@ -50,9 +51,21 @@ export function keepIdleConnections<T extends NodeHttp.Server>(server: T): T {
  * between would hang. Its own pre-listen fallback stays silent while any other
  * request listener exists, so only a listener added after listening takes over.
  */
-export function rejectRequestsUntilServing<T extends NodeHttp.Server>(server: T): T {
+export function rejectRequestsUntilServing<T extends NodeHttp.Server>(
+  server: T,
+  migrationProgress: () => DatabaseMigrationProgress | null = () => null,
+): T {
   const rejectRequest = (_request: NodeHttp.IncomingMessage, response: NodeHttp.ServerResponse) => {
-    response.writeHead(503, { "retry-after": "1", connection: "close" }).end();
+    const status: ServerStartupStatus = { status: "starting", migration: migrationProgress() };
+    response
+      .writeHead(503, {
+        "retry-after": "1",
+        connection: "close",
+        "cache-control": "no-store",
+        "content-type": "application/json; charset=utf-8",
+        "x-content-type-options": "nosniff",
+      })
+      .end(JSON.stringify(status));
   };
   const rejectUpgrade = (_request: NodeHttp.IncomingMessage, socket: NodeStream.Duplex) => {
     socket.end(

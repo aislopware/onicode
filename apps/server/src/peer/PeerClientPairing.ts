@@ -164,10 +164,11 @@ const make = Effect.gen(function* () {
   /** What this environment's Connections calls the client that asked. */
   const clientLabelOf = (sessionId: AuthSessionId) =>
     auth.listClientSessions(sessionId).pipe(
-      Effect.map((sessions) => {
-        const client = sessions.find((session) => session.sessionId === sessionId)?.client;
-        return client?.label?.trim() || client?.os?.trim() || "Onicode client";
-      }),
+      Effect.map((sessions) =>
+        EnvironmentAuth.clientSessionLabel(
+          sessions.find((session) => session.sessionId === sessionId)?.client,
+        ),
+      ),
       Effect.orElseSucceed(() => "Onicode client"),
     );
 

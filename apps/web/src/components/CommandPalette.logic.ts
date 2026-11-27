@@ -13,6 +13,7 @@ import {
 } from "@onicode/shared/paletteSearch";
 import { threadSearchSubject } from "@onicode/client-runtime/state/thread-search";
 import type { CommandPaletteLinkedThreads } from "../commandPaletteBus";
+import type { DraftId } from "../composerDraftStore";
 import {
   addProjectRemoteSourceLabel,
   addProjectRemoteSourcePathHint,
@@ -82,7 +83,12 @@ export function browseInputEndPaddingClass(input: {
 export type SearchOverlayMode = "command" | "files" | "content";
 
 export type CommandPaletteOpenIntent =
-  | { readonly kind: "add-project" | "new-thread-in" | "change-theme" }
+  | { readonly kind: "new-thread-in" | "change-theme" }
+  | {
+      readonly kind: "add-project";
+      /** The draft a project is being picked for; one with user content moves to it. */
+      readonly draftId?: DraftId;
+    }
   | {
       readonly kind: "search";
       readonly query: string;
@@ -108,7 +114,7 @@ export type CommandPaletteUiAction =
       readonly query: string;
       readonly linkedThreads?: CommandPaletteLinkedThreads;
     }
-  | { readonly _tag: "OpenAddProject" }
+  | { readonly _tag: "OpenAddProject"; readonly draftId?: DraftId }
   | { readonly _tag: "OpenNewThreadIn" }
   | { readonly _tag: "OpenChangeTheme" }
   | {
@@ -163,7 +169,10 @@ export function reduceCommandPaletteUiState(
         ...(action.linkedThreads ? { linkedThreads: action.linkedThreads } : {}),
       });
     case "OpenAddProject":
-      return openWithIntent({ kind: "add-project" });
+      return openWithIntent({
+        kind: "add-project",
+        ...(action.draftId ? { draftId: action.draftId } : {}),
+      });
     case "OpenNewThreadIn":
       return openWithIntent({ kind: "new-thread-in" });
     case "OpenChangeTheme":

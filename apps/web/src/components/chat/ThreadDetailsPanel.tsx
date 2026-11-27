@@ -11,7 +11,7 @@ import { scopedThreadKey, scopeProjectRef } from "@onicode/client-runtime/enviro
 import { providerSessionViews } from "@onicode/client-runtime/provider-session-views";
 import { isScratchProject } from "@onicode/client-runtime/state/projects";
 import type { ComposerThreadTarget, DraftId } from "../../composerDraftStore";
-import { useOniProjectFileScripts } from "../../hooks/useOniProjectFileScripts";
+import { useOniProjectFileState } from "../../hooks/useOniProjectFileScripts";
 import { type EnvMode, type EnvironmentOption } from "../BranchToolbar.logic";
 import { BranchToolbar } from "../BranchToolbar";
 import GitActionsControl from "../GitActionsControl";
@@ -102,7 +102,7 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
   const visible = useClientSettings(resolveThreadDetailsVisibility);
   const gt = useGT();
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
-  const fileScripts = useOniProjectFileScripts(
+  const oniFile = useOniProjectFileState(
     props.environmentId,
     props.activeProjectScripts && visible.scripts ? props.gitCwd : null,
   );
@@ -253,7 +253,8 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                         environmentId={props.environmentId}
                         displayMode="panel"
                         scripts={props.activeProjectScripts}
-                        fileScripts={fileScripts}
+                        fileScripts={oniFile.scripts}
+                        onActionsMenuOpen={oniFile.refresh}
                         preferredScriptId={props.preferredScriptId}
                         onRunScript={props.onRunProjectScript}
                         onAddScript={props.onAddProjectScript}

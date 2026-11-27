@@ -17200,11 +17200,17 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         return {
           events: plans.flatMap((plan) => plan.events),
           effects: plans.flatMap((plan) => plan.effects),
-          // Turn starts retry past their budget while a run is starting; one queued
-          // ahead would otherwise hold the deletion's cleanup behind it forever.
+          // Turn starts retry past their budget while a run is starting, so one queued ahead would
+          // hold the deletion's cleanup forever; a continuation would hold off the purge, and a late
+          // title would bring text back.
           cancelUnsettledEffects: {
-            effectTypes: ["provider-turn.start", "provider-turn.restart"],
-            reason: `Thread ${command.threadId} was deleted before its provider turn started.`,
+            effectTypes: [
+              "provider-turn.start",
+              "provider-turn.restart",
+              "provider-runtime.continue",
+              "thread-title.generate",
+            ],
+            reason: `Thread ${command.threadId} was deleted.`,
           },
         };
       }

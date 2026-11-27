@@ -1,7 +1,14 @@
-import { chunkTerminalWrite } from "@onicode/contracts";
+import {
+  chunkTerminalWrite,
+  terminalWritePhase,
+  type TerminalWriteInput,
+} from "@onicode/contracts";
 
 /** Sends one chunk of terminal input; resolves false when it failed and the rest should drop. */
-type SendTerminalChunk = (chunk: string) => Promise<boolean | "not-dispatched">;
+type SendTerminalChunk = (
+  chunk: string,
+  framing?: Pick<TerminalWriteInput, "bracketedPaste" | "plainWrite">,
+) => Promise<boolean | "not-dispatched">;
 
 /**
  * Orders one terminal's input into writes that fit `terminal.write`. A split write goes one chunk
@@ -23,31 +30,39 @@ export function createTerminalInputWriter(onIdle = () => {}) {
     data: string,
     chunks: ReadonlyArray<string>,
     send: SendTerminalChunk,
-    recover: () => Promise<boolean>,
+    recover: (bracketed: boolean) => Promise<boolean>,
     interrupted: () => void,
   ) => {
     if (closeInterruptedPaste !== null && !(await closePaste())) {
       interrupted();
       return;
     }
-    const bracketed =
-      chunks.length > 1 && data.startsWith("\x1b[200~") && data.endsWith("\x1b[201~");
+    const split = chunks.length > 1;
+    const bracketed = split && data.startsWith("\x1b[200~") && data.endsWith("\x1b[201~");
     let opened = false;
     try {
-      for (const chunk of chunks) {
-        const result = await send(chunk);
+      for (const [index, chunk] of chunks.entries()) {
+        const phase = terminalWritePhase(index, chunks.length);
+        const result = await send(
+          chunk,
+          phase ? (bracketed ? { bracketedPaste: phase } : { plainWrite: phase }) : undefined,
+        );
         if (result !== true) {
-          if (result !== "not-dispatched") opened = bracketed;
-          if (chunks.length > 1) interrupted();
+          if (result !== "not-dispatched") opened = split;
+          if (split) interrupted();
           return;
         }
-        opened = bracketed;
+        opened = split;
       }
       opened = false;
     } finally {
       if (opened) {
-        closeInterruptedPaste = recover;
-        await closePaste();
+        if (bracketed) {
+          closeInterruptedPaste = () => recover(true);
+          await closePaste();
+        } else {
+          await recover(false);
+        }
       }
     }
   };
@@ -55,7 +70,10 @@ export function createTerminalInputWriter(onIdle = () => {}) {
   return (
     data: string,
     send: SendTerminalChunk,
-    recover: () => Promise<boolean> = async () => (await send("\x1b[201~")) === true,
+    recover: (bracketed: boolean) => Promise<boolean> = async (bracketed) =>
+      (await (bracketed
+        ? send("\x1b[201~", { bracketedPaste: "abort" })
+        : send("", { plainWrite: "abort" }))) === true,
     interrupted = () => {},
   ): Promise<void> => {
     const idle = () => {
@@ -90,29 +108,14 @@ export function createTerminalInputWriter(onIdle = () => {}) {
   };
 }
 
-/**
- * What an interrupted bracketed paste still needs: `close` writes the closing marker, `wait` holds
- * while the pid is unknown, `done` discharges it because the process that saw it open has ended.
- */
-export function interruptedPasteRecovery(
-  openedPid: number | null,
-  current: { readonly status: string; readonly pid: number | null },
-): "close" | "wait" | "done" {
-  if (current.status === "exited" || current.status === "closed") return "done";
-  if (current.pid === null) return "wait";
-  return openedPid !== null && current.pid !== openedPid ? "done" : "close";
-}
-
 const writers = new Map<string, ReturnType<typeof createTerminalInputWriter>>();
 
 /** Retain ordering and framing obligations until acknowledged, across terminal view remounts. */
-export function terminalInputWriter(key: string, retain: () => () => void) {
+export function terminalInputWriter(key: string) {
   const existing = writers.get(key);
   if (existing) return existing;
-  const release = retain();
   const writer = createTerminalInputWriter(() => {
     if (writers.get(key) === writer) writers.delete(key);
-    release();
   });
   writers.set(key, writer);
   return writer;

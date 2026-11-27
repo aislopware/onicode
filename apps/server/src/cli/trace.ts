@@ -44,9 +44,14 @@ const msToUnixNano = (ms: number): bigint => {
   return BigInt(wholeMs) * NS_PER_MS + BigInt(Math.round((ms - wholeMs) * 1_000_000));
 };
 
-export function makeTraceSpanSummary(sinceMs = -Infinity) {
+export function makeTraceSpanSummary(window?: { nowMs: number; duration: Duration.Duration }) {
+  const sinceMs = window ? window.nowMs - Duration.toMillis(window.duration) : -Infinity;
+  // Integer nanoseconds: `now - duration` in float ms loses sub-microsecond precision at epoch scale.
+  const sinceNs =
+    window && Duration.isFinite(window.duration)
+      ? BigInt(window.nowMs) * NS_PER_MS - Duration.toNanosUnsafe(window.duration)
+      : undefined;
   const byName = new Map<string, { durations: number[]; interrupted: number; failures: number }>();
-  const sinceNs = Number.isFinite(sinceMs) ? msToUnixNano(sinceMs) : undefined;
   let spanCount = 0;
   let skippedLineCount = 0;
   let firstEndNs: bigint | undefined;
@@ -199,10 +204,10 @@ const traceSummaryCommand = Command.make("summary", {
       const traceFilePath =
         (yield* traceFileConfig) ??
         (yield* ServerConfig.deriveServerPaths(baseDir, false)).serverTracePath;
-      const sinceMs = Option.isSome(flags.since)
-        ? (yield* Clock.currentTimeMillis) - Duration.toMillis(flags.since.value)
+      const window = Option.isSome(flags.since)
+        ? { nowMs: yield* Clock.currentTimeMillis, duration: flags.since.value }
         : undefined;
-      const summarizer = makeTraceSpanSummary(sinceMs);
+      const summarizer = makeTraceSpanSummary(window);
       yield* Effect.forEach(
         toRotatedTracePaths(traceFilePath, yield* traceMaxFilesConfig),
         (path) => streamTraceFileLines(fs, path, summarizer.addLine),
@@ -212,7 +217,7 @@ const traceSummaryCommand = Command.make("summary", {
 
       yield* Console.log(
         summary.spanCount === 0
-          ? `No spans found in ${traceFilePath} or its rotated files${sinceMs === undefined ? "" : " in that window"}.${summary.skippedLineCount > 0 ? ` Skipped ${summary.skippedLineCount} lines that are not spans.` : ""}`
+          ? `No spans found in ${traceFilePath} or its rotated files${window === undefined ? "" : " in that window"}.${summary.skippedLineCount > 0 ? ` Skipped ${summary.skippedLineCount} lines that are not spans.` : ""}`
           : formatTraceSummary(summary, flags.limit),
       );
     }),

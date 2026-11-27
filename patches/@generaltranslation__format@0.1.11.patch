@@ -1,0 +1,98 @@
+diff --git a/dist/index.cjs b/dist/index.cjs
+index 97840bdde6c116f43ed0d9719a8b5180aa07955b..44b263da92b952072f1707fe4d9b37a18b4a246c 100644
+--- a/dist/index.cjs
++++ b/dist/index.cjs
+@@ -248,7 +248,7 @@ const validityCache = /* @__PURE__ */ new Map();
+ * @returns {boolean} True if the BCP 47 code is valid, false otherwise.
+ * @internal
+ */
+-const _isValidLocale = (locale, customMapping) => {
++const _isValidLocaleUncached = (locale, customMapping) => {
+ 	locale = getCustomLocaleCode(customMapping, locale) || locale;
+ 	let isValid = validityCache.get(locale);
+ 	if (isValid === void 0) {
+@@ -276,6 +276,19 @@ const validateLocaleCode = (locale) => {
+ 		return false;
+ 	}
+ };
++// Onicode patch: validity is a pure function of the locale and mapping, and useGT asks on every render.
++const validLocaleCache = new Map();
++const validLocaleCacheByMapping = new WeakMap();
++const _isValidLocale = (locale, customMapping) => {
++	let cache = validLocaleCache;
++	if (customMapping) {
++		cache = validLocaleCacheByMapping.get(customMapping);
++		if (!cache) validLocaleCacheByMapping.set(customMapping, cache = new Map());
++	}
++	let valid = cache.get(locale);
++	if (valid === void 0) cache.set(locale, valid = _isValidLocaleUncached(locale, customMapping));
++	return valid;
++};
+ /**
+ * Standardizes a BCP 47 locale to ensure correct formatting.
+ * @param {string} locale - The BCP 47 locale to standardize.
+@@ -330,7 +343,15 @@ function _prepareApprovedLocales(approvedLocales, customMapping) {
+ * "en-GB" and "en-US" would be different.
+ * @internal
+ */
++// Onicode patch: same reasoning as _isValidLocale; the comparison only depends on the locale strings.
++const sameDialectCache = new Map();
+ function _isSameDialect(...locales) {
++	const key = JSON.stringify(locales.flat());
++	let same = sameDialectCache.get(key);
++	if (same === void 0) sameDialectCache.set(key, same = _isSameDialectUncached(...locales));
++	return same;
++}
++function _isSameDialectUncached(...locales) {
+ 	try {
+ 		const localeObjects = locales.flat().map((locale) => require_IntlCache.intlCache.get("Locale", _standardizeLocale(locale)));
+ 		const [firstLocale] = localeObjects;
+diff --git a/dist/index.mjs b/dist/index.mjs
+index 3dffaf234c33d87af1fea0440b9c95d41100f953..32e97aeceaa2ddb24caf8caecab86ee6a27e9f16 100644
+--- a/dist/index.mjs
++++ b/dist/index.mjs
+@@ -247,7 +247,7 @@ const validityCache = /* @__PURE__ */ new Map();
+ * @returns {boolean} True if the BCP 47 code is valid, false otherwise.
+ * @internal
+ */
+-const _isValidLocale = (locale, customMapping) => {
++const _isValidLocaleUncached = (locale, customMapping) => {
+ 	locale = getCustomLocaleCode(customMapping, locale) || locale;
+ 	let isValid = validityCache.get(locale);
+ 	if (isValid === void 0) {
+@@ -275,6 +275,19 @@ const validateLocaleCode = (locale) => {
+ 		return false;
+ 	}
+ };
++// Onicode patch: validity is a pure function of the locale and mapping, and useGT asks on every render.
++const validLocaleCache = new Map();
++const validLocaleCacheByMapping = new WeakMap();
++const _isValidLocale = (locale, customMapping) => {
++	let cache = validLocaleCache;
++	if (customMapping) {
++		cache = validLocaleCacheByMapping.get(customMapping);
++		if (!cache) validLocaleCacheByMapping.set(customMapping, cache = new Map());
++	}
++	let valid = cache.get(locale);
++	if (valid === void 0) cache.set(locale, valid = _isValidLocaleUncached(locale, customMapping));
++	return valid;
++};
+ /**
+ * Standardizes a BCP 47 locale to ensure correct formatting.
+ * @param {string} locale - The BCP 47 locale to standardize.
+@@ -329,7 +342,15 @@ function _prepareApprovedLocales(approvedLocales, customMapping) {
+ * "en-GB" and "en-US" would be different.
+ * @internal
+ */
++// Onicode patch: same reasoning as _isValidLocale; the comparison only depends on the locale strings.
++const sameDialectCache = new Map();
+ function _isSameDialect(...locales) {
++	const key = JSON.stringify(locales.flat());
++	let same = sameDialectCache.get(key);
++	if (same === void 0) sameDialectCache.set(key, same = _isSameDialectUncached(...locales));
++	return same;
++}
++function _isSameDialectUncached(...locales) {
+ 	try {
+ 		const localeObjects = locales.flat().map((locale) => intlCache.get("Locale", _standardizeLocale(locale)));
+ 		const [firstLocale] = localeObjects;

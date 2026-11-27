@@ -29,6 +29,8 @@ import {
   AuthFilesystemReadScope,
   AuthOrchestrationOperateScope,
   AuthTerminalOperateScope,
+  TerminalProcessChangedError,
+  type TerminalWriteInput,
   type ContextMenuItem,
   type ProjectId,
   type ProviderInstanceId,
@@ -94,7 +96,7 @@ import { readEnvironmentScope } from "../state/session";
 import { terminalEnvironment } from "../state/terminal";
 import { useEnvironmentScope } from "../state/session";
 import { openTerminalLinkInPreview } from "./preview/openTerminalLinkInPreview";
-import { interruptedPasteRecovery, terminalInputWriter } from "./terminal/terminalInputWriter";
+import { terminalInputWriter } from "./terminal/terminalInputWriter";
 import { useAtomCommand } from "../state/use-atom-command";
 import { preventTerminalCloseShortcut } from "../lib/terminalCloseShortcut";
 import { observeResize } from "../lib/observeResize";
@@ -172,6 +174,15 @@ export function writeTerminalOutputUpdate(
   } else if (update.type === "append") {
     terminal.write(update.data);
   }
+}
+
+// Full-screen apps such as vim read their own modified arrows; shell motions would break them.
+export function terminalPromptNavigationData(
+  terminal: Pick<GhosttyTerminalSurface, "isAlternateScreen">,
+  event: KeyboardEvent,
+  platform?: string,
+): string | null {
+  return terminal.isAlternateScreen() ? null : terminalNavigationShortcutData(event, platform);
 }
 
 // Avoid formatting unbounded scrollback selections on every output update.
@@ -444,6 +455,8 @@ function terminalContextMenuItems(options: {
     { id: "scroll-to-bottom", label: m(msg("Jump to latest")) },
   ];
 }
+
+const isTerminalProcessChanged = Schema.is(TerminalProcessChangedError);
 
 /**
  * A writable session's output generation. A new one is a fresh PTY (or a
@@ -961,14 +974,21 @@ function TerminalSessionViewport({
         }
       };
 
-      const readInputSession = () => appAtomRegistry.get(terminalSessionAtom);
       const canWriteInput = () => readEnvironmentScope(environmentId, AuthTerminalOperateScope);
-      const writeInputChunk = (data: string, kind?: "binary" | "reply") =>
+      const writeInputChunk = (
+        data: string,
+        kind?: "binary" | "reply",
+        options?: Pick<TerminalWriteInput, "bracketedPaste" | "plainWrite" | "expectedPid">,
+      ) =>
         retainedTerminalWrite.current({
           environmentId,
-          input: kind
-            ? { threadId, terminalId, data, [kind]: true }
-            : { threadId, terminalId, data },
+          input: {
+            threadId,
+            terminalId,
+            data,
+            ...(kind === undefined ? {} : { [kind]: true }),
+            ...options,
+          },
         });
       const sendTerminalInput = (
         data: string,
@@ -983,7 +1003,6 @@ function TerminalSessionViewport({
         if (generation === null) return;
         const writeInput = terminalInputWriter(
           JSON.stringify([environmentId, threadId, terminalId]),
-          () => appAtomRegistry.mount(terminalSessionAtom),
         );
         let reported = false;
         const report = (message: string) => {
@@ -993,36 +1012,74 @@ function TerminalSessionViewport({
         };
         return writeInput(
           data,
-          async (chunk) => {
-            const currentSession = readInputSession();
+          async (chunk, framing) => {
+            if (terminalRef.current !== terminal) return "not-dispatched";
+            const currentSession = appAtomRegistry.get(terminalSessionAtom);
             if (
-              terminalRef.current !== terminal ||
               currentSession.lifecycleVersion !== lifecycleVersion ||
               writableSessionGeneration(currentSession, canWriteInput()) !== generation
             ) {
               return "not-dispatched";
             }
-            const result = await writeInputChunk(chunk, kind);
+            const expectedPid =
+              framing && session.supportsConditionalWrites ? session.pid : undefined;
+            if (expectedPid === null) return "not-dispatched";
+            const result = await writeInputChunk(chunk, kind, {
+              ...(kind ? {} : framing),
+              ...(expectedPid === undefined ? {} : { expectedPid }),
+            });
             if (result._tag === "Success") return true;
+            const error = squashAtomCommandFailure(result);
+            if (isTerminalProcessChanged(error)) return "not-dispatched";
             if (terminalRef.current === terminal && !isAtomCommandInterrupted(result)) {
-              const error = squashAtomCommandFailure(result);
               report(thrownErrorMessage(error, m) ?? fallbackError);
             }
             return false;
           },
-          // Close the bracket only for the process that saw it open; wait while its pid is unknown.
-          async () => {
-            const current = readInputSession();
-            const recovery = interruptedPasteRecovery(session.summary?.pid ?? null, {
-              status: current.status,
-              pid: current.summary?.pid ?? null,
+          // The attachment's PID stays with the paste even after the viewport detaches.
+          async (bracketed) => {
+            if (kind || session.pid === null) return true;
+            const expectedPid = session.supportsConditionalWrites ? session.pid : undefined;
+            const pidGuard = expectedPid === undefined ? {} : { expectedPid };
+            if (!bracketed) {
+              // Only releases the server's hold, which also ends when that process exits.
+              const current = appAtomRegistry.get(terminalSessionAtom);
+              if (current.lifecycleVersion !== lifecycleVersion) return true;
+              await writeInputChunk("", undefined, { plainWrite: "abort", ...pidGuard });
+              return true;
+            }
+            if (!canWriteInput()) return false;
+            if (!session.supportsConditionalWrites) {
+              const attached =
+                terminalRef.current === terminal ? appAtomRegistry.get(terminalSessionAtom) : null;
+              if (attached && attached.version > 0) {
+                if (attached.status === "closed" || attached.status === "exited") return true;
+                if (attached.pid !== null && attached.pid !== session.pid) return true;
+              }
+              const metadata = appAtomRegistry.get(
+                terminalEnvironment.metadata({ environmentId, input: null }),
+              );
+              if (!AsyncResult.isSuccess(metadata)) return false;
+              const current = metadata.value.find(
+                (item) => item.threadId === threadId && item.terminalId === terminalId,
+              );
+              if (current?.pid == null) return false;
+              if (attached) {
+                // An unguarded write needs both streams to agree the original PTY is running.
+                if (attached.status !== "running" || attached.pid !== current.pid) return false;
+              } else if (current.pid !== session.pid || current.status === "exited") {
+                return true;
+              }
+              if (current.status !== "running" || current.pid !== session.pid) return false;
+            }
+            const result = await writeInputChunk("\x1b[201~", undefined, {
+              bracketedPaste: "abort",
+              ...pidGuard,
             });
-            if (recovery !== "close") return recovery === "done";
-            if (writableSessionGeneration(current, canWriteInput()) === null) return false;
-            const result = await writeInputChunk("\x1b[201~");
             if (result._tag === "Success") return true;
+            const error = squashAtomCommandFailure(result);
+            if (isTerminalProcessChanged(error)) return true;
             if (!isAtomCommandInterrupted(result)) {
-              const error = squashAtomCommandFailure(result);
               report(thrownErrorMessage(error, m) ?? m(msg("Failed to close interrupted paste")));
             }
             return false;
@@ -1053,7 +1110,10 @@ function TerminalSessionViewport({
           return false;
         }
 
-        const navigationData = terminalNavigationShortcutData(event);
+        const activeTerminal = terminalRef.current;
+        const navigationData = activeTerminal
+          ? terminalPromptNavigationData(activeTerminal, event)
+          : null;
         if (navigationData !== null) {
           event.preventDefault();
           event.stopPropagation();

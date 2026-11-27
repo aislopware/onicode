@@ -12,6 +12,18 @@ index 785118a..8de7e78 100644
      const isAtEnd = isContentLess || distanceFromEnd <= EDGE_POSITION_EPSILON;
      const deferEndExit = !isAtEnd && state.measuringContainersInLayout && (maintainingScrollAtEnd === "pending-instant" || maintainingScrollAtEnd === "pending-animated") && !state.endFollowInterrupted && peek$(ctx, "isAtEnd");
      if (!deferEndExit) set$(ctx, "isAtEnd", isAtEnd);
+@@ -8288,7 +8289,10 @@ function createImperativeHandle(ctx, scheduleImperativeScrollCommit) {
+       contentLength: getContentSize(ctx),
+       data: state.props.data,
+       dataKey: state.props.dataKey,
+-      distanceFromEnd: Math.max(0, getContentSize(ctx) - getObservedScrollOffset(ctx) - state.scrollLength),
++      // Onicode patch: computed on read; the scroll read forces a layout every getState() caller paid for.
++      get distanceFromEnd() {
++        return Math.max(0, getContentSize(ctx) - getObservedScrollOffset(ctx) - state.scrollLength);
++      },
+       elementAtIndex: (index) => {
+         var _a3;
+         return (_a3 = ctx.viewRefs.get(findContainerId(ctx, getId(state, index)))) == null ? void 0 : _a3.current;
 diff --git a/react-native.mjs b/react-native.mjs
 index 8aae009..5be85dc 100644
 --- a/react-native.mjs
@@ -26,6 +38,50 @@ index 8aae009..5be85dc 100644
      const isAtEnd = isContentLess || distanceFromEnd <= EDGE_POSITION_EPSILON;
      const deferEndExit = !isAtEnd && state.measuringContainersInLayout && (maintainingScrollAtEnd === "pending-instant" || maintainingScrollAtEnd === "pending-animated") && !state.endFollowInterrupted && peek$(ctx, "isAtEnd");
      if (!deferEndExit) set$(ctx, "isAtEnd", isAtEnd);
+@@ -8267,7 +8268,10 @@ function createImperativeHandle(ctx, scheduleImperativeScrollCommit) {
+       contentLength: getContentSize(ctx),
+       data: state.props.data,
+       dataKey: state.props.dataKey,
+-      distanceFromEnd: Math.max(0, getContentSize(ctx) - getObservedScrollOffset(ctx) - state.scrollLength),
++      // Onicode patch: computed on read; the scroll read forces a layout every getState() caller paid for.
++      get distanceFromEnd() {
++        return Math.max(0, getContentSize(ctx) - getObservedScrollOffset(ctx) - state.scrollLength);
++      },
+       elementAtIndex: (index) => {
+         var _a3;
+         return (_a3 = ctx.viewRefs.get(findContainerId(ctx, getId(state, index)))) == null ? void 0 : _a3.current;
+diff --git a/react-native.web.js b/react-native.web.js
+index ca0217afce6086dcd0bb6d50492abd7a624cd2ae..43db6848f3303fe6628e2402ce6d7df6c1b06c53 100644
+--- a/react-native.web.js
++++ b/react-native.web.js
+@@ -9024,7 +9024,10 @@ function createImperativeHandle(ctx, scheduleImperativeScrollCommit) {
+       contentLength: getContentSize(ctx),
+       data: state.props.data,
+       dataKey: state.props.dataKey,
+-      distanceFromEnd: Math.max(0, getContentSize(ctx) - getObservedScrollOffset(ctx) - state.scrollLength),
++      // Onicode patch: computed on read; the scroll read forces a layout every getState() caller paid for.
++      get distanceFromEnd() {
++        return Math.max(0, getContentSize(ctx) - getObservedScrollOffset(ctx) - state.scrollLength);
++      },
+       elementAtIndex: (index) => {
+         var _a3;
+         return (_a3 = ctx.viewRefs.get(findContainerId(ctx, getId(state, index)))) == null ? void 0 : _a3.current;
+diff --git a/react-native.web.mjs b/react-native.web.mjs
+index 801cd3d7ab65c0abe63f7ceedac69a524d283fe8..590710611f4ceb3b77d84883d2ac196adb3ba5c0 100644
+--- a/react-native.web.mjs
++++ b/react-native.web.mjs
+@@ -9003,7 +9003,10 @@ function createImperativeHandle(ctx, scheduleImperativeScrollCommit) {
+       contentLength: getContentSize(ctx),
+       data: state.props.data,
+       dataKey: state.props.dataKey,
+-      distanceFromEnd: Math.max(0, getContentSize(ctx) - getObservedScrollOffset(ctx) - state.scrollLength),
++      // Onicode patch: computed on read; the scroll read forces a layout every getState() caller paid for.
++      get distanceFromEnd() {
++        return Math.max(0, getContentSize(ctx) - getObservedScrollOffset(ctx) - state.scrollLength);
++      },
+       elementAtIndex: (index) => {
+         var _a3;
+         return (_a3 = ctx.viewRefs.get(findContainerId(ctx, getId(state, index)))) == null ? void 0 : _a3.current;
 diff --git a/react.js b/react.js
 index ca0217a..dbc5135 100644
 --- a/react.js
@@ -143,6 +199,18 @@ index ca0217a..dbc5135 100644
            () => isScrollToIndexReady(state.props.data.length - 1, true)
          );
        }
+@@ -9024,7 +9063,10 @@ function createImperativeHandle(ctx, scheduleImperativeScrollCommit) {
+       contentLength: getContentSize(ctx),
+       data: state.props.data,
+       dataKey: state.props.dataKey,
+-      distanceFromEnd: Math.max(0, getContentSize(ctx) - getObservedScrollOffset(ctx) - state.scrollLength),
++      // Onicode patch: computed on read; the scroll read forces a layout every getState() caller paid for.
++      get distanceFromEnd() {
++        return Math.max(0, getContentSize(ctx) - getObservedScrollOffset(ctx) - state.scrollLength);
++      },
+       elementAtIndex: (index) => {
+         var _a3;
+         return (_a3 = ctx.viewRefs.get(findContainerId(ctx, getId(state, index)))) == null ? void 0 : _a3.current;
 diff --git a/react.mjs b/react.mjs
 index 801cd3d..4d770b3 100644
 --- a/react.mjs
@@ -260,3 +328,15 @@ index 801cd3d..4d770b3 100644
            () => isScrollToIndexReady(state.props.data.length - 1, true)
          );
        }
+@@ -9003,7 +9042,10 @@ function createImperativeHandle(ctx, scheduleImperativeScrollCommit) {
+       contentLength: getContentSize(ctx),
+       data: state.props.data,
+       dataKey: state.props.dataKey,
+-      distanceFromEnd: Math.max(0, getContentSize(ctx) - getObservedScrollOffset(ctx) - state.scrollLength),
++      // Onicode patch: computed on read; the scroll read forces a layout every getState() caller paid for.
++      get distanceFromEnd() {
++        return Math.max(0, getContentSize(ctx) - getObservedScrollOffset(ctx) - state.scrollLength);
++      },
+       elementAtIndex: (index) => {
+         var _a3;
+         return (_a3 = ctx.viewRefs.get(findContainerId(ctx, getId(state, index)))) == null ? void 0 : _a3.current;

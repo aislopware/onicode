@@ -432,7 +432,7 @@ export async function openDocument(
           name: table.attrs["table:name"] || undefined,
           rows,
           rowCount: rows.length,
-          columns: rows.reduce((columns, row) => Math.max(columns, row.length), 1),
+          columns: rows.length && rows.reduce((columns, row) => Math.max(columns, row.length), 1),
           truncated,
         };
       }),
@@ -468,11 +468,10 @@ export async function openEpub(archive: OfficeArchive): Promise<OfficeWorkerResu
     const entry = path ? archiveText(archive, path) : undefined;
     if (entry === undefined || !path) continue;
     const chapter = parseXml(entry);
+    const title = text(find(chapter, "title")[0] ?? find(chapter, "h1")[0] ?? chapter).trim();
+    const last = title.charCodeAt(119);
     pages.push({
-      title:
-        text(find(chapter, "title")[0] ?? find(chapter, "h1")[0] ?? chapter)
-          .trim()
-          .slice(0, 120) || undefined,
+      title: title.slice(0, last >= 0xd800 && last <= 0xdbff ? 119 : 120) || undefined,
       html: await epubHtml(chapter, archive, path),
     });
   }
@@ -587,6 +586,7 @@ const rtfCodePage = (value: number) =>
       950: "big5",
       874: "windows-874",
       10000: "macintosh",
+      54936: "gb18030",
     } as Record<number, string>
   )[value] ?? `windows-${value}`;
 

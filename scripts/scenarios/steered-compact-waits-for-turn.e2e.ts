@@ -69,6 +69,10 @@ test(
       await runPromise(state.cli(["thread", "send", waiting.threadId, "Then tidy up"]));
       await runPromise(state.cli(["thread", "send", waiting.threadId, "/compact"]));
       await onicode.open(waiting);
+      // The CLI sends land one after another, and the approval row above them renders late and
+      // pushes them down, so wait for all of it before hovering the command's row.
+      await expect(screen.getByRole("button", "Send now")).toHaveCount(2);
+      await expect(screen.getByText("Waiting for approval")).toBeVisible();
       await screen.getByRole("button", "Send now").last().hover();
       await expect(
         screen.getByText("Move this command to the front of the queue", { exact: false }),

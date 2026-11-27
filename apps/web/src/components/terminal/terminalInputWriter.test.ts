@@ -2,14 +2,19 @@ import { TerminalWriteInput } from "@onicode/contracts";
 import * as Schema from "effect/Schema";
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { createTerminalInputWriter, interruptedPasteRecovery } from "./terminalInputWriter";
+import { createTerminalInputWriter } from "./terminalInputWriter";
 
 const isWriteInput = Schema.is(TerminalWriteInput);
 const fitsWrite = (data: string) => isWriteInput({ threadId: "t", terminalId: "default", data });
 
 /** A `send` whose calls stay pending until the test settles them. */
 function heldSend() {
-  const sent: Array<{ readonly chunk: string; readonly settle: (ok: boolean) => void }> = [];
+  type Framing = Pick<TerminalWriteInput, "bracketedPaste" | "plainWrite">;
+  const sent: Array<{
+    readonly chunk: string;
+    readonly framing: Framing | undefined;
+    readonly settle: (ok: boolean) => void;
+  }> = [];
   const waiters: Array<{ readonly count: number; readonly resolve: () => void }> = [];
   return {
     sent,
@@ -20,9 +25,9 @@ function heldSend() {
         if (sent.length >= count) resolve();
         else waiters.push({ count, resolve });
       }),
-    send: (chunk: string) =>
+    send: (chunk: string, framing?: Framing) =>
       new Promise<boolean>((settle) => {
-        sent.push({ chunk, settle });
+        sent.push({ chunk, framing, settle });
         for (const waiter of waiters) if (sent.length >= waiter.count) waiter.resolve();
       }),
   };
@@ -162,26 +167,16 @@ describe("createTerminalInputWriter", () => {
     const pasted = write("q".repeat(140_000), send);
     void write("next", send);
     sent[0]!.settle(false);
-    await pasted;
     await sends(2);
+    sent[1]!.settle(true);
+    await pasted;
+    await sends(3);
 
-    expect(chunks()).toEqual(["q".repeat(65_536), "next"]);
+    expect(chunks()).toEqual(["q".repeat(65_536), "", "next"]);
+    expect(sent.map(({ framing }) => framing)).toEqual([
+      { plainWrite: "start" },
+      { plainWrite: "abort" },
+      undefined,
+    ]);
   });
-});
-
-describe("interruptedPasteRecovery", () => {
-  it.each([
-    { status: "running", openedPid: 7, pid: 7, expected: "close" },
-    { status: "starting", openedPid: 7, pid: null, expected: "wait" },
-    { status: "running", openedPid: 7, pid: 8, expected: "done" },
-    { status: "running", openedPid: null, pid: 8, expected: "close" },
-    // The closed terminal keeps its last summary, pid included.
-    { status: "closed", openedPid: 7, pid: 7, expected: "done" },
-    { status: "exited", openedPid: 7, pid: 7, expected: "done" },
-  ] as const)(
-    "$status, opened by $openedPid, now $pid: $expected",
-    ({ status, openedPid, pid, expected }) => {
-      expect(interruptedPasteRecovery(openedPid, { status, pid })).toBe(expected);
-    },
-  );
 });

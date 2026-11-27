@@ -30,7 +30,11 @@ function fetchResponse(
   port: number,
   path: string,
   upgrade = false,
-): Promise<NodeHttp.IncomingMessage> {
+): Promise<{
+  statusCode: number | undefined;
+  headers: NodeHttp.IncomingHttpHeaders;
+  body: string;
+}> {
   return new Promise((resolve, reject) => {
     const request = NodeHttp.get(
       {
@@ -49,15 +53,21 @@ function fetchResponse(
       },
       (response) => {
         response.on("error", reject);
-        response.on("end", () => resolve(response));
-        response.resume();
+        let body = "";
+        response.setEncoding("utf8");
+        response.on("data", (chunk: string) => {
+          body += chunk;
+        });
+        response.on("end", () =>
+          resolve({ statusCode: response.statusCode, headers: response.headers, body }),
+        );
       },
     );
     requests.push(request);
     request.on("error", reject);
     request.on("upgrade", (response, socket) => {
       socket.destroy();
-      resolve(response);
+      resolve({ statusCode: response.statusCode, headers: response.headers, body: "" });
     });
   });
 }
@@ -208,14 +218,29 @@ describe("keepIdleConnections", () => {
 describe("rejectRequestsUntilServing", () => {
   it("rejects early HTTP and upgrades, then hands each off to its serving handler", async () => {
     const writeErrors: unknown[] = [];
+    let progress: { current: number; total: number } | null = { current: 2, total: 7 };
     const server = HttpResponseErrorGuard.rejectRequestsUntilServing(
       guardHttpResponseWriteErrors(NodeHttp.createServer(), (error) => writeErrors.push(error)),
+      () => progress,
     );
     const port = await listen(server);
 
     const earlyHttp = await fetchResponse(port, "/");
     expect(earlyHttp.statusCode).toBe(503);
     expect(earlyHttp.headers["retry-after"]).toBe("1");
+
+    expect(earlyHttp.headers["cache-control"]).toBe("no-store");
+    expect(earlyHttp.headers["content-type"]).toBe("application/json; charset=utf-8");
+    expect(JSON.parse(earlyHttp.body)).toEqual({
+      status: "starting",
+      migration: { current: 2, total: 7 },
+    });
+    progress = { current: 3, total: 7 };
+    const step = await fetchResponse(port, "/.well-known/onicode/environment");
+    expect(JSON.parse(step.body)).toEqual({ status: "starting", migration: progress });
+    progress = null;
+    const finished = await fetchResponse(port, "/.well-known/onicode/environment");
+    expect(JSON.parse(finished.body)).toEqual({ status: "starting", migration: null });
 
     const earlyUpgrade = await fetchResponse(port, "/rpc", true);
     expect(earlyUpgrade.statusCode).toBe(503);

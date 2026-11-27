@@ -14,6 +14,7 @@ export interface OniProjectFileState {
   status: "loading" | "missing" | "invalid" | "valid";
   file: OniProjectFile | null;
   scripts: ReadonlyArray<OniProjectFileScript>;
+  refresh: () => void;
 }
 
 export function useOniProjectFileState(
@@ -28,23 +29,18 @@ export function useOniProjectFileState(
   );
   const contents = query.data && !query.data.truncated ? query.data.contents : null;
   const isPending = query.isPending;
+  const refresh = query.refresh;
   if (contents === null) {
     return {
       status: isPending ? "loading" : "missing",
       file: null,
       scripts: NO_SCRIPTS,
+      refresh,
     } as const;
   }
   const file = parseOniProjectFile(contents);
   if (file === null) {
-    return { status: "invalid", file: null, scripts: NO_SCRIPTS } as const;
+    return { status: "invalid", file: null, scripts: NO_SCRIPTS, refresh } as const;
   }
-  return { status: "valid", file, scripts: file.scripts ?? NO_SCRIPTS } as const;
-}
-
-export function useOniProjectFileScripts(
-  environmentId: EnvironmentId,
-  cwd: string | null,
-): ReadonlyArray<OniProjectFileScript> {
-  return useOniProjectFileState(environmentId, cwd).scripts;
+  return { status: "valid", file, scripts: file.scripts ?? NO_SCRIPTS, refresh } as const;
 }

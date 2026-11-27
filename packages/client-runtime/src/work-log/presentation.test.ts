@@ -10,6 +10,8 @@ import {
   type WorkLogPresentationEntry,
   workEntryIndicatesToolFailure,
   workEntryDisplayIndicatesToolFailure,
+  workEntriesViewedImagePaths,
+  workEntriesViewedImages,
   workEntryViewedImagePath,
 } from "./presentation.js";
 
@@ -255,5 +257,51 @@ describe("workEntryViewedImagePath", () => {
     expect(
       workEntryViewedImagePath({ ...base, tone: "error", toolLifecycleStatus: "completed" }),
     ).toBeNull();
+  });
+});
+
+describe("workEntriesViewedImages", () => {
+  const read = (
+    id: string,
+    path: string,
+    toolLifecycleStatus: NonNullable<WorkLogPresentationEntry["toolLifecycleStatus"]>,
+  ): WorkLogPresentationEntry => ({
+    id,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    label: "Read",
+    tone: "tool",
+    itemType: "dynamic_tool",
+    viewedImagePath: path,
+    toolLifecycleStatus,
+  });
+
+  it("marks an image pending until a Read of it finishes", () => {
+    expect(
+      workEntriesViewedImages([
+        read("done", "/repo/a.png", "completed"),
+        read("running", "/repo/b.png", "inProgress"),
+        read("missing", "/repo/c.png", "failed"),
+        read("again", "/repo/a.png", "inProgress"),
+      ]),
+    ).toEqual([
+      { path: "/repo/a.png", pending: false },
+      { path: "/repo/b.png", pending: true },
+    ]);
+    expect(
+      workEntriesViewedImages([
+        read("running", "/repo/b.png", "inProgress"),
+        read("done", "/repo/b.png", "completed"),
+      ]),
+    ).toEqual([{ path: "/repo/b.png", pending: false }]);
+  });
+
+  it("orders the finished images like the strip shows them", () => {
+    expect(
+      workEntriesViewedImagePaths([
+        read("first", "/repo/a.png", "inProgress"),
+        read("other", "/repo/b.png", "completed"),
+        read("again", "/repo/a.png", "completed"),
+      ]),
+    ).toEqual(["/repo/a.png", "/repo/b.png"]);
   });
 });

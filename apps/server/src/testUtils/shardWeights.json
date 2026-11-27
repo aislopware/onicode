@@ -376,7 +376,6 @@
   "src/provider/antigravityAuthSupport.test.ts": 2.3,
   "src/provider/antigravityCallback.test.ts": 1.1,
   "src/provider/antigravityCliRelease.test.ts": 0.5,
-  "src/provider/antigravityUsageLimits.test.ts": 0.7,
   "src/provider/codexLaunchArgs.test.ts": 0.6,
   "src/provider/codexModelCatalog.test.ts": 1.0,
   "src/provider/codexUsageLimits.test.ts": 1.0,

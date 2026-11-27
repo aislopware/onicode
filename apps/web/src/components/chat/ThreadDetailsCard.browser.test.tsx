@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
-import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@onicode/contracts";
-import { expect, it } from "vite-plus/test";
+import { EnvironmentId, ProjectId, ThreadId, type ScopedThreadRef } from "@onicode/contracts";
+import { expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 import { act, render } from "../../../test/render";
 import { selectThreadPanelOpen, useRightPanelStore } from "../../rightPanelStore";
@@ -8,6 +8,13 @@ import { PopoverCreateHandle } from "../ui/popover";
 import { ChatCanvasContext } from "./ChatCanvasContext";
 import { resolveChatCanvasLayout } from "./chatCanvasLayout";
 import { ThreadDetailsCard } from "./ThreadDetailsCard";
+import { ThreadRepositorySections } from "./ThreadRepositorySections";
+import { useThreadRepositoryPinsStore } from "../../threadRepositoryPinsStore";
+
+vi.mock(import("~/state/query"), async (original) => ({
+  ...(await original()),
+  useEnvironmentQuery: () => ({ data: null, error: null }) as never,
+}));
 
 const threadA: ScopedThreadRef = {
   environmentId: EnvironmentId.make("environment"),
@@ -187,6 +194,7 @@ it("keeps full density when many automations make the content tall", async () =>
 it.each([
   ["the expanded server list", "data-thread-details-server-overflow"],
   ["the context breakdown", "data-thread-details-context-breakdown"],
+  ["the expanded linked issues", "data-thread-details-issue-list"],
 ])("stays full while %s overflows", async (_name, marker) => {
   using fixture = setup();
   await using _screen = await render(
@@ -195,4 +203,61 @@ it.each([
   await expect
     .element(page.getByRole("region", { name: "Thread details" }))
     .toHaveAttribute("data-density", "full");
+});
+
+it("keeps the repository list reachable after Show more expands it", async () => {
+  using fixture = setup();
+  for (let index = 1; index <= 30; index++) {
+    useThreadRepositoryPinsStore
+      .getState()
+      .pin(threadB, { repositoryPath: `/repos/repo-${index}`, name: `repo-${index}` });
+  }
+  await using _screen = await render(
+    <StrictMode>
+      <ChatCanvasContext
+        value={{
+          container,
+          lane: { padding: 48, minChatWidth: 640 },
+          layout: resolveChatCanvasLayout({ container, preview: null }),
+          previewKey: null,
+          registerTimeline: () => {},
+          measureDetailsCard: () => {},
+          detailsCardTopInset: 0,
+          preferredDetailsCard: placement,
+          detailsCardPlacement: placement,
+        }}
+      >
+        <ThreadDetailsCard
+          threadRef={threadB}
+          anchor={fixture.anchor}
+          handle={fixture.handle}
+          contentKey="repositories"
+        >
+          {(density) =>
+            // As ThreadDetailsPanel does, essential density drops the repository section.
+            density === "essential" ? null : (
+              <ThreadRepositorySections
+                environmentId={threadB.environmentId}
+                threadId={threadB.threadId}
+                projectId={ProjectId.make("project")}
+                isServerThread={false}
+                threadCwd="/repos"
+                taskFolder={null}
+                reachesTracked
+                onTaskFolderChange={() => {}}
+                explainsEmpty={false}
+                showActions={false}
+              />
+            )
+          }
+        </ThreadDetailsCard>
+      </ChatCanvasContext>
+    </StrictMode>,
+  );
+  await page.getByRole("button", { name: "Show 26 more" }).click();
+
+  await expect.element(page.getByRole("button", { name: "Show fewer" })).toBeVisible();
+  await expect
+    .element(page.getByRole("region", { name: "Thread details" }))
+    .not.toHaveAttribute("data-density", "essential");
 });

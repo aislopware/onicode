@@ -4,6 +4,7 @@ import {
   type PullRequestDetail,
 } from "@onicode/contracts";
 import type { ReviewGuideGenerationInput } from "@onicode/provider-core/server/textGeneration";
+import { splitsSurrogatePair } from "@onicode/shared/assistantCitations";
 
 const SETTLED_REMARK_CHARS = 200;
 
@@ -12,7 +13,11 @@ function oneLine(text: string): string {
     .replace(/<!--[\s\S]*?-->/g, "")
     .replace(/\s+/g, " ")
     .trim();
-  return flat.length > SETTLED_REMARK_CHARS ? `${flat.slice(0, SETTLED_REMARK_CHARS)}…` : flat;
+  if (flat.length <= SETTLED_REMARK_CHARS) return flat;
+  const end = splitsSurrogatePair(flat, SETTLED_REMARK_CHARS)
+    ? SETTLED_REMARK_CHARS - 1
+    : SETTLED_REMARK_CHARS;
+  return `${flat.slice(0, end)}…`;
 }
 
 function settledReviewSummary(activity: PullRequestActivity): string {

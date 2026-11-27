@@ -5,7 +5,9 @@ export function preserveReadingPosition(
   scroller: HTMLElement,
   enabled: () => boolean = () => true,
 ): () => void {
-  let width = scroller.clientWidth;
+  // Seeded by the observer's first report or an earlier scroll, never read here: that would force
+  // a layout mid-commit. A resize before either is not corrected.
+  let width: number | null = null;
   let anchor: { range: Range; top: number } | null = null;
   let frame: number | null = null;
   let captureFrame: number | null = null;
@@ -18,6 +20,7 @@ export function preserveReadingPosition(
       anchor = null;
       return;
     }
+    width ??= scroller.clientWidth;
     if (scroller.clientWidth !== width) return;
     anchor = null;
     if (scroller.scrollTop === 0) return;
@@ -91,6 +94,7 @@ export function preserveReadingPosition(
   };
   const stop = observeResize(scroller, () => {
     const nextWidth = scroller.clientWidth;
+    if (width === null) width = nextWidth;
     if (nextWidth === width) {
       capture();
       return;
