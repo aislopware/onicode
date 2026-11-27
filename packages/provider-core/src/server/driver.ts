@@ -8,6 +8,7 @@ import type {
   ProviderDriverKind,
   ResolvedProviderInstanceEnvironment,
   ProviderInstanceId,
+  ProviderRuntimeModeLimit,
   ServerProvider,
   ServerProviderWorkspaceSnapshot,
 } from "@onicode/contracts";
@@ -58,6 +59,13 @@ export interface ProviderInstance {
   ) => Effect.Effect<ProviderWorkspaceSnapshot, ProviderDriverError>;
   /** `snapshotForCwd` can return `workspaceModels`: a folder's own config adds models. */
   readonly listsWorkspaceModels?: boolean;
+  /**
+   * Modes this instance offers that cannot run in `cwd`. Must stay cheap: clients ask whenever a
+   * mode picker opens, so read configuration and never start the provider.
+   */
+  readonly runtimeModeLimitsForCwd?: (
+    cwd: string,
+  ) => Effect.Effect<ReadonlyArray<ProviderRuntimeModeLimit>>;
   /**
    * Cwds whose workspace skills or models may have changed. The registry rescans only cwds already
    * requested. The stream must end when the instance is torn down.

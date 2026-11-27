@@ -4130,3 +4130,4 @@ cbf5c78696	take	taken as is
 9f05579533	take	pre branch placed before Onicode's pPr-lookup paragraph branch
 0085217d1b	take	taken as is
 8ada2c0f1c	take	taken as is
+8468c7af68	take	ClaudeAdapterV2: upstream's resolveClaudeModeAvailability/announceAutoFallback replace Onicode's readBypassSettings+resolveBypassAvailability block (same body, moved out); kept Onicode's announcedModelSubstitutions, firstInit gate and readInstalledBuild tail, not upstream's reportedCwd/onSessionInit return; dropped upstream's requiresClaudeApproval (removed in Onicode #288, unused); ClaudeDriver computes configDir via resolveClaudeHomePath (Onicode lacks upstream's reset-credits commit); new read query getProviderRuntimeModeLimits in RPC_REQUIRED_SCOPES (read); wire-compatible additions only; i18n in all locales; Claude adapter, registry, replay fixtures and composer permission tests pass
