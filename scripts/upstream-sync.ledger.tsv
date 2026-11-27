@@ -3997,3 +3997,4 @@ d2a9b77499	skip	already solved differently: Onicode's WorkflowAgentLinks.reply s
 8f5fd287a4	take	taken as is
 19a6e5b57b	take	taken as is
 f1efcfb494	skip	removed surface: agent feedback reports to T3 through telemetry; feedbackRequest.ts does not exist in Onicode
+7814c9f884	skip	already solved differently: Onicode's wslServiceRegistered reads the service keys through the native WindowsRegistry (advapi32), which the reg.exe policy cannot block
