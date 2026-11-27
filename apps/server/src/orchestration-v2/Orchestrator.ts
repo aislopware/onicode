@@ -1397,6 +1397,26 @@ type DelegatedChildControls = ProjectionRecords<
   readonly runsFloor?: OrchestrationV2Run | undefined;
 };
 
+/**
+ * Callers pass the task's latest work run. A cancel also covers it when the run the cancel stopped
+ * can never be a result: it ended before starting, or it completed as a monitor acknowledgement.
+ */
+function cancelCoversRun(
+  controls: Pick<DelegatedChildControls, "runs" | "messages">,
+  cancelledRunId: RunId | undefined,
+  run: OrchestrationV2Run,
+): boolean {
+  if (cancelledRunId === run.id) return true;
+  if (cancelledRunId === undefined) return false;
+  const cancelled = controls.runs.find((candidate) => candidate.id === cancelledRunId);
+  if (cancelled === undefined || cancelled.completedAt === null) return false;
+  const neverResult =
+    cancelled.startedAt === null ||
+    (cancelled.status === "completed" &&
+      monitorUpdateRunIds(controls.messages, [cancelled]).has(cancelled.id));
+  return neverResult && runRanAfter(cancelled, run);
+}
+
 function ranSince(run: OrchestrationV2Run, floor: OrchestrationV2Run): boolean {
   return run.id === floor.id || runRanAfter(run, floor);
 }
@@ -1411,7 +1431,7 @@ function reportRunsRead(
   if (floor === undefined || run.status !== "completed") return true;
   const oldest = reportRuns.at(-1) ?? run;
   if (!ranSince(oldest, floor)) return false;
-  const monitorRuns = monitorUpdateRunIds(controls.messages);
+  const monitorRuns = monitorUpdateRunIds(controls.messages, controls.runs);
   return controls.runs.some(
     (candidate) =>
       candidate.id !== run.id &&
@@ -16393,6 +16413,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       taskIds: ReadonlyArray<NodeId>,
       // Runs whose task outcome no capture can change, such as a cancelled task's.
       settledRunIds: ReadonlyArray<RunId>,
+      options?: Parameters<typeof delegatedTaskProgress>[1],
     ) {
       // Progress tells a held wake from a held message the user wrote by the run's message.
       const withHeldMessages = Effect.fn("Orchestrator.readHeldRunMessages")(function* <
@@ -16419,7 +16440,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ),
         settledRunIds,
       );
-      const progress = delegatedTaskProgress(controls);
+      const progress = delegatedTaskProgress(controls, options);
       // The latest result may have ended before the runs read above; then read them all.
       if (
         controls.runsFloor !== undefined &&
@@ -16429,7 +16450,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           yield* withHeldMessages(yield* readAllDelegatedChildControls(childThreadId)),
           settledRunIds,
         );
-        return { controls: all, progress: delegatedTaskProgress(all) };
+        return { controls: all, progress: delegatedTaskProgress(all, options) };
       }
       return { controls, progress };
     },
@@ -16610,7 +16631,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       // A cancelled task's completed run ends it interrupted, as does one whose provider turn its
       // parent's Stop interrupted to kill background work. Stop's marker on an idle run names no
       // provider turn and interrupted nothing.
-      const cancelled = task.cancelledRunId === childRun.id;
+      const cancelled = cancelCoversRun(childControls, task.cancelledRunId, childRun);
       const stopped =
         task.completionDelivery?.state === "disposed" &&
         childResult.turnItems.some(
@@ -16810,6 +16831,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       childThreadId,
       openTasks.map((task) => task.id),
       openTasks.flatMap((task) => task.cancelledRunId ?? []),
+      {
+        unsettled: openTasks.some(
+          (task) => task.id === forkedFrom.nodeId && task.cancelledRunId === undefined,
+        ),
+      },
     );
     const cancelAwaitsWork = progress.state === "working" && !progress.onlyAwaitsUserRun;
     for (const task of openTasks) {
@@ -16833,7 +16859,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const resultTaskId = resultRun?.delegatedTaskId ?? forkedFrom.nodeId;
     const resultTask = parent.subagents.find((task) => task.id === resultTaskId);
     const taskCancelled =
-      resultTask?.cancelledRunId !== undefined && resultTask.cancelledRunId === resultRun?.id;
+      resultRun !== undefined &&
+      cancelCoversRun(childControls, resultTask?.cancelledRunId, resultRun);
     if (
       resultRun === undefined ||
       (taskCancelled ? cancelAwaitsWork : progress.state !== "result_available")
@@ -18770,7 +18797,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       child.thread.forkedFrom?.type === "node" &&
       child.thread.forkedFrom.nodeId === taskId &&
       !followUpIds.has(taskId) &&
-      !monitorUpdateRunIds(child.messages).has(capturing.id) &&
+      !monitorUpdateRunIds(child.messages, child.runs).has(capturing.id) &&
       ![...followUpIds].some(owns)
     );
   };
@@ -18830,13 +18857,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                 run.status === "queued" ? { ...run, queueHeld: true } : run,
               ),
             );
-            const monitorRunIds = new Set(
-              child.messages
-                .filter((message) => message.notification?.source.kind === "monitor")
-                .map((message) => message.runId),
-            );
             const activeRun = child.runs
-              .filter((run) => isLiveRun(run) && !monitorRunIds.has(run.id))
+              .filter(isLiveRun)
               .toSorted((a, b) => b.ordinal - a.ordinal)[0];
             const cancelledRun = followUpRun ?? activeRun ?? progressAfterTurn(child).resultRun;
             const now = yield* DateTime.now;
