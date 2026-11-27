@@ -559,6 +559,7 @@ const CODE_PAGES = new Map([
   [949, "euc-kr"],
   [950, "big5"],
   [10000, "macintosh"],
+  [54936, "gb18030"],
   [65001, "utf-8"],
 ]);
 const codePage = (value: number) =>
