@@ -4134,3 +4134,4 @@ cbf5c78696	take	taken as is
 e75534b3e5	take	i18n catalogs merged as a union
 be0b94683a	take	took upstream's code placeholders and split _/* emphasis passes; kept Onicode's link regex [^[\]] (d38dda42b2: a stray [ no longer runs into the next link; upstream still has [^\]]) and its test
 be5b14d842	take	taken as is
+428684301a	take	applied cleanly onto Onicode's paragraphs() (hr line after br)
