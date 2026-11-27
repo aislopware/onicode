@@ -1979,6 +1979,10 @@ export function useComposerSend(input: ComposerSendInput) {
     );
     // A failed checkout reports itself and keeps the prompt unsent.
     if (result === false) return donePreparing();
+    if (result === "moved") {
+      donePreparing();
+      return notifyDraftChanged();
+    }
     if (draftStatus === "ready" && isShown()) {
       return sendWithEnvironmentRefreshLatest(...args).finally(donePreparing);
     }
@@ -1994,8 +1998,10 @@ export function useComposerSend(input: ComposerSendInput) {
     // The transcript carries its own text, which lands in the draft, so edits do not cancel.
     return async (...args: Parameters<typeof onSend>) => {
       const workspaceDefault = draftId ? holdSendForWorkspaceDefault(draftId) : null;
-      if (workspaceDefault !== null && (await workspaceDefault) === false) return;
-      const state = draftId ? detachedDraftSendState(draftId, envModeAtCapture) : "send";
+      const outcome = workspaceDefault === null ? undefined : await workspaceDefault;
+      if (outcome === false) return;
+      const current = draftId ? detachedDraftSendState(draftId, envModeAtCapture) : "send";
+      const state = current === "send" && outcome === "moved" ? "moved" : current;
       if (state === "gone") return;
       // This send starts where its render put the draft; a workspace that changed since leaves
       // the transcript in the draft to send from there.
