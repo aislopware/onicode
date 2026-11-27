@@ -4167,3 +4167,4 @@ afc388c052	take	panel applied cleanly (scrollToLine typechecks on Onicode's @pie
 744ff6c8cb	take	Antigravity ask_question form; package export added
 77cd243e6b	take	monotonic OTLP sums; kept Onicode webhook description
 9c4ab6d47a	take	reuse Onicode listRef; tests use await using setup(); scenario ported
+336b8c70fc	take	upstream hover/leave restructure; kept Onicode TOOLTIP_* timing and shortcut/description refresh fields
