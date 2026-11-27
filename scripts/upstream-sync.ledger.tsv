@@ -4393,3 +4393,4 @@ b6a054a92b	take	applied cleanly; mobile filePath keeps its own anchored isWindow
 9c67c7da9b	take	contract unreadProviders optional (wire-compatible); kept Onicode's model-list caching (modelLists/lookupRounds) and computed unreadProviders after readable; readAccounts reads destructure accounts, Onicode's slow-account rows kept; HUB_PROVIDERS is codex/claude/xai after 96423cb5e2, so the copy is true; i18n keys in all locales
 f4b252309f	take	applied cleanly
 6252f1f203	take	applied cleanly
+5596e7490e	take	kept Onicode's text-binary PreviewError around the decode; added only ignoreBOM: start > 0; mobile n.a.
