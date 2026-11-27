@@ -6,6 +6,7 @@ import {
   type WorkflowRunsAboutInput,
   applyWorkflowRunsUpdate,
   type WorkflowRunsSnapshot,
+  type WorkflowRunsSubscribeInput,
   type WorkflowRunsUpdate,
 } from "@onicode/contracts";
 import * as Context from "effect/Context";
@@ -247,6 +248,15 @@ export const wholeLists = (updates: Stream.Stream<WorkflowRunsUpdate>) =>
       },
     ),
   );
+
+/**
+ * What `workflows.subscribe` sends: tagged diffs only when asked for with `diff`. The legacy
+ * `changes` flag of v0.25/v0.26 clients is not that ask; they cannot decode a tagged diff.
+ */
+export const subscribed = (
+  updates: Stream.Stream<WorkflowRunsUpdate>,
+  input: typeof WorkflowRunsSubscribeInput.Type,
+) => (input.diff === true ? updates : wholeLists(updates));
 
 export const OFF =
   'Workflows are off on this server. Turn them on in its Settings → Labs → Workflows, or without a desktop, set "workflowsEnabled": true in userdata/settings.json in its Onicode home (~/.onicode by default).';
