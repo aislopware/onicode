@@ -51,6 +51,8 @@ const HIDDEN = new Set([
   "alphabetical-index-source",
   "bibliography-source",
 ]);
+// Captions are read before the rows, so the row walk skips them.
+const TABLE_ROW_SKIP = new Set([...HIDDEN, "caption"]);
 
 // @effect-diagnostics-next-line extendsNativeError:off - this worker loads no Effect runtime; Truncation is a local throw sentinel.
 class Truncation extends Error {}
@@ -409,8 +411,14 @@ function hasCellText(cell: XmlNode): boolean {
   );
 }
 function* table(node: XmlNode): Generator<TextPart, void> {
+  for (const caption of children(node)) {
+    if (caption.name !== "caption") continue;
+    yield LINE_START;
+    yield* paragraphs(caption);
+    yield LINE_START;
+  }
   let rowCount = 0;
-  for (const row of all(node, ["tr", "table-row"], HIDDEN)) {
+  for (const row of all(node, ["tr", "table-row"], TABLE_ROW_SKIP)) {
     // Word nests a cell inside w:sdt when a content control wraps the whole cell.
     const cells = [...all(row, ["tc", "table-cell", "covered-table-cell", "td", "th"], HIDDEN)];
     // ODS writers pad sheets with repeated empty rows and trailing cells.
