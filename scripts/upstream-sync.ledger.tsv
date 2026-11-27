@@ -4598,3 +4598,4 @@ a9ad9afa09	take	test fixture conflict (Onicode's zipFixture map); same epub:type
 9268aa9b27	take	taken as is (mobile already passes its message resolver)
 4f7c529085	take	code merged into Onicode's Map archive (archive.set); test kept Onicode's zipFixture wordFile (files map) with upstream's svg content type added
 6665327fb3	take	taken as is
+0d233a338c	take	taken as is
