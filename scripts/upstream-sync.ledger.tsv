@@ -4427,3 +4427,4 @@ d034b66f99	take	applied cleanly; every adapter helper it calls exists
 9534f2aab7	take	applied cleanly on the ported document worker chain
 1bd40a6427	take	applied cleanly; new test listed in the mobile react project
 81aac52ddb	take	hand-ported into Onicode's resumable scanMarkdown: lines split at LF or bare CR (native split when the text has no CR), pieces sliced from the source with their separator, held cuts too; extendMarkdownSplit resumes after LF or a bare CR, not half a CRLF; wholeMarkdown counts CR breaks; ChunkedMarkdown onCopy takes upstream's range check, clearData and joinMarkdownChunks; CR-only extend row; copy test uses Onicode's async setup
+e18c8fc2e5	take	applied cleanly; one web key in all locales, i18n:check green; tablePng is a lazy chunk; mobile n.a.; Electron clipboard image/png checked in the integrated pass
