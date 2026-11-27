@@ -4241,3 +4241,4 @@ e0370221a4	take	taken as is (the next-line expects land in Onicode's tapped-chec
 d6b3593030	take	taken as is
 bf27eb196a	take	Onicode's send hold (holdSendForWorkspaceDefault with its 3 s give-up and disconnected-machine check, cancelOnEdit already gone) moved into upstream's new draftWorkspaceDefaults module on top of readPendingWorkspaceDefault; adopted upstream's acceptsWorkspaceDefault (adds workspaceExplicit) over keepsProvisionalWorkspace; kept carryFanoutSelections from draftFanoutSelections; dropped upstream's duplicate moved-machine test (Onicode's 'leaves a draft that moved to another machine' covers it); scenario ported: startSecondEnvironment, rpcClient on the second home, inline load preference rows, hash route, unpair in finally
 d1b4b60d16	take	taken as is
+813972e9d3	take	the singular message gets a new key; its translations copied from upstream into all 10 mobile locales in the old key's place
