@@ -4691,3 +4691,4 @@ d838e95660	take	applied cleanly; DocumentText VERSION 20 bump in this PR covers 
 0e15425b23	take	applied cleanly
 9a66ff1e31	take	applied cleanly
 d99c3c2048	take	applied cleanly
+531ec4b5a4	skip	Onicode's shim already traps TERM/HUP before the CLI starts and forwards an early signal
