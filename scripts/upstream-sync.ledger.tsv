@@ -4356,3 +4356,4 @@ b403a7c2e3	take	taken as is
 f87ab0be1b	take	taken as is
 2e830d7733	skip	T3 release version bump (0.1.13); Onicode versions its own releases through better-update
 87132a26e8	take	isLinkDefinition swapped into Onicode's scanMarkdown, keeping offset === 0
+fb84179e19	take	taken as is
