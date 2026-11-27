@@ -48,7 +48,6 @@ import {
 } from "../lib/chatThreadActions";
 import type { EnvironmentProject } from "@onicode/client-runtime/state/shell";
 import { peekOniProjectFile, readOniProjectFile } from "../lib/oniProjectFileDefaults";
-import { composerDraftContentChanged } from "../components/chat/composerSend.logic";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentSummaries } from "../state/presentation";
 import { environmentServerConfigsAtom } from "../state/server";
@@ -108,17 +107,12 @@ function keepsProvisionalWorkspace(
   );
 }
 
-export type WorkspaceDefaultHold = { readonly status: "ready" | "cancelled" };
-
 /**
- * Holds a send from a draft whose onicode.json default has not landed. Ready once it lands or
- * after a short bound, which gives up on the default so it can no longer move the draft. With
- * `cancelOnEdit`, an edit to the draft's content cancels it. Null when nothing needs to wait.
+ * Holds a send from a draft whose onicode.json default has not landed. Resolves once it lands or
+ * after a short bound, which gives up on the default so it can no longer move the draft. Null when
+ * nothing needs to wait.
  */
-export function holdSendForWorkspaceDefault(
-  draftId: DraftId,
-  options: { readonly cancelOnEdit: boolean },
-): Promise<WorkspaceDefaultHold> | null {
+export function holdSendForWorkspaceDefault(draftId: DraftId): Promise<void> | null {
   const pending = pendingWorkspaceDefaults.get(draftId);
   if (pending === undefined) return null;
   const store = useComposerDraftStore;
@@ -135,27 +129,14 @@ export function holdSendForWorkspaceDefault(
     return null;
   }
   return new Promise((resolve) => {
-    const draftAtPress = store.getState().getComposerDraft(draftId);
-    let done = false;
-    const settle = (status: WorkspaceDefaultHold["status"]) => {
-      if (done) return;
-      done = true;
-      clearTimeout(timer);
-      stopWatching();
-      resolve({ status });
-    };
     const timer = setTimeout(() => {
       giveUp();
-      settle("ready");
+      resolve();
     }, WORKSPACE_DEFAULT_SEND_WAIT_MS);
-    const stopWatching = options.cancelOnEdit
-      ? store.subscribe((state) => {
-          if (composerDraftContentChanged(draftAtPress, state.getComposerDraft(draftId))) {
-            settle("cancelled");
-          }
-        })
-      : () => {};
-    const ready = () => settle("ready");
+    const ready = () => {
+      clearTimeout(timer);
+      resolve();
+    };
     void pending.settled.then(ready, ready);
   });
 }

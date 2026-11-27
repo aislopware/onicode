@@ -84,10 +84,6 @@ const testState = vi.hoisted(() => {
     cacheProjectFile(cached: CachedProjectFile) {
       cachedProjectFile = cached;
     },
-    editPrompt(prompt: string) {
-      composerDraft = { ...composerDraft, prompt };
-      for (const listener of draftListeners) listener(draftStore);
-    },
     subscribe(listener: (state: unknown) => void) {
       draftListeners.add(listener);
       return () => draftListeners.delete(listener);
@@ -321,8 +317,7 @@ import {
   WORKSPACE_DEFAULT_SEND_WAIT_MS,
 } from "./useHandleNewThread";
 
-const holdSend = (draftId: string, cancelOnEdit = false) =>
-  holdSendForWorkspaceDefault(draftId as never, { cancelOnEdit });
+const holdSend = (draftId: string) => holdSendForWorkspaceDefault(draftId as never);
 const openRemoteDraft = () =>
   useNewThreadHandler()({ environmentId: "environment-ssh", projectId: "project-remote" } as never);
 
@@ -359,7 +354,7 @@ describe.each([
     const pendingDefault = holdSend(opened!.draftId);
     expect(pendingDefault).not.toBeNull();
     testState.completeProjectFileRead({ defaultThreadEnvMode: "worktree" });
-    expect(await pendingDefault).toEqual({ status: "ready" });
+    await pendingDefault;
 
     expect(holdSend(opened!.draftId)).toBeNull();
 
@@ -490,7 +485,7 @@ describe("useNewThreadHandler", () => {
 
     const pendingDefault = holdSend(opened!.draftId);
     await vi.advanceTimersByTimeAsync(WORKSPACE_DEFAULT_SEND_WAIT_MS);
-    expect(await pendingDefault).toEqual({ status: "ready" });
+    await pendingDefault;
     expect(holdSend(opened!.draftId)).toBeNull();
 
     testState.completeProjectFileRead({ defaultThreadEnvMode: "worktree" });
@@ -504,18 +499,6 @@ describe("useNewThreadHandler", () => {
 
     testState.disconnect("environment-ssh");
     expect(holdSend(opened!.draftId)).toBeNull();
-  });
-
-  it("cancels a held send when the draft is edited, unless the send carries its own text", async () => {
-    testState.reset(null, { envMode: null, startFromOrigin: false });
-    const opened = await openRemoteDraft();
-
-    const pressed = holdSend(opened!.draftId, true);
-    const dictated = holdSend(opened!.draftId);
-    testState.editPrompt("typed after Send");
-    expect(await pressed).toEqual({ status: "cancelled" });
-    testState.completeProjectFileRead({ defaultThreadEnvMode: "worktree" });
-    expect(await dictated).toEqual({ status: "ready" });
   });
 
   it("takes a fresh read over a cached onicode.json that is refetching or stale", async () => {

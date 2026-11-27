@@ -4223,3 +4223,4 @@ b0edd30be4	take	taken as is
 e63b9ada75	take	taken as is
 5519a98a8e	take	code as is; kept Onicode's usage.md structure and rewrote its OpenCode paragraph (external OpenCode 2 servers now report limits)
 063c422ee1	take	taken as is
+4b3c79f01b	take	adopted upstream's watchComposerSendEdits over Onicode's content-only cancelOnEdit hold: also catches model, provider, mode, fan-out and new-image changes and covers the environment-refresh wait; holdSendForWorkspaceDefault loses cancelOnEdit (no caller left) and resolves void; kept Onicode's info toast (not a thread error), markSendPreparing, isShown/notifyLeftBeforeSend and draftPlaceChanged in holdComposerSend; scenario ported as is (desktop init-script WebSocket hold works as in file-picker-keeps-newer-file)
