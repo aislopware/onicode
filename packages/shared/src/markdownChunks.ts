@@ -815,7 +815,7 @@ function headingSlugs(text: string): string[] {
     const slug = githubHeadingSlug(headingPlainText(heading));
     if (slug) slugs.push(slug);
   };
-  for (const line of text.split("\n")) {
+  for (const line of splitLines(text, 0)) {
     const inFrontmatter = offset < frontmatter;
     offset += line.length + 1;
     if (inFrontmatter) continue;
@@ -826,7 +826,7 @@ function headingSlugs(text: string): string[] {
       }
       continue;
     }
-    if (line.trim() === "") {
+    if (BLANK_LINE.test(line)) {
       paragraph = [];
       continue;
     }

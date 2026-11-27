@@ -844,6 +844,8 @@ describe("markdownHeadingPiece", () => {
     // A decoded underscore is text, never emphasis.
     const underscores = [{ text: "# &#95;init&#x5f;", lines: 1 }];
     expect(markdownHeadingPiece(underscores, "_init_")).toEqual({ index: 0, id: "_init_" });
+    const crOnly = [{ text: "Intro\r\r## Setup\r\rText", lines: 5 }];
+    expect(markdownHeadingPiece(crOnly, "setup")).toEqual({ index: 0, id: "setup" });
   });
 });
 
