@@ -792,10 +792,10 @@ Third}`;
       '<office:body><office:text><text:list text:style-name="L1"><text:list-item><text:p>One</text:p><text:list><text:list-item><text:p>Sub</text:p></text:list-item></text:list></text:list-item><text:list-item><text:p><draw:frame><draw:text-box><text:list text:style-name="L1"><text:list-item><text:p>Boxed</text:p></text:list-item></text:list></draw:text-box></draw:frame></text:p></text:list-item></text:list><text:list text:style-name="L2"><text:list-item><text:p>Bullet</text:p></text:list-item></text:list><text:list text:style-name="M1"><text:list-item><text:p>Header style</text:p></text:list-item></text:list><text:list text:style-name="Numbering_20_123"><text:list-item><text:p>First</text:p><text:list><text:list-item><text:p>Nested</text:p></text:list-item></text:list></text:list-item></text:list><text:list text:style-name="Numbering_20_123"><text:list-header><text:list><text:list-item><text:p>Under header</text:p></text:list-item></text:list></text:list-header></text:list><text:list text:style-name="L3"><text:list-item><text:p>No number</text:p><text:list><text:list-item><text:p>No format</text:p></text:list-item></text:list></text:list-item></text:list><text:list><text:list-item><text:p>Plain</text:p></text:list-item></text:list></office:text></office:body></office:document-content>';
     const styles = `<office:document-styles ${ns}><office:styles><text:list-style style:name="L2"><text:list-level-style-number text:level="1" style:num-format="1"/></text:list-style><text:list-style style:name="Numbering_20_123"><text:list-level-style-number text:level="1" style:num-format="1"/><text:list-level-style-number text:level="2" style:num-format="1"/></text:list-style></office:styles><office:automatic-styles><text:list-style style:name="M1"><text:list-level-style-number text:level="1" style:num-format="1"/></text:list-style></office:automatic-styles></office:document-styles>`;
     const html = async (styles: string) => {
-      const result = await openDocument(
-        new TestArchive().file("content.xml", content).file("styles.xml", styles),
-        "odt",
-      );
+      // boundedArchive keeps every OpenDocument part as bytes.
+      const archive = new TestArchive().file("content.xml", content);
+      archive.set("styles.xml", new TextEncoder().encode(styles));
+      const result = await openDocument(archive, "odt");
       if (result.type !== "document") throw new Error("Expected document");
       return result.pages[0]!.html;
     };
