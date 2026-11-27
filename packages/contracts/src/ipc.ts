@@ -1149,6 +1149,8 @@ export interface DesktopBridge {
   setClientSettings: (settings: ClientSettings) => Promise<void>;
   getConnectionCatalog: () => Promise<string | null>;
   setConnectionCatalog: (catalog: string) => Promise<boolean>;
+  /** Where a catalog that could no longer be decrypted was backed up, once after it was reset. */
+  takeConnectionCatalogReset?: () => Promise<string | null>;
   discoverSshHosts: () => Promise<readonly DesktopDiscoveredSshHost[]>;
   resolveSshHost: (alias: string) => Promise<DesktopSshEnvironmentTarget>;
   remoteDesktop: {

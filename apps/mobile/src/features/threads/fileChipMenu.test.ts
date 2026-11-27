@@ -67,6 +67,9 @@ describe("file chip downloads", () => {
     ["/tmp/data.sqlite", "/tmp/data.sqlite", "application/vnd.sqlite3"],
     ["/tmp/data.sqlite3", "/tmp/data.sqlite3", "application/vnd.sqlite3"],
     ["/tmp/data.db", "/tmp/data.db", "application/vnd.sqlite3"],
+    ["src/app.ts", "/repo/src/app.ts", "application/octet-stream"],
+    ["/tmp/archive.7z", "/tmp/archive.7z", "application/octet-stream"],
+    ["/tmp/Makefile", "/tmp/Makefile", "application/octet-stream"],
   ])("offers a host download for %s", (href, path, mimeType) => {
     const target = resolveFileChipTarget(href, "/repo")!;
     expect(fileChipMenu(target).actions).toContainEqual({
@@ -76,12 +79,12 @@ describe("file chip downloads", () => {
     expect(fileChipShareSource(target, threadId)).toEqual({
       name: path.split("/").at(-1),
       mimeType,
-      resource: { _tag: "media-file", threadId, path },
+      resource: { _tag: "media-file", threadId, path, disposition: "attachment" },
     });
   });
 
-  it("does not offer downloads the host asset endpoint cannot serve", () => {
-    for (const href of ["src/app.ts", "/tmp/archive.7z", "/tmp/clip.mp4.txt"]) {
+  it("does not offer downloads for folder links", () => {
+    for (const href of ["patches/", "/tmp/reports/"]) {
       const target = resolveFileChipTarget(href, "/repo")!;
       expect(fileChipShareSource(target, threadId)).toBeNull();
       expect(fileChipMenu(target).actions.some(({ id }) => id === "save")).toBe(false);

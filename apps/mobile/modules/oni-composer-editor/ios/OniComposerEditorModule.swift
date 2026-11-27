@@ -9,6 +9,38 @@ enum OniComposerClipboard {
     text.contains("oni-thread://v2/")
   }
 
+  // JS keeps a rich-text link's destination; packages/shared/src/pastedMarkdownLinks.ts restores it.
+  static func hasWebLink(_ html: String) -> Bool {
+    html.range(of: #"<a\s[^>]*href"#, options: [.regularExpression, .caseInsensitive]) != nil
+  }
+
+  /// Notes and other UIKit apps copy rich text as RTF without HTML; their links reach JS as anchors,
+  /// with the RTF's own text for a pasteboard that carries no plain rendition.
+  static func rtfLinks(_ board: UIPasteboard) -> (html: String, text: String)? {
+    guard let data = board.data(forPasteboardType: "public.rtf"),
+          let text = try? NSAttributedString(
+            data: data,
+            options: [.documentType: NSAttributedString.DocumentType.rtf],
+            documentAttributes: nil
+          ) else { return nil }
+    let escape = { (raw: String) in
+      raw.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
+        .replacingOccurrences(of: "\"", with: "&quot;")
+    }
+    var html = ""
+    var linked = false
+    text.enumerateAttribute(.link, in: NSRange(location: 0, length: text.length)) { value, range, _ in
+      let run = escape(text.attributedSubstring(from: range).string)
+      if let href = (value as? URL)?.absoluteString ?? value as? String {
+        linked = true
+        html += "<a href=\"\(escape(href))\">\(run)</a>"
+      } else {
+        html += run
+      }
+    }
+    return linked ? (html, text.string) : nil
+  }
+
   static func write(text: String, fragment: String) {
     var items: [String: Any] = ["public.utf8-plain-text": text]
     if let data = fragment.data(using: .utf8),

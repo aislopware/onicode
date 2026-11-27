@@ -563,6 +563,10 @@
       "types": "./src/markdownLinks.ts",
       "import": "./src/markdownLinks.ts"
     },
+    "./pastedMarkdownLinks": {
+      "types": "./src/pastedMarkdownLinks.ts",
+      "import": "./src/pastedMarkdownLinks.ts"
+    },
     "./fileLinks": {
       "types": "./src/fileLinks.ts",
       "import": "./src/fileLinks.ts"

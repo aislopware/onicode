@@ -331,10 +331,19 @@ private final class ComposerTextView: UITextView {
       return
     }
     // read() sees only the first item; native paste keeps every item of a longer pasteboard.
-    if !bypassTextPasteInterception, pasteboard.numberOfItems == 1,
-       OniComposerClipboard.hasThreadLink(context["text", default: ""]) {
-      onPasteContext?(context)
-      return
+    if !bypassTextPasteInterception, pasteboard.numberOfItems == 1 {
+      var context = context
+      if context["html", default: ""].isEmpty, let rtf = OniComposerClipboard.rtfLinks(pasteboard) {
+        context["html"] = rtf.html
+        if context["text", default: ""].isEmpty { context["text"] = rtf.text }
+      }
+      let text = context["text", default: ""]
+      // JS restores links onto the plain text, so a pasteboard without one pastes natively.
+      if OniComposerClipboard.hasThreadLink(text) ||
+        (!text.isEmpty && OniComposerClipboard.hasWebLink(context["html", default: ""])) {
+        onPasteContext?(context)
+        return
+      }
     }
     super.paste(sender)
   }

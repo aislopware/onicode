@@ -47,6 +47,7 @@ import {
 import { foldSearchQuery, rankMessageMatches } from "@onicode/shared/paletteSearch";
 import { findForMessageMatch, openThreadFindOnQuery } from "./chat/threadFindStore";
 import {
+  canMarkLatestRunUnread,
   threadRuntimeCanArchive,
   type EnvironmentThreadShell,
 } from "@onicode/client-runtime/state/models";
@@ -173,7 +174,6 @@ import { ProjectRowActions } from "./ProjectComboboxRow";
 import {
   buildDraftActionMenuItems,
   buildThreadActionMenuItems,
-  canMarkLatestRunUnread,
   isThreadTriageAction,
   threadActionRequiresOperate,
 } from "./threadActionMenu.logic";
@@ -182,6 +182,7 @@ import {
   filterSidebarV2VisibleThreads,
   groupSidebarThreadsByProject,
   sidebarFolderExpansionKeys,
+  sliceSidebarFolderThreads,
   buildBulkTitleRegenerationContextMenuItem,
   buildBulkMarkUnreadContextMenuItem,
   buildBulkUnpinContextMenuItem,
@@ -343,7 +344,6 @@ const EMPTY_PROVIDER_ENTRIES: ReadonlyMap<string, SidebarProviderEntry> = new Ma
 const EMPTY_THREADS: readonly EnvironmentThreadShell[] = [];
 const EMPTY_DRAFT_IDS: readonly DraftId[] = [];
 
-const FOLDER_PREVIEW_COUNT = 6;
 const SETTLED_TAIL_INITIAL_COUNT = 10;
 const SETTLED_TAIL_PAGE_COUNT = 25;
 const REVEAL_ROW_CLASS_NAME =
@@ -555,23 +555,15 @@ function useSidebarThreads(input: {
             projectExpandedById,
             sidebarFolderExpansionKeys(folder.group),
           );
-          const showAll = !collapsed && showAllFolderKeys.has(folder.group.projectKey);
-          // A closed folder previews nothing; either way the open thread stays listed.
-          const previewCount = collapsed ? 0 : FOLDER_PREVIEW_COUNT;
-          const tail = folder.threads.slice(previewCount);
-          const hidden = tail.filter((thread) => threadShellKey(thread) !== routeRowThreadKey);
-          const listsAll = showAll || hidden.length === 0;
           return {
             group: folder.group,
             collapsed,
-            threads: listsAll
-              ? folder.threads
-              : [
-                  ...folder.threads.slice(0, previewCount),
-                  ...routeThreadOnly(tail, routeRowThreadKey),
-                ],
-            hiddenThreads: listsAll ? EMPTY_THREADS : hidden,
-            canShowLess: showAll && hidden.length > 0,
+            ...sliceSidebarFolderThreads({
+              threads: folder.threads,
+              collapsed,
+              showAll: showAllFolderKeys.has(folder.group.projectKey),
+              routeThreadKey: routeRowThreadKey,
+            }),
           };
         });
   const orderedThreads = [

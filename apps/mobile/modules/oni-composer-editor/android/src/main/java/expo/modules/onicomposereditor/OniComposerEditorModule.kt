@@ -13,6 +13,11 @@ internal object OniComposerClipboard {
   fun hasThreadLink(text: String): Boolean =
     text.contains("oni-thread://v2/")
 
+  // JS keeps a rich-text link's destination; packages/shared/src/pastedMarkdownLinks.ts restores it.
+  private val webLink = Regex("<a\\s[^>]*href", RegexOption.IGNORE_CASE)
+
+  fun hasWebLink(html: String): Boolean = webLink.containsMatchIn(html)
+
   // Clipboard bridges can echo our text back without its HTML context metadata.
   private var copiedContext: Pair<String, String>? = null
 

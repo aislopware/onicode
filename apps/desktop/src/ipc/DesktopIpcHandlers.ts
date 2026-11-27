@@ -11,7 +11,11 @@ import * as DesktopIpc from "./DesktopIpc.ts";
 import { installNotificationBadge } from "./methods/notificationBadge.ts";
 import { installRemoteDesktop } from "./methods/remoteDesktop.ts";
 import { getClientSettings, setClientSettings } from "./methods/clientSettings.ts";
-import { getConnectionCatalog, setConnectionCatalog } from "./methods/connectionCatalog.ts";
+import {
+  getConnectionCatalog,
+  setConnectionCatalog,
+  takeConnectionCatalogReset,
+} from "./methods/connectionCatalog.ts";
 import {
   captureWindowScreenshot,
   getErrorReporting,
@@ -144,6 +148,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(dismissSnapShotAnimation);
   yield* ipc.handle(acknowledgeSnapShot);
   yield* ipc.handle(setConnectionCatalog);
+  yield* ipc.handle(takeConnectionCatalogReset);
 
   yield* ipc.handle(discoverSshHosts);
   yield* ipc.handle(resolveSshHost);

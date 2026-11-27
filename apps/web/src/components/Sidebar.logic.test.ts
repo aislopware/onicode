@@ -23,7 +23,6 @@ import {
   resolveWindowTitleThreadStatus,
   resolveWorkingStartedAt,
   searchSidebarThreads,
-  selectMarkUnreadThreads,
   shouldRecedeSidebarThread,
   sortInboxThreadsByReturn,
   resolveSidebarDropTarget,
@@ -40,6 +39,7 @@ import {
   groupSidebarThreadsByProject,
   resolveSidebarFolderDot,
   sidebarFolderExpansionKeys,
+  sliceSidebarFolderThreads,
   withoutRemovedCheckout,
 } from "./Sidebar.logic";
 import { scopeThreadRef, scopedThreadKey } from "@onicode/client-runtime/environment";
@@ -159,31 +159,6 @@ function makeLatestRun(overrides?: {
       overrides?.completedAt !== undefined ? overrides.completedAt : "2026-03-09T10:05:00.000Z",
   };
 }
-
-describe("selectMarkUnreadThreads", () => {
-  it("leaves out running threads and threads with no completed run", () => {
-    const runtime = {
-      status: "completed" as const,
-      activeRunId: null,
-      providerInstanceId: ProviderInstanceId.make("codex"),
-      providerName: "Codex",
-      lastError: null,
-      updatedAt: "2026-03-09T10:05:00.000Z",
-    };
-    const threads = [
-      { id: "done", latestRun: makeLatestRun(), runtime },
-      {
-        id: "running",
-        latestRun: makeLatestRun(),
-        runtime: { ...runtime, status: "running" as const },
-      },
-      { id: "never-completed", latestRun: makeLatestRun({ completedAt: null }), runtime: null },
-      { id: "no-run", latestRun: null, runtime: null },
-      { id: "stopped", latestRun: makeLatestRun({ status: "interrupted" }), runtime },
-    ];
-    expect(selectMarkUnreadThreads(threads).map((thread) => thread.id)).toEqual(["done"]);
-  });
-});
 
 describe("withoutRemovedCheckout", () => {
   const worktree = { branch: "onicode/task", worktreePath: "/worktrees/task" };
@@ -1740,6 +1715,63 @@ describe("groupSidebarThreadsByProject", () => {
       { projectKey: "onicode", threads: ["a", "b"] },
       { projectKey: "fleet", threads: [] },
     ]);
+  });
+});
+
+describe("sliceSidebarFolderThreads", () => {
+  it("previews six threads until Show more and keeps the route thread listed", () => {
+    const threads = Array.from({ length: 8 }, (_, index) => ({
+      environmentId: localEnvironmentId,
+      id: ThreadId.make(`thread-${index}`),
+    }));
+    const routeKey = (index: number) =>
+      scopedThreadKey(scopeThreadRef(localEnvironmentId, threads[index]!.id));
+    const summarize = (
+      input: Omit<Parameters<typeof sliceSidebarFolderThreads>[0], "threads">,
+      list = threads,
+    ) => {
+      const folder = sliceSidebarFolderThreads({ ...input, threads: list });
+      return {
+        listed: folder.threads.map((thread) => thread.id),
+        hidden: folder.hiddenThreads.map((thread) => thread.id),
+        canShowLess: folder.canShowLess,
+      };
+    };
+    const ids = (...indexes: number[]) => indexes.map((index) => `thread-${index}`);
+
+    expect(summarize({ collapsed: false, showAll: false, routeThreadKey: null })).toEqual({
+      listed: ids(0, 1, 2, 3, 4, 5),
+      hidden: ids(6, 7),
+      canShowLess: false,
+    });
+    expect(summarize({ collapsed: false, showAll: true, routeThreadKey: null })).toEqual({
+      listed: ids(0, 1, 2, 3, 4, 5, 6, 7),
+      hidden: [],
+      canShowLess: true,
+    });
+    // The open thread past the preview stays listed, and the rest still count as hidden.
+    expect(summarize({ collapsed: false, showAll: false, routeThreadKey: routeKey(7) })).toEqual({
+      listed: ids(0, 1, 2, 3, 4, 5, 7),
+      hidden: ids(6),
+      canShowLess: false,
+    });
+    // Seven threads, the seventh open: nothing is left to show, so no Show more or Show less.
+    expect(
+      summarize(
+        { collapsed: false, showAll: true, routeThreadKey: routeKey(6) },
+        threads.slice(0, 7),
+      ),
+    ).toEqual({ listed: ids(0, 1, 2, 3, 4, 5, 6), hidden: [], canShowLess: false });
+    expect(summarize({ collapsed: true, showAll: true, routeThreadKey: routeKey(3) })).toEqual({
+      listed: ids(3),
+      hidden: ids(0, 1, 2, 4, 5, 6, 7),
+      canShowLess: false,
+    });
+    expect(summarize({ collapsed: true, showAll: false, routeThreadKey: null })).toEqual({
+      listed: [],
+      hidden: ids(0, 1, 2, 3, 4, 5, 6, 7),
+      canShowLess: false,
+    });
   });
 });
 

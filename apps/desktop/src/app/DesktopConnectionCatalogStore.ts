@@ -23,6 +23,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 
 import * as ElectronSafeStorage from "../electron/ElectronSafeStorage.ts";
@@ -171,6 +172,8 @@ export class DesktopConnectionCatalogStore extends Context.Service<
       boolean,
       DesktopConnectionCatalogStoreWriteError | DesktopConnectionCatalogStoreProtectionError
     >;
+    /** Where the catalog that could no longer be decrypted was backed up, once per reset. */
+    readonly takeResetBackupPath: Effect.Effect<Option.Option<string>>;
   }
 >()("@onicode/desktop/app/DesktopConnectionCatalogStore") {}
 
@@ -366,6 +369,7 @@ export const make = Effect.gen(function* () {
   const random = yield* SecureRandom.SecureRandom;
   const savedEnvironments = yield* DesktopSavedEnvironments.DesktopSavedEnvironments;
   const catalogPath = path.join(environment.stateDir, "connection-catalog.json");
+  const resetBackupPath = yield* Ref.make(Option.none<string>());
   const encryptionAvailable = safeStorage.isEncryptionAvailable.pipe(
     Effect.mapError(
       (cause) =>
@@ -463,6 +467,7 @@ export const make = Effect.gen(function* () {
         "The desktop connection catalog can no longer be decrypted; starting a new one.",
         { catalogPath, backupPath, reason: decryptError._tag },
       );
+      yield* Ref.set(resetBackupPath, Option.some(backupPath));
     }
   });
 
@@ -562,6 +567,7 @@ export const make = Effect.gen(function* () {
       yield* writeCatalog(catalog);
       return true;
     }),
+    takeResetBackupPath: Ref.getAndSet(resetBackupPath, Option.none()),
   });
 });
 

@@ -20,7 +20,6 @@ import { msg } from "gt-react";
 import { pickSnoozePreset, resolveSnoozePresets } from "../components/Sidebar.snooze";
 import {
   buildThreadActionMenuItems,
-  canMarkLatestRunUnread,
   isThreadTriageAction,
   threadActionRequiresOperate,
   type ThreadActionMenuId,
@@ -47,7 +46,10 @@ import {
   selectProjectGroupingSettings,
 } from "@onicode/client-runtime/state/project-grouping";
 import { buildPhysicalToLogicalProjectKeyMap } from "../sidebarProjectGrouping";
-import { threadRuntimeCanArchive } from "@onicode/client-runtime/state/models";
+import {
+  canMarkLatestRunUnread,
+  threadRuntimeCanArchive,
+} from "@onicode/client-runtime/state/models";
 import { useCopyToClipboard } from "./useCopyToClipboard";
 import { useNewThreadHandler } from "./useHandleNewThread";
 import { useClientSettings } from "./useSettings";

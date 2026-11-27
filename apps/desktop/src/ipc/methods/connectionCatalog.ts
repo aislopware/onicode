@@ -25,3 +25,13 @@ export const setConnectionCatalog = DesktopIpc.makeIpcMethod({
     return yield* store.set(catalog);
   }),
 });
+
+export const takeConnectionCatalogReset = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.TAKE_CONNECTION_CATALOG_RESET_CHANNEL,
+  payload: Schema.Void,
+  result: Schema.NullOr(Schema.String),
+  handler: Effect.fn("desktop.ipc.connectionCatalog.takeReset")(function* () {
+    const store = yield* DesktopConnectionCatalogStore.DesktopConnectionCatalogStore;
+    return Option.getOrNull(yield* store.takeResetBackupPath);
+  }),
+});

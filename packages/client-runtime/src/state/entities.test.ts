@@ -3,6 +3,7 @@ import {
   MessageId,
   NodeId,
   ProviderDriverKind,
+  ProviderInstanceId,
   ProviderSessionId,
   ProviderThreadId,
   RunId,
@@ -12,7 +13,11 @@ import {
 import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 
-import { presentThreadShell, resolveThreadWorkingStartedAt } from "./models.ts";
+import {
+  presentThreadShell,
+  resolveThreadWorkingStartedAt,
+  threadCanMarkUnread,
+} from "./models.ts";
 import { v2Projection, v2ThreadShell } from "./orchestrationV2TestFixtures.ts";
 import { deriveLatestThreadRun, deriveThreadRuntime } from "./threadExecution.ts";
 import { isThreadWorking } from "./threadInbox.ts";
@@ -594,5 +599,31 @@ describe("V2 client presentation", () => {
       { requestId: multiRequestId, multiSelect: true },
       { requestId: legacyRequestId, multiSelect: false },
     ]);
+  });
+
+  it("offers mark unread only for a run that finished on its own with nothing running", () => {
+    const run = {
+      status: "completed" as const,
+      completedAt: "2026-03-09T10:05:00.000Z",
+    };
+    const runtime = {
+      status: "completed" as const,
+      activeRunId: null,
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      providerName: "Codex",
+      lastError: null,
+      updatedAt: "2026-03-09T10:05:00.000Z",
+    };
+    const threads = [
+      { id: "done", latestRun: run, runtime },
+      { id: "running", latestRun: run, runtime: { ...runtime, status: "running" as const } },
+      { id: "never-completed", latestRun: { ...run, completedAt: null }, runtime: null },
+      { id: "no-run", latestRun: null, runtime: null },
+      { id: "stopped", latestRun: { ...run, status: "interrupted" as const }, runtime },
+      { id: "cancelled", latestRun: { ...run, status: "cancelled" as const }, runtime },
+    ];
+    expect(
+      threads.filter((thread) => threadCanMarkUnread(thread)).map((thread) => thread.id),
+    ).toEqual(["done"]);
   });
 });

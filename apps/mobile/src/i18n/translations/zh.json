@@ -5132,6 +5132,7 @@
   "378c3404c430fc05": "与 /side 相同",
   "08aa54cb113f64b1": "以全新上下文重新开始",
   "2a6969164260cdee": "此项目无法使用 pull request。",
+  "f73d6e04e1100572": "只能保存或分享文件，不能保存或分享文件夹。",
   "a0ce478324829283": "{term, select, mr {无法关联此 MR} cr {无法关联此 change request} other {无法关联此 PR}}",
   "962d13f9565f189b": "{term, select, mr {无法取消关联此 MR} cr {无法取消关联此 change request} other {无法取消关联此 PR}}",
   "0f9053e44ef763ec": "{term, select, mr {粘贴 merge request URL，或输入此会话仓库的 123 / #123。} cr {粘贴 change request URL，或输入此会话仓库的 123 / #123。} other {粘贴 pull request URL，或输入此会话仓库的 123 / #123。}}",

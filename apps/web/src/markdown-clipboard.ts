@@ -1,4 +1,8 @@
-import { UNFINISHED_DRIVE_PATH } from "@onicode/shared/markdownLinks";
+import {
+  escapeMarkdownProse,
+  type PastedTextRun,
+  restoreMarkdownLinkRuns,
+} from "@onicode/shared/pastedMarkdownLinks";
 
 const SKIPPED_TAGS = new Set(["BUTTON", "INPUT", "SCRIPT", "STYLE", "TEMPLATE"]);
 const SKIPPED_CLASS_NAMES = ["select-none", "sr-only"];
@@ -211,31 +215,7 @@ function serializeDetails(details: Element): string {
   return `<details${open}>\n<summary>${summary}</summary>${content ? `\n\n${content}` : ""}\n</details>\n\n`;
 }
 
-// Prose that would read as inline Markdown once pasted back: a backslash before punctuation,
-// backticks, brackets, and emphasis or strikethrough runs (user remark-gfm sets singleTilde: false).
-const INLINE_MARKDOWN = /\\(?=[!-/:-@[-`{-~\n]|$)|[`[\]]|\*+|_+|~{2,}/g;
 const ESCAPED_PUNCTUATION = /\\([!-/:-@[-`{-~])/g;
-
-/** Escapes rendered prose so it parses back to the same text, leaving runs that cannot open or close. */
-function escapeProse(text: string): string {
-  return text.replace(/\S+/g, (word, wordOffset: number) => {
-    // Check each word once; testing every escape's growing prefix would be quadratic.
-    const drive = UNFINISHED_DRIVE_PATH.exec(word);
-    const driveStart = drive ? drive.index + drive[0].search(/[A-Za-z]/) + 2 : Infinity;
-    return word.replace(INLINE_MARKDOWN, (match: string, offset: number) => {
-      if (offset >= driveStart) return match;
-      const before = text[wordOffset + offset - 1];
-      const after = text[wordOffset + offset + match.length];
-      if (match === "\\" && after !== undefined && /[^\S\n]/.test(after)) return match;
-      // A text node's edge may touch another node's markers, so it counts as neither.
-      const between = (pattern: RegExp) =>
-        before !== undefined && after !== undefined && pattern.test(before) && pattern.test(after);
-      if (/[*_~]/.test(match[0]!) && between(/\s/)) return match;
-      if (match[0] === "_" && between(/[\p{L}\p{N}]/u)) return match;
-      return match.replace(/[\s\S]/g, "\\$&");
-    });
-  });
-}
 
 /** Restores link destinations only when the HTML and plain clipboard describe the same text. */
 export function restorePastedMarkdownLinks(plain: string, html: string): string {
@@ -274,50 +254,18 @@ export function restorePastedMarkdownLinks(plain: string, html: string): string 
   for (const anchor of fragment.querySelectorAll("a[href]")) {
     // Linked identifiers in API docs code samples must stay literal code.
     if (anchor.closest("pre, code")) continue;
-    const href = anchor.getAttribute("href")?.trim() ?? "";
-    if (!/^(?:https?:\/\/|mailto:)/i.test(href)) continue;
-    let url: URL;
-    try {
-      url = new URL(href);
-    } catch {
-      continue;
-    }
     const label = document.createTextNode(anchor.textContent ?? "");
+    destinations.set(label, anchor.getAttribute("href") ?? "");
     anchor.replaceWith(label);
-    destinations.set(label, url.href);
   }
   if (destinations.size === 0) return plain;
 
-  // Match visible characters in order. The plain rendition owns line breaks and spacing.
+  const runs: PastedTextRun[] = [];
   const walker = document.createTreeWalker(fragment, NodeFilter.SHOW_TEXT);
-  const characters = plain.matchAll(/\S/g);
-  const parts: string[] = [];
-  let resultEnd = 0;
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-    let start: number | undefined;
-    let end = 0;
-    for (const character of (node.textContent ?? "").matchAll(/\S/g)) {
-      const match = characters.next().value;
-      if (match?.[0] !== character[0]) return plain;
-      start ??= match.index;
-      end = match.index + 1;
-    }
-    const href = destinations.get(node);
-    if (href === undefined || start === undefined) continue;
-    const label = plain.slice(start, end);
-    if (label === href) continue;
-    const prefix = plain.slice(resultEnd, start).replace(/(?<!\\)((?:\\\\)*)([!\\])$/, "$1\\$2");
-    const destination = href.replaceAll("&", "&amp;");
-    parts.push(
-      prefix,
-      label.replace(/\S(?:[^\n]*\S)?/g, (line) =>
-        markdownAnchor(escapeProse(line), destination, false),
-      ),
-    );
-    resultEnd = end;
+    runs.push({ text: node.textContent ?? "", href: destinations.get(node) });
   }
-  if (!characters.next().done || parts.length === 0) return plain;
-  return parts.join("") + plain.slice(resultEnd);
+  return restoreMarkdownLinkRuns(plain, runs);
 }
 
 function markdownAnchor(label: string, href: string, inTableCell: boolean): string {
@@ -364,7 +312,7 @@ function serializeNode(node: Node, inTableCell = false): string {
     // A <br> already wrote the line ending that follows it.
     if (node.previousSibling?.nodeName === "BR") text = text.replace(/^\n/, "");
     if (text.includes("\n") && text.trim().length === 0) return "\n";
-    return escapeTablePipes(escapeProse(text), inTableCell);
+    return escapeTablePipes(escapeMarkdownProse(text), inTableCell);
   }
   if (node.nodeType !== Node.ELEMENT_NODE) return "";
   const element = node as Element;

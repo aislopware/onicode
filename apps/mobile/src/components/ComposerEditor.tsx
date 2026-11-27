@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 import type { EnvironmentId } from "@onicode/contracts";
 import { encodeComposerContextFragment } from "@onicode/shared/composerContextClipboard";
 import { collectComposerContextReferences } from "@onicode/shared/composerContextReferences";
+import { restorePastedHtmlLinks } from "@onicode/shared/pastedMarkdownLinks";
 import {
   collectAssistantCitations,
   serializeAssistantCitation,
@@ -103,13 +104,17 @@ export function ComposerEditor({
   const pasteContext = async (
     clipboard: Parameters<NonNullable<NativeComposerEditorProps["onPasteContext"]>>[0],
   ) => {
-    if (
-      !draftKey ||
-      appAtomRegistry.get(composerContextImportsAtom)[draftKey] ||
-      props.readOnly ||
-      props.editable === false
-    )
+    if (props.readOnly || props.editable === false) return;
+    const pasted = { ...clipboard, text: restorePastedHtmlLinks(clipboard.text, clipboard.html) };
+    // Context needs a draft to hold its records; elsewhere the paste is text.
+    if (!draftKey) {
+      const { start, end } = clipboard.selection;
+      const caret = start + pasted.text.length;
+      changeText(clipboard.value.slice(0, start) + pasted.text + clipboard.value.slice(end));
+      props.onSelectionChange?.({ start: caret, end: caret });
       return;
+    }
+    if (appAtomRegistry.get(composerContextImportsAtom)[draftKey]) return;
     const insertion = { text: clipboard.value, ...clipboard.selection };
     const operation = startComposerDraftOperation(draftKey);
     const { signal } = operation;
@@ -117,7 +122,7 @@ export function ComposerEditor({
     const settled = await settlePromise(async () => {
       const retained = getComposerDraftAfterSelection(draftKey, insertion);
       const result = await importComposerContextClipboard(
-        clipboard,
+        pasted,
         retained.attachments.length,
         signal,
         retained.context?.records.length ?? 0,
@@ -126,7 +131,7 @@ export function ComposerEditor({
       );
       if (signal.aborted) return;
       if (!result) {
-        insertComposerDraftText(draftKey, clipboard.text, insertion);
+        insertComposerDraftText(draftKey, pasted.text, insertion);
         return;
       }
       if (!insertComposerDraftContext(draftKey, result, insertion)) {

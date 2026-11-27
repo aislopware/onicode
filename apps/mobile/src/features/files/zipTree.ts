@@ -64,7 +64,8 @@ function freeze(node: MutableNode): ZipTreeNode {
 export function buildZipTree(entries: ReadonlyArray<ZipEntry>): ReadonlyArray<ZipTreeNode> {
   const root: MutableNode = { path: "", name: "", entry: null, children: new Map() };
   for (const entry of entries) {
-    const parts = entry.path.split("/").filter(Boolean);
+    // `zip -r x.zip .` and similar name members "./src/a.txt"; list them from the archive root.
+    const parts = entry.path.split("/").filter((part) => part !== "" && part !== ".");
     let current = root;
     parts.forEach((part, index) => {
       const leaf = index === parts.length - 1 && !entry.isDirectory;

@@ -5149,6 +5149,7 @@
   "378c3404c430fc05": "Wie /side",
   "08aa54cb113f64b1": "Neue Sitzung starten",
   "2a6969164260cdee": "Pull Requests sind für dieses Projekt nicht verfügbar.",
+  "f73d6e04e1100572": "Nur Dateien können gespeichert oder geteilt werden, keine Ordner.",
   "a0ce478324829283": "{term, select, mr {Dieser Merge Request konnte nicht verknüpft werden} cr {Diese Änderungsanfrage konnte nicht verknüpft werden} other {Dieser Pull Request konnte nicht verknüpft werden}}",
   "962d13f9565f189b": "{term, select, mr {Die Verknüpfung dieses Merge Requests konnte nicht aufgehoben werden} cr {Die Verknüpfung dieser Änderungsanfrage konnte nicht aufgehoben werden} other {Die Verknüpfung dieses Pull Requests konnte nicht aufgehoben werden}}",
   "0f9053e44ef763ec": "{term, select, mr {Füge eine Merge-Request-URL ein oder gib 123 / #123 für das Repository dieses Threads ein.} cr {Füge eine Änderungsanfrage-URL ein oder gib 123 / #123 für das Repository dieses Threads ein.} other {Füge eine Pull-Request-URL ein oder gib 123 / #123 für das Repository dieses Threads ein.}}",

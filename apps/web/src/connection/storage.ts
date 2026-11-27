@@ -514,6 +514,24 @@ export interface CatalogBackend {
   readonly quarantine?: (raw: string) => Effect.Effect<void, ConnectionTransientError>;
 }
 
+// A catalog the system can no longer decrypt reads as empty; the desktop tells once where it kept it.
+function announceCatalogReset(bridge: NonNullable<typeof window.desktopBridge>) {
+  const takeReset = bridge.takeConnectionCatalogReset;
+  if (takeReset === undefined) return Effect.void;
+  return Effect.sync(() => {
+    void takeReset()
+      .then(async (backupPath) => {
+        if (backupPath === null) return;
+        const { showConnectionCatalogResetToast } =
+          await import("../components/ConnectionCatalogResetToast");
+        showConnectionCatalogResetToast(backupPath);
+      })
+      .catch((cause: unknown) => {
+        console.warn("Could not announce the reset desktop connection catalog.", cause);
+      });
+  });
+}
+
 export function makeCatalogBackend(database: DatabaseHandle): CatalogBackend {
   const bridge = window.desktopBridge;
   if (bridge !== undefined) {
@@ -521,7 +539,7 @@ export function makeCatalogBackend(database: DatabaseHandle): CatalogBackend {
       read: Effect.tryPromise({
         try: () => bridge.getConnectionCatalog(),
         catch: (cause) => catalogError("load", cause),
-      }),
+      }).pipe(Effect.tap((raw) => (raw === null ? announceCatalogReset(bridge) : Effect.void))),
       write: (raw) =>
         Effect.tryPromise({
           try: () => bridge.setConnectionCatalog(raw),
