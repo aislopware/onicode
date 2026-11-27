@@ -75,12 +75,21 @@ export interface ApprovalTextPart {
 
 // Control, format, separator and ignorable characters draw as nothing or as a blank box, and some
 // reorder the text beside them. A line feed and a tab draw as themselves and are not in the set.
-const UNDRAWN = /[\0-\x08\x0B-\x1F\x7F-\x9F\p{Zl}\p{Zp}\p{Cf}\p{Default_Ignorable_Code_Point}]/gu;
-const UNDRAWN_NAMES: Readonly<Record<string, string>> = {
-  "\r": "\\r",
-  "\b": "\\b",
-  "\u001B": "\\e",
-};
+const UNDRAWN = /[\0-\x08\x0B-\x1F\x7F-\x9F\p{Zl}\p{Zp}\p{Cf}\p{Default_Ignorable_Code_Point}]+/gu;
+// Only undrawn code points are named, so this cache stays within that set of a few thousand.
+const UNDRAWN_NAMES = new Map<number, string>([
+  [0x0d, "\\r"],
+  [0x08, "\\b"],
+  [0x1b, "\\e"],
+]);
+function undrawnName(codePoint: number): string {
+  let name = UNDRAWN_NAMES.get(codePoint);
+  if (name === undefined) {
+    name = `U+${codePoint.toString(16).toUpperCase().padStart(4, "0")}`;
+    UNDRAWN_NAMES.set(codePoint, name);
+  }
+  return name;
+}
 const PICTOGRAPH = /^\p{Extended_Pictographic}$/u;
 // The pictographic range also holds code points reserved for emoji that do not exist yet.
 const EMOJI = /^\p{Emoji}$/u;
@@ -91,11 +100,23 @@ const EMOJI_SELECTOR = 0xfe0f;
 const KEYCAP = 0x20e3;
 
 const isSkinTone = (codePoint: number) => codePoint >= 0x1f3fb && codePoint <= 0x1f3ff;
+// Every such emoji is ©, ®, between U+203C and U+3299, or between U+1F000 and U+1FFFD, so the
+// cache of these few thousand code points stays small.
+const PICTURES = new Map<number, boolean>();
 // An emoji that is not a skin tone, which only colours the emoji before it.
 const isPicture = (codePoint: number) => {
-  if (codePoint < 0 || isSkinTone(codePoint)) return false;
-  const character = String.fromCodePoint(codePoint);
-  return PICTOGRAPH.test(character) && EMOJI.test(character);
+  const possible =
+    codePoint < 0x203c
+      ? codePoint === 0xa9 || codePoint === 0xae
+      : codePoint <= 0x3299 || (codePoint >= 0x1f000 && codePoint <= 0x1fffd);
+  if (!possible || isSkinTone(codePoint)) return false;
+  let picture = PICTURES.get(codePoint);
+  if (picture === undefined) {
+    const character = String.fromCodePoint(codePoint);
+    picture = PICTOGRAPH.test(character) && EMOJI.test(character);
+    PICTURES.set(codePoint, picture);
+  }
+  return picture;
 };
 // A digit, # or *.
 const isKeycapBase = (codePoint: number) =>
@@ -191,38 +212,42 @@ function scanApprovalText(shown: string, namedRuns: number) {
   const starts: number[] = [];
   let stop = shown.length;
   let end = 0;
-  let names = "";
+  const names: string[] = [];
   let namesStart = 0;
   let runs = 0;
-  for (const match of shown.matchAll(UNDRAWN)) {
-    const [character] = match;
-    const codePoint = character.codePointAt(0) ?? 0;
-    if (isInsideEmoji(shown, match.index, codePoint)) continue;
-    if (match.index > end || names === "") {
-      if (runs === namedRuns) {
-        stop = match.index;
-        break;
-      }
-      if (names !== "") {
-        parts.push({ text: names, named: true });
-        starts.push(namesStart);
-      }
-      if (match.index > end) {
-        parts.push({ text: shown.slice(end, match.index) });
-        starts.push(end);
-      }
-      names = "";
-      namesStart = match.index;
-      runs += 1;
-    }
-    names +=
-      UNDRAWN_NAMES[character] ?? `U+${codePoint.toString(16).toUpperCase().padStart(4, "0")}`;
-    end = match.index + character.length;
-  }
-  if (names !== "") {
-    parts.push({ text: names, named: true });
+  const flushNames = () => {
+    if (names.length === 0) return;
+    const text = names.length === 1 ? (names[0] ?? "") : names.join("");
+    parts.push({ text, named: true });
     starts.push(namesStart);
+    names.length = 0;
+  };
+  scan: for (const match of shown.matchAll(UNDRAWN)) {
+    const matchEnd = match.index + match[0].length;
+    for (let index = match.index; index < matchEnd;) {
+      const codePoint = shown.codePointAt(index) ?? 0;
+      const size = codePoint > 0xffff ? 2 : 1;
+      if (!isInsideEmoji(shown, index, codePoint)) {
+        if (index > end || names.length === 0) {
+          if (runs === namedRuns) {
+            stop = index;
+            break scan;
+          }
+          flushNames();
+          if (index > end) {
+            parts.push({ text: shown.slice(end, index) });
+            starts.push(end);
+          }
+          namesStart = index;
+          runs += 1;
+        }
+        names.push(undrawnName(codePoint));
+        end = index + size;
+      }
+      index += size;
+    }
   }
+  flushNames();
   if (end < stop) {
     parts.push({ text: shown.slice(end, stop) });
     starts.push(end);

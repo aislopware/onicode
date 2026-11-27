@@ -1,4 +1,5 @@
 import * as Schema from "effect/Schema";
+import * as SchemaTransformation from "effect/SchemaTransformation";
 
 import { IssueRef } from "./issue.ts";
 import { PullRequestRef } from "./pullRequest.ts";
@@ -58,7 +59,7 @@ export const WorkflowRun = Schema.Struct({
 });
 export type WorkflowRun = typeof WorkflowRun.Type;
 
-export const WorkflowStep = Schema.Struct({
+const stepFields = {
   name: Schema.String,
   // A sleep's `detail` is when it wakes, as an ISO time. A `queue` step waits for a place in a pool.
   kind: Schema.Literals(["step", "wait", "agent", "ask", "sleep", "queue"]),
@@ -79,7 +80,27 @@ export const WorkflowStep = Schema.Struct({
   ahead: Schema.optional(Schema.Number),
   startedAt: Schema.String,
   endedAt: Schema.NullOr(Schema.String),
+};
+
+// Builds from before the `queue` kind refuse a run that has one, so it travels as a marked `wait`.
+// A bare `queue` still decodes: servers between the two sent it that way.
+const WorkflowStepWire = Schema.Struct({
+  ...stepFields,
+  queue: Schema.optional(Schema.Boolean),
 });
+
+const DecodedWorkflowStep = Schema.Struct(stepFields);
+
+export const WorkflowStep = WorkflowStepWire.pipe(
+  Schema.decodeTo(
+    Schema.toType(DecodedWorkflowStep),
+    SchemaTransformation.transform<typeof DecodedWorkflowStep.Type, typeof WorkflowStepWire.Type>({
+      decode: ({ queue, ...step }) => (queue === true ? { ...step, kind: "queue" } : step),
+      encode: ({ kind, ...step }) =>
+        kind === "queue" ? { ...step, kind: "wait", queue: true } : { ...step, kind },
+    }),
+  ),
+);
 export type WorkflowStep = typeof WorkflowStep.Type;
 
 /** A question a run asked. Answer it with a signal to its run and name. */

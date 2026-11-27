@@ -426,6 +426,11 @@ function ThreadTerminal(props: {
   const contentTopInset = useContentTopInset();
   const navigation = useNavigation();
   const writeTerminal = useAtomCommand(terminalEnvironment.write, "terminal write");
+  // Servers older than paste phases reject the empty abort write, and it only releases a hold.
+  const abortTerminalWrite = useAtomCommand(terminalEnvironment.write, {
+    label: "terminal write",
+    reportFailure: false,
+  });
   const clearTerminal = useAtomCommand(terminalEnvironment.clear, "terminal clear");
   const closeTerminal = useAtomCommand(terminalEnvironment.close, "terminal close");
   const retryEnvironment = useRetryEnvironment();
@@ -661,7 +666,8 @@ function ThreadTerminal(props: {
     ) {
       return false;
     }
-    const result = await writeTerminal({
+    const write = plainWrite === "abort" ? abortTerminalWrite : writeTerminal;
+    const result = await write({
       environmentId: selectedThread.environmentId,
       input: {
         threadId: selectedThread.id,

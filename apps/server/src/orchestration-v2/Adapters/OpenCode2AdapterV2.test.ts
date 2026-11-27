@@ -8523,64 +8523,83 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       }),
   );
 
-  it.effect("does not start a wake's history at a prompt another client steered into it", () =>
-    Effect.gen(function* () {
-      const offers: Array<ProviderContinuationRequests.ProviderContinuationRequest> = [];
-      // Onicode's own prompt can be admitted after a failed submit ended its turn.
-      const late = `msg_oni_turn_${SESSION}:attempt:late`;
-      const { runtime, thread } = yield* resumed([
-        event("session.inbox.enqueued", {
-          inboxID: late,
-          sessionID: SESSION,
-          item: { type: "user", payload: { text: "mine" }, delivery: "steer" },
-        }),
-        event("session.execution.started", { sessionID: SESSION }),
-        event("session.inbox.delivered", { sessionID: SESSION, inboxID: late }),
-        event("session.inbox.enqueued", {
+  it.effect.each([
+    { name: "after its first delivery", enqueuedBeforeFirstDelivery: false },
+    { name: "while it is opening", enqueuedBeforeFirstDelivery: true },
+  ])(
+    "does not start a wake's history at a prompt another client steered into it $name",
+    ({ enqueuedBeforeFirstDelivery }) =>
+      Effect.gen(function* () {
+        const offers: Array<ProviderContinuationRequests.ProviderContinuationRequest> = [];
+        // Onicode's own prompt can be admitted after a failed submit ended its turn.
+        const late = `msg_oni_turn_${SESSION}:attempt:late`;
+        const external = event("session.inbox.enqueued", {
           inboxID: "msg_external",
           sessionID: SESSION,
           item: { type: "user", payload: { text: "And this?" }, delivery: "steer" },
-        }),
-        event("session.inbox.delivered", { sessionID: SESSION, inboxID: "msg_external" }),
-        event("session.execution.succeeded", { sessionID: SESSION }),
-        // Handled only after the wake above has buffered everything before it.
-        event("session.model.selected", {
+        });
+        const deliveredLate = event("session.inbox.delivered", {
           sessionID: SESSION,
-          model: { id: "buffered", providerID: "opencode" },
-        }),
-      ]).pipe(
-        Effect.provideService(ProviderContinuationRequests.ProviderContinuationRequests, {
-          offer: (request) => Effect.sync(() => void offers.push(request)),
-          take: Effect.never,
-        }),
-      );
-      const refs: Array<string | null | undefined> = [];
-      const buffered = yield* Deferred.make<void>();
-      const ended = yield* Deferred.make<void>();
-      yield* runtime.events.pipe(
-        Stream.tap((event) =>
-          Effect.gen(function* () {
-            if (event.type === "provider_turn.updated") {
-              refs.push(event.providerTurn.nativeTurnRef?.nativeId);
-            }
-            if (
-              event.type === "provider_thread.updated" &&
-              event.providerThread.nativeMetadata?.modelSelection?.model === "opencode/buffered"
-            ) {
-              yield* Deferred.succeed(buffered, undefined);
-            }
-            if (event.type === "turn.terminal") yield* Deferred.succeed(ended, undefined);
+          inboxID: late,
+        });
+        const { runtime, thread } = yield* resumed([
+          event("session.inbox.enqueued", {
+            inboxID: late,
+            sessionID: SESSION,
+            item: { type: "user", payload: { text: "mine" }, delivery: "steer" },
           }),
-        ),
-        Stream.runDrain,
-        Effect.forkScoped,
-      );
-      yield* Deferred.await(buffered);
-      yield* runtime.startTurn(continuationTurn(thread, offers[0]!));
-      yield* Deferred.await(ended);
-      assert.isNotEmpty(refs);
-      assert.notInclude(refs, "msg_external");
-    }),
+          event("session.execution.started", { sessionID: SESSION }),
+          ...(enqueuedBeforeFirstDelivery ? [external, deliveredLate] : [deliveredLate, external]),
+          event("session.inbox.delivered", { sessionID: SESSION, inboxID: "msg_external" }),
+          event("session.execution.succeeded", { sessionID: SESSION }),
+          // Handled only after the wake above has buffered everything before it.
+          event("session.model.selected", {
+            sessionID: SESSION,
+            model: { id: "buffered", providerID: "opencode" },
+          }),
+        ]).pipe(
+          Effect.provideService(ProviderContinuationRequests.ProviderContinuationRequests, {
+            offer: (request) => Effect.sync(() => void offers.push(request)),
+            take: Effect.never,
+          }),
+        );
+        const refs: Array<string | null | undefined> = [];
+        const completedRefs: Array<string | null | undefined> = [];
+        const userItems: Array<string> = [];
+        const buffered = yield* Deferred.make<void>();
+        const ended = yield* Deferred.make<void>();
+        yield* runtime.events.pipe(
+          Stream.tap((event) =>
+            Effect.gen(function* () {
+              if (event.type === "provider_turn.updated") {
+                refs.push(event.providerTurn.nativeTurnRef?.nativeId);
+                if (event.providerTurn.status === "completed") {
+                  completedRefs.push(event.providerTurn.nativeTurnRef?.nativeId);
+                }
+              }
+              if (event.type === "turn_item.updated" && event.turnItem.type === "user_message") {
+                userItems.push(`${event.turnItem.inputIntent}: ${event.turnItem.text}`);
+              }
+              if (
+                event.type === "provider_thread.updated" &&
+                event.providerThread.nativeMetadata?.modelSelection?.model === "opencode/buffered"
+              ) {
+                yield* Deferred.succeed(buffered, undefined);
+              }
+              if (event.type === "turn.terminal") yield* Deferred.succeed(ended, undefined);
+            }),
+          ),
+          Stream.runDrain,
+          Effect.forkScoped,
+        );
+        yield* Deferred.await(buffered);
+        yield* runtime.startTurn(continuationTurn(thread, offers[0]!));
+        yield* Deferred.await(ended);
+        assert.notInclude(refs, "msg_external");
+        // The wake begins at the item it opened on; the steer joins that same turn.
+        assert.deepEqual(completedRefs, [late]);
+        assert.deepEqual([...new Set(userItems)], ["steer: And this?"]);
+      }),
   );
 
   it.effect.each([

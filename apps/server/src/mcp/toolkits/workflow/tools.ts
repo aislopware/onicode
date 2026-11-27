@@ -54,7 +54,8 @@ const WorkflowTool = Tool.make("oni_workflow", {
   }),
   success: Schema.Struct({
     run: Schema.optional(WorkflowRun),
-    steps: Schema.optional(Schema.Array(WorkflowStep)),
+    // Agents read the step kind as it is; only old app builds need the wire's `wait` form.
+    steps: Schema.optional(Schema.Array(Schema.toType(WorkflowStep))),
     runs: Schema.optional(Schema.Array(WorkflowRun)),
     questions: Schema.optional(Schema.Array(Workflows.WorkflowQuestion)),
     hooks: Schema.optional(Schema.Array(WorkflowHook)),

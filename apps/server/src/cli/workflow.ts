@@ -18,7 +18,10 @@ import {
   withThreadTools,
 } from "./thread.ts";
 
-const RunResult = Schema.Struct({ run: WorkflowRun, steps: Schema.Array(WorkflowStep) });
+const RunResult = Schema.Struct({
+  run: WorkflowRun,
+  steps: Schema.Array(Schema.toType(WorkflowStep)),
+});
 const RunsResult = Schema.Struct({ runs: Schema.Array(WorkflowRun) });
 const QuestionsResult = Schema.Struct({ questions: Schema.Array(Workflows.WorkflowQuestion) });
 const HooksResult = Schema.Struct({ hooks: Schema.Array(WorkflowHook) });
