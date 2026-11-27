@@ -24,6 +24,26 @@ export class UnreadableZipEntryError extends Schema.TaggedError<UnreadableZipEnt
   { message: Schema.String },
 ) {}
 
+const CP437_HIGH_BYTES =
+  "ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒ" +
+  "áíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐" +
+  "└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀" +
+  "αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■\u00a0";
+
+const strictUtf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+
+// A name without the UTF-8 flag or a Unicode path field is often UTF-8 anyway, so CP437 (the
+// ZIP spec's default) is only the fallback; replacing invalid bytes would merge distinct names.
+function decodeLegacyName(raw: Uint8Array) {
+  try {
+    return strictUtf8.decode(raw);
+  } catch {
+    return Array.from(raw, (byte) =>
+      byte < 128 ? String.fromCharCode(byte) : CP437_HIGH_BYTES[byte - 128],
+    ).join("");
+  }
+}
+
 export function readZipDirectory(input: ArrayBuffer | Uint8Array, entryLimit = 2048) {
   const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -127,6 +147,7 @@ function zipEntry(bytes: Uint8Array, view: DataView, offset: number, shift: numb
       message: "This ZIP archive uses an unsupported compression method.",
     });
   let storedName = bytes.subarray(offset + 46, extraStart);
+  let utf8Name = (flags & 0x800) !== 0;
   for (let field = extraStart; field + 4 <= extraEnd;) {
     const end = Math.min(field + 4 + view.getUint16(field + 2, true), extraEnd);
     const id = view.getUint16(field, true);
@@ -147,8 +168,10 @@ function zipEntry(bytes: Uint8Array, view: DataView, offset: number, shift: numb
       end - field >= 9 &&
       bytes[field + 4] === 1 &&
       view.getUint32(field + 5, true) === crc32(storedName)
-    )
+    ) {
       storedName = bytes.subarray(field + 9, end);
+      utf8Name = true;
+    }
     field = end;
   }
   const header = local + shift;
@@ -156,7 +179,9 @@ function zipEntry(bytes: Uint8Array, view: DataView, offset: number, shift: numb
     throw damagedEntry();
   const start = header + 30 + view.getUint16(header + 26, true) + view.getUint16(header + 28, true);
   if (start + compressedSize > bytes.length) throw damagedEntry();
-  const originalName = new TextDecoder().decode(storedName);
+  const originalName = utf8Name
+    ? new TextDecoder().decode(storedName)
+    : decodeLegacyName(storedName);
   const directory =
     (external & 0x10) !== 0 ||
     (view.getUint16(offset + 4, true) >> 8 === 3 && ((external >>> 16) & 0x4000) !== 0) ||
