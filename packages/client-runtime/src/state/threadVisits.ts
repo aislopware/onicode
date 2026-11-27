@@ -108,7 +108,8 @@ export function createThreadVisitTracker(options: ThreadVisitTrackerOptions) {
               ...(opened ? { opened: true } : {}),
             },
           },
-          { reportFailure: false },
+          // A background sync; a server that cannot take it answers with a defect.
+          { reportFailure: false, reportDefect: false },
         ).then((result) => {
           if (!active) return;
           if (!AsyncResult.isFailure(result)) {

@@ -1619,8 +1619,11 @@ interface CodexSubagentThreadContext {
   background: boolean;
   // The turn whose `wait` names it; one app-server serves several threads and nested children.
   awaitedBy: ActiveCodexTurnContext | null;
-  // Settled before its first turn started; that turn is interrupted whichever parent turn is live.
-  stoppedBeforeStart: boolean;
+  // A child stopped before its turn started has that turn interrupted; a live parent turn's
+  // input instead lets the turn reopen the settled child.
+  nextTurn: "run" | "interrupt" | "reopen";
+  // A turn passed the stop checks; finalizeCodexTurn settles the child's nodes from then on.
+  turnStarted: boolean;
 }
 
 const approvalOwnerCodexTurn = (
@@ -1651,6 +1654,13 @@ const isDescendantCodexTurn = (
   }
   return false;
 };
+
+// Calls that start a turn on the children they name.
+const CODEX_CHILD_WAKING_TOOLS: ReadonlySet<string> = new Set([
+  "sendInput",
+  "resumeAgent",
+  "followupTask",
+]);
 
 const hasCodexTurnLineageIn = (
   context: ActiveCodexTurnContext,
@@ -3608,7 +3618,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
 
             // No turn means no finalizeCodexTurn to settle the child's nodes. They go first:
             // subagent.updated can end the parent run's ingestion.
-            if (!settled && completedAt !== null && input.subagent.nativeTurnIds.size === 0) {
+            if (!settled && completedAt !== null && !input.subagent.turnStarted) {
               yield* emitProviderEvent({
                 type: "node.updated",
                 driver: CODEX_PROVIDER,
@@ -3681,15 +3691,20 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             belongs: (parent: ActiveCodexTurnContext) => boolean,
             completedAt: DateTime.Utc,
           ) {
-            const running = Array.from((yield* Ref.get(activeTurns)).values());
+            const active = yield* Ref.get(activeTurns);
+            const running = new Set(Array.from(active.values(), (context) => context.subagent));
             for (const subagent of (yield* Ref.get(subagentThreads)).values()) {
               if (!isOrchestrationV2WorkActive(subagent.task.status)) continue;
-              if (!belongs(subagent.parentContext)) continue;
-              if (running.some((context) => context.subagent === subagent)) continue;
-              subagent.stoppedBeforeStart = true;
-              yield* Ref.update(terminalizedNonCompletedNativeTurns, (current) =>
-                new Set(current).add(subagent.parentContext.nativeTurnId),
-              );
+              const parent = subagent.parentContext;
+              if (!belongs(parent)) continue;
+              if (running.has(subagent)) continue;
+              subagent.nextTurn = "interrupt";
+              // A parent still running (its Stop unconfirmed) keeps reporting its children.
+              if (active.get(parent.nativeTurnId) !== parent) {
+                yield* Ref.update(terminalizedNonCompletedNativeTurns, (current) =>
+                  new Set(current).add(parent.nativeTurnId),
+                );
+              }
               yield* emitSubagentTaskUpdate({ subagent, status: "interrupted", completedAt });
             }
           },
@@ -3719,20 +3734,25 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           ) {
             if (subagent.nativeTurnIds.has(turn.nativeTurnId)) return;
             subagent.nativeTurnIds.add(turn.nativeTurnId);
-            const stoppedBeforeStart = subagent.stoppedBeforeStart;
-            subagent.stoppedBeforeStart = false;
+            const nextTurn = subagent.nextTurn;
+            subagent.nextTurn = "run";
             const parentNativeThreadId = yield* getNativeThreadId(
               subagent.parentContext.providerThread,
             );
-            const currentParent = yield* findActiveTurnByNativeThreadId(parentNativeThreadId);
-            if (currentParent !== undefined) subagent.parentContext = currentParent;
+            const parent =
+              (yield* findActiveTurnByNativeThreadId(parentNativeThreadId)) ??
+              subagent.parentContext;
             if (
-              stoppedBeforeStart ||
-              hasCodexTurnLineageIn(
-                subagent.parentContext,
-                yield* Ref.get(terminalizedNonCompletedNativeTurns),
-              )
+              nextTurn === "interrupt" ||
+              hasCodexTurnLineageIn(parent, yield* Ref.get(terminalizedNonCompletedNativeTurns))
             ) {
+              if (isOrchestrationV2WorkActive(subagent.task.status)) {
+                yield* emitSubagentTaskUpdate({
+                  subagent,
+                  status: "interrupted",
+                  completedAt: yield* DateTime.now,
+                });
+              }
               const nativeThreadId = yield* getNativeThreadId(subagent.providerThread);
               // Fork requests off the notification reader so it can read their responses.
               yield* client
@@ -3760,6 +3780,8 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 );
               return;
             }
+            subagent.parentContext = parent;
+            subagent.turnStarted = true;
             const providerTurnId = idAllocator.derive.providerTurn({
               driver: CODEX_PROVIDER,
               nativeTurnId: turn.nativeTurnId,
@@ -3808,7 +3830,9 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               subagent,
               status: "running",
               startedAt: turn.startedAt,
-              ...(providerTurnOrdinal > 1 ? { reopen: true, result: null } : {}),
+              ...(providerTurnOrdinal > 1 || nextTurn === "reopen"
+                ? { reopen: true, result: null }
+                : {}),
             });
             const now = yield* DateTime.now;
             yield* emitProviderEvent({
@@ -4074,7 +4098,8 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               task,
               background: true,
               awaitedBy: null,
-              stoppedBeforeStart: false,
+              nextTurn: "run",
+              turnStarted: false,
             } satisfies CodexSubagentThreadContext;
 
             yield* Ref.update(subagentThreads, (current) => {
@@ -6192,6 +6217,18 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 awaited: true,
                 waiter: context,
               });
+            }
+            if (
+              payload.item.type === "collabAgentToolCall" &&
+              CODEX_CHILD_WAKING_TOOLS.has(payload.item.tool) &&
+              !hasCodexTurnLineageIn(context, yield* Ref.get(terminalizedNonCompletedNativeTurns))
+            ) {
+              const subagents = yield* Ref.get(subagentThreads);
+              for (const nativeThreadId of payload.item.receiverThreadIds) {
+                const subagent = subagents.get(nativeThreadId);
+                if (subagent !== undefined && !isOrchestrationV2WorkActive(subagent.task.status))
+                  subagent.nextTurn = "reopen";
+              }
             }
 
             yield* completeProviderRetry(context, yield* DateTime.now);

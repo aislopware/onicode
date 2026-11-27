@@ -4514,6 +4514,11 @@ describe("OrchestratorMcpService provider resolution", () => {
       saved: ScheduledTask = tasks[0]!,
       /** Stores each keyed create under the id its key derives, as the real service does. */
       created?: Ref.Ref<ReadonlyArray<ScheduledTask>>,
+      extra?: {
+        readonly providers?: ReadonlyArray<ServerProvider>;
+        readonly inputs?: Array<{ readonly modelSelection?: unknown }>;
+        readonly settings?: Parameters<typeof ServerSettings.layerTest>[0];
+      },
     ) =>
       OrchestratorMcpService.layer.pipe(
         Layer.provide(Layer.mock(ThreadLaunchService.ThreadLaunchService)({})),
@@ -4539,8 +4544,10 @@ describe("OrchestratorMcpService provider resolution", () => {
               getThreadShell: (threadId) =>
                 Effect.succeed(threadId === boundThreadId ? boundThread : null),
             }),
-            ServerSettings.layerTest(),
-            Layer.mock(ProviderRegistry.ProviderRegistry)({ getProviders: Effect.succeed([]) }),
+            ServerSettings.layerTest(extra?.settings),
+            Layer.mock(ProviderRegistry.ProviderRegistry)({
+              getProviders: Effect.succeed(extra?.providers ?? []),
+            }),
             Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({
               list: () => Effect.succeed([]),
             }),
@@ -4561,6 +4568,7 @@ describe("OrchestratorMcpService provider resolution", () => {
                   : Ref.get(created).pipe(Effect.map((stored) => ({ tasks: stored }))),
               upsert: (input) =>
                 Ref.update(upserted, (count) => count + 1).pipe(
+                  Effect.tap(() => Effect.sync(() => extra?.inputs?.push(input))),
                   Effect.andThen(
                     created === undefined || input.commandId === undefined
                       ? Effect.void
@@ -4577,6 +4585,90 @@ describe("OrchestratorMcpService provider resolution", () => {
           ),
         ),
       );
+
+    it.effect(
+      "a supervised caller's task does not take the agent mode of the project default",
+      () =>
+        Effect.gen(function* () {
+          const agent = ProviderInstanceId.make("acp-agent");
+          const yolo = {
+            instanceId: agent,
+            model: "default",
+            options: [{ id: "_oni/session-mode", value: "yolo" }],
+          };
+          const scheduleAs = (client: McpInvocationScope) =>
+            Effect.gen(function* () {
+              const inputs: Array<{ readonly modelSelection?: unknown }> = [];
+              yield* OrchestratorMcpService.OrchestratorMcpService.pipe(
+                Effect.flatMap((mcp) =>
+                  mcp.scheduleTask(client, {
+                    projectId,
+                    prompt: "Check the build",
+                    schedule: { type: "interval", everyMs: 3_600_000 },
+                  }),
+                ),
+                Effect.provide(
+                  service([], null, yield* Ref.make(0), task({ modelSelection: yolo }), undefined, {
+                    inputs,
+                    settings: {
+                      projectSettingsFolded: true,
+                      projectSettingsOverrides: {
+                        [projectId]: {
+                          defaultModelSelection: yolo,
+                          providerInstances: { [agent]: { enabled: true } },
+                        },
+                      },
+                    },
+                    providers: [
+                      {
+                        instanceId: agent,
+                        driver: ProviderDriverKind.make("acpRegistry"),
+                        enabled: true,
+                        installed: true,
+                        version: "test",
+                        status: "ready",
+                        auth: { status: "authenticated" },
+                        checkedAt: "2026-09-13T00:00:00.000Z",
+                        slashCommands: [],
+                        skills: [],
+                        models: [
+                          {
+                            slug: "default",
+                            name: "Default",
+                            isCustom: false,
+                            capabilities: {
+                              optionDescriptors: [
+                                {
+                                  id: "_oni/session-mode",
+                                  label: "Mode",
+                                  type: "select",
+                                  agentMode: true,
+                                  options: [
+                                    { id: "ask", label: "Ask" },
+                                    { id: "yolo", label: "YOLO" },
+                                  ],
+                                },
+                              ],
+                            },
+                          },
+                        ],
+                      },
+                    ],
+                  }),
+                ),
+              );
+              return inputs.map((input) => input.modelSelection);
+            });
+          assert.deepEqual(yield* scheduleAs(supervisedClient), [{ ...yolo, options: [] }]);
+          assert.deepEqual(
+            yield* scheduleAs({
+              ...supervisedClient,
+              client: { ...supervisedClient.client!, access: "full-access" },
+            }),
+            [yolo],
+          );
+        }),
+    );
 
     it.effect("lists a webhook task without its URL to a caller that may run it", () =>
       Effect.gen(function* () {

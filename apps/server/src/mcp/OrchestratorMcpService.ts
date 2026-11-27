@@ -141,6 +141,7 @@ import {
   resolveRuntimeMode,
   runtimeModeRank,
   taskPrompt,
+  withoutAgentModePicks,
 } from "./delegatedTaskModes.ts";
 import {
   assertTargetWithinLimits,
@@ -1462,7 +1463,10 @@ const make = Effect.gen(function* () {
 
   const projectDefaultModelSelection = Effect.fn(
     "OrchestratorMcpService.projectDefaultModelSelection",
-  )(function* (project: Effect.Success<ReturnType<typeof requireProject>>) {
+  )(function* (
+    project: Effect.Success<ReturnType<typeof requireProject>>,
+    callerRuntimeMode: RuntimeMode,
+  ) {
     const settings = yield* serverSettings.getSettings.pipe(
       Effect.mapError(() => failure("orchestration_error", "Unable to read server settings.")),
     );
@@ -1473,7 +1477,16 @@ const make = Effect.gen(function* () {
         "invalid_request",
         `Project ${project.id} has no default model, so this caller cannot pick one for it.`,
       );
-    return selection;
+    // A default a full-access user saved may set the agent's own mode, which only a
+    // full-access caller may run work in.
+    if (callerRuntimeMode === "full-access" || selection.options === undefined) return selection;
+    const provider = (yield* providerRegistry.getProviders).find(
+      (candidate) => candidate.instanceId === selection.instanceId,
+    );
+    return {
+      ...selection,
+      options: withoutAgentModePicks(selection.options, providerOptionDescriptors(provider)) ?? [],
+    };
   });
   const secretRequests = yield* SecretRequests.SecretRequests;
 
@@ -2557,7 +2570,8 @@ const make = Effect.gen(function* () {
         );
       }
       const modelSelection =
-        parent?.thread.modelSelection ?? (yield* projectDefaultModelSelection(project));
+        parent?.thread.modelSelection ??
+        (yield* projectDefaultModelSelection(project, limits.runtimeMode));
       // Never end on a lone high surrogate, which renders as a broken character.
       const derivedTitle = (input.prompt.split("\n")[0]?.trim() ?? "")
         .slice(0, 80)

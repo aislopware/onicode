@@ -23481,6 +23481,33 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         [...new Set([...cards, ...nodes].map((record) => record.providerTurnId))],
         [cards[0]?.providerTurnId],
       );
+      // The first card settles while the root is idle, which can end the first run's ingestion.
+      const firstChildThreadId = cards.find(
+        (card) => card.nativeItemRef?.nativeId === FIRST_TASK,
+      )?.childThreadId;
+      const firstCardSettled = harness.events.findIndex(
+        (event) =>
+          event.type === "turn_item.updated" &&
+          event.turnItem.type === "subagent" &&
+          event.turnItem.nativeItemRef?.nativeId === FIRST_TASK &&
+          event.turnItem.status === "completed",
+      );
+      assert.deepEqual(
+        harness.events
+          .slice(0, firstCardSettled)
+          .flatMap((event) =>
+            event.type === "node.updated" &&
+            event.node.threadId === firstChildThreadId &&
+            event.node.status !== "running"
+              ? [`${event.node.kind}:${event.node.status}`]
+              : event.type === "message.updated" &&
+                  event.message.threadId === firstChildThreadId &&
+                  event.message.role === "assistant"
+                ? [`assistant:${event.message.text}`]
+                : [],
+          ),
+        ["root_turn:completed", "assistant:Audit done."],
+      );
     }).pipe(
       Effect.provide(
         Layer.mergeAll(

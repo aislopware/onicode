@@ -81,7 +81,6 @@ import {
 } from "@onicode/provider-core/server/subagentProjection";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
-import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
 
 const DEFAULT_IDLE_TIMEOUT_MS = 2 * 60 * 1000;
 // Without native resume, a released session comes back as a summary of the thread, so it stays longer.
@@ -420,6 +419,57 @@ function sessionScopedArtifactThreadId(
   }
 }
 
+// Past these bounds the oldest entries go: an item reported that long ago has left the run's queue.
+const REPORTED_TURN_ITEM_RUNS = 16;
+const REPORTED_TURN_ITEMS_PER_RUN = 128;
+
+/**
+ * The order the pump saw each run's turn items in. A direct session-scoped write passes it on,
+ * so items still queued for the run keep their places ahead of the written one.
+ */
+function makeReportedTurnItems() {
+  const runs = new Map<
+    string,
+    {
+      readonly threadId: ThreadId;
+      readonly runId: RunId;
+      readonly ids: Set<OrchestrationV2TurnItem["id"]>;
+    }
+  >();
+  return {
+    note: (item: OrchestrationV2TurnItem) => {
+      if (item.runId === null) return;
+      const key = `${item.threadId}\u0000${item.runId}`;
+      const known = runs.get(key);
+      if (known?.ids.has(item.id)) return;
+      const run = known ?? {
+        threadId: item.threadId,
+        runId: item.runId,
+        ids: new Set<OrchestrationV2TurnItem["id"]>(),
+      };
+      runs.delete(key);
+      runs.set(key, run);
+      run.ids.add(item.id);
+      if (run.ids.size > REPORTED_TURN_ITEMS_PER_RUN) {
+        run.ids.delete(run.ids.values().next().value!);
+      }
+      if (runs.size > REPORTED_TURN_ITEM_RUNS) runs.delete(runs.keys().next().value!);
+    },
+    reservationFor: (item: OrchestrationV2TurnItem) => {
+      const run = item.runId === null ? undefined : runs.get(`${item.threadId}\u0000${item.runId}`);
+      return run === undefined
+        ? {}
+        : {
+            reserveTurnItemPositions: {
+              threadId: run.threadId,
+              runId: run.runId,
+              turnItemIds: [...run.ids],
+            },
+          };
+    },
+  };
+}
+
 function providerThreadRuntimeKey(
   providerThread: Parameters<
     ProviderAdapter.ProviderAdapterV2SessionRuntime["resumeThread"]
@@ -477,7 +527,6 @@ export const layerWithOptions = (
   | ProviderEventIngestor.ProviderEventIngestorV2
   | ProviderAdapterRegistry.ProviderAdapterRegistryV2
   | ProviderInstallationGate.ProviderInstallationGate
-  | TurnItemPositionStore.TurnItemPositionStoreV2
 > =>
   Layer.effect(
     ProviderSessionManagerV2,
@@ -499,7 +548,6 @@ export const layerWithOptions = (
       const idAllocator = yield* IdAllocator.IdAllocatorV2;
       const providerEventIngestor = yield* ProviderEventIngestor.ProviderEventIngestorV2;
       const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
-      const turnItemPositions = yield* TurnItemPositionStore.TurnItemPositionStoreV2;
       const agentScope = yield* AgentScope;
       const installationGate = yield* ProviderInstallationGate.ProviderInstallationGate;
       // Labs flag, read live: Codex per turn (its shared session outlives a toggle), Claude per query.
@@ -3192,44 +3240,17 @@ export const layerWithOptions = (
         return false;
       });
 
-      // An item keeps the place it was reported at, whichever writer lands first: a direct
-      // session-scoped write can commit while a run's queue still holds earlier items.
-      const reservedTurnItemIds = new WeakMap<
+      const reportedTurnItemsByEntry = new WeakMap<
         LiveSessionEntry,
-        Set<OrchestrationV2TurnItem["id"]>
+        ReturnType<typeof makeReportedTurnItems>
       >();
-      const reserveTurnItemPosition = (entry: LiveSessionEntry, item: OrchestrationV2TurnItem) => {
-        let reserved = reservedTurnItemIds.get(entry);
-        if (reserved === undefined) {
-          reserved = new Set();
-          reservedTurnItemIds.set(entry, reserved);
+      const reportedTurnItemsFor = (entry: LiveSessionEntry) => {
+        let reported = reportedTurnItemsByEntry.get(entry);
+        if (reported === undefined) {
+          reported = makeReportedTurnItems();
+          reportedTurnItemsByEntry.set(entry, reported);
         }
-        const seen = reserved;
-        return seen.has(item.id)
-          ? Effect.void
-          : turnItemPositions
-              .allocate({
-                threadId: item.threadId,
-                turnItemId: item.id,
-                runId: item.runId,
-                keepExisting: true,
-              })
-              .pipe(
-                Effect.tap(() =>
-                  Effect.sync(() => {
-                    // Allocation is idempotent; the set only skips repeat lookups.
-                    if (seen.size >= 4096) seen.clear();
-                    seen.add(item.id);
-                  }),
-                ),
-                // Ingestion allocates it anyway, only without the ordering guarantee.
-                Effect.catch((cause) =>
-                  Effect.logWarning("orchestration-v2.turn-item-position-reserve-failed", {
-                    turnItemId: item.id,
-                    cause,
-                  }),
-                ),
-              );
+        return reported;
       };
 
       const startEventPump = (entry: LiveSessionEntry) => {
@@ -3316,7 +3337,7 @@ export const layerWithOptions = (
             Effect.andThen(
               Effect.gen(function* () {
                 if (event.type === "turn_item.updated")
-                  yield* reserveTurnItemPosition(entry, event.turnItem);
+                  reportedTurnItemsFor(entry).note(event.turnItem);
                 if (
                   event.type === "provider_thread.updated" &&
                   event.providerThread.status === "error"
@@ -3371,6 +3392,9 @@ export const layerWithOptions = (
                         threadId,
                         event,
                         sessionScoped: true,
+                        ...(event.type === "turn_item.updated"
+                          ? reportedTurnItemsFor(entry).reservationFor(event.turnItem)
+                          : {}),
                       })
                       .pipe(
                         Effect.mapError(
