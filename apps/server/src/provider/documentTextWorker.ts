@@ -101,6 +101,7 @@ interface XmlNode {
   epubBlock?: boolean;
   odfBlockTextBox?: boolean;
   odfInlineParagraphs?: boolean;
+  odfParagraphHidden?: boolean;
 }
 
 // ODF 1.3 Part 3 §6.1.2: paragraph character data turns TAB, CR and LF into spaces, collapses
@@ -251,6 +252,22 @@ function xml(source: string, extension: string): XmlNode {
       else node.odfBlockTextBox = true;
     }
     if (
+      extension === ".odt" &&
+      node.name === "hidden-paragraph" &&
+      namespaceOf(tag.name, stack) === ODF_TEXT_NS
+    ) {
+      const paragraph = stack.findLast(
+        (ancestor) => ancestor.name === "p" || ancestor.name === "h",
+      );
+      // A visible field keeps the paragraph visible even if another field hides it.
+      if (paragraph && paragraph.odfParagraphHidden !== false) {
+        const visibility = Object.entries(tag.attributes).find(
+          ([name]) => name.endsWith(":is-hidden") && namespaceOf(name, stack) === ODF_TEXT_NS,
+        )?.[1];
+        paragraph.odfParagraphHidden = /^[\t\n\r ]*(?:true|1)[\t\n\r ]*$/u.test(visibility ?? "");
+      }
+    }
+    if (
       extension === ".epub" &&
       node.name === "semantics" &&
       namespaceOf(tag.name, stack) === MATHML_NS
@@ -302,6 +319,7 @@ function xml(source: string, extension: string): XmlNode {
     if (odf && (node.name === "p" || node.name === "h")) collapseOdfWhitespace(node);
     if (
       node.pptxHidden ||
+      (node.odfParagraphHidden && namespaceOf(tag.name, [...stack, node]) === ODF_TEXT_NS) ||
       isMathmlAlternative ||
       (extension === ".epub" &&
         node.name === "template" &&
