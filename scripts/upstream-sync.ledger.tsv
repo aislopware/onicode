@@ -4096,3 +4096,4 @@ d98c3e2de7	take	taken as is (ACP Registry only)
 a03617a312	take	taken as is
 333cf311bc	take	taken as is
 539008aab9	take	taken as is
+cca1e3e1e7	take	electronFuses beside Onicode's productName/electronLanguages; took only the inspector test (the AppImage-per-channel test needs nightly, which Onicode dropped); electron-builder 26.18.1 supports electronFuses; only dev Electron uses --inspect
