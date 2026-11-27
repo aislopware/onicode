@@ -859,11 +859,8 @@ export const make = Effect.gen(function* () {
       const worktreePath = queued.worktreePath;
       if (worktreePath === null) return;
       // The parent's worktree belongs to the parent; shared-worktree children
-      // skip duplicate cleanup there.
-      if (
-        queued.lineage.relationshipToParent === "subagent" &&
-        queued.lineage.parentThreadId !== null
-      ) {
+      // (subagents, forks, side chats) skip duplicate cleanup there.
+      if (queued.lineage.parentThreadId !== null) {
         const parent = yield* projections.getThread(queued.lineage.parentThreadId).pipe(
           Effect.catchTags({
             ProjectionStoreThreadNotFoundError: () => Effect.succeed(null),
