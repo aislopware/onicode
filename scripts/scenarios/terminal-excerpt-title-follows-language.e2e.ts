@@ -1,11 +1,11 @@
 import { expect } from "e2e";
 
-import { test, WEB } from "./onicode.ts";
+import { test, WEB } from "./desktop.ts";
 
 test(
   "A thread started with only a terminal excerpt gets a title in the app's language",
   WEB,
-  async ({ onicode, app, browser, screen }) => {
+  async ({ onicode, desktop, app, browser, screen }) => {
     await onicode.project("demo");
     await onicode.open("/settings/general");
     await screen.getByLabel("Language", { exact: true }).tap();
@@ -19,9 +19,11 @@ test(
     await input.waitFor();
     await input.focus();
     await browser.keyboard.type("printf 'first\\nsecond\\n'\n");
-    await browser.keyboard.press("Control+Shift+A");
-    await browser.locator("canvas.cursor-text").secondaryTap();
-    await screen.getByText("チャットに追加", { exact: true }).tap();
+    // The desktop app shows the terminal's context menu natively, and the terminal takes
+    // Control+Shift+A as input, so the menu selects the output.
+    const canvas = browser.locator("canvas.cursor-text");
+    await desktop.chooseFromContextMenu(canvas, "すべて選択");
+    await desktop.chooseFromContextMenu(canvas, "チャットに追加");
 
     const excerpt = browser.locator('[data-testid="composer-editor"]').getByText(/行目/);
     await excerpt.waitFor();
