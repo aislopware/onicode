@@ -126,7 +126,7 @@ const REMOVE_LINK_PATH = /^\/*connections\/remove\/?(?=[?#]|$)/;
  */
 export function takeDevConnectionRemoveLink(path: string): boolean {
   if (!pairingLinksAllowed() || !REMOVE_LINK_PATH.test(path)) return false;
-  const query = /\?([^#]*)/.exec(path)?.[1] ?? "";
+  const query = /^[^#?]*\?([^#]*)/.exec(path)?.[1] ?? "";
   const environmentId = new URLSearchParams(query).get("environmentId")?.trim() ?? "";
   if (environmentId.length > 0) void forgetEnvironment(EnvironmentId.make(environmentId));
   return true;

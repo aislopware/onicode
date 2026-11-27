@@ -38,11 +38,13 @@ export const hostResourcesAtom = Atom.family((environmentIdsKey: string) =>
       const timer = setTimeout(() => get.refreshSelf(), nextExpiry - evaluatedAt + 1);
       get.addFinalizer(() => clearTimeout(timer));
     }
-    // Queries refetch only on mount, so with every machine busy or stale nothing would sample
-    // again. Weight only ranks machines that pass, and candidates all have a positive one.
+    // Queries refetch only on mount, so with every answering machine busy or stale nothing would
+    // sample again. One that fails, such as an older server, is not asked again every time.
+    // Weight only ranks machines that pass, and candidates all have a positive one.
+    const answering = resources.filter((resource) => !resource.failed);
     if (
-      resources.length > 0 &&
-      resources.every((resource) => !resource.pending && !resource.failed) &&
+      answering.length > 0 &&
+      resources.every((resource) => !resource.pending) &&
       chooseLoadBalancedEnvironment(
         resources.map((resource) => ({ ...resource, weight: 1 })),
         evaluatedAt,
@@ -51,15 +53,33 @@ export const hostResourcesAtom = Atom.family((environmentIdsKey: string) =>
       // The registry, not `get`: the first refresh rebuilds this atom and disposes `get`.
       const registry = get.registry;
       const timer = setTimeout(() => {
-        for (const { environmentId } of resources) {
-          registry.refresh(serverEnvironment.hostResources({ environmentId, input: {} }));
-        }
+        Atom.batch(() => {
+          for (const { environmentId } of answering) {
+            registry.refresh(serverEnvironment.hostResources({ environmentId, input: {} }));
+          }
+        });
       }, HOST_RESOURCES_RESAMPLE_MS);
       get.addFinalizer(() => clearTimeout(timer));
     }
     return { evaluatedAt, resources };
   }),
 );
+
+// Resampling rebuilds the snapshot every few seconds; the composer only cares when the outcome moves.
+export const loadBalancedSelectionAtom = Atom.family((key: string) => {
+  const [environmentIdsKey = "", weightsKey = ""] = key.split("\t");
+  const ids = environmentIdsKey === "" ? [] : environmentIdsKey.split("\n");
+  const weightList = weightsKey === "" ? [] : weightsKey.split(",").map(Number);
+  const weights = Object.fromEntries(ids.map((id, index) => [id, weightList[index] ?? 50]));
+  return Atom.make((get) =>
+    selectLoadBalancedEnvironment(get(hostResourcesAtom(environmentIdsKey)), weights),
+  ).pipe(
+    Atom.withEquality<ReturnType<typeof selectLoadBalancedEnvironment>>(
+      (a, b) =>
+        a.pending === b.pending && a.environmentId === b.environmentId && a.failed === b.failed,
+    ),
+  );
+});
 
 /** Only mounted for unresolved automatic drafts, so idle clients do not poll hosts. */
 export function useLoadBalancedEnvironment(
@@ -90,8 +110,12 @@ export function useLoadBalancedEnvironment(
     );
     return chooseLoadBalancedEnvironment(candidates, Date.now()) as EnvironmentId | null;
   };
-  const state = useAtomValue(hostResourcesAtom(environmentIds.join("\n")));
-  return { refresh, refreshSelection, ...selectLoadBalancedEnvironment(state, weights) };
+  const selection = useAtomValue(
+    loadBalancedSelectionAtom(
+      `${environmentIds.join("\n")}\t${environmentIds.map((id) => weights[id] ?? 50).join(",")}`,
+    ),
+  );
+  return { refresh, refreshSelection, ...selection };
 }
 
 export function selectLoadBalancedEnvironment(
@@ -106,8 +130,12 @@ export function selectLoadBalancedEnvironment(
     })),
     evaluatedAt,
   ) as EnvironmentId | null;
+  // Machines that answer are sampled again while busy, so only all failing ends the check.
   const failed =
-    !checking && environmentId === null && resources.some((resource) => resource.failed);
+    !checking &&
+    environmentId === null &&
+    resources.length > 0 &&
+    resources.every((resource) => resource.failed);
   return {
     // Busy machines are sampled again until one frees up, so the check is still running.
     pending: checking || (environmentId === null && !failed && resources.length > 0),

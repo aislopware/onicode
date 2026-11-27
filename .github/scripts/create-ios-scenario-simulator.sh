@@ -17,8 +17,6 @@ read -r runtime type < <(xcrun simctl list runtimes available -j | jq -er '
   | "\(.identifier) \(first(.supportedDeviceTypes[] | select(.productFamily == "iPhone")).identifier)"')
 
 command -v simslim > /dev/null || brew install mobai-app/tap/simslim
-# clone arrived in simslim 0.15; a runner's older install upgrades once.
-simslim --help 2>&1 | grep -q '^  clone ' || brew upgrade mobai-app/tap/simslim
 
 if [[ "${RUNNER_ENVIRONMENT:-}" != self-hosted ]]; then
   udid="$(xcrun simctl create "$name" "$type" "$runtime")"
@@ -26,10 +24,20 @@ if [[ "${RUNNER_ENVIRONMENT:-}" != self-hosted ]]; then
   exit 0
 fi
 
+# clone arrived in simslim 0.15; a runner's older install upgrades once. grep reads the whole
+# help, as -q would stop early and fail the pipe with SIGPIPE.
+simslim --help 2>&1 | grep '^  clone ' > /dev/null || brew upgrade mobai-app/tap/simslim
+
 # The runner takes one job at a time, so no other run builds a template meanwhile. A half-made
-# one keeps its "preparing" name, which reset-ios-scenarios.sh deletes.
-template="$name template ${runtime##*.} ${type##*.}"
-preparing="$name preparing ${runtime##*.} ${type##*.}"
+# one keeps its "preparing" name, which reset-ios-scenarios.sh deletes. The kept services name
+# the template too, so changing them prepares a new one and deletes the old.
+template="$name template ${runtime##*.} ${type##*.} $keep"
+preparing="$name preparing ${runtime##*.} ${type##*.} $keep"
+xcrun simctl list devices -j |
+  jq -r --arg runtime "$runtime" --arg prefix "$name template ${runtime##*.} ${type##*.} " \
+    --arg name "$template" \
+    '.devices[$runtime][]? | select((.name | startswith($prefix)) and .name != $name) | .udid' |
+  while read -r udid; do xcrun simctl delete "$udid"; done
 template_udid="$(xcrun simctl list devices -j | jq -r --arg runtime "$runtime" --arg name "$template" \
   'first(.devices[$runtime][]? | select(.name == $name and .isAvailable) | .udid) // empty')"
 if [[ -z "$template_udid" ]]; then

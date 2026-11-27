@@ -9,7 +9,7 @@ usage() {
   exit 2
 }
 
-[[ $# -ge 3 ]] || usage
+[[ $# -ge 3 && -n "$1" ]] || usage
 
 environment_id="$1"
 agent_device_command="$2"
