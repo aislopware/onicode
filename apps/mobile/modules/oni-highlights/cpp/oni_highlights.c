@@ -8,8 +8,6 @@
 
 // The control block and buffer layout mirror the JavaScript glue in
 // @pierre/highlights (`HighlightsHighlighter` in dist/highlighter.js).
-// INPUT_OFFSET is its `inputPtr`: the lexers' static data ends there.
-#define INPUT_OFFSET 81920u
 #define INPUT_PADDING 96u
 #define MODE_UTF16_LINE_RECORDS 3u
 // Like the JavaScript glue, a small input after a large one gets a fresh
@@ -72,6 +70,21 @@ u32 w2c_env_is_id_continue(struct w2c_env* host, u32 ptr, u32 len) {
   return id_class(host, ptr, len, false);
 }
 
+// Only lexers registered at runtime use these; the built-in module has none, and
+// the JavaScript glue answers 0 the same way.
+u32 w2c_env_lex_line(struct w2c_env* host, u32 ptr, u32 len, u32 reset, u32 state, u32 state_len) {
+  return 0;
+}
+
+u32 w2c_env_fence_language(struct w2c_env* host, u32 ptr, u32 len) {
+  return 0;
+}
+
+u32 w2c_env_fence_lex(struct w2c_env* host, u32 language, u32 from, u32 to, u32 reset, u32 state,
+                      u32 out) {
+  return 0;
+}
+
 static void reset_instance(void) {
   if (!instantiated) return;
   wasm2c_highlights_free(&instance);
@@ -108,8 +121,10 @@ int64_t oni_highlights_tokenize(const uint8_t* source, size_t length, uint8_t la
   ensure_instance();
 
   wasm_rt_memory_t* memory = w2c_highlights_memory(&instance);
+  // The lexers' static data ends at `inputPtr`.
+  const uint32_t input_offset = *w2c_highlights_inputPtr(&instance);
   uint64_t needed_pages =
-      ((uint64_t)INPUT_OFFSET + length + INPUT_PADDING + WASM_DEFAULT_PAGE_SIZE - 1) /
+      ((uint64_t)input_offset + length + INPUT_PADDING + WASM_DEFAULT_PAGE_SIZE - 1) /
       WASM_DEFAULT_PAGE_SIZE;
   if (needed_pages > memory->pages &&
       wasm_rt_grow_memory(memory, needed_pages - memory->pages) == (uint64_t)-1) {
@@ -117,8 +132,8 @@ int64_t oni_highlights_tokenize(const uint8_t* source, size_t length, uint8_t la
   }
 
   uint8_t* data = memory->data;
-  if (length > 0) memcpy(data + INPUT_OFFSET, source, length);
-  data[INPUT_OFFSET + length] = 0;
+  if (length > 0) memcpy(data + input_offset, source, length);
+  data[input_offset + length] = 0;
   data[0] = language;
   data[1] = MODE_UTF16_LINE_RECORDS;
   write_u32(data + 2, (uint32_t)length);

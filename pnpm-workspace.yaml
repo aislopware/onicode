@@ -39,7 +39,7 @@ catalog:
   "@legendapp/list": 3.9.2
   "@noble/hashes": 2.4.0
   "@pierre/diffs": 1.7.2
-  "@pierre/highlights": 0.5.2
+  "@pierre/highlights": 0.6.0
   "@pierre/trees": 1.0.0
   # @sentry/electron pins its core; desktop and server Sentry packages must resolve to that one copy.
   # Mobile's @sentry/react-native pins its own.

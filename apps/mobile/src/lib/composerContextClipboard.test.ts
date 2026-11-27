@@ -61,7 +61,10 @@ vi.mock("./composerImages", () => ({
 }));
 vi.mock("./uuid", () => ({ uuidv4: () => `import-${++mocks.sequence}` }));
 
-import { importComposerContextClipboard } from "./composerContextClipboard";
+import {
+  copiedComposerContextText,
+  importComposerContextClipboard,
+} from "./composerContextClipboard";
 import { createComposerContextHistory } from "./composerContext";
 
 const image = {
@@ -379,6 +382,31 @@ describe("mobile context clipboard imports", () => {
         0,
         new AbortController().signal,
       ),
+    ).toBeNull();
+  });
+});
+
+describe("mobile context clipboard copies", () => {
+  it("writes a copied selection's context links as the references the composer pastes", () => {
+    const fragment = {
+      version: 1 as const,
+      source: { environmentId: EnvironmentId.make("source") },
+      records: [image, terminal],
+    };
+    const markdown = `See ${formatComposerContextReference(image)} and [the build](oni-context://v1/terminal/terminal-source).`;
+    // copyLinksAs: 'markdown' escapes brackets and drops the image's `!`; Copy as Markdown keeps both.
+    expect(
+      copiedComposerContextText(
+        "See [Check\\[out\\]](oni-context://v1/image/image-source) and [the build](<oni-context://v1/terminal/terminal-source>), [docs](https://x.dev).",
+        markdown,
+        fragment,
+      ),
+    ).toBe(
+      `See ${formatComposerContextReference(image)} and ${formatComposerContextReference(terminal)}, [docs](https://x.dev).`,
+    );
+    expect(copiedComposerContextText("See [docs](https://x.dev).", markdown, fragment)).toBeNull();
+    expect(
+      copiedComposerContextText("[Other](oni-context://v1/terminal/missing)", markdown, fragment),
     ).toBeNull();
   });
 });

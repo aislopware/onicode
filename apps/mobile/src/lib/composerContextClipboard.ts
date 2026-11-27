@@ -16,6 +16,9 @@ import {
   encodeComposerContextFragment,
 } from "@onicode/shared/composerContextClipboard";
 import {
+  collectComposerContextReferences,
+  formatComposerContextHref,
+  formatComposerContextReference,
   threadContextsOutsideEnvironment,
   threadLinkContextReferences,
 } from "@onicode/shared/composerContextReferences";
@@ -66,6 +69,38 @@ export function writeComposerContextClipboard(
       new Error(m(msg("This context selection is too large to copy. Select fewer items."))),
     );
   return nativeClipboard().writeContextClipboard(text, encoded);
+}
+
+// `[label](url)` as copyLinksAs: 'markdown' writes it, and Copy as Markdown, with an optional `!`.
+const COPIED_MARKDOWN_LINK = /!?\[(?:\\.|[^\\\]])*\]\(<?([^\s()<>]+)>?\)/g;
+
+/** The copied text with the message's context links written as composer references, or null when it has none. */
+export function copiedComposerContextText(
+  copied: string,
+  markdown: string,
+  fragment: ComposerContextClipboardFragment,
+): string | null {
+  const referenceByHref = new Map(
+    collectComposerContextReferences(markdown).flatMap((reference) => {
+      const record = fragment.records.find((entry) => entry.contextId === reference.contextId);
+      return record
+        ? [
+            [
+              formatComposerContextHref(reference.kind, reference.contextId),
+              formatComposerContextReference({ ...reference, label: record.label }),
+            ] as const,
+          ]
+        : [];
+    }),
+  );
+  let matched = false;
+  const text = copied.replace(COPIED_MARKDOWN_LINK, (link, href: string) => {
+    const reference = referenceByHref.get(href);
+    if (reference === undefined) return link;
+    matched = true;
+    return reference;
+  });
+  return matched ? text : null;
 }
 
 export async function importComposerContextClipboard(

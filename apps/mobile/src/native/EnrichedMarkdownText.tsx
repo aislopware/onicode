@@ -1,10 +1,5 @@
 import { decodeComposerContextFragment } from "@onicode/shared/composerContextClipboard";
 import {
-  collectComposerContextReferences,
-  formatComposerContextHref,
-  formatComposerContextReference,
-} from "@onicode/shared/composerContextReferences";
-import {
   markdownForNativeRendering,
   markdownWithFileEmbeds,
   markdownForNativeParsing,
@@ -22,6 +17,7 @@ import {
   type MarkdownImageBlock,
   type MarkdownLinkOccurrence,
   type MarkdownStyle,
+  type SelectionCopyEvent,
   type TextSelectionMenuConfig,
 } from "react-native-enriched-markdown";
 import { codeFenceRenderer } from "./codeBlockMarkdown";
@@ -34,6 +30,10 @@ import { Menu } from "../components/ui/Menu";
 import { useEnrichedLinkVariants } from "./useEnrichedLinkVariants";
 import { useRetryingImageSource } from "./useRetryingImageSource";
 import * as Dialog from "../components/ui/Dialog";
+import {
+  copiedComposerContextText,
+  writeComposerContextClipboard,
+} from "../lib/composerContextClipboard";
 import { copyTextWithHaptic } from "../lib/copyTextWithHaptic";
 import type { HighlightScheme } from "../lib/highlights";
 import {
@@ -382,31 +382,21 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
           }),
         )
       : undefined;
-  const selectionClipboard = useMemo(() => {
-    const fragment = decodeComposerContextFragment(props.contextClipboardFragment);
-    if (!fragment) return undefined;
-    const references = collectComposerContextReferences(props.markdown);
-    const linkTextByUrl = Object.fromEntries(
-      references.flatMap((reference) => {
-        const record = fragment.records.find((entry) => entry.contextId === reference.contextId);
-        return record
-          ? [
-              [
-                formatComposerContextHref(reference.kind, reference.contextId),
-                formatComposerContextReference({ ...reference, label: record.label }),
-              ],
-            ]
-          : [];
-      }),
-    );
-    return {
-      linkTextByUrl,
-      htmlAttributes: {
-        "data-oni-context-fragment": encodeURIComponent(props.contextClipboardFragment!),
-      },
-      mimeTypes: { "app.onicode.context-fragment": props.contextClipboardFragment! },
-    };
-  }, [props.contextClipboardFragment, props.markdown]);
+  const contextFragment = useMemo(
+    () => decodeComposerContextFragment(props.contextClipboardFragment),
+    [props.contextClipboardFragment],
+  );
+  // Fires after the library's own write, which this replaces with the context the composer pastes.
+  const onSelectionCopy = contextFragment
+    ? ({ text, format }: SelectionCopyEvent) => {
+        if (format === "imageUrls") return;
+        const copied = copiedComposerContextText(text, props.markdown, contextFragment);
+        if (copied === null) return;
+        writeComposerContextClipboard(copied, contextFragment).catch((error: unknown) =>
+          console.error("Failed to copy the message's context to the clipboard.", error),
+        );
+      }
+    : undefined;
   const { fontScale } = useWindowDimensions();
   const baseMarkdownStyle = useMemo(() => {
     const style = enrichedStyle(props.textStyle, themeAppearance === "dark", fontScale);
@@ -503,7 +493,9 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
                 ]
               : undefined
           }
-          selectionClipboard={selectionClipboard}
+          // Keeps each context link's URL in the plain text, where onSelectionCopy finds it.
+          copyLinksAs={contextFragment ? "markdown" : "label"}
+          onSelectionCopy={onSelectionCopy}
           selectionMenuConfig={selectionMenuConfig}
           selectionColor={props.textStyle.selectionColor}
           selectionHandleColor={props.textStyle.selectionHandleColor}

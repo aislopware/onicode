@@ -193,8 +193,8 @@ catalogs:
       specifier: 2.4.0
       version: 2.4.0
     '@pierre/highlights':
-      specifier: 0.5.2
-      version: 0.5.2
+      specifier: 0.6.0
+      version: 0.6.0
     '@pierre/trees':
       specifier: 1.0.0
       version: 1.0.0
@@ -565,7 +565,7 @@ importers:
         version: 1.7.2(patch_hash=2ebea690922d45d6e5dd60d075f4e8e46a34b0452da10fed3070693a3eeae68a)(@shikijs/themes@4.6.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@pierre/highlights':
         specifier: 'catalog:'
-        version: 0.5.2
+        version: 0.6.0
       '@react-native-menu/menu':
         specifier: 2.3.4
         version: 2.3.4(patch_hash=a94c04829e4b09cb8ae837ddb51e598ac72edbf5e28a89b9f1f1c25cce442d94)(react-native@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)
@@ -1083,7 +1083,7 @@ importers:
         version: 1.0.0(@pierre/theme@2.1.0)(@shikijs/themes@4.6.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(shiki@4.6.0)
       '@pierre/words':
         specifier: file:deps/pierre-words-0.2.2-t3.4-7c04b7f1.tgz
-        version: file:apps/web/deps/pierre-words-0.2.2-t3.4-7c04b7f1.tgz(@pierre/highlights@0.5.2)(react@19.3.0)
+        version: file:apps/web/deps/pierre-words-0.2.2-t3.4-7c04b7f1.tgz(@pierre/highlights@0.6.0)(react@19.3.0)
       '@sentry/electron':
         specifier: 'catalog:'
         version: 8.5.0
@@ -5945,9 +5945,6 @@ packages:
         optional: true
       react-dom:
         optional: true
-
-  '@pierre/highlights@0.5.2':
-    resolution: {integrity: sha512-CV+yFa8dodaU3w7U42FR+AfoavrsfcH0/n3rckDu1A/UXan1Dzo6OdM/MPOAAsGM/EbKhDxD6k+qMcNUtnLfsg==}
 
   '@pierre/highlights@0.6.0':
     resolution: {integrity: sha512-5RhenEkZxlcsw2hrDaYlGyT6ERfQgHSvZxRg/ByZ11SVkoWuAwDMozL7HxUfUnOVyShD5WKMxqiakg8S/8Fi7A==}
@@ -14987,8 +14984,6 @@ snapshots:
     transitivePeerDependencies:
       - '@shikijs/themes'
 
-  '@pierre/highlights@0.5.2': {}
-
   '@pierre/highlights@0.6.0': {}
 
   '@pierre/patches@0.0.1': {}
@@ -15016,9 +15011,9 @@ snapshots:
       - '@shikijs/themes'
       - shiki
 
-  '@pierre/words@file:apps/web/deps/pierre-words-0.2.2-t3.4-7c04b7f1.tgz(@pierre/highlights@0.5.2)(react@19.3.0)':
+  '@pierre/words@file:apps/web/deps/pierre-words-0.2.2-t3.4-7c04b7f1.tgz(@pierre/highlights@0.6.0)(react@19.3.0)':
     optionalDependencies:
-      '@pierre/highlights': 0.5.2
+      '@pierre/highlights': 0.6.0
       react: 19.3.0
 
   '@pinojs/redact@0.4.0': {}
