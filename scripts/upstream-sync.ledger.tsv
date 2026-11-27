@@ -3901,3 +3901,4 @@ b530e1f304	take	applied to Onicode's react-native-keyboard-controller@1.24.0 pat
 1a3c772c65	take	kept Onicode's desktop catalog conflict side; rekeyed the 4 'Onicode' strings to Onicode's source hashes; dropped the duplicate HostProcess import upstream fixes in 17e1e01dbe/e7f1f81a21
 62e8042b21	take	taken as is
 36d6333885	take	dropped the BrowserSession.test.ts hunk (would delete Onicode's only HostProcess import); merged the onlyTestFiles mock into Onicode's test harness
+17e1e01dbe	skip	net no-op with e7f1f81a21; 1a3c772c65 was ported without upstream's duplicate HostProcess import, so Onicode's single import already matches upstream's end state
