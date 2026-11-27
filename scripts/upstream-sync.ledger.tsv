@@ -4443,3 +4443,4 @@ ca1680bec6	take	hand-ported into Onicode's resumable scanMarkdown (planner sugge
 a4f7b1e8b7	take	applies cleanly
 aed2db70ee	take	BOM sourceOffset merged into Onicode's one-entry fencedCodeRanges cache (keyed by full markdown, BOM included); scenario composer-bom-fenced-thread-link ported adapted: environment id via environmentId(app.baseUrl), desktop routes by hash
 9d963e3116	take	applies cleanly; mobile locale key bc86d0e75a37411b -> 5286056f1e375e8c
+34846ca8d6	take	code applies cleanly; Onicode-only docs/user/portable-handoffs.md rewritten: history budgeted at ~4 bytes per token up to the 64,000-byte ceiling, context-window reservation still one token per byte
