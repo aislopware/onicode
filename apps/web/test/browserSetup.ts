@@ -1,5 +1,5 @@
 import { beforeEach } from "vite-plus/test";
-import { commands } from "vite-plus/test/browser";
+import { commands, page } from "vite-plus/test/browser";
 
 import { initializeI18n } from "../src/i18n/initializeI18n";
 
@@ -16,12 +16,17 @@ declare module "vite-plus/test/browser" {
   }
 }
 
+// A size set with page.viewport outlives its test, so a later test would lay out at it.
+const viewport = { width: window.innerWidth, height: window.innerHeight };
+
 // Playwright's mouse outlives each test and each file, so whatever the next test mounts
 // under its last position starts hovered. Registered here rather than in render() so tests
 // that mount without it are covered too. Before each test, not after: a timed-out test keeps
 // running and can move the mouse after its own afterEach.
 beforeEach(async () => {
   await commands.resetPointer();
+  if (window.innerWidth !== viewport.width || window.innerHeight !== viewport.height)
+    await page.viewport(viewport.width, viewport.height);
 });
 
 // The app initializes GT at startup; components using its hooks need the same here.

@@ -88,11 +88,7 @@ describe("ExpandedImageDialog", () => {
   });
 
   it("keeps Close clear of Next for a short wide image in a gallery", async () => {
-    const viewport = { width: window.innerWidth, height: window.innerHeight };
     await page.viewport(1280, 800);
-    await using _viewport = {
-      [Symbol.asyncDispose]: () => page.viewport(viewport.width, viewport.height),
-    };
     const wide = `data:image/svg+xml,${encodeURIComponent(
       '<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="40"><rect width="1600" height="40"/></svg>',
     )}`;

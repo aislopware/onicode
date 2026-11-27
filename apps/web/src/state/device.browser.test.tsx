@@ -43,11 +43,7 @@ vi.mock(import("../components/device/DeviceHostUpdates"), () => ({
 }));
 
 it("baselines the first device snapshot without reopening dismissed devices", async () => {
-  const viewport = { width: window.innerWidth, height: window.innerHeight };
   await page.viewport(1280, 800);
-  await using _viewport = {
-    [Symbol.asyncDispose]: () => page.viewport(viewport.width, viewport.height),
-  };
   const threadRef = {
     environmentId: EnvironmentId.make("device-loading"),
     threadId: ThreadId.make("thread"),

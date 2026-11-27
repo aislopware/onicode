@@ -718,8 +718,6 @@ describe("MessagesTimeline messages", () => {
 
   it("keeps the visible sentence in a long message when the chat width changes", async () => {
     setup();
-    const size = { width: window.innerWidth, height: window.innerHeight };
-    onTestFinished(() => page.viewport(size.width, size.height));
     await page.viewport(1200, 1400);
     const props = { ...baseProps(), liveFollowEnabled: false };
     const paragraphs = Array.from(
@@ -844,11 +842,7 @@ describe("MessagesTimeline messages", () => {
 
   it("keeps the minimap off the copy button when the chat lane is shifted left", async () => {
     setup();
-    const pageSize = { width: window.innerWidth, height: window.innerHeight };
     await page.viewport(1280, 800);
-    await using _pageSize = {
-      [Symbol.asyncDispose]: () => page.viewport(pageSize.width, pageSize.height),
-    };
     const props = baseProps();
     const entries = Array.from({ length: 6 }, (_, index) => [
       message(`Question ${index}`, {}, `user-${index}`),
@@ -883,11 +877,7 @@ describe("MessagesTimeline messages", () => {
 
   it("moves the minimap off the chat lane when the lane shifts left without resizing", async () => {
     setup();
-    const pageSize = { width: window.innerWidth, height: window.innerHeight };
     await page.viewport(1600, 800);
-    await using _pageSize = {
-      [Symbol.asyncDispose]: () => page.viewport(pageSize.width, pageSize.height),
-    };
     const props = baseProps();
     const entries = Array.from({ length: 6 }, (_, index) => [
       message(`Question ${index}`, {}, `user-${index}`),
