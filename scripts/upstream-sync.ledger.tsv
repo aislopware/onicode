@@ -3893,3 +3893,4 @@ b6869fad67	take	feat(terminal): Add keybindings for cycling through terminals (#
 801b32f3a6	take	kept Onicode's minimap request-ref (no setState per measure) with upstream's left/width hit strip; kept Onicode's narrowed rail transition-[left,right,translate] over transition-all
 e7a2d9fcea	take	taken as is
 f46f17e46f	take	kept Onicode's button size scale (hairline pass); compact/xs already had gap-1.5, applied only micro gap-1.5
+66a4d99d1d	take	taken as is
