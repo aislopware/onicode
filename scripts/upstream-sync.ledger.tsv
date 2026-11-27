@@ -4359,3 +4359,4 @@ f87ab0be1b	take	taken as is
 fb84179e19	take	taken as is
 81f8990da6	take	taken as is
 a066eb0935	take	BLANK_LINE used for Onicode's afterBlankLine (with frontmatter) and its comment reset; headingSlugs left, queued; CRLF test inputs end with a line break, since Onicode never cuts at an unfinished last line
+e07c80889e	take	last hunk applied with Onicode's wrapped throw
