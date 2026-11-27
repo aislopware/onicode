@@ -53,15 +53,24 @@ const readableText = (row: string) =>
 // only when unbalanced, so the label still ends at its own `](`; an unescaped `[`
 // must close, as in ThreadSearch, so an unclosed one before a link starts no label.
 const LINK_LABEL = /(!?\[)((?:\\.|[^\\[\]\n]|\[(?:\\.|[^\\[\]\n])*\])*)(\]\([^)\s]*\))/g;
-const MARKDOWN_ESCAPE = /\\([!-/:-@[-`{-~])/g;
+// Sent file mentions write a label's brackets as &#91; and &#93;; older ones escaped them.
+const MARKDOWN_ESCAPE = /\\([!-/:-@[-`{-~])|&#9(1|3);/g;
 const BALANCED_BRACKETS = /^(?:[^[\]]|\[[^[\]]*\])*$/;
+const entityBracket = (code: string | undefined) => (code === "1" ? "[" : "]");
 
 const readableLabel = (label: string) => {
-  const unescaped = label.replace(MARKDOWN_ESCAPE, "$1");
+  const unescaped = label.replace(
+    MARKDOWN_ESCAPE,
+    (_escape, char: string | undefined, code: string | undefined) => char ?? entityBracket(code),
+  );
   return BALANCED_BRACKETS.test(unescaped)
     ? unescaped
-    : label.replace(MARKDOWN_ESCAPE, (escape, char: string) =>
-        char === "[" || char === "]" || char === "\\" ? escape : char,
+    : label.replace(MARKDOWN_ESCAPE, (escape, char: string | undefined, code: string | undefined) =>
+        char === undefined
+          ? `\\${entityBracket(code)}`
+          : char === "[" || char === "]" || char === "\\"
+            ? escape
+            : char,
       );
 };
 

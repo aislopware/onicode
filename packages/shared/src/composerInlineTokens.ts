@@ -38,8 +38,8 @@ const MENTION_TOKEN_REGEX = /(^|\s)@(?:"((?:\\.|[^"\\])*)"|([^\s@"]+))(?=\s)/g;
 // Bound unmatched-bracket rescans to avoid quadratic work; only basenames survive, and common filesystems cap them at 255.
 const MAX_FILE_LINK_LABEL_LENGTH = 512;
 // An unescaped `[` in a label must close, as in ThreadSearch, so an unclosed one before a link
-// starts no label that would swallow the link.
-const FILE_LINK_LABEL_CHAR = `(?:\\\\.|[^\\[\\]\\\\])`;
+// starts no label that would swallow the link. An entity is one unit against the length cap.
+const FILE_LINK_LABEL_CHAR = `(?:\\\\.|&#9[13];|&(?!#9[13];)|[^\\[\\]\\\\&])`;
 const FILE_LINK_TOKEN_REGEX = new RegExp(
   `(^|\\s)\\[((?:${FILE_LINK_LABEL_CHAR}|\\[${FILE_LINK_LABEL_CHAR}{0,${MAX_FILE_LINK_LABEL_LENGTH}}\\]){0,${MAX_FILE_LINK_LABEL_LENGTH}})\\]\\(([^)\\s]+)\\)(?=\\s)`,
   "g",
@@ -56,7 +56,10 @@ function collectMentionTokens(text: string): ComposerInlineToken[] {
   for (const match of text.matchAll(FILE_LINK_TOKEN_REGEX)) {
     const fullMatch = match[0];
     const prefix = match[1] ?? "";
-    const label = (match[2] ?? "").replace(/\\(.)/g, "$1");
+    const label = (match[2] ?? "").replace(
+      /\\(.)|&#9(1|3);/g,
+      (_match, escaped?: string, code?: string) => escaped ?? (code === "1" ? "[" : "]"),
+    );
     const encodedPath = match[3] ?? "";
     if (encodedPath.startsWith("//")) {
       continue;

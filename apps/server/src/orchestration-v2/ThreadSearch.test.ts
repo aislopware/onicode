@@ -954,7 +954,7 @@ it.layer(layerTest)("ThreadSearch filters before it ranks", (it) => {
             mention,
             "heron-mention",
             "user",
-            String.raw`Fix [\_\_init\_\_.py](pkg/__init__.py) and [\_café\_.py](pkg/_caf%C3%A9_.py)`,
+            String.raw`Fix [\_\_init\_\_.py](pkg/__init__.py), [\_café\_.py](pkg/_caf%C3%A9_.py), [\~\~draft\~\~.md](./notes/~~draft~~.md), [&#91;TODO&#93;.md](notes/%5BTODO%5D.md), and [\&#91;lit\&#93;.md](./notes/%26%2391;lit%26%2393;.md)`,
           ),
         ],
         projections.apply,
@@ -965,13 +965,22 @@ it.layer(layerTest)("ThreadSearch filters before it ranks", (it) => {
         matches.map((match) => [match.threadId, match.snippet]),
         [[labeled, "See the heron plan now"]],
       );
-      for (const query of ["__init__.py", "_café_.py"]) {
+      for (const query of [
+        "__init__.py",
+        "_café_.py",
+        "~~draft~~.md",
+        "[TODO",
+        "[TODO].md",
+        "&#91;lit&#93;.md",
+      ]) {
         const mentions = yield* search.search({ query });
         assert.deepEqual(
-          mentions.matches.map((match) => [match.threadId, match.snippet]),
-          [[mention, "Fix __init__.py and _café_.py"]],
+          mentions.matches.map((match) => [match.threadId, match.snippet.includes(query)]),
+          [[mention, true]],
         );
       }
+      assert.deepEqual((yield* search.search({ query: "[lit" })).matches, []);
+
       // A route file's brackets are escaped in its label too.
       const route = ThreadId.make("thread:heron-route");
       yield* Effect.forEach(

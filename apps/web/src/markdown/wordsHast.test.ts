@@ -1,7 +1,8 @@
 import type { Element, Root } from "hast";
 import { toHtml } from "hast-util-to-html";
 import { describe, expect, it } from "vite-plus/test";
-import { extractMarkdownLinkHrefs } from "@onicode/shared/markdownLinks";
+import { serializeComposerFileLink } from "@onicode/shared/composerTrigger";
+import { extractMarkdownLinkHrefs, isMarkdownFileLinkLabel } from "@onicode/shared/markdownLinks";
 
 import {
   decodeMarkdownLinkEscapes,
@@ -544,5 +545,22 @@ describe("wordsHast", () => {
     );
     expect(html).not.toMatch(/onload|javascript|position|<a |<script/);
     expect(html).toContain('aria-label="y"');
+  });
+
+  it.each([
+    ["notes/[TODO].md", "[TODO].md"],
+    ["notes/~~draft~~.md", "~~draft~~.md"],
+    ["notes/&#91;TODO&#93;.md", "&#91;TODO&#93;.md"],
+  ])("renders sent composer file mention %s with literal basename %s", (path, basename) => {
+    const tree = wordsHast(serializeComposerFileLink(path), {
+      ...ASSISTANT,
+      math: true,
+      extensions: { userMessage: true },
+    });
+    const paragraph = tree.children[0] as Element;
+    const anchor = paragraph.children[0] as Element;
+    expect(anchor.tagName).toBe("a");
+    expect(anchor.children).toEqual([{ type: "text", value: basename }]);
+    expect(isMarkdownFileLinkLabel(basename, String(anchor.properties.href))).toBe(true);
   });
 });
