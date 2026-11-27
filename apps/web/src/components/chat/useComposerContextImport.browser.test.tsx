@@ -63,7 +63,9 @@ it.each([
   { kind: "file", edit: "undo" },
   { kind: "file", edit: "retain" },
   { kind: "file", edit: "switch" },
+  { kind: "image", edit: "reload" },
   { kind: "file", edit: "cached" },
+  { kind: "image", edit: "cached" },
   { kind: "file", edit: "question" },
   { kind: "image", edit: "question" },
   { kind: "file", edit: "stopped-question" },
@@ -97,13 +99,20 @@ it.each([
   rememberCopiedComposerAttachments(
     sourceEnvironmentId,
     edit === "cached"
-      ? new Map([["source-attachment", new File(["notes"], "notes.txt")]])
+      ? new Map([
+          [
+            "source-attachment",
+            new File(["notes"], "notes.txt", {
+              type: kind === "image" ? "image/png" : "text/plain",
+            }),
+          ],
+        ])
       : new Map(),
   );
   using _copy = {
     [Symbol.dispose]: () => rememberCopiedComposerAttachments(sourceEnvironmentId, new Map()),
   };
-  const promptRef = { current: "" };
+  let expectedPrompt = "";
   const downloaded = deferred<Response>();
   const requested = deferred<void>();
   const settled = deferred<void>();
@@ -115,18 +124,15 @@ it.each([
     composerDraftTarget: target,
     attachmentDraftTarget: target,
     attachmentTargetKey: target,
-    attachmentTargetKeyRef: { current: target },
     questionAttachmentTarget: question ? target : null,
     pendingUserInputs: [],
     composerContextRecords: new Map(),
     composerImages: [],
-    composerFilesRef: { current: [] },
-    promptRef,
     addComposerFilesToDraft: (files: Parameters<typeof store.addFiles>[1]) =>
       store.addFiles(target, files, { appendReference: !question }),
-  } satisfies ImportInput & { promptRef: { current: string } };
+  } satisfies ImportInput;
   let importer!: Importer;
-  await using _screen = await render(
+  await using screen = await render(
     <Harness
       input={input}
       ready={(value) => {
@@ -144,6 +150,7 @@ it.each([
     requested.resolve();
     return downloaded.promise;
   });
+  using reader = vi.spyOn(FileReader.prototype, "readAsDataURL");
   const contextId = ComposerContextId.make(`${kind}_source`);
   const attachmentFields = {
     version: 1 as const,
@@ -195,7 +202,7 @@ it.each([
       label: annotated ? "Page annotation" : "notes.txt",
     });
     if (question) pastedPrompt = "Question answer";
-    promptRef.current = pastedPrompt;
+    expectedPrompt = pastedPrompt;
     store.setPrompt(target, pastedPrompt);
     if (edit !== "cached") await requested.promise;
   });
@@ -206,25 +213,26 @@ it.each([
       edit !== "retain" &&
       edit !== "cached" &&
       !question &&
-      edit !== "switch"
+      edit !== "switch" &&
+      edit !== "reload"
     ) {
-      promptRef.current = "Keep this edit";
-      store.setPrompt(target, promptRef.current);
+      expectedPrompt = "Keep this edit";
+      store.setPrompt(target, expectedPrompt);
     }
     if (edit === "undo") {
-      promptRef.current = pastedPrompt;
+      expectedPrompt = pastedPrompt;
       store.setPrompt(target, pastedPrompt);
     }
-    if (edit === "switch") input.attachmentTargetKeyRef.current = DraftId.make("other-draft");
     if (stopped || answered) {
       makeThreadRequestsResolvedAnnouncer(
         environmentId,
         thread.threadId,
       )([{ id: requestId, status: stopped ? "cancelled" : "resolved" }]);
-      promptRef.current = "";
+      expectedPrompt = "";
     }
-    if (stopped) input.attachmentTargetKeyRef.current = DraftId.make(composerTargetKey(thread));
   });
+  // The pasting composer goes away; the bytes still land in the draft that holds their chip.
+  if (edit === "switch" || edit === "reload") await screen.unmount();
   // The thread's send is blocked by, and its slots count, the import that moved there.
   if (stopped) {
     expect(pendingDraftWork.has(composerTargetKey(thread))).toBe(true);
@@ -261,8 +269,19 @@ it.each([
   expect(pendingDraftWork.has(target)).toBe(false);
   expect(pendingDraftWork.has(composerTargetKey(thread))).toBe(false);
   expect(countMovedQuestionImports(composerTargetKey(thread))).toBe(0);
+  // A deleted chip's image is never prepared for saving.
+  if (kind === "image" && (edit === "delete" || edit === "delete-annotation")) {
+    expect(reader).not.toHaveBeenCalled();
+  }
+  if (edit === "reload") {
+    const inMemoryFile = store.getComposerDraft(target)?.images[0]?.file;
+    await useComposerDraftStore.persist.rehydrate();
+    const restored = store.getComposerDraft(target)?.images[0]?.file;
+    expect(restored).not.toBe(inMemoryFile);
+    expect(await restored?.text()).toBe("notes");
+  }
   const draft = store.getComposerDraft(stopped ? thread : target);
-  expect(draft?.prompt ?? "").toBe(promptRef.current);
+  expect(draft?.prompt ?? "").toBe(expectedPrompt);
   const attachments = (kind === "file" ? draft?.files : draft?.images) ?? [];
   if (kind === "image" && edit === "retain")
     expect(draft?.images[0]?.source).toEqual(
@@ -271,6 +290,8 @@ it.each([
   expect(attachments.map((file) => file.name)).toEqual(
     edit === "undo" ||
       edit === "retain" ||
+      edit === "switch" ||
+      edit === "reload" ||
       edit === "annotation" ||
       edit === "cached" ||
       (question && !answered && edit !== "stopped-question-full")
@@ -310,13 +331,10 @@ it.each(["same", "other-environment"] as const)(
           composerDraftTarget: target,
           attachmentDraftTarget: target,
           attachmentTargetKey: target,
-          attachmentTargetKeyRef: { current: target },
           questionAttachmentTarget: null,
           pendingUserInputs: [],
           composerContextRecords: new Map([[first.contextId, { kind: "thread", record: first }]]),
           composerImages: [],
-          composerFilesRef: { current: [] },
-          promptRef: { current: "" },
           addComposerFilesToDraft: () => [],
         }}
         ready={(value) => {
@@ -399,13 +417,10 @@ it.each([
         composerDraftTarget: target,
         attachmentDraftTarget: target,
         attachmentTargetKey: target,
-        attachmentTargetKeyRef: { current: target },
         questionAttachmentTarget: null,
         pendingUserInputs: [],
         composerContextRecords: new Map(),
         composerImages: [],
-        composerFilesRef: { current: marker ? [reattach] : [] },
-        promptRef: { current: "" },
         addComposerFilesToDraft: (files) => store.addFiles(target, files),
       }}
       ready={(value) => {
@@ -488,13 +503,10 @@ it("lands two moved question imports that settle together in the thread's last t
     composerDraftTarget: target,
     attachmentDraftTarget: target,
     attachmentTargetKey: target,
-    attachmentTargetKeyRef: { current: target },
     questionAttachmentTarget: target,
     pendingUserInputs: [],
     composerContextRecords: new Map(),
     composerImages: [],
-    composerFilesRef: { current: [] },
-    promptRef: { current: "" },
     addComposerFilesToDraft: (files: Parameters<typeof store.addFiles>[1]) =>
       store.addFiles(target, files, { appendReference: false }),
   } satisfies ImportInput;
@@ -527,7 +539,6 @@ it("lands two moved question imports that settle together in the thread's last t
       environmentId,
       thread.threadId,
     )([{ id: requestId, status: "cancelled" }]);
-    input.attachmentTargetKeyRef.current = DraftId.make(threadKey);
   });
   expect(countMovedQuestionImports(threadKey)).toBe(2);
   store.addFiles(
@@ -591,13 +602,10 @@ it("pasting back a removed queued attachment counts against the queued message's
         composerDraftTarget: target,
         attachmentDraftTarget: target,
         attachmentTargetKey: target,
-        attachmentTargetKeyRef: { current: target },
         questionAttachmentTarget: null,
         pendingUserInputs: [],
         composerContextRecords: new Map(),
         composerImages: [],
-        composerFilesRef: { current: [] },
-        promptRef: { current: "" },
         addComposerFilesToDraft: () => [],
         existingAttachmentCount: PROVIDER_SEND_TURN_MAX_ATTACHMENTS - 1,
         removedQueuedAttachments: [{ attachment: removed, contextIds: [contextId] }],
