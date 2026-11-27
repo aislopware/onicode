@@ -4083,3 +4083,4 @@ efcf9cb5bc	take	taken as is
 3eee3d48f1	take	taken as is
 f8b2fcbee5	skip	only touches infra/relay/ (T3 relay Worker), removed in Onicode
 6b09aea61d	take	imports merged next to Onicode's ./service/ launcher (no ./cloud/); one auto-pull sweep per fetch interval, skipped on constrained hosts
+4f04b70bf8	take	mechanical merges only (mock agent env, new tests beside Onicode's port-discovery test); tightens auto-accept-edits to paths inside cwd/writable roots for every ACP flavor; Antigravity's Onicode-MCP allow-first and withSentRawInputPaths unchanged
