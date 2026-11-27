@@ -4032,3 +4032,4 @@ e36800e61b	take	taken as is
 3b827b4fb3	take	taken as is
 9df77f2125	take	taken as is
 b1360538c1	take	taken as is
+7d8c03fd99	take	adopted upstream's paste session write over Onicode's input/enqueue (mobile half of 5db9717004); Onicode's restart-drop test kept with the abort write; binary mouse reports keep ordering but send no phases; scenario ported to desktop

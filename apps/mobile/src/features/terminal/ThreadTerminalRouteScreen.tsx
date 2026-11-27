@@ -3,6 +3,7 @@ import { m } from "../../i18n/messages";
 import {
   AuthTerminalReadScope,
   AuthTerminalOperateScope,
+  type TerminalWriteInput,
   DEFAULT_TERMINAL_ID,
   EnvironmentId,
   ThreadId,
@@ -649,7 +650,11 @@ function ThreadTerminal(props: {
     messages,
   );
 
-  const writeChunk = async (data: string, binary?: true): Promise<boolean> => {
+  const writeChunk = async (
+    data: string,
+    plainWrite?: TerminalWriteInput["plainWrite"],
+    binary?: true,
+  ): Promise<boolean> => {
     if (
       !isRunning ||
       !readEnvironmentScope(selectedThread.environmentId, AuthTerminalOperateScope)
@@ -662,6 +667,7 @@ function ThreadTerminal(props: {
         threadId: selectedThread.id,
         terminalId,
         data,
+        ...(plainWrite ? { plainWrite } : {}),
         ...(binary ? { binary } : {}),
       },
     });
@@ -669,7 +675,7 @@ function ThreadTerminal(props: {
   };
 
   // Android's IME delivers a system paste as one input, which can exceed one write.
-  const writeInput = (data: string) => pasteSession.input(data, writeChunk);
+  const writeInput = (data: string) => pasteSession.write(data, writeChunk);
 
   const pasteText = async (readText: () => Promise<string>) => {
     await pasteSession.paste({
@@ -706,7 +712,10 @@ function ThreadTerminal(props: {
     }
     // Mouse reports from the terminal itself, never typed, so a pending modifier waits.
     if (binary) {
-      void pasteSession.input(data, (chunk) => writeChunk(chunk, true));
+      // The server rejects a phase on binary input, so mouse reports keep only the ordering.
+      void pasteSession.write(data, (chunk, phase) =>
+        phase === "abort" ? Promise.resolve(true) : writeChunk(chunk, undefined, true),
+      );
       return;
     }
 

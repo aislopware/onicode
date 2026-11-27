@@ -1,33 +1,61 @@
-import { chunkTerminalWrite } from "@onicode/contracts";
+import {
+  chunkTerminalWrite,
+  terminalWritePhase,
+  type TerminalWriteInput,
+} from "@onicode/contracts";
 
 import { encodeTerminalPaste } from "./terminalInput";
 
+type WriteChunk = (data: string, phase?: TerminalWriteInput["plainWrite"]) => Promise<boolean>;
+
 interface TerminalPasteInput {
   readonly readText: () => Promise<string>;
-  readonly write: (data: string) => Promise<boolean>;
+  readonly write: WriteChunk;
   readonly onReadError: (cause: unknown) => void;
 }
 
 export interface TerminalPasteSession {
   readonly reset: (active: boolean) => void;
-  /** Sends typed input in order: behind a split write or paste, at once when nothing waits. */
-  readonly input: (data: string, write: (chunk: string) => Promise<boolean>) => Promise<boolean>;
+  /** True until the terminal's liveness changes (stop, start or restart) after this call. */
+  readonly liveness: () => () => boolean;
+  readonly write: (data: string, send: WriteChunk) => Promise<void>;
   readonly paste: (input: TerminalPasteInput) => Promise<void>;
 }
 
 export function createTerminalPasteSession(): TerminalPasteSession {
   let liveTarget: object | null = null;
   let latestRequest = 0;
-  let writeTail: Promise<void> = Promise.resolve();
-  let queuedWrites = 0;
-  const enqueue = <A>(task: () => Promise<A>): Promise<A> => {
-    queuedWrites += 1;
-    const queued = writeTail.then(task, task);
-    const settle = () => {
-      queuedWrites -= 1;
+  let writeTail: Promise<void> | null = null;
+
+  const writeChunks = (
+    data: string,
+    send: WriteChunk,
+    isCurrent: () => boolean,
+    queueSingle: boolean,
+  ) => {
+    const chunks = chunkTerminalWrite(data);
+    const run = async () => {
+      let started = false;
+      try {
+        for (const [index, chunk] of chunks.entries()) {
+          if (!isCurrent()) return;
+          const phase = terminalWritePhase(index, chunks.length);
+          started ||= phase === "start";
+          if (!(await send(chunk, phase))) return;
+        }
+        started = false;
+      } finally {
+        if (started) await send("", "abort");
+      }
     };
-    writeTail = queued.then(settle, settle);
-    return queued;
+    if (writeTail === null && !queueSingle && chunks.length <= 1) return run();
+    const pending = (writeTail ?? Promise.resolve()).then(run, run);
+    writeTail = pending;
+    const clear = () => {
+      if (writeTail === pending) writeTail = null;
+    };
+    void pending.then(clear, clear);
+    return pending;
   };
 
   return {
@@ -35,16 +63,15 @@ export function createTerminalPasteSession(): TerminalPasteSession {
       liveTarget = active ? {} : null;
     },
 
-    input(data, write) {
+    liveness() {
       const target = liveTarget;
-      const chunks = chunkTerminalWrite(data);
-      const writeChunks = async () => {
-        for (const chunk of chunks) {
-          if (liveTarget !== target || !(await write(chunk))) return false;
-        }
-        return true;
-      };
-      return queuedWrites === 0 && chunks.length === 1 ? writeChunks() : enqueue(writeChunks);
+      return () => liveTarget === target;
+    },
+
+    async write(data, send) {
+      // Input can arrive before the first attach snapshot sets liveness; the caller gates on running.
+      const target = liveTarget;
+      await writeChunks(data, send, () => liveTarget === target, false);
     },
 
     async paste({ readText, write, onReadError }) {
@@ -67,14 +94,7 @@ export function createTerminalPasteSession(): TerminalPasteSession {
         return;
       }
 
-      const writePaste = async () => {
-        for (const chunk of chunkTerminalWrite(encodeTerminalPaste(text))) {
-          if (!isCurrent() || !(await write(chunk))) {
-            return;
-          }
-        }
-      };
-      await enqueue(writePaste);
+      await writeChunks(encodeTerminalPaste(text), write, isCurrent, true);
     },
   };
 }

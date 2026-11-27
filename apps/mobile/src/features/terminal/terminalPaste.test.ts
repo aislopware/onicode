@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { TERMINAL_WRITE_MAX_LENGTH } from "@onicode/contracts";
+import { TERMINAL_WRITE_MAX_LENGTH, type TerminalWriteInput } from "@onicode/contracts";
 import { createTerminalPasteSession } from "./terminalPaste";
 
 function deferred<T>() {
@@ -34,35 +34,35 @@ describe("terminal paste session", () => {
     expect(writes).toEqual([]);
   });
 
-  it("keeps typed input behind a split write and drops its rest after a restart", async () => {
+  it("reports a liveness change after capture, including a restart in place", () => {
     const session = createTerminalPasteSession();
     session.reset(true);
-    const firstChunk = deferred<boolean>();
-    const writes: string[] = [];
-    const write = (data: string) => {
-      writes.push(data);
-      return writes.length === 1 ? firstChunk.promise : Promise.resolve(true);
-    };
+    const isSameShell = session.liveness();
+    expect(isSameShell()).toBe(true);
+    session.reset(true);
+    expect(isSameShell()).toBe(false);
+  });
 
-    const large = session.input("x".repeat(TERMINAL_WRITE_MAX_LENGTH + 4), write);
-    const enter = session.input("\r", write);
-    firstChunk.resolve(true);
-    await Promise.all([large, enter]);
-    expect(writes.map((data) => data.length)).toEqual([TERMINAL_WRITE_MAX_LENGTH, 4, 1]);
-
-    writes.length = 0;
+  it("drops the rest of a split write after a restart and aborts it", async () => {
+    const session = createTerminalPasteSession();
+    session.reset(true);
     const restarted = deferred<boolean>();
     const firstSent = deferred<void>();
-    const interrupted = session.input("y".repeat(TERMINAL_WRITE_MAX_LENGTH + 4), (data) => {
+    const writes: string[] = [];
+    const phases: Array<TerminalWriteInput["plainWrite"]> = [];
+    const interrupted = session.write("y".repeat(TERMINAL_WRITE_MAX_LENGTH + 4), (data, phase) => {
       writes.push(data);
+      phases.push(phase);
       firstSent.resolve();
-      return restarted.promise;
+      return writes.length === 1 ? restarted.promise : Promise.resolve(true);
     });
     await firstSent.promise;
+
     session.reset(true);
     restarted.resolve(true);
-    expect(await interrupted).toBe(false);
-    expect(writes).toHaveLength(1);
+    await interrupted;
+    expect(writes.map((data) => data.length)).toEqual([TERMINAL_WRITE_MAX_LENGTH, 0]);
+    expect(phases).toEqual(["start", "abort"]);
   });
 
   it("never overlaps writes from rapid paste requests", async () => {
@@ -72,9 +72,11 @@ describe("terminal paste session", () => {
     const firstWrite = deferred<boolean>();
     const firstWriteStarted = deferred<void>();
     const writes: string[] = [];
+    const phases: Array<TerminalWriteInput["plainWrite"]> = [];
     let activeWrites = 0;
     let maximumActiveWrites = 0;
-    const write = async (data: string) => {
+    const write = async (data: string, phase?: TerminalWriteInput["plainWrite"]) => {
+      phases.push(phase);
       writes.push(data);
       activeWrites += 1;
       maximumActiveWrites = Math.max(maximumActiveWrites, activeWrites);
@@ -106,8 +108,45 @@ describe("terminal paste session", () => {
     firstWrite.resolve(true);
     await Promise.all([olderPaste, newerPaste]);
 
-    expect(writes.map((chunk) => chunk.length)).toEqual([TERMINAL_WRITE_MAX_LENGTH, 5]);
-    expect(writes[1]).toBe("newer");
+    expect(writes.map((chunk) => chunk.length)).toEqual([TERMINAL_WRITE_MAX_LENGTH, 0, 5]);
+    expect(writes[2]).toBe("newer");
+    expect(phases).toEqual(["start", "abort", undefined]);
     expect(maximumActiveWrites).toBe(1);
+  });
+  it("keeps a keystroke behind a queued split write", async () => {
+    const session = createTerminalPasteSession();
+    session.reset(true);
+    const firstChunk = deferred<boolean>();
+    const started = deferred<void>();
+    const writes: string[] = [];
+    const send = async (data: string) => {
+      writes.push(data);
+      if (writes.length === 1) {
+        started.resolve();
+        return firstChunk.promise;
+      }
+      return true;
+    };
+    const a = "a".repeat(TERMINAL_WRITE_MAX_LENGTH);
+    const b = "b".repeat(TERMINAL_WRITE_MAX_LENGTH);
+    const first = session.write(a + "1", send);
+    await started.promise;
+    const second = session.write(b + "2", send);
+    const key = session.write("k", send);
+    expect(writes).toEqual([a]);
+
+    firstChunk.resolve(true);
+    await Promise.all([first, second, key]);
+    expect(writes).toEqual([a, "1", b, "2", "k"]);
+  });
+
+  it("sends a keystroke typed before the first attach snapshot", async () => {
+    const session = createTerminalPasteSession();
+    const writes: string[] = [];
+    await session.write("k", async (data) => {
+      writes.push(data);
+      return true;
+    });
+    expect(writes).toEqual(["k"]);
   });
 });
