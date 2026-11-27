@@ -1,8 +1,8 @@
 # Updating Onicode
 
 The app you use and the server running your agents can be on different machines.
-When a server is behind your web or desktop app, the update button at the bottom
-of the sidebar and **Settings → Environments** offer to update it.
+When a server is behind your desktop or mobile app, the update button at the bottom
+of the desktop sidebar and **Settings → Environments** offer to update it.
 
 ## When a new version is out
 

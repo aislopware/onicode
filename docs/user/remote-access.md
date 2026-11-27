@@ -1,6 +1,6 @@
 # Remote access
 
-Connect a phone, browser, or another desktop app to Onicode running on a different
+Connect a phone or another desktop app to Onicode running on a different
 machine. That machine must stay running and reachable while you work.
 
 Your work never passes through an Onicode cloud service. Other devices reach a machine over
@@ -105,7 +105,7 @@ On desktop, select the route count under the machine's name in
 or remove it. On mobile, open the machine under **Settings → Environments** and
 choose **Edit**.
 
-Open **Permissions** next to **Routes** in web or desktop, or **Your permissions**
+Open **Permissions** next to **Routes** on desktop, or **Your permissions**
 in the mobile route details, to see what your current connection can do on that
 environment. For a remote environment, this is in its route details. Permissions
 shown there apply only to the route marked **In use**; other routes are not

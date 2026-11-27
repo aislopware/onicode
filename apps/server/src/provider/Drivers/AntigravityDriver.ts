@@ -36,6 +36,7 @@ import { makeAntigravityTextGeneration } from "../../textGeneration/AntigravityT
 import { makeAntigravityAuth, type AntigravityAuth } from "../AntigravityAuth.ts";
 import * as AntigravityInstallation from "../AntigravityInstallation.ts";
 import { brokenRuntimeError } from "../providerCompatibility.ts";
+import { NativeTelemetryClient } from "../../resourceTelemetry/NativeTelemetryClient.ts";
 import * as AntigravityUsage from "./AntigravityUsage.ts";
 import {
   ANTIGRAVITY_ACP_DIRECTORY_NAME,
@@ -59,7 +60,8 @@ import {
   OPEN_MODEL_ACCESS_RELEASE,
   type AntigravityAcpRuntimeInput,
 } from "../acp/AntigravityAcpSupport.ts";
-import type * as AcpSessionRuntime from "@onicode/provider-acp/server/AcpSessionRuntime";
+import * as AcpSessionRuntime from "@onicode/provider-acp/server/AcpSessionRuntime";
+import { readNativeProcessTable } from "@onicode/provider-core/server/processDescendants";
 import type { ServerProviderDraft } from "@onicode/provider-core/server/snapshotProbe";
 import {
   removeAntigravitySessionFiles,
@@ -150,6 +152,17 @@ export const AntigravityDriver: ProviderDriver<
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+    const nativeProcessTable = Option.getOrUndefined(
+      yield* Effect.serviceOption(NativeTelemetryClient),
+    )?.processIdentities;
+    // One reader per instance, so its sessions share one macOS descendant poll; `ps` stays the fallback.
+    const darwinDescendantProcessTableReader =
+      nativeProcessTable === undefined
+        ? undefined
+        : readNativeProcessTable(
+            nativeProcessTable,
+            AcpSessionRuntime.readDarwinProcessTable(spawner),
+          );
     const host = yield* ProviderHost.ProviderHost;
     const selfInvocation = yield* resolveSelfInvocation();
     const installation = yield* AntigravityInstallation.AntigravityInstallation;
@@ -431,6 +444,9 @@ export const AntigravityDriver: ProviderDriver<
         authMethod: auth.authMethod,
         childProcessSpawner: spawner,
         spawn,
+        ...(darwinDescendantProcessTableReader === undefined
+          ? {}
+          : { darwinDescendantProcessTableReader }),
       }).pipe(Effect.provideService(SecureRandom.SecureRandom, random));
       const startCompatible = Effect.fn("AntigravityDriver.startCompatible")(function* () {
         // A launcher can select a different runtime based on the thread's environment.

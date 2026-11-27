@@ -2059,7 +2059,7 @@ describe("mobile composer drafts", () => {
     expect(onEdit).toHaveBeenCalledTimes(8);
   });
 
-  it("retargets a new-task draft to another project, keeping only a pull request workspace", () => {
+  it("retargets a new-task draft to another project, keeping only a picked or pull request workspace", () => {
     const from = {
       environmentId: EnvironmentId.make("environment-1"),
       projectId: ProjectId.make("project-1"),
@@ -2106,6 +2106,25 @@ describe("mobile composer drafts", () => {
     });
     retargetNewTaskDraft(key, to);
     expect(getComposerDraftSnapshot(key).workspaceSelection).toBeUndefined();
+
+    updateComposerDraftSettings(key, {
+      workspaceSelection: {
+        mode: "worktree",
+        branch: "feature/b",
+        worktreePath: null,
+        startFromOrigin: true,
+        repositories: ["/old-machine/repo"],
+        explicit: true,
+      },
+    });
+    retargetNewTaskDraft(key, from);
+    expect(getComposerDraftSnapshot(key).workspaceSelection).toEqual({
+      mode: "worktree",
+      branch: null,
+      worktreePath: null,
+      startFromOrigin: true,
+      explicit: true,
+    });
   });
 
   it("retargets a saved new-task draft only after drafts load", async () => {

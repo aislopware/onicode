@@ -1,4 +1,4 @@
-import { type DeviceToolVersions, WS_METHODS } from "@onicode/contracts";
+import { type DeviceServiceState, type DeviceToolVersions, WS_METHODS } from "@onicode/contracts";
 import { Atom } from "effect/reactivity";
 
 import type { EnvironmentRegistry } from "../connection/registry.ts";
@@ -114,6 +114,11 @@ export function createDeviceEnvironmentAtoms<R, E>(
       concurrency,
     }),
   };
+}
+
+/** The devices Stop all powers off: running simulators and emulators, never a physical device. */
+export function stoppableDevices(state: Pick<DeviceServiceState, "devices"> | null) {
+  return (state?.devices ?? []).filter((device) => device.booted && !device.physical);
 }
 
 export function deviceToolVersionLabels(

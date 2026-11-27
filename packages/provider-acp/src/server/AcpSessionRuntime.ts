@@ -1100,7 +1100,7 @@ const terminateWindowsProcessTreeWithTaskkill = (
     ),
   );
 
-const readDarwinProcessTable = (
+export const readDarwinProcessTable = (
   spawner: ChildProcessSpawner.ChildProcessSpawner["Service"],
 ): Effect.Effect<ReadonlyArray<ProcessTableRow>> =>
   Effect.scoped(
