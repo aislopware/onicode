@@ -3962,3 +3962,4 @@ a05a8518f9	take	taken as is
 d41f231a1f	take	taken as is
 b2f56cc0aa	take	taken as is
 07276c4197	take	taken as is
+feecca53e4	take	kept Onicode's per-package npm outdated fallback; added the registry probe timeout to it
