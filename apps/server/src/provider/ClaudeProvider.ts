@@ -975,7 +975,9 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   });
   // Claude Code lists gateway models only while its one gateway cache holds this base URL, and
   // then all of them, so a list without any may lack this gateway's models.
-  return reportedModels.length === 0 ? { ...provider, modelsIncomplete: true } : provider;
+  return customApiEndpoint && reportedModels.length === 0
+    ? { ...provider, modelsIncomplete: true }
+    : provider;
 });
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);

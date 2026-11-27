@@ -5084,7 +5084,10 @@ it.layer(
               ? { fastModeDisabledReason: row.fastModeDisabledReason }
               : {}),
           }),
+          { ...process.env, ANTHROPIC_BASE_URL: "" },
         );
+        // A first-party report is the whole list, so the registry must not restore dropped models.
+        assert.strictEqual(status.modelsIncomplete, undefined);
         const opus = status.models.find((model) => model.slug === "claude-opus-5-5");
         assert.deepStrictEqual(
           {
