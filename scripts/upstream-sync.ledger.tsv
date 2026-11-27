@@ -4501,3 +4501,4 @@ faceb33bb8	take	adopted upstream's BetterOffice 0.6.1/fonts 0.5.0 over Onicode's
 d20571f9b9	take	kept Onicode's dropThreadAttachment/unloadDetachedThreads helpers (shared with retire paths); added upstream's handoff unload before detach, handoff skip and pending-background-work guard inside unloadDetachedThreads; thread/closed resolves the close waiter before Onicode's terminalization (unknown-outcome commands kept)
 f6e19aed9b	take	clean; follow-up: mobile zipTree shows a '.' folder for ./-prefixed entries
 bb312b12b7	take	clean; shared by desktop and mobile
+e0fd8f67f5	take	clean
