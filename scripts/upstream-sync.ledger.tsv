@@ -4697,3 +4697,4 @@ d99c3c2048	take	applied cleanly
 9fe10dc6d2	take	taken as is
 468ac6637a	take	test uses Onicode's TestArchive in place of JSZip
 1f8a4522bb	take	conflict: adopted upstream's exact gitdir parse over Onicode's whitespace regex (it mangled U+2028 paths); kept Onicode's realPath resolution of relative gitdirs (Git follows links before ..)
+2292cca56a	take	taken as is; join only runs for commands containing a backslash-newline
