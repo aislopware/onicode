@@ -1955,14 +1955,13 @@ export function useComposerSend(input: ComposerSendInput) {
         : refreshBeforeSend();
     if (refresh === null) return onSend(...args);
     const donePreparing = markSendPreparing();
-    try {
-      const { result: ready, draftStatus } = await waitBeforeSend(refresh);
-      if (!isShown()) return notifyLeftBeforeSend();
-      if (draftStatus === "edited") return notifyDraftChanged();
-      if (ready && draftStatus === "ready") return await onSendLatest(...args);
-    } finally {
-      donePreparing();
-    }
+    return waitBeforeSend(refresh)
+      .then(({ result: ready, draftStatus }) => {
+        if (!isShown()) return notifyLeftBeforeSend();
+        if (draftStatus === "edited") return notifyDraftChanged();
+        if (ready && draftStatus === "ready") return onSendLatest(...args);
+      })
+      .finally(donePreparing);
   };
   const sendWithEnvironmentRefreshLatest = useStableCallback(sendWithEnvironmentRefresh);
   const onSendWithRouting = async (...args: Parameters<typeof onSend>) => {
