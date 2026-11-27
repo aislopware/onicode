@@ -4294,3 +4294,4 @@ a3e13b25dc	take	exec loop and code-span scan taken without the hosted-link bare 
 98f2a92fc1	skip	already done: Onicode's clearSearchOnEscape (09f564ad4a) handles Esc/IME/repeat in the ignored-file search, unit-tested in searchFieldEscape.test.ts
 fce54e67a6	take	applied cleanly
 5e37e6db56	take	removed Onicode's antigravityClientInfo, kept process-ownership helper; driver test takes upstream's two-version loop; docs keep Onicode's wording with 1.5.1 and the no-allowances sentence (also fixes the stale Usage > Limits paragraph 96423cb5e2 left)
+c80bd64514	take	kept Onicode's server|loopback roles; dropped scripts/lib/dev-share.test.ts (no dev --share in Onicode)
