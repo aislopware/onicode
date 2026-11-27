@@ -4621,3 +4621,4 @@ e3cd83a299	take	taken as is
 fe03466f24	take	fix already in Onicode (949df015f6: currentRouteThreadKeyRef guards the reset and the focus frame, covered by 'leaves the composer on screen alone when a save from another thread lands' and 'skips the focus frame when the thread changes before it runs'), so the source and browser-test hunks are dropped; kept Onicode's version: same behavior, already tested; scenario late-queued-edit-keeps-focus ported as is (WEB)
 c103563d84	take	taken as is
 68b3c575b9	take	taken as is
+f765ce36fe	take	adopted upstream's scpRemoteHost over Onicode's last-@ SCP_REMOTE regex (1977b26df4): same last-@ split, plus Git's connect.c rules (bracketed hosts, a slash before the colon, option-looking user/path rejected), so it is stricter and matches git; GitHub definition 14, GitLab discovery 10 passed
