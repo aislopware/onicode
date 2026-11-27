@@ -4267,3 +4267,4 @@ cdb6764d75	take	applied to Onicode's resumable splitter by hand (cut needs an un
 14f46dd1f2	take	taken as is
 d8f315a81f	take	taken as is
 a446449577	take	tests only; kept Onicode's IMPLIED_END/openSibling, which already passes upstream's rows
+8ac2613d78	take	only angleEnd changed; kept Onicode's PARAGRAPH_END whitespaceEnd
