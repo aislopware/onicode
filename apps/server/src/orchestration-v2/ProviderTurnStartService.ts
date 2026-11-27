@@ -424,14 +424,20 @@ const compactsNativeSession = (
   return text === "/compact" || (nativeCommand && /^\/compact\s/.test(text));
 };
 
+/** The thread's whole history: a full summary, or an import's (side chats copy only context). */
+const carriesHistory = (handoff: OrchestrationV2ContextHandoff) =>
+  handoff.strategy === "full_thread_summary" ||
+  (handoff.strategy === "manual_context" &&
+    !ContextHandoffService.isSideChatContextHandoff(handoff));
+
 /** A compaction carries no inline history, so this session would summarize none of the thread. */
-const missesFullSummary = (
+const missesHistory = (
   handoffs: ReadonlyArray<OrchestrationV2ContextHandoff>,
   providerThread: OrchestrationV2ProviderThread,
 ) =>
   handoffs.some(
     (handoff) =>
-      handoff.strategy === "full_thread_summary" &&
+      carriesHistory(handoff) &&
       (providerThread.nativeThreadRef === null ||
         handoff.delivery?.nativeThreadId !== providerThread.nativeThreadRef.nativeId ||
         handoff.delivery.status === "pending"),
@@ -666,8 +672,11 @@ export const layer: Layer.Layer<
               "type" | "title" | "input" | "output" | "exitCode"
             >;
         readonly providerThreadUpdate?: OrchestrationV2ProviderThread;
+        /** Written first, such as a recovery's handoff item for the session it opened. */
+        readonly precedingItems?: ReadonlyArray<OrchestrationV2TurnItem>;
       }) {
-        const { run, rootNode, attempt, turnItems, now, status } = input;
+        const { run, rootNode, attempt, now, status } = input;
+        const turnItems = [...input.turnItems, ...(input.precedingItems ?? [])];
         const runId = run.id;
         const started = input.startedAt === undefined ? {} : { startedAt: input.startedAt };
         const item: OrchestrationV2TurnItem = {
@@ -691,6 +700,10 @@ export const layer: Layer.Layer<
           ...input.item,
         };
         const eventPayloads = [
+          ...(input.precedingItems ?? []).map((payload) => ({
+            type: "turn-item.updated" as const,
+            payload,
+          })),
           { type: "turn-item.updated", payload: item },
           { type: "run.updated", payload: { ...run, status, ...started, completedAt: now } },
           {
@@ -1291,41 +1304,51 @@ export const layer: Layer.Layer<
         cwd: resolvedRuntimePolicy.cwd,
       });
       const compaction = compactsNativeSession(providerMessage, slashCommand);
+      // Without injection the history only reaches the session in a prompt, which a compaction lacks.
+      const settleEmptyCompaction = Effect.fn("ProviderTurnStartService.settleEmptyCompaction")(
+        function* (
+          thread: OrchestrationV2ProviderThread,
+          precedingItems: ReadonlyArray<OrchestrationV2TurnItem> = [],
+        ) {
+          const now = yield* DateTime.now;
+          yield* settleRunBeforeStart({
+            run,
+            rootNode,
+            attempt,
+            turnItems: projection.turnItems,
+            signal: "empty-compaction",
+            status: "failed",
+            now,
+            startedAt: now,
+            providerInstanceId: run.providerInstanceId,
+            itemProviderThreadId: providerThread.id,
+            item: {
+              type: "compaction",
+              title: "Nothing to compact yet",
+              driver: session.driver,
+              summary:
+                "This thread's earlier conversation reaches the agent with your next message. Send a message before compacting.",
+            },
+            precedingItems,
+            providerThreadUpdate: {
+              ...thread,
+              status:
+                thread.status === "error"
+                  ? "error"
+                  : thread.nativeThreadRef === null
+                    ? "not_loaded"
+                    : "idle",
+              updatedAt: now,
+            },
+          });
+        },
+      );
       if (
         session.injectHistory === undefined &&
         compaction &&
-        missesFullSummary(handoffs, providerThread)
+        missesHistory(handoffs, providerThread)
       ) {
-        const now = yield* DateTime.now;
-        yield* settleRunBeforeStart({
-          run,
-          rootNode,
-          attempt,
-          turnItems: projection.turnItems,
-          signal: "empty-compaction",
-          status: "failed",
-          now,
-          startedAt: now,
-          providerInstanceId: run.providerInstanceId,
-          itemProviderThreadId: providerThread.id,
-          item: {
-            type: "compaction",
-            title: "Nothing to compact yet",
-            driver: session.driver,
-            summary:
-              "This thread's earlier conversation reaches the agent with your next message. Send a message before compacting.",
-          },
-          providerThreadUpdate: {
-            ...providerThread,
-            status:
-              providerThread.status === "error"
-                ? "error"
-                : providerThread.nativeThreadRef === null
-                  ? "not_loaded"
-                  : "idle",
-            updatedAt: now,
-          },
-        });
+        yield* settleEmptyCompaction(providerThread);
         return;
       }
       const cutTurn = unsettledStoppedProviderTurn(
@@ -2456,6 +2479,18 @@ export const layer: Layer.Layer<
         createdAt: providerThread.createdAt,
         updatedAt: now,
       };
+      // A fallback above opened a fresh session that holds none of the history yet.
+      if (
+        session.injectHistory === undefined &&
+        compaction &&
+        missesHistory(effectiveHandoffs, runningProviderThread)
+      ) {
+        yield* settleEmptyCompaction(
+          runningProviderThread,
+          recoveryTurnItem === undefined ? [] : [recoveryTurnItem],
+        );
+        return;
+      }
       const runningRun: OrchestrationV2Run = {
         ...run,
         status: "running",
@@ -2623,7 +2658,6 @@ export const layer: Layer.Layer<
         function* (turnInput: Parameters<typeof session.startTurn>[0], compact = false) {
           const { providerThread: targetThread, retryHandoff } = deliveryTarget;
           const retryHandoffIds = new Set(retryHandoff.handoffs.map((handoff) => handoff.id));
-          let injectionDeclined = false;
           const delivery = yield* deliverContextHandoffs({
             handoffs: [...effectiveHandoffs, ...retryHandoff.handoffs],
             deferInline: compact || slashCommand,
@@ -2638,23 +2672,13 @@ export const layer: Layer.Layer<
                     session.injectHistory!({
                       providerThread: targetThread,
                       ...history,
-                    }).pipe(
-                      Effect.catchIf(refusedBeforePrompt, () => Effect.succeed(false)),
-                      Effect.map((injected) => {
-                        injectionDeclined = !injected;
-                        return injected;
-                      }),
-                    ),
+                    }).pipe(Effect.catchIf(refusedBeforePrompt, () => Effect.succeed(false))),
                 }),
             persist: persistHandoff,
           });
           if (!(yield* isCurrentAttemptInStatus("running"))) return;
-          // A session opened after the start guard, e.g. a recovery replacement, lacks the history too.
-          if (
-            (compact || compaction) &&
-            (session.injectHistory === undefined || injectionDeclined) &&
-            missesFullSummary(effectiveHandoffs, targetThread)
-          ) {
+          // The history went neither in a prompt nor by injection (declined, or over budget).
+          if ((compact || compaction) && delivery.deferred.some(carriesHistory)) {
             return yield* new ContextHandoffPendingCompactionError();
           }
           const start = compact ? session.compactThread! : session.startTurn;
@@ -2782,6 +2806,8 @@ export const layer: Layer.Layer<
         ) {
           if (
             resumeFellBack ||
+            // A replacement would hold none of the history a compaction needs; the next prompt recovers.
+            (compaction && session.injectHistory === undefined) ||
             !nativeSessionLoadFailed(error) ||
             outcomeUnknown(error) ||
             !(yield* isCurrentAttemptInStatus("running")) ||

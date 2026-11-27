@@ -117,7 +117,10 @@ export const notesWaitingMessageIds = (
 export const withInlineContext = (context: string, userText: string): string =>
   context === "" ? userText : `${context}\n\nUser message:\n${userText}`;
 
-/** Persist around injection; ambiguous delivery requires a fresh native thread. Call unsent if refused before prompt consumption. */
+/**
+ * Persist around injection; ambiguous delivery requires a fresh native thread. Call unsent if
+ * refused before prompt consumption. `deferred` holds what waits for the next prompt.
+ */
 export const deliverContextHandoffs = Effect.fn("orchestrationV2.deliverContextHandoffs")(
   function* <InjectError = never, PersistError = never, BudgetError = never>(input: {
     readonly handoffs: ReadonlyArray<OrchestrationV2ContextHandoff>;
@@ -131,6 +134,7 @@ export const deliverContextHandoffs = Effect.fn("orchestrationV2.deliverContextH
     readonly persist: (handoff: OrchestrationV2ContextHandoff) => Effect.Effect<void, PersistError>;
   }) {
     const nativeThreadId = input.providerThread.nativeThreadRef?.nativeId ?? undefined;
+    const nothingDeferred: ReadonlyArray<OrchestrationV2ContextHandoff> = [];
     const pending = input.handoffs.filter(
       (handoff) =>
         nativeThreadId === undefined ||
@@ -138,7 +142,13 @@ export const deliverContextHandoffs = Effect.fn("orchestrationV2.deliverContextH
         handoff.delivery.status === "pending",
     );
     if (pending.length === 0 || (input.deferInline && input.inject === undefined))
-      return { context: "", delivered: Effect.void, unsent: Effect.void, inlineHandoffs: [] };
+      return {
+        context: "",
+        delivered: Effect.void,
+        unsent: Effect.void,
+        inlineHandoffs: [],
+        deferred: pending,
+      };
     const budget = typeof input.budget === "number" ? input.budget : yield* input.budget;
     let coverage = pending
       .map(
@@ -178,7 +188,13 @@ export const deliverContextHandoffs = Effect.fn("orchestrationV2.deliverContextH
     });
     if (historyCost(selected.messages, selected.context) > budget) {
       if (input.deferInline)
-        return { context: "", delivered: Effect.void, unsent: Effect.void, inlineHandoffs: [] };
+        return {
+          context: "",
+          delivered: Effect.void,
+          unsent: Effect.void,
+          inlineHandoffs: [],
+          deferred: pending,
+        };
       return yield* new ContextHandoffBudgetError();
     }
     const omittedItemIds = new Set(selected.omittedItemIds);
@@ -229,7 +245,13 @@ export const deliverContextHandoffs = Effect.fn("orchestrationV2.deliverContextH
       });
       if (injected) {
         yield* persist("injected");
-        return { context: "", delivered: Effect.void, unsent: Effect.void, inlineHandoffs: [] };
+        return {
+          context: "",
+          delivered: Effect.void,
+          unsent: Effect.void,
+          inlineHandoffs: [],
+          deferred: nothingDeferred,
+        };
       }
     } else {
       yield* persist("pending");
@@ -237,13 +259,20 @@ export const deliverContextHandoffs = Effect.fn("orchestrationV2.deliverContextH
     if (input.deferInline) {
       // Compaction cannot carry inline transcripts; retain for the next turn if native injection is unsupported.
       yield* Effect.forEach(pending, input.persist, { discard: true });
-      return { context: "", delivered: Effect.void, unsent: Effect.void, inlineHandoffs: [] };
+      return {
+        context: "",
+        delivered: Effect.void,
+        unsent: Effect.void,
+        inlineHandoffs: [],
+        deferred: pending,
+      };
     }
     return {
       context: renderHistory(selected.messages, selected.context),
       delivered: persist("inline"),
       unsent: Effect.forEach(pending, input.persist, { discard: true }),
       inlineHandoffs: pending,
+      deferred: nothingDeferred,
     };
   },
 );
