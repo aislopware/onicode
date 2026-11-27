@@ -15,6 +15,8 @@ import { randomUuidV4 } from "./randomUuid.ts";
 // Other providers may never consume these references.
 const MAX_KEPT_HTML_RENDERS = 64;
 const MAX_KEPT_TOOL_RESULTS = 64;
+// Screenshots make kept results large; a thread keeps at most this much until its turn ends.
+const MAX_KEPT_TOOL_RESULT_BYTES = 32 * 1024 * 1024;
 // A request whose call never comes back for its answer stays until the session ends.
 const MAX_KEPT_APPROVAL_REQUESTS = 8;
 
@@ -149,6 +151,14 @@ export class McpProviderSessions extends Context.Service<
     // counts for every request of the thread asking `message` that has none yet. For those
     // instances that answer, not the client's reply, is what Onicode goes by.
     readonly showsApprovalRequests: (providerInstanceId: ProviderInstanceId) => Effect.Effect<void>;
+    // An adapter that recovers Onicode tool results says so for its provider instance, so screenshot
+    // results are kept only where something will take them back out.
+    readonly recoversToolResultImages: (
+      providerInstanceId: ProviderInstanceId,
+    ) => Effect.Effect<void>;
+    readonly areToolResultImagesRecovered: (
+      providerInstanceId: ProviderInstanceId,
+    ) => Effect.Effect<boolean>;
     readonly areApprovalRequestsShown: (
       providerInstanceId: ProviderInstanceId,
     ) => Effect.Effect<boolean>;
@@ -241,6 +251,24 @@ const matchingToolResultIndex = (
   return matches.every((index) => kept[index]!.outputJson === firstOutput) ? matches[0]! : -1;
 };
 
+/**
+ * Drops the oldest results until the thread fits. Every result kept for the same call input goes
+ * with it, so an input-only lookup can never hand the dropped call's sibling output to another call.
+ */
+const withinByteLimit = (kept: ReadonlyArray<KeptToolResult>): ReadonlyArray<KeptToolResult> => {
+  let rest = kept;
+  let bytes = rest.reduce((total, entry) => total + entry.outputJson.length, 0);
+  while (bytes > MAX_KEPT_TOOL_RESULT_BYTES && rest.length > 0) {
+    const oldest = rest[0]!;
+    const dropped = rest.filter(
+      (entry) => entry.toolName === oldest.toolName && entry.inputHash === oldest.inputHash,
+    );
+    rest = rest.filter((entry) => !dropped.includes(entry));
+    bytes -= dropped.reduce((total, entry) => total + entry.outputJson.length, 0);
+  }
+  return rest;
+};
+
 const updateToolResults = (
   sessions: ReadonlyMap<ThreadId, ProviderSession>,
   threadId: ThreadId,
@@ -261,6 +289,7 @@ const make = Effect.gen(function* () {
   const htmlRenders = yield* Ref.make(new Map<ThreadId, ReadonlyArray<KeptHtmlRender>>());
   const approvalRequests = yield* Ref.make(new Map<ThreadId, ReadonlyArray<KeptApprovalRequest>>());
   const approvalRequestsShownBy = yield* Ref.make<ReadonlySet<ProviderInstanceId>>(new Set());
+  const toolResultImagesRecoveredBy = yield* Ref.make<ReadonlySet<ProviderInstanceId>>(new Set());
   const withoutThread = <A>(kept: ReadonlyMap<ThreadId, A>, threadId: ThreadId) => {
     const next = new Map(kept);
     next.delete(threadId);
@@ -399,7 +428,7 @@ const make = Effect.gen(function* () {
           };
           return updateToolResults(current, threadId, ({ epoch, kept }) => ({
             epoch,
-            kept: [...kept, entry].slice(-MAX_KEPT_TOOL_RESULTS),
+            kept: withinByteLimit([...kept, entry].slice(-MAX_KEPT_TOOL_RESULTS)),
           }));
         });
       },
@@ -454,6 +483,20 @@ const make = Effect.gen(function* () {
     forgetApprovalRequest: Effect.fn("McpProviderSessions.forgetApprovalRequest")(
       function (threadId, id) {
         return Effect.asVoid(takeApprovalRequest(threadId, id));
+      },
+    ),
+    recoversToolResultImages: Effect.fn("McpProviderSessions.recoversToolResultImages")(
+      function (providerInstanceId) {
+        return Ref.update(toolResultImagesRecoveredBy, (current) =>
+          new Set(current).add(providerInstanceId),
+        );
+      },
+    ),
+    areToolResultImagesRecovered: Effect.fn("McpProviderSessions.areToolResultImagesRecovered")(
+      function (providerInstanceId) {
+        return Ref.get(toolResultImagesRecoveredBy).pipe(
+          Effect.map((current) => current.has(providerInstanceId)),
+        );
       },
     ),
     showsApprovalRequests: Effect.fn("McpProviderSessions.showsApprovalRequests")(
