@@ -4445,3 +4445,4 @@ aed2db70ee	take	BOM sourceOffset merged into Onicode's one-entry fencedCodeRange
 9d963e3116	take	applies cleanly; mobile locale key bc86d0e75a37411b -> 5286056f1e375e8c
 34846ca8d6	take	code applies cleanly; Onicode-only docs/user/portable-handoffs.md rewritten: history budgeted at ~4 bytes per token up to the 64,000-byte ceiling, context-window reservation still one token per byte
 75fff25369	take	removed-area tag false positive (connection/); mobile ping 10s, desktop keeps 5s default; PING_TIMEOUT 15s and server 20s heartbeat unaffected; fine over LAN/Tailscale/Funnel
+002594adbe	take	applies cleanly after 34846ca8d6
