@@ -586,6 +586,8 @@ describe("extendMarkdownSplit", () => {
   // The first definition fits under the shared cap, so the cap is nearly spent past the cut: the
   // longer one after it no longer fits, the short one does.
   const cappedDefinitions = `# A\n\n[a]: /${"a".repeat(16_000)}\n\n# B\n\n[b]: /${"b".repeat(400)}\n\n[c]: /c\n\n# C\n`;
+  // The first [id] is too large to share; the later one must not take its place after a cut.
+  const omittedDefinition = `# A\n\n[id]:\n  /first\n  "${"t".repeat(16 * 1024)}"\n\n# B\n\n[ID]: /later\n\n[id]\n\n# C\n`;
   const heldPastLimit = `<details>\n\nintro\n\npara ${"x".repeat(LARGE_MARKDOWN_CHUNK_MAX_CHARS)}\n\n</details>\n\n# B\n`;
   const finishedPastLimit = `<details>\n\nintro\n\npara ${"x".repeat(LARGE_MARKDOWN_CHUNK_MAX_CHARS)}`;
   const near = (text: string, marker: string, offsets: readonly number[]) =>
@@ -607,6 +609,20 @@ describe("extendMarkdownSplit", () => {
     {
       name: "definitions in the last piece",
       text: "# A\n\n[a]: /one\n\nuse [a] and [b]\n\n# B\n\ntext\n\n[b]: /two 'Two'\n[c]: /three\n",
+    },
+    {
+      name: "a wrapped label with a next-line destination",
+      text: "# A\n\n[release\nnotes]:\n  /first\n\n# B\n[other\nlabel]:\n  /other 'Other'\n\nuse [release notes]\n\n# C\n",
+    },
+    {
+      name: "an omitted oversized definition",
+      text: omittedDefinition,
+      cuts: [
+        ...near(omittedDefinition, "[id]:", [0, 3, 8, 16 * 1024]),
+        ...near(omittedDefinition, "# B", [0, 2]),
+        ...near(omittedDefinition, "[ID]", [0, 5, 12]),
+        omittedDefinition.length - 1,
+      ],
     },
     { name: "frontmatter", text: frontmatter, reusesFrom: frontmatter.indexOf("\n\n# Heading") },
     { name: "CRLF line ends", text: "# A\r\n\r\ntext\r\n\r\n# B\r\n\r\nmore\r\n" },
@@ -723,6 +739,91 @@ describe("withMarkdownDefinitions", () => {
     expect(chunks).toHaveLength(2);
     expect(html(withMarkdownDefinitions(chunks[1]!.text, definitions))).toContain('href="/first"');
     expect(chunks.map((chunk) => chunk.text).join("\n")).toBe(text);
+  });
+
+  it.each([
+    ["a wrapped label with an inline destination", "[release\nnotes]: /first", "/first", ""],
+    ["a wrapped label with a next-line destination", "[release\nnotes]:\n  /first", "/first", ""],
+    [
+      "a title on the next line of the preceding definition",
+      '[other]: /other\n  "Other"\n[release notes]: /first',
+      "/first",
+      "",
+    ],
+    [
+      "a title starting on the destination line",
+      '[release notes]: /first "First\n  release"',
+      "/first",
+      'title="First\nrelease"',
+    ],
+    [
+      "a destination ending in a nonbreaking space",
+      "[release notes]:\n  /first\u00a0",
+      "/first%C2%A0",
+      "",
+    ],
+  ])("preserves the first reference with %s", (_, first, href, title) => {
+    const text = `${first}\n\n${"x".repeat(4100)}\n\n# Next\n[release notes]: /later\n\n[Release][release notes]`;
+    const { chunks, definitions } = splitMarkdown(text);
+    expect(chunks).toHaveLength(2);
+    const rendered = html(withMarkdownDefinitions(chunks[1]!.text, definitions));
+    expect(rendered).toContain(`href="${href}"`);
+    if (title) expect(rendered).toContain(title);
+  });
+
+  it("shares a wrapped label at the Markdown length limit with an escaped bracket", () => {
+    const definition = `[${"a".repeat(995)}\\]\nct]: /first`;
+    expect(splitMarkdown(definition).definitions).toBe(definition);
+  });
+
+  it("leaves oversized titles with their source definitions", () => {
+    const title = "t".repeat(16 * 1024);
+    const text = `[id]\n\n[id]:\n  /first\n  "${title}"\n\n# Next\n[ID]: /later\n\n[id]`;
+    const { chunks, definitions } = splitMarkdown(text);
+    expect(chunks).toHaveLength(2);
+    const first = html(withMarkdownDefinitions(chunks[0]!.text, definitions));
+    expect(first).toContain('href="/first"');
+    expect(first).toContain(`title="${title}"`);
+  });
+
+  it.each(["", '" trailing text', '\\"'])(
+    "shares a complete definition before a long quote-led paragraph ending in %j",
+    (suffix) => {
+      const text = `[id]:\n  /first\n  "${"x".repeat(16 * 1024)}${suffix}\n\n# Next\n[id]: /later\n\n[id]`;
+      const { chunks, definitions } = splitMarkdown(text);
+      expect(chunks).toHaveLength(2);
+      const rendered = html(withMarkdownDefinitions(chunks[1]!.text, definitions));
+      expect(rendered).toContain('href="/first"');
+    },
+  );
+
+  it.each([
+    ["inline links", "[a](/x)".repeat(2000), "\n\n", 64],
+    ["link-like text separated by thematic breaks", "[note] text\n***", "\n", 2000],
+    ["invalid definitions separated by thematic breaks", "[note]: /invalid)\n***", "\n", 2000],
+  ])("keeps long runs of %s out of shared definitions", (_, block, separator, count) => {
+    const text = Array.from({ length: count }, () => block).join(separator);
+    const { chunks, definitions } = splitMarkdown(text);
+    expect(definitions).toBe("");
+    expect(chunks.map((chunk) => chunk.text).join("\n")).toBe(text);
+  });
+
+  it("keeps a display math opener and its contents out of shared definitions", () => {
+    const text = "[actual]\n\n[unused]:\n$$\n\n[actual]: /wrong\n\n$$\n\n[actual]: /right";
+    const { chunks, definitions } = splitMarkdown(text, 1);
+    expect(html(withMarkdownDefinitions(chunks[0]!.text, definitions))).toContain('href="/right"');
+    expect(definitions).toBe("[actual]: /right");
+    expect(chunks.map((chunk) => chunk.text).join("\n")).toBe(text);
+  });
+
+  it("collects a long run of titled references within the shared definition budget", () => {
+    const references = Array.from({ length: 2000 }, (_, index) => `[r${index}]:\n  /url "Title"`);
+    const source = references.join("\n");
+    const { definitions } = splitMarkdown(source);
+    expect(definitions).toBe(source.slice(0, definitions.length));
+    expect(definitions).toContain(references[500]);
+    expect(definitions.length).toBeLessThanOrEqual(16 * 1024);
+    expect(definitions).not.toContain("[r1999]");
   });
 
   it("keeps frontmatter hidden and task offsets shifted by exactly the prefix", () => {

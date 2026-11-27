@@ -1,4 +1,6 @@
 import { decodeString } from "micromark-util-decode-string";
+import remarkParse from "remark-parse";
+import { unified } from "unified";
 
 import {
   FRONTMATTER_MAX_LINES,
@@ -19,6 +21,7 @@ const THEMATIC_BREAK = /^ {0,3}(?:(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3
 // A column-0 paragraph, quote or table after a blank line closes any open list, quote or table.
 const BLOCK_START = /^[\p{L}\p{N}`[!|>]/u;
 const ORDERED_ITEM = /^\d{1,9}[.)](?:[ \t]|\r?$)/;
+const DISPLAY_MATH_OPEN = /^ {0,3}\$\$/;
 // CommonMark HTML blocks of types 1-5 and display math run past blank lines until their closer.
 const SPANNING_BLOCKS: ReadonlyArray<readonly [open: RegExp, close: RegExp]> = [
   [/^ {0,3}<(?:script|pre|style|textarea)(?=[\s>]|$)/i, /<\/(?:script|pre|style|textarea)>/i],
@@ -27,7 +30,7 @@ const SPANNING_BLOCKS: ReadonlyArray<readonly [open: RegExp, close: RegExp]> = [
   [/^ {0,3}<\?/, /\?>/],
   [/^ {0,3}<!\[CDATA\[/, /\]\]>/],
   [/^ {0,3}<![A-Za-z]/, />/],
-  [/^ {0,3}\$\$/, /\$\$/],
+  [DISPLAY_MATH_OPEN, /\$\$/],
 ];
 
 // CommonMark type-6 block tags start an HTML block even with trailing text or across lines.
@@ -125,12 +128,49 @@ export interface MarkdownChunk {
   readonly lines: number;
 }
 
-// A one-line link reference definition; footnotes are left alone so each piece does not grow
-// a footnote section.
-const LINK_DEFINITION =
-  /^ {0,3}\[(?!\^)(?:[^\]\\]|\\.)+\]:[ \t]*(?:<[^<>\n]*>|([^\s<]\S*))(?:[ \t]+(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\((?:[^()\\]|\\.)*\)))?[ \t]*\r?$/;
+// Footnotes are left alone so each piece does not grow a footnote section.
+const LINK_DEFINITION_START = /^ {0,3}\[(?!\^)/;
+const LINK_LABEL_MAX_CHARS = 999;
+const LINK_TITLE_START = /^[ \t]*(["'(])/;
 // Definitions past this are not repeated into every piece; their parse cost would outweigh links.
 const SHARED_DEFINITIONS_MAX_CHARS = 16 * 1024;
+const definitionParser = unified().use(remarkParse);
+// A one-line definition; its parse would re-run on every append while a definition run streams.
+const ONE_LINE_DEFINITION =
+  /^ {0,3}\[((?:[^\][\\]|\\.)+)\]:[ \t]*(?:<[^<>\n]*>|([^\s<]\S*))([ \t]+(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\((?:[^()\\]|\\.)*\)))?[ \t]*\r?$/;
+
+/** The definition `lines[index]` holds alone, when no later line could extend or undo it. */
+function readOneLineDefinition(lines: readonly string[], index: number) {
+  const line = lines[index]!;
+  const match = ONE_LINE_DEFINITION.exec(line);
+  if (!match) return;
+  const [, label = "", bareDestination, title] = match;
+  if (label.length > LINK_LABEL_MAX_CHARS || BLANK_LINE.test(label)) return;
+  // Without a title, a next line that opens one may still belong to this definition.
+  const next = lines[index + 1];
+  if (title === undefined && (next === undefined || LINK_TITLE_START.test(next))) return;
+  if (bareDestination !== undefined) {
+    let depth = 0;
+    for (let at = 0; at < bareDestination.length; at++) {
+      const char = bareDestination[at];
+      if (char === "\\") at++;
+      else if (char === "(") depth++;
+      else if (char === ")" && --depth < 0) return;
+    }
+    if (depth !== 0) return;
+  }
+  return {
+    text: line.slice(line.indexOf("["), line.endsWith("\r") ? -1 : undefined),
+    end: index,
+    identifier: label
+      .replace(/[\t\n\r ]+/g, " ")
+      .replace(/^ | $/g, "")
+      .toLowerCase()
+      .toUpperCase()
+      .toLowerCase(),
+  };
+}
+
 // A footnote resolves only inside its own piece, so a file that defines one stays whole.
 const FOOTNOTE_DEFINITION = /^ {0,3}\[\^[^\]\n]+\]:/m;
 
@@ -148,25 +188,113 @@ interface MarkdownSplitResume {
   readonly afterBlankLine: boolean;
   readonly afterDefinition: boolean;
   readonly afterHeading: boolean;
+  /** Labels whose first definition was too large to share, so a later one must not win. */
+  readonly omittedDefinitions: ReadonlySet<string>;
 }
 
-function isLinkDefinition(line: string): boolean {
-  const match = LINK_DEFINITION.exec(line);
-  if (!match) return false;
-  const bareDestination = match[1];
-  if (bareDestination === undefined) return true;
-  let depth = 0;
-  for (let i = 0; i < bareDestination.length; i++) {
-    const ch = bareDestination[i];
-    if (ch === "\\") {
-      i++;
-    } else if (ch === "(") {
-      depth++;
-    } else if (ch === ")" && --depth < 0) {
-      return false;
+function hasDefinitionLabel(lines: readonly string[], start: number): boolean {
+  const opener = LINK_DEFINITION_START.exec(lines[start]!);
+  if (!opener) return false;
+
+  let column = opener[0].length;
+  let labelChars = 0;
+  for (let index = start; index < lines.length; index++) {
+    const line = lines[index]!;
+    if (BLANK_LINE.test(line)) return false;
+    const end = line.endsWith("\r") ? line.length - 1 : line.length;
+    for (; column < end && labelChars <= LINK_LABEL_MAX_CHARS; column++, labelChars++) {
+      const char = line[column];
+      if (char === "]") return line[column + 1] === ":";
+      if (char === "[") return false;
+      if (char === "\\" && /[\\[\]]/.test(line[column + 1] ?? "")) {
+        column++;
+        labelChars++;
+      }
+    }
+    if (labelChars > LINK_LABEL_MAX_CHARS) return false;
+    column = 0;
+  }
+  return false;
+}
+
+function endsDefinitionRun(line: string) {
+  // The preview treats display math as a block even when plain Remark would consume its opener.
+  return (
+    BLANK_LINE.test(line) ||
+    ATX_HEADING.test(line) ||
+    THEMATIC_BREAK.test(line) ||
+    FENCE_OPEN.test(line) ||
+    DISPLAY_MATH_OPEN.test(line)
+  );
+}
+
+function findTitleEnd(lines: readonly string[], start: number, opener: RegExpExecArray) {
+  const closer = opener[1] === "(" ? ")" : opener[1];
+  let column = opener[0].length;
+  for (let index = start; index < lines.length; index++) {
+    const line = lines[index]!;
+    if (endsDefinitionRun(line)) return;
+    for (; column < line.length; column++) {
+      const char = line[column];
+      if (char === closer) return BLANK_LINE.test(line.slice(column + 1)) ? index : undefined;
+      if (char === "\\" && (line[column + 1] === closer || line[column + 1] === "\\")) column++;
+    }
+    column = 0;
+  }
+}
+
+function readLinkDefinitions(lines: readonly string[], start: number) {
+  const definitions = new Map<number, { text?: string; end: number; identifier: string }>();
+  let chars = lines[start]!.length;
+  if (chars >= SHARED_DEFINITIONS_MAX_CHARS) return definitions;
+  let end = start + 1;
+  let capped = false;
+  for (; end < lines.length; end++) {
+    const line = lines[end]!;
+    if (endsDefinitionRun(line)) break;
+    chars += line.length + 1;
+    if (chars >= SHARED_DEFINITIONS_MAX_CHARS) {
+      capped = true;
+      break;
     }
   }
-  return depth === 0;
+
+  const text = lines.slice(start, end).join("\n");
+  let partialTitleStart: number | undefined;
+  for (const node of definitionParser.parse(text).children) {
+    if (node.type !== "definition" || !node.position) break;
+    const { start: from, end: to } = node.position;
+    const firstLine = start + from.line - 1;
+    if (!LINK_DEFINITION_START.test(lines[firstLine]!)) break;
+    const lastLine = start + to.line - 1;
+    definitions.set(firstLine, {
+      text: text.slice(from.offset, to.offset),
+      end: lastLine,
+      identifier: node.identifier,
+    });
+    partialTitleStart =
+      capped && node.title == null && LINK_TITLE_START.test(lines[lastLine + 1] ?? "")
+        ? firstLine
+        : undefined;
+  }
+  if (partialTitleStart !== undefined) {
+    // Retry at the candidate's label before looking beyond the batch limit.
+    if (partialTitleStart !== start) {
+      definitions.delete(partialTitleStart);
+    } else {
+      const titleStart = definitions.get(start)!.end + 1;
+      const opener = LINK_TITLE_START.exec(lines[titleStart]!)!;
+      const titleEnd = findTitleEnd(lines, titleStart, opener);
+      if (titleEnd !== undefined && titleEnd >= end) {
+        const full = definitionParser.parse(lines.slice(start, titleEnd + 1).join("\n"))
+          .children[0];
+        if (full?.type === "definition" && full.title != null) {
+          definitions.set(start, { end: titleEnd, identifier: full.identifier });
+        }
+      }
+    }
+  }
+  return definitions;
 }
 
 export interface SplitMarkdown {
@@ -199,6 +327,7 @@ export function splitMarkdown(
     afterBlankLine: false,
     afterDefinition: false,
     afterHeading: false,
+    omittedDefinitions: new Set(),
   });
 }
 
@@ -260,7 +389,11 @@ function scanMarkdown(
   const { frontmatter } = from;
   const definitions = definitionsBefore ? [definitionsBefore] : [];
   let definitionsLength = definitionsBefore.length;
-  let { afterBlankLine, afterDefinition, afterHeading, definitionChars } = from;
+  let { afterBlankLine, afterHeading, definitionChars } = from;
+  const omittedDefinitions = new Set(from.omittedDefinitions);
+  // The local index of the last line of the latest definition; -1 makes line 0 follow one.
+  let definitionEnd = from.afterDefinition ? -1 : -2;
+  let pendingDefinitions: ReturnType<typeof readLinkDefinitions> | undefined;
   let resume = from.start > 0 ? from : undefined;
   let lines: string[] = [];
   let chars = 0;
@@ -293,7 +426,7 @@ function scanMarkdown(
       openedFence = false;
     } else if (closes !== null) {
       if (closes(line)) closes = null;
-    } else {
+    } else if (index > definitionEnd) {
       // The last line may still be growing; "1" can become "1. item" and "#" "#tag".
       if (openWrappers > 0 && chars - wrapperStart >= WRAPPED_MAX_CHARS) openWrappers = 0;
       const cutPoint =
@@ -313,8 +446,9 @@ function scanMarkdown(
           definitions: definitionsLength,
           definitionChars,
           afterBlankLine,
-          afterDefinition,
+          afterDefinition: index === definitionEnd + 1,
           afterHeading,
+          omittedDefinitions: new Set(omittedDefinitions),
         };
         if (openWrappers === 0) {
           chunks.push({ text: lines.join("\n"), lines: lines.length });
@@ -331,15 +465,30 @@ function scanMarkdown(
       openedFence = /^ ?[`~]/.test(line) && FENCE_OPEN.test(line);
       // A definition cannot interrupt a paragraph, so it follows a blank line, a heading,
       // a closing code fence or another definition.
-      const definition: boolean =
-        (offset === 0 || afterBlankLine || afterDefinition || afterHeading) &&
-        isLinkDefinition(line);
-      afterDefinition = definition;
-      if (definition && definitionChars + line.length < SHARED_DEFINITIONS_MAX_CHARS) {
-        const trimmed = line.trim();
-        definitions.push(trimmed);
-        definitionsLength += (definitionsLength > 0 ? 1 : 0) + trimmed.length;
-        definitionChars += line.length + 1;
+      if (offset === 0 || afterBlankLine || index === definitionEnd + 1 || afterHeading) {
+        let definition = pendingDefinitions?.get(index);
+        if (!definition && definitionChars < SHARED_DEFINITIONS_MAX_CHARS) {
+          definition = readOneLineDefinition(textLines, index);
+          if (!definition && hasDefinitionLabel(textLines, index)) {
+            pendingDefinitions = readLinkDefinitions(textLines, index);
+            definition = pendingDefinitions.get(index);
+          }
+        }
+        if (definition) {
+          definitionEnd = definition.end;
+          if (!omittedDefinitions.has(definition.identifier)) {
+            if (
+              definition.text !== undefined &&
+              definitionChars + definition.text.length < SHARED_DEFINITIONS_MAX_CHARS
+            ) {
+              definitions.push(definition.text);
+              definitionsLength += (definitionsLength > 0 ? 1 : 0) + definition.text.length;
+              definitionChars += definition.text.length + 1;
+            } else {
+              omittedDefinitions.add(definition.identifier);
+            }
+          }
+        }
       }
     }
     // Tags outside comments open and close wrappers on HTML block and comment block lines; a
@@ -380,7 +529,10 @@ function scanMarkdown(
     // there. A growing last line may still become a cut itself, so it waits for its line break.
     if (held !== null && index < wholeLines && chars - 1 > LARGE_MARKDOWN_CHUNK_MAX_CHARS) {
       chunks.push({ text: lines.slice(0, held.line).join("\n"), lines: held.line });
-      ({ afterBlankLine, afterDefinition, afterHeading, definitionChars } = held.resume);
+      ({ afterBlankLine, afterHeading, definitionChars } = held.resume);
+      definitionEnd = held.resume.afterDefinition ? held.index - 1 : -2;
+      omittedDefinitions.clear();
+      for (const label of held.resume.omittedDefinitions) omittedDefinitions.add(label);
       resume = held.resume;
       offset = held.resume.start;
       linesBefore = held.resume.linesBefore;
