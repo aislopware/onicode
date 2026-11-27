@@ -18,8 +18,10 @@ function makeCommandPermissions<R, E>(
 ) {
   const sessions = createEnvironmentSessionAtoms(runtime);
   const requiredScopes = (input?: unknown) => clientRpcRequiredScopes(method, input);
-  const atomsByEnvironment = Atom.family((environmentId: EnvironmentId | null) =>
-    Atom.family((scopeKey: string) =>
+  // One family keyed by the pair: a nested family is held only weakly, so a held atom would not
+  // keep it, and the next lookup would build a second atom for the same key.
+  const atomsByKey = Atom.family(
+    ([environmentId, scopeKey]: readonly [EnvironmentId | null, string]) =>
       Atom.make((get) => {
         if (environmentId === null) return false;
         const scopes = scopeKey.split(",").filter(Boolean) as AuthEnvironmentScope[];
@@ -32,10 +34,9 @@ function makeCommandPermissions<R, E>(
           scopes.every((scope) => sessionGrantsScope(session, scope))
         );
       }),
-    ),
   );
   const permissionAtom = (environmentId: EnvironmentId | null, input?: unknown) =>
-    atomsByEnvironment(environmentId)(requiredScopes(input).join(","));
+    atomsByKey([environmentId, requiredScopes(input).join(",")] as const);
   const authorize = (
     registry: AtomRegistry.AtomRegistry,
     environmentId: EnvironmentId,

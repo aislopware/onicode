@@ -1,0 +1,60 @@
+diff --git a/dist/errors.js b/dist/errors.js
+index 916560230fc47bd18557e75255417914eaca6a79..96a94f401c6c627ae148dd438ab984ab9774b7cc 100644
+--- a/dist/errors.js
++++ b/dist/errors.js
+@@ -12,6 +12,7 @@
+  * | target_still_moving with `details.dispatched: no`            | NODE_STALE (retryable)        |
+  * | a covered or keyboard-occluded target, `dispatched: no`      | NOT_ACTIONABLE, with the hint |
+  * | a target with no screen origin to aim at, `dispatched: no`   | NOT_ACTIONABLE, with the hint |
++ * | the iOS runner busy, `dispatched: no` (action paths only)   | NODE_STALE (retryable)       |
+  * | the iOS runner busy, wedged, or past its watchdog           | ENGINE_FAILURE, naming the   |
+  * | a snapshot the iOS runner acquired but could not present    |   runner and the recovery    |
+  * | anything else, agent-device's own timeouts included         | ENGINE_FAILURE with the text |
+@@ -277,6 +278,14 @@ export function isUnreadableCapture(error) {
+ export function isAppNotRunning(error) {
+     return error instanceof Error && details(error.cause).runnerErrorCode === 'APP_NOT_RUNNING';
+ }
++/**
++ * True for a translated command the iOS runner refused while it still drains a
++ * command that overran its watchdog. Nothing was sent, and the refusal clears
++ * once that work drains, so a caller that polls may read it as nothing there yet.
++ */
++export function isRunnerBusy(error) {
++    return error instanceof Error && details(error.cause).runnerErrorCode === 'RUNNER_BUSY';
++}
+ /** True for a translated `open` agent-device refused because no installed app matches the name. */
+ export function isAppNotInstalled(error) {
+     return error instanceof Error && isAgentDeviceError(error.cause) && normalizeAgentDeviceError(error.cause).code === 'APP_NOT_INSTALLED';
+@@ -312,6 +321,10 @@ export function staleOr(cause, operation, where) {
+         (reason === 'target_still_moving' && dispatched === 'no')) {
+         return new EngineError('NODE_STALE', `${operation}: ${message(cause)}`, { retryable: true, cause });
+     }
++    // Nothing was sent and the runner clears once its abandoned work drains, so the action waits within its budget.
++    if (details(cause).runnerErrorCode === 'RUNNER_BUSY' && dispatched === 'no') {
++        return new EngineError('NODE_STALE', runnerMessage(operation, where, RUNNER_STATE.get('RUNNER_BUSY'), cause), { retryable: true, cause });
++    }
+     if (typeof reason === 'string' && NOT_ACTIONABLE_REASONS.has(reason) && dispatched === 'no') {
+         const hint = NOT_ACTIONABLE_REASONS.get(reason);
+         const text = hint === undefined ? withHint(cause, message(cause)) : `${message(cause)} Hint: ${hint}`;
+diff --git a/dist/surface.js b/dist/surface.js
+index 8511c8b53486d1fb9573d6d97d00add242afc0b2..3847621b8bcc0efd9d5b81502aff437ed0e8f9f2 100644
+--- a/dist/surface.js
++++ b/dist/surface.js
+@@ -15,7 +15,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, w
+ import { tmpdir } from 'node:os';
+ import path from 'node:path';
+ import { EngineError, KEY_NAMES, parseKey, raceAbort, rejectUnknownKeys, stopProviderRecording, withinCleanupBudget, ConfigurationError, TestError, } from '@e2e-dev/core/engine';
+-import { isAppNotRunning, isSnapshotPresentationFailure, isUnreadableCapture, ORIGIN_UNKNOWN_BOUNDS, ORIGIN_WARNING, runCommand, staleOr } from './errors.js';
++import { isAppNotRunning, isRunnerBusy, isSnapshotPresentationFailure, isUnreadableCapture, ORIGIN_UNKNOWN_BOUNDS, ORIGIN_WARNING, runCommand, staleOr } from './errors.js';
+ import { pointerInteraction, DEFAULT_LONG_PRESS_MS } from './actions.js';
+ import { resolveExpression } from './locate.js';
+ import { isWithin, KEYBOARD_KINDS, keyboardBand, mayTakeText, normalizeKind, projectSnapshot, ROOT_ID, screenRoot, screenTitle, } from './nodes.js';
+@@ -855,7 +855,7 @@ export class AgentDeviceSurface {
+             return await this.snapshotOrEmpty(operation, false, budget);
+         }
+         catch (cause) {
+-            const arriving = isUnreadableCapture(cause) || (this.launching && isAppNotRunning(cause));
++            const arriving = isUnreadableCapture(cause) || isRunnerBusy(cause) || (this.launching && isAppNotRunning(cause));
+             if (operation.signal.aborted || !arriving || budget.remainingMs() < Date.now() - startedMs)
+                 throw cause;
+             return undefined;

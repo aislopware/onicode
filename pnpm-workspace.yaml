@@ -252,6 +252,9 @@ patchedDependencies:
   # Android: a language change applies at once instead of reading back the old locale
   # before the async native write lands.
   gt-react-native@11.4.24: patches/gt-react-native@11.4.24.patch
+  # An iOS scenario action waits out a runner still draining a command past its watchdog
+  # (RUNNER_BUSY, nothing sent) within the action's timeout instead of failing the test.
+  "@e2e-dev/mobile@0.12.8": patches/@e2e-dev__mobile@0.12.8.patch
 
 # Unmet peers fail resolution, so a pin outside a dependency's peer range is
 # caught when the lockfile changes instead of scrolling past as a warning.

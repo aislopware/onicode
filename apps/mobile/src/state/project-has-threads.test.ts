@@ -23,7 +23,7 @@ function setup() {
   });
   const registry = AtomRegistry.make();
   const onChange = vi.fn();
-  const atom = family(environmentId)(mine);
+  const atom = family([environmentId, mine] as const);
   // Immediate, as useAtomValue reads the value when it subscribes.
   const unsubscribe = registry.subscribe(atom, onChange, { immediate: true });
   onChange.mockClear();

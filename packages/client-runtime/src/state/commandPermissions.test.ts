@@ -1,3 +1,7 @@
+// @effect-diagnostics nodeBuiltinImport:off - The identity test forces garbage collection in Node.
+import * as NodeTimersPromises from "node:timers/promises";
+import * as NodeV8 from "node:v8";
+import * as NodeVM from "node:vm";
 import { requestGuarded, runStreamGuarded } from "../rpc/client.ts";
 import { EnvironmentSupervisor } from "../connection/supervisor.ts";
 import * as SubscriptionRef from "effect/SubscriptionRef";
@@ -326,6 +330,16 @@ describe("command permissions", () => {
         yield* permissions.authorize(registry, env);
       }),
   );
+  it("returns the atom a caller still holds after a garbage collection", async () => {
+    NodeV8.setFlagsFromString("--expose-gc");
+    const gc = NodeVM.runInNewContext("gc") as () => void;
+    const held = permissions.permissionAtom(env);
+    // oxlint-disable-next-line onicode/no-real-time-wait-in-tests -- a zero-delay macrotask boundary, not a wait for time
+    await NodeTimersPromises.setImmediate();
+    gc();
+    expect(permissions.permissionAtom(env)).toBe(held);
+  });
+
   it("rechecks permission after waiting in a serial command lane", async () => {
     const registry = AtomRegistry.make();
     const unmount = registry.mount(sessions(env));
