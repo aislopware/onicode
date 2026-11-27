@@ -50,7 +50,12 @@ test(
 
     // Delay one ordinary keystroke on the first connection to model a write in flight.
     await browser.addInitScript(() => {
-      if (window !== window.top) return;
+      // The desktop preload exposes its bridge only to the top frame; the same-origin viewer borrows it.
+      if (window !== window.top) {
+        const bridge = (window.parent as { desktopBridge?: unknown }).desktopBridge;
+        if (bridge) Object.assign(window, { desktopBridge: bridge });
+        return;
+      }
       const send = WebSocket.prototype.send;
       WebSocket.prototype.send = function (data) {
         if (
@@ -75,7 +80,7 @@ test(
     await browser.evaluate(() => {
       const frame = document.createElement("iframe");
       frame.id = "second-viewer";
-      frame.src = location.pathname;
+      frame.src = location.href;
       frame.style.cssText =
         "position:fixed;inset:0;width:100%;height:100%;border:0;z-index:2147483647";
       document.body.append(frame);
