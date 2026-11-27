@@ -973,9 +973,8 @@ it.each([
   await screen.getByRole("button", { name: "Unlock" }).click();
   if (kind === "docx") await expect.element(screen.getByText(content)).toBeVisible();
   else {
-    await vi.waitFor(() => {
-      const frame = screen.container.querySelector("iframe");
-      expect(frame?.getAttribute("srcdoc")).toContain(content);
-    });
+    await expect
+      .element(screen.getByTitle(file.name, { exact: false }))
+      .toHaveAttribute("srcdoc", expect.stringContaining(content));
   }
 });
