@@ -46,7 +46,7 @@ function xmlParser() {
   return parser;
 }
 
-function officeXmlDecoder(bytes: Uint8Array) {
+export function officeXmlDecoder(bytes: Uint8Array) {
   if ((bytes[0] === 0xff && bytes[1] === 0xfe) || (bytes[0] === 0x3c && bytes[1] === 0))
     return new TextDecoder("utf-16le");
   if ((bytes[0] === 0xfe && bytes[1] === 0xff) || (bytes[0] === 0 && bytes[1] === 0x3c))
@@ -1225,7 +1225,7 @@ export async function boundedArchive(input: Extract<OfficeWorkerRequest, { type:
     throw new PreviewError({ code: "file-too-large" });
   let directory: ReturnType<typeof readZipDirectory>;
   try {
-    directory = readZipDirectory(bytes);
+    directory = readZipDirectory(bytes, input.kind === "epub" ? 8192 : 2048);
   } catch (cause) {
     if (!isUnreadableZipEntry(cause)) throw cause;
     throw new PreviewError({ code: "office-invalid" });
