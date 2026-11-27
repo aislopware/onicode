@@ -302,6 +302,7 @@ function PoolRow({ window, now }: { readonly window: LimitPoolWindow; readonly n
       label={window.label}
       fill={left}
       tone={limitTone(left)}
+      tick={window.paceRemainingPercent}
       value={`${left}%`}
       ariaValue={gt("{left}% left", { left })}
       opensUsage
