@@ -11304,6 +11304,68 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     ),
   );
 
+  it.effect("records the permission mode Claude reports when leaving plan mode", () =>
+    Effect.gen(function* () {
+      const reported: Array<ClaudeSdk.PermissionMode | undefined> = ["plan", undefined];
+      const harness = yield* makeWakeHarnessWithOptions({
+        setPermissionMode: () => Effect.succeed(reported.shift()),
+      });
+      const now = yield* DateTime.now;
+      const turn = Effect.fnUntraced(function* (ordinal: number, enterPlan: boolean) {
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now,
+            attemptId: RunAttemptId.make(`attempt-claude-reported-mode-${ordinal}`),
+            providerTurnOrdinal: ordinal,
+            text: "Edit it.",
+            attachments: [],
+            runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+              runtimeMode: "auto-accept-edits",
+              interactionMode: "default",
+              cwd: "/workspace",
+            }),
+          }),
+        );
+        if (enterPlan) {
+          yield* harness.offerAndWait(
+            claudeSdkFrame({
+              type: "system",
+              subtype: "status",
+              status: null,
+              permissionMode: "plan",
+              uuid: `00000000-0000-4000-8000-00000000074${ordinal}`,
+              session_id: WAKE_NATIVE_SESSION,
+            }),
+          );
+        }
+        yield* harness.offerAndWait(
+          makeResultFrame({ uuid: `00000000-0000-4000-8000-00000000075${ordinal}`, result: "Ok." }),
+        );
+        yield* Queue.take(harness.terminalReceipts);
+      });
+
+      yield* turn(1, true);
+      yield* turn(2, false);
+      // Claude answered that it is still in plan mode, so the next turn asks again.
+      assert.deepEqual(harness.permissionModeChanges, ["acceptEdits"]);
+      yield* turn(3, false);
+      assert.deepEqual(harness.permissionModeChanges, ["acceptEdits", "acceptEdits"]);
+      yield* turn(4, false);
+      assert.deepEqual(harness.permissionModeChanges, ["acceptEdits", "acceptEdits"]);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
+  );
+
   it.effect("keeps a later future-window event-supplied Claude reset over the embedded reset", () =>
     Effect.gen(function* () {
       const harness = yield* makeWakeHarness;

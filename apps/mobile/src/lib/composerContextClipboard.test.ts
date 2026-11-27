@@ -394,19 +394,32 @@ describe("mobile context clipboard copies", () => {
       records: [image, terminal],
     };
     const markdown = `See ${formatComposerContextReference(image)} and [the build](oni-context://v1/terminal/terminal-source).`;
+    const references = `See ${formatComposerContextReference(image)} and ${formatComposerContextReference(terminal)}`;
     // copyLinksAs: 'markdown' escapes brackets and drops the image's `!`; Copy as Markdown keeps both.
+    const copy =
+      "See [Check\\[out\\]](oni-context://v1/image/image-source) and [the build](<oni-context://v1/terminal/terminal-source>), [docs \\[v2\\]](https://x.dev).";
+    expect(copiedComposerContextText(copy, "plain", markdown, fragment)).toEqual({
+      text: `${references}, docs [v2].`,
+      hasContext: true,
+    });
+    expect(copiedComposerContextText(copy, "markdown", markdown, fragment)).toEqual({
+      text: `${references}, [docs \\[v2\\]](https://x.dev).`,
+      hasContext: true,
+    });
+    expect(
+      copiedComposerContextText("See [docs](https://x.dev).", "plain", markdown, fragment),
+    ).toEqual({ text: "See docs.", hasContext: false });
+    expect(
+      copiedComposerContextText("See [docs](https://x.dev).", "markdown", markdown, fragment),
+    ).toBeNull();
     expect(
       copiedComposerContextText(
-        "See [Check\\[out\\]](oni-context://v1/image/image-source) and [the build](<oni-context://v1/terminal/terminal-source>), [docs](https://x.dev).",
+        "[Other](oni-context://v1/terminal/missing)",
+        "plain",
         markdown,
         fragment,
       ),
-    ).toBe(
-      `See ${formatComposerContextReference(image)} and ${formatComposerContextReference(terminal)}, [docs](https://x.dev).`,
-    );
-    expect(copiedComposerContextText("See [docs](https://x.dev).", markdown, fragment)).toBeNull();
-    expect(
-      copiedComposerContextText("[Other](oni-context://v1/terminal/missing)", markdown, fragment),
-    ).toBeNull();
+    ).toEqual({ text: "Other", hasContext: false });
+    expect(copiedComposerContextText("No links.", "plain", markdown, fragment)).toBeNull();
   });
 });

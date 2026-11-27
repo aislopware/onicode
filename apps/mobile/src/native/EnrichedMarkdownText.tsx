@@ -1,4 +1,5 @@
 import { decodeComposerContextFragment } from "@onicode/shared/composerContextClipboard";
+import * as Clipboard from "expo-clipboard";
 import {
   markdownForNativeRendering,
   markdownWithFileEmbeds,
@@ -390,9 +391,12 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
   const onSelectionCopy = contextFragment
     ? ({ text, format }: SelectionCopyEvent) => {
         if (format === "imageUrls") return;
-        const copied = copiedComposerContextText(text, props.markdown, contextFragment);
+        const copied = copiedComposerContextText(text, format, props.markdown, contextFragment);
         if (copied === null) return;
-        writeComposerContextClipboard(copied, contextFragment).catch((error: unknown) =>
+        const written = copied.hasContext
+          ? writeComposerContextClipboard(copied.text, contextFragment)
+          : Clipboard.setStringAsync(copied.text);
+        written.catch((error: unknown) =>
           console.error("Failed to copy the message's context to the clipboard.", error),
         );
       }
