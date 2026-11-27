@@ -4655,7 +4655,7 @@ f3e36337ce	take	taken as is
 910c72ed99	take	taken as is
 c042549955	take	taken as is
 de4328bfb5	take	adopted upstream's index-walking sweep filter; kept Onicode's getPullRequestLinkKeys for archived PR keys (json_each in SQL returns 4 fields instead of decoding archived payloads), so no includeArchived branch; comment names migration 118, Onicode's active_shell_idx
-6c5e9e3ee6	skip	Onicode has no ModelPickerSidebar: kept Onicode's single-list model picker (no provider sidebar, since 00c6adbdce), whose rows the React Compiler already memoizes
+6c5e9e3ee6	skip	Onicode has no ModelPickerSidebar: kept Onicode's single-list model picker (no provider sidebar, since 00c6adbdce): no per-provider hover state, and its virtualized ModelListRow is already memo-wrapped
 346c58c03d	take	taken as is
 1f509e5151	take	taken as is
 44b3c4e0c6	take	taken as is

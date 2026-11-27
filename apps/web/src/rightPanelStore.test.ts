@@ -1361,6 +1361,14 @@ describe("rightPanelStore", () => {
 
     const surface = selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA);
     expect(surface?.kind === "terminal" ? surface.activeTerminalId : null).toBe("term-2");
+
+    // A pane the server closes picks its neighbour the same way.
+    store.splitTerminal(refA, "terminal:term-1", "term-4");
+    store.activateTerminal(refA, "terminal:term-1", "term-2");
+    store.dropTerminals(refA, ["term-2"]);
+
+    const dropped = selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA);
+    expect(dropped?.kind === "terminal" ? dropped.activeTerminalId : null).toBe("term-3");
   });
 
   it("closing the final terminal pane removes its surface and closes the panel", () => {
