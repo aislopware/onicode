@@ -36,8 +36,13 @@ vi.mock(import("../state/server"), async () => {
 import { loadBalancedSelectionAtom } from "./useLoadBalancedEnvironment";
 
 it.each([
-  { name: "busy machines", cpu: { a: [0.99], b: [0.99, 0.2] }, picks: "b", failed: false },
-  { name: "a failing machine", cpu: { a: "fails", b: [0.99, 0.2] }, picks: "b", failed: false },
+  { name: "busy machines", cpu: { a: [0.99], b: [0.99, 0.99, 0.2] }, picks: "b", failed: false },
+  {
+    name: "a failing machine",
+    cpu: { a: "fails", b: [0.99, 0.99, 0.2] },
+    picks: "b",
+    failed: false,
+  },
   { name: "only failing machines", cpu: { a: "fails", b: "fails" }, picks: null, failed: true },
 ] as const)("samples $name again until one frees up", ({ cpu, picks, failed }) => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
@@ -50,17 +55,25 @@ it.each([
       ]),
     );
     host.reads = {};
-    const atom = loadBalancedSelectionAtom("a\nb\t50,50");
-    registry.mount(atom);
+    const atom = loadBalancedSelectionAtom(
+      JSON.stringify([
+        ["a", 50],
+        ["b", 50],
+      ]),
+    );
+    const changes = vi.fn();
+    registry.subscribe(atom, changes);
     if (!failed) {
       expect(registry.get(atom)).toEqual({ pending: true, environmentId: null, failed: false });
-      vi.advanceTimersByTime(5_000);
+      vi.advanceTimersByTime(10_000);
     }
     expect(registry.get(atom)).toEqual({
       pending: false,
       environmentId: picks === null ? null : EnvironmentId.make(picks),
       failed,
     });
+    // A sample that leaves the outcome unchanged does not re-render the composer.
+    expect(changes).toHaveBeenCalledTimes(failed ? 0 : 1);
 
     const reads = { ...host.reads };
     vi.advanceTimersByTime(5_000);

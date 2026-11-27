@@ -53,7 +53,7 @@ fi
 echo "Opened the existing Add Environment route with a fresh pairing credential."
 
 # forget-client.sh takes this id to remove the connection at teardown.
-if environment_id="$(tr -d '[:space:]' < "$base_dir/userdata/environment-id" 2>/dev/null)" &&
+if environment_id="$(tr -d '[:space:]' 2>/dev/null < "$base_dir/userdata/environment-id")" &&
   [[ -n "$environment_id" ]]; then
   echo "Environment ID: $environment_id"
 else

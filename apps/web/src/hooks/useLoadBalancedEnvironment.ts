@@ -12,13 +12,11 @@ const HOST_RESOURCES_FRESH_MS = 15_000;
 // The server's sample cache lifetime.
 const HOST_RESOURCES_RESAMPLE_MS = 5_000;
 
-// Keyed by content: callers derive the list every render.
+// Keyed by JSON content: callers derive the list every render, and an id may hold any character.
 export const hostResourcesAtom = Atom.family((environmentIdsKey: string) =>
   Atom.make((get) => {
     const evaluatedAt = Date.now();
-    const resources = (
-      environmentIdsKey === "" ? [] : (environmentIdsKey.split("\n") as EnvironmentId[])
-    ).map((environmentId) => {
+    const resources = (JSON.parse(environmentIdsKey) as EnvironmentId[]).map((environmentId) => {
       const result = get(serverEnvironment.hostResources({ environmentId, input: {} }));
       return {
         environmentId,
@@ -67,10 +65,9 @@ export const hostResourcesAtom = Atom.family((environmentIdsKey: string) =>
 
 // Resampling rebuilds the snapshot every few seconds; the composer only cares when the outcome moves.
 export const loadBalancedSelectionAtom = Atom.family((key: string) => {
-  const [environmentIdsKey = "", weightsKey = ""] = key.split("\t");
-  const ids = environmentIdsKey === "" ? [] : environmentIdsKey.split("\n");
-  const weightList = weightsKey === "" ? [] : weightsKey.split(",").map(Number);
-  const weights = Object.fromEntries(ids.map((id, index) => [id, weightList[index] ?? 50]));
+  const entries = JSON.parse(key) as [EnvironmentId, number][];
+  const environmentIdsKey = JSON.stringify(entries.map(([environmentId]) => environmentId));
+  const weights = Object.fromEntries(entries);
   return Atom.make((get) =>
     selectLoadBalancedEnvironment(get(hostResourcesAtom(environmentIdsKey)), weights),
   ).pipe(
@@ -111,9 +108,7 @@ export function useLoadBalancedEnvironment(
     return chooseLoadBalancedEnvironment(candidates, Date.now()) as EnvironmentId | null;
   };
   const selection = useAtomValue(
-    loadBalancedSelectionAtom(
-      `${environmentIds.join("\n")}\t${environmentIds.map((id) => weights[id] ?? 50).join(",")}`,
-    ),
+    loadBalancedSelectionAtom(JSON.stringify(environmentIds.map((id) => [id, weights[id] ?? 50]))),
   );
   return { refresh, refreshSelection, ...selection };
 }
