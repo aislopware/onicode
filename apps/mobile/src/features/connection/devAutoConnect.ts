@@ -88,8 +88,7 @@ export function withoutPairingTarget(
  * Pairing links prefill and auto-connect only in development and in mobile:metrics' release
  * bundles, the one production bundle built with the probe flag; store builds never set it.
  */
-export const pairingLinksAllowed = () =>
-  __DEV__ || process.env.EXPO_PUBLIC_ONI_BEHAVIOR_PROBE === "1";
+const pairingLinksAllowed = () => __DEV__ || process.env.EXPO_PUBLIC_ONI_BEHAVIOR_PROBE === "1";
 
 /**
  * `connections/new?pairingUrl=…&autoConnect=1` (or `settings/environment-new?…`) pairs from the
