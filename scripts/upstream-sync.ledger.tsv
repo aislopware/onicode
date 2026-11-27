@@ -4456,3 +4456,4 @@ b4d3a6b270	take	applies cleanly
 0b42e2e2fe	take	applies cleanly
 1f56ac62d8	take	applies cleanly; only shared state is the replacingDraftId route param
 99e3d8bb55	take	source applies cleanly; test file rebuilt from Onicode's with upstream's new test appended plus the Stream import; test adapted: opens Onicode's thread details panel first (closed by default) and waits for Onicode's 'Loading changes…' ellipsis
+02d7a67f22	take	dropped the markdownTextDirection.test.ts hunk and the markdownWithTextDirection row in the new markdownDocument.test.ts: kept Onicode's fork-based mobile text direction (a5602667eb), mobile injects no direction marks (same call as 002ad240ca); splitLeadingBom, source-offset fixes and applyMarkdownEdits embeds taken as is
