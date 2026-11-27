@@ -47,11 +47,8 @@ import * as PortScanner from "../../preview/PortScanner.ts";
 import * as ProviderCredentialStore from "../ProviderCredentialStore.ts";
 import * as ProviderHostLive from "../ProviderHostLive.ts";
 
-const layerDeps = ServerConfig.layerTest(process.cwd(), {
-  prefix: "onicodex-driver-maintenance-",
-}).pipe(
+const layerDeps = IdAllocator.layer.pipe(
   Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
-  Layer.provideMerge(IdAllocator.layer),
   Layer.provideMerge(McpProviderSessions.layer),
   Layer.provideMerge(PortScanner.layerTest),
   Layer.provideMerge(
@@ -95,6 +92,13 @@ const layerDeps = ServerConfig.layerTest(process.cwd(), {
     Layer.succeed(
       HttpClient.HttpClient,
       HttpClient.make(() => Effect.die("Disabled Codex must not make an HTTP request")),
+    ),
+  ),
+  // Built first so it is released last: npm version lookups forked into ProviderLatestVersions'
+  // scope write into its temp dir until that scope closes.
+  Layer.provideMerge(
+    ServerConfig.layerTest(process.cwd(), { prefix: "onicodex-driver-maintenance-" }).pipe(
+      Layer.provide(NodeServices.layer),
     ),
   ),
 );

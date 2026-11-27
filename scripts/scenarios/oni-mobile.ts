@@ -45,6 +45,7 @@ const devClientPath = Effect.gen(function* () {
 // answers this machine at once. The launcher then stays on its error screen, so the load is
 // tried again.
 const LOAD_ATTEMPTS = 3;
+const LAUNCH_ATTEMPTS = 3;
 
 // The simulator keeps an app's data between runs, and an earlier run's server is gone. The first
 // install of a run removes the app first, so one install and pairing last the run.
@@ -87,6 +88,19 @@ export const test = base.extend<{ onicode: MobileOni }>({
         // environments an earlier run saved can still be listed.
         const workspace = screen.getByTestId("adaptive-workspace-layout");
         const loadFailed = screen.getByText("Failed to load app", { exact: false });
+        // A loaded host can time out the accept of iOS's open-link prompt, and the app then never
+        // launches; reads only say it is not running. Open it again instead of waiting that out.
+        for (let attempt = 1; attempt < LAUNCH_ATTEMPTS; attempt += 1) {
+          const notLaunched = await workspace
+            .or(loadFailed)
+            .waitFor({ state: "visible", timeout: 45_000 })
+            .then(
+              () => false,
+              (error: unknown) => String(error).includes("is not running"),
+            );
+          if (!notLaunched) break;
+          await load();
+        }
         await expect(workspace.or(loadFailed)).toBeVisible({ timeout: 240_000 });
         // The error stays on screen while another load runs, so only the app tells that one worked.
         for (let attempt = 1; attempt < LOAD_ATTEMPTS; attempt += 1) {

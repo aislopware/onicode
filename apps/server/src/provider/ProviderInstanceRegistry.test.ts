@@ -172,14 +172,9 @@ const makeTildeProviderFixtures = Effect.fn(
 });
 
 describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
-  const layerBaseDeps = ServerConfig.layerTest(process.cwd(), {
-    prefix: "provider-instance-registry-test",
+  const layerBaseDeps = Layer.mock(CodexManagedTokenBroker.CodexManagedTokenBroker)({
+    endpoint: Effect.succeed("unused-private-pipe"),
   }).pipe(
-    Layer.provideMerge(
-      Layer.mock(CodexManagedTokenBroker.CodexManagedTokenBroker)({
-        endpoint: Effect.succeed("unused-private-pipe"),
-      }),
-    ),
     Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     Layer.provideMerge(
       Layer.mock(CodexInstallation.CodexInstallation)({
@@ -210,6 +205,13 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
     Layer.provideMerge(ProviderInstallationGate.layer),
     Layer.provideMerge(ModelManifest.layerTest),
     Layer.provideMerge(ResetCreditCoordinator.layerTest),
+    // Built first so it is released last: its temp dir holds the npm cache that version
+    // lookups forked into ProviderLatestVersions' scope still write into while it closes.
+    Layer.provideMerge(
+      ServerConfig.layerTest(process.cwd(), { prefix: "provider-instance-registry-test" }).pipe(
+        Layer.provide(NodeServices.layer),
+      ),
+    ),
   );
   const layerBase = ProviderHostLive.layer.pipe(Layer.provideMerge(layerBaseDeps));
   const layerTest = ProviderOrchestrationAdapterInfrastructure.layer.pipe(
@@ -217,6 +219,10 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
     Layer.provideMerge(PortScanner.layerTest),
     Layer.provideMerge(layerBase),
   );
+  // The registry and its fixtures close before the layer removes the state dir their probes and
+  // version lookups write into; otherwise that removal races them and fails with ENOTEMPTY.
+  const withRegistryLayer = <A, E, R>(test: Effect.Effect<A, E, R>) =>
+    test.pipe(Effect.scoped, Effect.provide(layerTest));
 
   it.effect.each(["replacement", "removal", "creation failure"] as const)(
     "detaches retired provider scopes after repeated %s",
@@ -290,7 +296,7 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
           Effect.ensuring(Scope.close(parent, Exit.void)),
         );
         expect(closes).toBe(creates);
-      }).pipe(Effect.provide(layerTest)),
+      }).pipe(withRegistryLayer),
   );
 
   it.effect.each(["replacement", "removal"] as const)(
@@ -345,7 +351,7 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
         expect((yield* registry.getInstance(nextId))?.displayName).toBe("Second");
         expect(yield* registry.getInstance(siblingId)).toBe(sibling);
         expect(closed).toBe(1);
-      }).pipe(Effect.provide(layerTest)),
+      }).pipe(withRegistryLayer),
   );
 
   it.effect.each([{ displayName: "Renamed" }, { accentColor: "#ff0000" }])(
@@ -388,7 +394,7 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
         expect(yield* instance!.snapshot.getSnapshot).toMatchObject(presentation);
         // The instance hears of a new name only.
         expect(renames).toEqual("displayName" in presentation ? ["Renamed"] : []);
-      }).pipe(Effect.provide(layerTest)),
+      }).pipe(withRegistryLayer),
   );
 
   it.effect("restores the default Pi name after clearing a saved custom label", () =>
@@ -412,7 +418,7 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
       const updated = yield* registry.getInstance(instanceId);
       const after = yield* updated!.snapshot.getSnapshot;
       expect(after.displayName).toBe("Pi");
-    }).pipe(Effect.provide(layerTest)),
+    }).pipe(withRegistryLayer),
   );
 
   it.effect("treats an explicit in-config enabled:false as disabling despite the envelope", () =>
@@ -436,7 +442,7 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
       expect(instance!.enabled).toBe(false);
       const snapshot = yield* instance!.snapshot.getSnapshot;
       expect(snapshot.enabled).toBe(false);
-    }).pipe(Effect.provide(layerTest)),
+    }).pipe(withRegistryLayer),
   );
 
   it.effect("lists a blocked driver's instances as unavailable without running them", () =>
@@ -454,7 +460,7 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
       expect(unavailable?.instanceId).toBe(instanceId);
       expect(unavailable?.availability).toBe("unavailable");
       expect(unavailable?.unavailableReason).toBe(reason);
-    }).pipe(Effect.provide(layerTest)),
+    }).pipe(withRegistryLayer),
   );
 
   it.live("runs Codex and Claude readiness probes from configured tilde paths", () =>
@@ -508,7 +514,7 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
         installed: true,
         version: "2.1.219",
       });
-    }).pipe(Effect.provide(layerTest)),
+    }).pipe(withRegistryLayer),
   );
 
   it.live("runs Claude instance probes in the server state dir, not the server cwd", () =>
@@ -543,7 +549,7 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
         version: "2.1.219",
         auth: { status: "authenticated" },
       });
-    }).pipe(Effect.provide(layerTest)),
+    }).pipe(withRegistryLayer),
   );
 
   it.live("follows the models and fast mode Claude reports, and shows why its probe failed", () =>
@@ -596,7 +602,7 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
       ).not.toContainEqual(expect.objectContaining({ id: "fastMode" }));
       expect(refused).toMatchObject({ status: "warning", auth: { status: "unknown" } });
       expect(refused.message).toContain("claude: this machine is not enrolled");
-    }).pipe(Effect.provide(layerTest)),
+    }).pipe(withRegistryLayer),
   );
 
   it.live("probes Claude with the provider host environment, not the server's own", () =>
@@ -628,7 +634,7 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
       }).pipe(Effect.provideService(HostProcess.Environment, hostEnvironment));
 
       expect(snapshot.message).toContain("seen through the provider host environment");
-    }).pipe(Effect.provide(layerTest)),
+    }).pipe(withRegistryLayer),
   );
 
   it.live("applies the lowest maxEffortLevel across Claude's settings sources", () =>
@@ -677,7 +683,7 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
             : [],
         )[0]?.label;
       expect(maxLabel).toBe("Max (capped to High)");
-    }).pipe(Effect.provide(layerTest)),
+    }).pipe(withRegistryLayer),
   );
 
   it.live("keeps usage and uncapped efforts when the CLI rejects get_settings", () =>
@@ -717,7 +723,7 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
       expect(effortLabels.some((label) => label.includes("capped"))).toBe(false);
       expect(snapshot.auth).toMatchObject({ status: "authenticated", email: "test@example.com" });
       expect(snapshot.usageLimits?.windows[0]?.usedPercent).toBe(100);
-    }).pipe(Effect.provide(layerTest)),
+    }).pipe(withRegistryLayer),
   );
 
   it.effect("Claude's one-probe fallback keeps the last account once, then warns", () =>
@@ -810,7 +816,7 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
         auth: { status: "authenticated", email: "account-b@example.com", workspaceId: "org-b" },
         slashCommands: expect.arrayContaining([expect.objectContaining({ name: "recovered" })]),
       });
-    }).pipe(Effect.provide(layerTest)),
+    }).pipe(withRegistryLayer),
   );
 
   const makeClaudeCacheFixture = Effect.fnUntraced(function* (
@@ -882,7 +888,7 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
           expect(after.auth.status).toBe("authenticated");
           expect(after.usageLimits?.unavailable).toBeUndefined();
           expect(after.usageLimits?.windows.map((window) => window.id)).toEqual(["five_hour"]);
-        }).pipe(Effect.provide(layerTest)),
+        }).pipe(withRegistryLayer),
     );
   }
 
@@ -923,7 +929,7 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
         expect(ghost.driver).toBe("ghostDriver");
         expect(ghost.availability).toBe("unavailable");
         expect(ghost.unavailableReason).toMatch(/ghostDriver/);
-      }).pipe(Effect.provide(layerTest)),
+      }).pipe(withRegistryLayer),
   );
 });
 
