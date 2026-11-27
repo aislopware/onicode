@@ -4256,3 +4256,4 @@ f0d4511921	take	taken as is
 898b83410d	take	taken as is
 eb30c13dcb	take	taken as is
 b4d93997eb	take	kept Onicode's config comment; added interface-address listener probe: upstream's LAN-listener test failed on macOS, where a wildcard bind shares a port with an interface listener
+b35358ee07	take	mobile vite list placed after GitConfirmSheet; scenario failed-commit-keeps-excluded-files ported as is
