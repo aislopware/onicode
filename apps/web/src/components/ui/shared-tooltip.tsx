@@ -25,9 +25,8 @@ import {
   useTooltipScrollTracker,
 } from "./tooltip";
 
-// The app's tooltip timing: open after a rest, reopen at once right after another closed.
-const OPEN_DELAY_MS = TOOLTIP_DELAY_MS;
-const REOPEN_WINDOW_MS = TOOLTIP_WARM_MS;
+// The app's tooltip timing (open after a rest, reopen at once right after another closed) is read
+// where it is used: ./tooltip is still loading here when lib/utils' imports reach this module.
 // Time to travel from the trigger into a hoverable popup.
 const CLOSE_GRACE_MS = 100;
 
@@ -100,7 +99,7 @@ export function SharedTooltipProvider({ children }: { children: ReactNode }) {
       // A Root that mounts open skips Base UI's mount transition, so the popup would slide in from (0,0).
       if (!current.current) flushSync(() => commit({ ...content, anchor, open: false }));
       const open = current.current?.open === true;
-      const reopen = performance.now() - lastClosedAt.current < REOPEN_WINDOW_MS;
+      const reopen = performance.now() - lastClosedAt.current < TOOLTIP_WARM_MS;
       if (immediate || open || reopen) {
         commit({ ...content, anchor, open: true });
         return;
@@ -110,7 +109,7 @@ export function SharedTooltipProvider({ children }: { children: ReactNode }) {
         const next = pending.current;
         pending.current = null;
         if (next) commit(next);
-      }, OPEN_DELAY_MS);
+      }, TOOLTIP_DELAY_MS);
     },
     refresh(anchor, content) {
       if (pending.current?.anchor === anchor) {
