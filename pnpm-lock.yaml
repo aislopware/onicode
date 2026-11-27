@@ -2537,6 +2537,9 @@ importers:
       effect:
         specifier: 4.1.5
         version: 4.1.5(patch_hash=14a7acd734809d8dddbf2c19c4ec01fdd2ffae60a612de42b5ed29860216052a)
+      playwright-core:
+        specifier: 1.65.1
+        version: 1.65.1
       plist:
         specifier: 'catalog:'
         version: 5.1.2

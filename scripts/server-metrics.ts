@@ -160,6 +160,7 @@ const LoopStats = Schema.Struct({
 
 export class MetricsError extends Schema.TaggedError<MetricsError>()("MetricsError", {
   message: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
 }) {}
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
@@ -168,7 +169,7 @@ const decodeJson = <S extends Schema.Top>(schema: S) =>
 const encodeMetrics = Schema.encodeEffect(fromJsonStringPretty(ServerMetrics));
 
 /** What a command printed, or none when it is missing or failed. */
-const output = (program: string, args: ReadonlyArray<string>, cwd?: string) =>
+export const output = (program: string, args: ReadonlyArray<string>, cwd?: string) =>
   run(program, args, cwd === undefined ? {} : { cwd }).pipe(
     Effect.map(({ stdout }) => stdout.trim()),
     Effect.option,
@@ -177,7 +178,7 @@ const powershell = (script: string) =>
   output("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script]);
 
 /** Milliseconds on a monotonic clock, for intervals only. */
-const nowMs = Effect.map(Clock.monotonicTimeNanos, (nanos) => Number(nanos) / 1e6);
+export const nowMs = Effect.map(Clock.monotonicTimeNanos, (nanos) => Number(nanos) / 1e6);
 
 const httpServerOn = (port: number) =>
   NodeHttpServer.layer(() => NodeHttp.createServer(), { port, host: "127.0.0.1" });
@@ -578,7 +579,7 @@ const sample = Effect.fn("serverMetrics.sample")(function* (pid: number) {
 });
 
 /** Every process with its parent and start time. Windows needs none: taskkill /T stops the tree. */
-const processTable = Effect.fn("serverMetrics.processTable")(function* () {
+export const processTable = Effect.fn("serverMetrics.processTable")(function* () {
   const platform = yield* HostProcess.Platform;
   if (platform === "darwin") {
     const table = yield* output("ps", ["-A", "-o", "pid=,ppid=,lstart="]);
@@ -811,7 +812,7 @@ const prepareSeed = Effect.fn("serverMetrics.prepareSeed")(function* (
 });
 
 /** A free loopback port: bind 0, read it, let it go. */
-const freePort = Effect.scoped(
+export const freePort = Effect.scoped(
   Effect.gen(function* () {
     const context = yield* Layer.build(httpServerOn(0));
     const { address } = Context.get(context, HttpServer.HttpServer);
@@ -2112,7 +2113,7 @@ const runOnce = Effect.fn("serverMetrics.runOnce")(function* (options: RunOption
   return { measured: measured as Measured, profiles, soakHeapGrowth, soakRetainerGrowth };
 }, Effect.scoped);
 
-const machineLoad = Effect.gen(function* () {
+export const machineLoad = Effect.gen(function* () {
   const platform = yield* HostProcess.Platform;
   if (platform === "win32") {
     return yield* powershell(
@@ -2195,7 +2196,7 @@ const load1 = Effect.gen(function* () {
  * Starts watching the machine for one run; the returned effect reads what competed with it: the
  * highest 1-minute load seen and the cores other Onicode, node and agent processes kept busy.
  */
-const watchMachine = Effect.gen(function* () {
+export const watchMachine = Effect.gen(function* () {
   const startedAt = yield* nowMs;
   const loads: number[] = [];
   // Unknown (none) once any read fails, so a partial sum never passes for the whole run.
