@@ -120,7 +120,7 @@ function RequiredUpdateDialogContent({
         {status === null ? null : (
           <p
             role="status"
-            className="self-center text-muted-foreground text-sm max-sm:order-1 max-sm:text-center sm:mr-auto"
+            className="self-center text-muted-foreground text-sm max-sm:order-1 max-sm:text-center sm:flex-1"
           >
             {status}
           </p>
