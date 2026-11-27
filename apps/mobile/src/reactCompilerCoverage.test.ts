@@ -148,8 +148,8 @@ const RENDER_ALLOCATION_BUDGETS: Record<string, number> = {
   "src/features/threads/floating-working-control.tsx#FloatingWorkingControl": 0,
   "src/components/ComposerEditor.tsx#ComposerEditor": 3,
   "src/state/use-thread-composer-state.ts#useThreadComposerState": 0,
-  "src/features/threads/thread-list-v2-items.tsx#ThreadListV2Row": 68,
-  "src/features/threads/thread-list-v2-items.tsx#ThreadListV2PendingRow": 31,
+  "src/features/threads/thread-list-v2-items.tsx#ThreadListV2Row": 67,
+  "src/features/threads/thread-list-v2-items.tsx#ThreadListV2PendingRow": 30,
 };
 
 const isFunctionNode = (node: AstNode) =>

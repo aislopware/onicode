@@ -117,7 +117,6 @@ vi.mock(import("@onicode/client-runtime/state/runtime"), async (original) => {
   };
 });
 vi.mock(import("./files/useFileDownload"), () => ({ useFileDownload: () => state.download }));
-vi.mock(import("../env"), async (original) => ({ ...(await original()), isElectron: true }));
 vi.mock(import("@onicode/client-runtime/change-request-links"), async (original) => ({
   ...(await original()),
   resolvePullRequestPreviewTarget: () => null,

@@ -154,11 +154,13 @@ describe("renderTablePng", () => {
   it("draws an image the page loaded from another origin without CORS", async () => {
     // Another loopback name for the same server is another origin, as desktop's asset URLs are.
     // The server listens on one of the two loopback addresses, depending on the machine.
-    const sources = ["127.0.0.1", "[::1]"].map((hostname) => {
-      const url = new URL("/splash-logo.png", location.href);
-      url.hostname = hostname;
-      return url.href;
-    });
+    const sources = ["127.0.0.1", "[::1]", "localhost"]
+      .filter((hostname) => hostname !== location.hostname)
+      .map((hostname) => {
+        const url = new URL("/splash-logo.png", location.href);
+        url.hostname = hostname;
+        return url.href;
+      });
     using mounted = mountTable(`<tr><td><img id="image" width="32" height="32"></td></tr>`);
     const { table } = mounted;
     const image = document.getElementById("image") as HTMLImageElement;
