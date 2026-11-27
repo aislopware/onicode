@@ -3911,3 +3911,4 @@ d50a43e642	take	taken as is (shared ACP core; Antigravity/ACP tests pass)
 6667f3c089	take	kept Onicode's NFC-normalized minimap preview, added upstream's surrogate-safe slice
 89047261b1	take	taken as is
 4e6b1fa771	take	taken as is
+87479a6951	take	taken as is
