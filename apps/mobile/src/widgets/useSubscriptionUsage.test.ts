@@ -59,8 +59,9 @@ vi.mock("@onicode/client-runtime/state/runtime", () => ({
   runAtomCommand: (
     _registry: unknown,
     _command: unknown,
-    input: { readonly environmentId: string },
+    input: { readonly environmentId: string; readonly input?: { readonly limitsOnly?: boolean } },
   ) => {
+    expect(input.input).toEqual({ limitsOnly: true });
     fixture.refreshed.push(input.environmentId);
     return Promise.resolve();
   },

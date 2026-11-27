@@ -1,6 +1,7 @@
-import { ClaudeSettings, ProviderDriverKind } from "@onicode/contracts";
+import { ClaudeSettings, ProviderDriverKind, type ServerProvider } from "@onicode/contracts";
 import * as Cache from "effect/Cache";
 import type * as Cause from "effect/Cause";
+import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
@@ -13,6 +14,7 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { HttpClient } from "effect/http";
 import { ChildProcessSpawner } from "effect/process";
+import { makeUnavailableUsageLimits } from "@onicode/provider-core/server/usageLimits";
 
 import { makeClaudeTextGeneration } from "../../textGeneration/ClaudeTextGeneration.ts";
 import * as ProviderLatestVersions from "@onicode/provider-core/server/ProviderLatestVersions";
@@ -27,7 +29,7 @@ import {
 } from "../../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
 import { ProviderDriverError } from "../Errors.ts";
 import { claudeUsageReader } from "./claudeUsage.ts";
-import { makeClaudeScopedLimitNames } from "../claudeUsageLimits.ts";
+import { makeClaudeScopedLimitNames, recordClaudeUsageResponse } from "../claudeUsageLimits.ts";
 import {
   checkClaudeProviderStatus,
   makePendingClaudeProvider,
@@ -298,6 +300,53 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
       Effect.provideService(Path.Path, path),
     );
 
+    let readCurrentSnapshot: Effect.Effect<ServerProvider | undefined> = Effect.undefined;
+    const checkUsageLimits = Effect.gen(function* () {
+      if (!effectiveConfig.enabled) return undefined;
+      const current = yield* readCurrentSnapshot;
+      const checkedAt = DateTime.formatIso(yield* DateTime.now);
+      const probed = yield* probeClaudeCapabilities(
+        effectiveConfig,
+        processEnv,
+        stateDir,
+        "usageOnly",
+      ).pipe(Effect.result);
+      if (probed._tag === "Failure") {
+        return makeUnavailableUsageLimits({ checkedAt, reason: "probeFailed" });
+      }
+      const capabilities = probed.success;
+      const { email, workspaceId } = capabilities;
+      const auth =
+        email || workspaceId
+          ? { ...(email ? { email } : {}), ...(workspaceId ? { workspaceId } : {}) }
+          : undefined;
+      const switchedAccount =
+        (email !== undefined &&
+          current?.auth.email !== undefined &&
+          email.toLowerCase() !== current.auth.email.toLowerCase()) ||
+        (workspaceId !== undefined &&
+          current?.auth.workspaceId !== undefined &&
+          workspaceId !== current.auth.workspaceId);
+      if (switchedAccount) {
+        yield* Ref.set(lastGoodCapabilities, undefined);
+        yield* Cache.invalidateAll(capabilitiesProbeCache);
+      }
+      if (!capabilities.usage) {
+        return {
+          usageLimits: makeUnavailableUsageLimits({ checkedAt, reason: "probeFailed" }),
+          ...(auth ? { auth } : {}),
+        };
+      }
+      const usageLimits = yield* recordClaudeUsageResponse(scopedLimitNames, {
+        response: capabilities.usage,
+        checkedAt: capabilities.usageCheckedAt ?? checkedAt,
+      });
+      return { usageLimits, ...(auth ? { auth } : {}) };
+    }).pipe(
+      Effect.provideService(FileSystem.FileSystem, fileSystem),
+      Effect.provideService(Path.Path, path),
+    );
+
     const snapshotSettings = yield* makeProviderSnapshotSettingsSource(effectiveConfig);
     const snapshot = yield* makeManagedServerProvider<ProviderSnapshotSettings<ClaudeSettings>>({
       resolveMaintenance,
@@ -310,6 +359,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
           Effect.map(stampIdentity),
         ),
       checkProvider,
+      checkUsageLimits,
       invalidateUsageCache: Cache.invalidateAll(capabilitiesProbeCache),
       enrichSnapshot: ({ settings, snapshot, publishSnapshot }) =>
         resolveMaintenance().pipe(
@@ -336,6 +386,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
           }),
       ),
     );
+    readCurrentSnapshot = snapshot.getSnapshot;
 
     return {
       instanceId,

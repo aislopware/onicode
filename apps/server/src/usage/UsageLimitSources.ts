@@ -231,7 +231,7 @@ export const make = Effect.gen(function* () {
     const snapshots = yield* Effect.forEach(
       entries,
       ([id, config]) => readSource(id as UsageLimitSourceId, config),
-      { concurrency: 4 },
+      { concurrency: "unbounded" },
     );
     if (settings) yield* api.retainHubs(entries.map(([, config]) => config.url));
     yield* publish(keepLastGoodReadings(yield* Ref.get(stateRef), snapshots));
