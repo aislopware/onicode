@@ -1,6 +1,7 @@
 import DocumentPages, { sanitizeDocumentHtml } from "./DocumentPages";
 import { act, fakeTimers, render, stubGlobal, type Screen } from "../../../test/render";
 import { EnvironmentId, ThreadId } from "@onicode/contracts";
+import { strToU8, zipSync } from "fflate";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 import "~/index.css";
@@ -285,6 +286,33 @@ describe("bounded binary previews", () => {
       await act(() => parent().click());
       expect(parent().disabled).toBe(true);
       expect(rows()).toEqual(["a"]);
+    } finally {
+      URL.revokeObjectURL(src);
+    }
+  });
+
+  it("shows 0 bytes for empty archive entries and folders", async () => {
+    const bytes = zipSync({
+      "empty.txt": new Uint8Array(),
+      "empty-dir/": new Uint8Array(),
+      "pkg/__init__.py": new Uint8Array(),
+      "readme.txt": strToU8("hello"),
+    });
+    const src = URL.createObjectURL(new Blob([bytes]));
+    try {
+      await using screen = await render(<BinaryViewer src={src} name="sizes.zip" kind="archive" />);
+      const rows = () =>
+        [...screen.container.querySelectorAll("tbody tr")].map((row) =>
+          [...row.querySelectorAll("td")].slice(0, 2).map((cell) => cell.textContent?.trim()),
+        );
+      await vi.waitFor(() => {
+        expect(rows()).toEqual([
+          ["empty-dir", "0 bytes"],
+          ["pkg", "0 bytes"],
+          ["empty.txt", "0 bytes"],
+          ["readme.txt", "1 KB"],
+        ]);
+      }, 10_000);
     } finally {
       URL.revokeObjectURL(src);
     }

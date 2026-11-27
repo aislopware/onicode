@@ -4017,3 +4017,4 @@ aef22ed239	skip	T3 Connect CLI, removed in Onicode
 83a7c75b88	take	kept Onicode's archived-copy guard in the picker; scenario ported to desktop
 2891419b93	take	taken as is
 b20bb177b5	take	LINE_START yield placed in Onicode's paragraphs() non-p branch
+0f55a0dc37	take	archive test builds its zip with fflate (no JSZip in Onicode)
