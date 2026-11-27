@@ -4466,3 +4466,4 @@ c035572ea2	take	applies cleanly; labelFromChildren still used
 09e4c7c636	take	applies after its slice-07/10/12 dependencies; ONICODE_CODE_ORCHESTRATION_SECTIONS has only the two upstream callers; default text unchanged (nativeSubagents defaults true)
 fb2e365579	take	end of the documentTextWorker chain; NodeUtil stays imported
 769d3bcb1e	take	applies after slice-09 a8a64ce565 and slice-11 39388dd0d6
+65f1ec8c79	take	not a removed area (Connection catalog = LAN/Tailscale/Funnel peers). adopted upstream over Onicode's f7807fcc79 'surface the error and keep the file': after OS keyring loss Electron regenerates its key, so the catalog can never decrypt again; upstream backs it up once (content-hashed .undecryptable) and starts fresh. kept Onicode's no-Relay/no-remoteDpopTokens catalog and the no-Keychain-ask guard; test keeps Onicode's Effect-capable encryptionAvailable with upstream's key Ref. Follow-up: no UI notice that saved environments were reset
