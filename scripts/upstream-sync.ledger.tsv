@@ -4098,3 +4098,4 @@ a03617a312	take	taken as is
 539008aab9	take	taken as is
 cca1e3e1e7	take	electronFuses beside Onicode's productName/electronLanguages; took only the inspector test (the AppImage-per-channel test needs nightly, which Onicode dropped); electron-builder 26.18.1 supports electronFuses; only dev Electron uses --inspect
 fbb6526db2	take	taken as is
+c1b3254791	take	kept Onicode's leadingFrontmatterLength scanner (ffcff8727f), which already stops at the first closing fence; upstream fixes its LEADING_FRONTMATTER regex, which Onicode doesn't use; took only the test row
