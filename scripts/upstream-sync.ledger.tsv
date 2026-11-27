@@ -4592,3 +4592,4 @@ dc2c7db0b6	take	clean; iOS release-build device check owed
 91bbd5f99c	take	test import conflict only; tooltip tests 16 passed
 cf87a9586c	take	clean; two handler lines, no hook added
 54fcf5e9c3	take	clean
+5d94090ed0	take	clean; one profile read per settled turn (Antigravity first tier)
