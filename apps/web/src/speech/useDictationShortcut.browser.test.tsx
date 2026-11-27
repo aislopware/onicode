@@ -315,6 +315,7 @@ it.each([
   { composer: "main", focus: "side-timeline", layout: "split", submits: false },
   { composer: "main", focus: "terminal", layout: "split", submits: false },
   { composer: "main", focus: "page", layout: "split", submits: true },
+  { composer: "main", focus: "page", layout: "maximized", submits: false },
   { composer: "main", focus: "timeline", layout: "sheet", submits: false },
   { composer: "side", focus: "timeline", layout: "split", submits: false },
   { composer: "side", focus: "side-timeline", layout: "split", submits: true },

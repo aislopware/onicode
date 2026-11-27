@@ -383,6 +383,9 @@ describe("liveThoughtLine", () => {
     ["Match [^a-z] first. More.", "Match [^a-z] first."],
     ["[Note]: Checking the cache first. Then more.", "[Note]: Checking the cache first."],
     ['Read [the guide][g] now.\n\n[g]: <https://example.com> "Guide"', "Read the guide now."],
+    ['Reading [the guide][g]\n\n[g]: https://example.com\n  "Guide"', "Reading the guide"],
+    ["Read [the guide][g] now.\n\n[g]:\n  https://example.com", "Read the guide now."],
+    ['Read [the guide][g] now.\n\n[g]: https://example.com "Say \\"hi\\""', "Read the guide now."],
   ])("keeps only the prose of %j", (markdown, expected) => {
     expect(liveThoughtLine(markdown)).toBe(expected);
   });

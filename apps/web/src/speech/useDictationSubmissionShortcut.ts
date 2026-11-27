@@ -1,10 +1,7 @@
 import { useEffect, useRef, type RefObject } from "react";
 
 import { isCommandPaletteOpen } from "../commandPaletteBus";
-import {
-  hasFloatingLayerOver,
-  shouldRedirectInputToComposer,
-} from "../components/chat/composerFocusRedirect";
+import { shouldRedirectInputToComposer } from "../components/chat/composerFocusRedirect";
 import { isInSideChatPane, SIDE_CHAT_PANE_SELECTOR } from "../lib/sideChatPane";
 import { getTerminalFocusOwner } from "../lib/terminalFocus";
 
@@ -38,17 +35,15 @@ export function useDictationSubmissionShortcut(input: {
       const target = event.target;
       if (!(target instanceof Element)) return;
       const { background, formRef } = latest.current;
-      // Focus on the page itself belongs to the main chat; a side chat needs focus in its pane.
+      // Focus on the page itself is outside every side pane, so it belongs to the main chat.
       const owned =
-        target === document.body || target === document.documentElement
-          ? !background && !hasFloatingLayerOver()
-          : isInSideChatPane(target) === background &&
-            (isFrozenComposerTarget(target, formRef.current) ||
-              // Focus parked on the chat itself, such as the timeline, belongs to the composer.
-              shouldRedirectInputToComposer(
-                event,
-                background ? target.closest(SIDE_CHAT_PANE_SELECTOR) : null,
-              ));
+        isInSideChatPane(target) === background &&
+        (isFrozenComposerTarget(target, formRef.current) ||
+          // Focus parked on the chat itself, such as the timeline, belongs to the composer.
+          shouldRedirectInputToComposer(
+            event,
+            background ? target.closest(SIDE_CHAT_PANE_SELECTOR) : null,
+          ));
       if (owned) latest.current.onKeyDown(event);
     };
     window.addEventListener("keydown", onKeyDown, true);

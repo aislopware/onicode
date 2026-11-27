@@ -903,11 +903,10 @@ export function toolGroupSummaryKind(
   return fallbackKinds.size === 1 ? fallbackKinds.values().next().value! : "mixed";
 }
 
-// Footnote and link reference definitions, with a footnote's indented continuation lines.
 // A footnote definition with its indented continuation, or a CommonMark link reference definition
-// (one destination and an optional title); "[Note]: some prose" is neither.
+// (one destination and an optional title, either may start a new line); "[Note]: some prose" is neither.
 const REFERENCE_DEFINITION =
-  /^[ \t]{0,3}\[(?:(\^[^\]\s]+)\]:.*(?:\r?\n(?: {4}|\t).*)*|([^\]\r\n]+)\]:[ \t]*(?:<[^>\r\n]*>|[^\s<>]+)(?:[ \t]+(?:"[^"\r\n]*"|'[^'\r\n]*'|\([^)\r\n]*\)))?[ \t]*$)/gm;
+  /^[ \t]{0,3}\[(?:(\^[^\]\s]+)\]:.*(?:\r?\n(?: {4}|\t).*)*|([^\]\r\n]+)\]:[ \t]*(?:\r?\n[ \t]*)?(?:<[^>\r\n]*>|[^\s<>]+)(?:(?:[ \t]+|[ \t]*\r?\n[ \t]*)(?:"(?:\\.|[^"\\\r\n])*"|'(?:\\.|[^'\\\r\n])*'|\((?:\\.|[^)\\\r\n])*\)))?[ \t]*$)/gm;
 
 /** Drops definitions and the references they resolve; an undefined `[^a-z]` is literal text. */
 function withoutReferences(markdown: string, text: string): string {
