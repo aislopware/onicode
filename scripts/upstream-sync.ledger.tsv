@@ -4582,3 +4582,4 @@ a6e147bbec	take	clean
 d898612a03	take	docs/user/browser.md bullet rewritten in Onicode's voice; i18n key renamed in all web locales; mobile has no floating preview
 52c5a9ae6d	take	adapted: test archive is a Map (no JSZip)
 d01ce6da1d	take	adapted: kept Onicode's deliverySession condition (skips the delivery wrapper with nothing pending) beside upstream's recoverLostNativeSession; kept Onicode's same-native-id refusal after the forced replacement; adopted upstream's effect-acp AcpRequestError check (effect-acp already a server dep); Onicode-only resume-fallback test mock gains forgetLoadedProviderThread; ProviderSwitch integration + ProviderTurnStartService + RunExecutionService 335 passed; ACP family only (Antigravity first tier)
+ea8e968024	skip	already in Onicode 59b82f3fd3: addBrowserSurface forwards zoomFactor and colorScheme when duplicating, covered by openPreviewSession.test.ts
