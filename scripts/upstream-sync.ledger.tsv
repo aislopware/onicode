@@ -4093,3 +4093,4 @@ f0769f330d	skip	only renames PostHog config in apps/server/src/telemetry (teleme
 0d371444f3	take	adopted upstream's scoped poll input stamp (readStatusPoll/readStatusInputs) over Onicode's whole-repo readLocalStatusRefSnapshot on the background poll: an unrelated remote branch or sibling worktree commit no longer forces a full local read; kept Onicode's keepCountsOnUnknown positional param (poll inputs via options), forced-local-read cadence, sealed unpackLimit fetch, and its checkpoint-free branch-picker ref snapshot (upstream's test assertion that a checkpoint ref moves the snapshot inverted)
 d98c3e2de7	take	taken as is (ACP Registry only)
 0d2b8eda98	take	taken as is
+a03617a312	take	taken as is
