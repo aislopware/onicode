@@ -4551,3 +4551,4 @@ b22bd40be3	take	clean
 ab9ca1efed	take	clean
 e67034a885	take	clean; shared by web and mobile
 2e4e8f1f35	take	test import conflict only (kept Onicode's Deferred, added HostProcess)
+609178f9f4	take	adapted: dropped the hosted-link test row (Onicode has no hosted thread links)
