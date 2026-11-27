@@ -6,8 +6,8 @@ export const THREAD_LINK_PROTOCOL = "oni-thread";
 const V1_PREFIX = `${THREAD_LINK_PROTOCOL}://v1/`;
 const V2_PREFIX = `${THREAD_LINK_PROTOCOL}://v2/`;
 const THREAD_HREF = String.raw`oni-thread:\/\/v[12]\/`;
-// A label stops at any bracket, so a run of unclosed brackets is scanned once, not once per bracket.
-const LABEL = String.raw`[^[\]\n]*`;
+// Unescaped brackets end a label, so consecutive unclosed brackets cannot restart a long scan.
+const LABEL = String.raw`(?:\\[^\n]|[^\\[\]\n])*`;
 const LIST_MARKERS = String.raw`(?:(?:[-*+]|\d{1,9}[.)])[ \t]+)*`;
 const QUOTE_PREFIX = new RegExp(String.raw`^([ \t]*${LIST_MARKERS})(>(?:[ \t]*>)+)`, "gm");
 // Move inter-marker spacing before the quote so fence depth matches and offsets stay intact. A label

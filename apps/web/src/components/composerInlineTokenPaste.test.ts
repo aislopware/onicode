@@ -7,15 +7,14 @@ import {
 import { threadContextRecord } from "@onicode/shared/composerContextReferences";
 import { describe, expect, it } from "vite-plus/test";
 
-import { importPastedComposerText } from "./composerInlineTokenPaste";
+import { importPastedComposerText, readPastedComposerClipboard } from "./composerInlineTokenPaste";
 
 const thread = {
   environmentId: EnvironmentId.make("env-1"),
   threadId: ThreadId.make("thread-1"),
 };
-const clipboard = (data: Record<string, string>) => ({
-  getData: (type: string) => data[type] ?? "",
-});
+const clipboard = (data: Record<string, string>) =>
+  readPastedComposerClipboard({ getData: (type) => data[type] ?? "" });
 const chip = (title: string) =>
   `[${title}](oni-context://v1/thread/${threadContextRecord(thread, title).contextId})`;
 
@@ -48,6 +47,10 @@ describe("importPastedComposerText", () => {
       importAll([]),
     );
     expect(text).toBe(chip("Login"));
+    const withBrackets = clipboard({
+      "text/plain": String.raw`[Fix \[login\]](oni-thread://v2/env-1/thread-1)`,
+    });
+    expect(importPastedComposerText(withBrackets, importAll([]))).toBe(chip("Fix login"));
   });
 
   it("keeps the link when the composer cannot take the thread", () => {
