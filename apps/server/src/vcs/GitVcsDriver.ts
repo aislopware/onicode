@@ -15,6 +15,7 @@ import { ChildProcessSpawner } from "effect/process";
 
 import {
   GitCommandError,
+  trimAsciiWhitespace,
   VcsCheckpointStorageError,
   VcsProcessExitError,
   VcsUnsupportedOperationError,
@@ -1310,7 +1311,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
           allowNonZeroExit: true,
         });
         // git-lfs resolves a relative lfs.storage against the common Git directory.
-        const storage = path.resolve(gitCommonDir, configured.stdout.trim() || "lfs");
+        const storage = path.resolve(gitCommonDir, trimAsciiWhitespace(configured.stdout) || "lfs");
         yield* Effect.forEach(
           objects,
           (entry) =>
