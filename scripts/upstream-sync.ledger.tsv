@@ -4594,3 +4594,4 @@ cf87a9586c	take	clean; two handler lines, no hook added
 54fcf5e9c3	take	clean
 5d94090ed0	take	clean; one profile read per settled turn (Antigravity first tier)
 a9ad9afa09	take	test fixture conflict (Onicode's zipFixture map); same epub:type attributes as upstream
+853318d6ce	take	test import conflict resolved (kept Onicode's OrchestrationV2GetThreadProjectionError beside upstream's imports); code applied as is
