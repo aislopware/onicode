@@ -4555,3 +4555,4 @@ e67034a885	take	clean; shared by web and mobile
 affe0cdf9d	skip	kept Onicode's single mcp__onicode__ Pi registration: the fix keeps upstream's hidden alias tools active after tool_search; Onicode dropped those aliases (829d4cf43a) and its reconcileDiscovery never drops a loaded tool, so the cache-busting re-declaration cannot happen
 fd9b7e83ec	take	clean; Codex (follows upstream)
 a62266d842	take	adapted: test draws /splash-logo.png (Onicode's public dir has no favicon-32x32.png); server already answers API routes with CORS
+37534874ea	take	clean
