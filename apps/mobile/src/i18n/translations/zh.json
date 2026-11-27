@@ -5753,5 +5753,6 @@
     }
   ],
   "0f93532dd76391fc": "你回答了 {choice}",
-  "7e1fd2eb570a372b": "{who}回答了 {choice}"
+  "7e1fd2eb570a372b": "{who}回答了 {choice}",
+  "1a1beecff68a6e61": "验证 Google 账户"
 }

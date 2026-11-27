@@ -5846,5 +5846,6 @@
     }
   ],
   "0f93532dd76391fc": "Ваш ответ: {choice}",
-  "7e1fd2eb570a372b": "Ответ {who}: {choice}"
+  "7e1fd2eb570a372b": "Ответ {who}: {choice}",
+  "1a1beecff68a6e61": "Подтвердить аккаунт Google"
 }

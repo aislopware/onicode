@@ -5771,5 +5771,6 @@
     }
   ],
   "0f93532dd76391fc": "Du hast {choice} geantwortet",
-  "7e1fd2eb570a372b": "{who} hat {choice} geantwortet"
+  "7e1fd2eb570a372b": "{who} hat {choice} geantwortet",
+  "1a1beecff68a6e61": "Google-Konto bestätigen"
 }

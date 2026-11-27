@@ -5766,5 +5766,6 @@
     }
   ],
   "0f93532dd76391fc": "Vous avez répondu {choice}",
-  "7e1fd2eb570a372b": "{who} a répondu {choice}"
+  "7e1fd2eb570a372b": "{who} a répondu {choice}",
+  "1a1beecff68a6e61": "Vérifier le compte Google"
 }

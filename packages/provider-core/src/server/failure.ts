@@ -1,18 +1,20 @@
-import type {
-  NodeId,
-  OrchestrationV2ProviderFailure,
-  OrchestrationV2ProviderFailureClass,
-  OrchestrationV2ProviderRetry,
-  OrchestrationV2TurnItem,
-  ProviderDriverKind,
-  ProviderThreadId,
-  ProviderTurnId,
-  RunId,
-  ThreadId,
-  TurnItemId,
+import {
+  GoogleAccountVerificationUrl,
+  type NodeId,
+  type OrchestrationV2ProviderFailure,
+  type OrchestrationV2ProviderFailureClass,
+  type OrchestrationV2ProviderRetry,
+  type OrchestrationV2TurnItem,
+  type ProviderDriverKind,
+  type ProviderThreadId,
+  type ProviderTurnId,
+  type RunId,
+  type ThreadId,
+  type TurnItemId,
 } from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Cause from "effect/Cause";
+import * as Option from "effect/Option";
 
 import * as IdAllocator from "./IdAllocator.ts";
 import type { ProviderAdapterFailureReason } from "./ProviderAdapter.ts";
@@ -327,6 +329,8 @@ export function boundedRedactedTail(value: string, maxLength: number): string {
   return `…${redacted.slice(start)}`;
 }
 
+const decodeVerificationUrl = Schema.decodeUnknownOption(GoogleAccountVerificationUrl);
+
 export function makeProviderFailure(input: {
   readonly cause?: unknown;
   readonly message?: string | undefined;
@@ -334,6 +338,7 @@ export function makeProviderFailure(input: {
   readonly class?: OrchestrationV2ProviderFailureClass;
   readonly retryable?: boolean | null;
   readonly resetAt?: string | null;
+  readonly verificationUrl?: unknown;
 }): OrchestrationV2ProviderFailure {
   const curated = curatedCauseMessages(input.cause);
   const requestTooLarge =
@@ -348,6 +353,7 @@ export function makeProviderFailure(input: {
     rawCode === null
       ? null
       : boundedRedactedText(rawCode, MAX_PROVIDER_FAILURE_CODE_LENGTH) || null;
+  const verificationUrl = Option.getOrUndefined(decodeVerificationUrl(input.verificationUrl));
 
   return {
     class: input.class ?? "unknown",
@@ -359,6 +365,7 @@ export function makeProviderFailure(input: {
     Number.isFinite(Date.parse(input.resetAt))
       ? { resetAt: DateTime.formatIso(DateTime.makeUnsafe(input.resetAt)) }
       : {}),
+    ...(verificationUrl === undefined ? {} : { verificationUrl }),
   };
 }
 

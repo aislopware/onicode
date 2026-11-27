@@ -5772,5 +5772,6 @@
     }
   ],
   "0f93532dd76391fc": "Du svarade {choice}",
-  "7e1fd2eb570a372b": "{who} svarade {choice}"
+  "7e1fd2eb570a372b": "{who} svarade {choice}",
+  "1a1beecff68a6e61": "Verifiera Google-konto"
 }

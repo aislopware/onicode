@@ -5748,5 +5748,6 @@
     }
   ],
   "0f93532dd76391fc": "내 답변: {choice}",
-  "7e1fd2eb570a372b": "{who}의 답변: {choice}"
+  "7e1fd2eb570a372b": "{who}의 답변: {choice}",
+  "1a1beecff68a6e61": "Google 계정 확인"
 }
