@@ -4461,3 +4461,4 @@ b4d3a6b270	take	applies cleanly
 cdb798a327	take	applies with -C1; private, no-cache works over LAN, Tailscale and Funnel
 047590dc25	take	kept Onicode's holdScrollTop/isScrollTopHeld (5fd749cd79): the hold flag lives with the scroller, so upstream's restoringScroll ref and onStop callback are dropped and onScroll checks isScrollTopHeld; test merged by hand into Onicode's it.each Linear case (aislopware/onicode PR, completed detail keeps no linked PRs); adapted: Onicode opens a Linear issue's PR through its repository's project, which the fixture lacks, so the PR tab opens from the store, and the test awaits the scroll event before leaving; fails without the fix
 5f65976040	take	applies cleanly after its slice-09/10/13 dependencies; mobile has no hosted author search
+c035572ea2	take	applies cleanly; labelFromChildren still used
