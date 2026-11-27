@@ -4450,3 +4450,4 @@ aed2db70ee	take	BOM sourceOffset merged into Onicode's one-entry fencedCodeRange
 13a910f50e	take	ThemeSearchSection and test taken; web locales regenerated and key 90d1efbdea5f026b filled from upstream's values (pt-BR 'download' is upstream's Portuguese); mobile has no theme search
 ac20e4d95a	take	applies cleanly
 b4d3a6b270	take	applies cleanly
+7a93ea0acd	take	adopted upstream over Onicode's blanket "template" entry in HIDDEN (949df015f6): upstream drops only XHTML-namespace templates while parsing, so a foreign meta:template keeps its text; Onicode's stale-row/cell template test still passes
