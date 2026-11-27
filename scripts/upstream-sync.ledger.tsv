@@ -4736,3 +4736,4 @@ ce56dfe956	take	taken as is (shared notebookOutput under @onicode/shared; Docume
 53845d9e9a	take	adapted: widened Onicode's earlier shared-worktree check on the queued thread instead of adding upstream's later copy
 264bb3b55a	take	taken as is
 b8233e5ed7	take	taken as is
+2e2af395f6	take	adapted: test builds the EPUB with Onicode's TestArchive (no JSZip)
