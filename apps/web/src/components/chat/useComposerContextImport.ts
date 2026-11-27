@@ -5,6 +5,7 @@ import {
   ConnectionTransientError,
 } from "@onicode/client-runtime/connection";
 import { EnvironmentRpcUnavailableError } from "@onicode/client-runtime/rpc";
+import { scopeThreadRef } from "@onicode/client-runtime/environment";
 import * as Cause from "effect/Cause";
 import * as Schema from "effect/Schema";
 import type { ChatComposerProps } from "./ChatComposer";
@@ -53,6 +54,8 @@ import { readComposerImageBytes } from "./composerAttachmentFiles";
 import { serializeComposerImages } from "./composerImagePersistence";
 import { randomUUID } from "~/lib/utils";
 import { readPreparedConnection } from "~/state/session";
+import { appAtomRegistry } from "~/rpc/atomRegistry";
+import { environmentThreadDetails } from "~/state/threads";
 import { resolveAssetUrl } from "~/assets/assetUrls";
 import { toKindScopedComposerContextId } from "@onicode/shared/composerContextReferences";
 import { toastManager } from "../ui/toast";
@@ -286,8 +289,8 @@ export function useComposerContextImport(input: {
         fail(m(msg("The draft rejected this attachment (duplicate or attachment limit reached).")));
         return;
       }
-      // In the draft now, so a moved import's claim and reserved slot go before the save.
-      if (thread) questionWork?.finish();
+      // In the draft now, so a question import's claim and reserved slot go before the save.
+      questionWork?.finish();
       await useComposerDraftStore
         .getState()
         .appendPersistedAttachments(destination, [image], serialized);
@@ -329,13 +332,27 @@ export function useComposerContextImport(input: {
       ? startQuestionDraftWork(questionAttachmentTarget)
       : null;
     if (!questionWork) pendingDraftWork.begin(importTargetKey);
+    // The question can be answered or stopped while this composer is gone; its thread's requests
+    // stay mounted so the work hears it and drops or moves the attachment.
+    const releaseRequests =
+      questionWork && activeThreadId
+        ? appAtomRegistry.mount(
+            environmentThreadDetails.pendingRequestsAtom(
+              scopeThreadRef(environmentId, activeThreadId),
+            ),
+          )
+        : undefined;
     await runAttachmentImport(
       record,
       localId,
       sourceEnvironmentId,
       questionWork,
       pastedRestores,
-    ).finally(() => (questionWork ? questionWork.finish() : pendingDraftWork.end(importTargetKey)));
+    ).finally(() => {
+      if (questionWork) questionWork.finish();
+      else pendingDraftWork.end(importTargetKey);
+      releaseRequests?.();
+    });
   };
   const importContextRecords = (
     records: ReadonlyArray<ComposerContextRecord>,

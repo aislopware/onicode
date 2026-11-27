@@ -1,4 +1,5 @@
 import { threadContextRecord } from "@onicode/shared/composerContextReferences";
+import { Atom } from "effect/reactivity";
 import { useEffect } from "react";
 import {
   ChatAttachmentId,
@@ -17,7 +18,12 @@ import { act, render, stubGlobal } from "../../../test/render";
 import { DraftId, composerTargetKey, useComposerDraftStore } from "../../composerDraftStore";
 import { formatInlineContextReference } from "../../lib/composerContextReferences";
 import { rememberCopiedComposerAttachments } from "../../lib/copiedComposerAttachments";
-import { countMovedQuestionImports, questionAttachmentDraftId } from "../../questionAttachments";
+import {
+  countMovedQuestionImports,
+  countQuestionAttachments,
+  questionAttachmentDraftId,
+} from "../../questionAttachments";
+import { environmentThreadDetails } from "../../state/threads";
 import { toastManager } from "../ui/toast";
 import { pendingDraftWork } from "./pendingDraftWork";
 import {
@@ -461,6 +467,104 @@ it.each([
       }),
     );
   }
+});
+
+it("a question's image import watches its thread's requests and holds one slot while it saves", async () => {
+  const environmentId = EnvironmentId.make("question-watch-target");
+  const thread = scopeThreadRef(environmentId, ThreadId.make("question-watch"));
+  const target = questionAttachmentDraftId(
+    environmentId,
+    thread.threadId,
+    RuntimeRequestId.make("question-watch-request"),
+    "answer",
+  );
+  const store = useComposerDraftStore.getState();
+  using _draft = { [Symbol.dispose]: () => store.clearComposerContent(target) };
+  // Answering or stopping the question elsewhere is only seen while its requests are mounted.
+  let watching = false;
+  const requests = Atom.make<null>((get) => {
+    watching = true;
+    get.addFinalizer(() => {
+      watching = false;
+    });
+    return null;
+  }).pipe(Atom.setIdleTTL(0));
+  using _requests = vi
+    .spyOn(environmentThreadDetails, "pendingRequestsAtom")
+    .mockImplementation((ref) => {
+      expect(ref).toEqual(thread);
+      return requests;
+    });
+  const downloaded = deferred<Response>();
+  const requested = deferred<void>();
+  using _fetch = stubGlobal("fetch", () => {
+    requested.resolve();
+    return downloaded.promise;
+  });
+  let slotsWhileSaving: number | undefined;
+  const append = store.appendPersistedAttachments;
+  using _append = vi.spyOn(store, "appendPersistedAttachments").mockImplementation((...args) => {
+    slotsWhileSaving = countQuestionAttachments([target]);
+    return append(...args);
+  });
+  const settled = deferred<void>();
+  const end = pendingDraftWork.end.bind(pendingDraftWork);
+  using _settled = vi.spyOn(pendingDraftWork, "end").mockImplementation((key) => {
+    end(key);
+    if (key === target) settled.resolve();
+  });
+  let importer!: Importer;
+  await using screen = await render(
+    <Harness
+      input={{
+        environmentId,
+        linkedEnvironments: new Map(),
+        activeThread: undefined,
+        activeThreadId: thread.threadId,
+        composerDraftTarget: target,
+        attachmentDraftTarget: target,
+        attachmentTargetKey: target,
+        questionAttachmentTarget: target,
+        pendingUserInputs: [],
+        composerContextRecords: new Map(),
+        composerImages: [],
+        addComposerFilesToDraft: (files) =>
+          store.addFiles(target, files, { appendReference: false }),
+      }}
+      ready={(value) => {
+        importer = value;
+      }}
+    />,
+  );
+
+  await act(async () => {
+    importer.importContextRecords(
+      [
+        {
+          version: 1,
+          kind: "image",
+          contextId: ComposerContextId.make("image_question-watch"),
+          label: "shot.png",
+          attachmentId: "question-watch-shot",
+          name: "shot.png",
+          mimeType: "image/png",
+          sizeBytes: 5,
+        },
+      ],
+      EnvironmentId.make("question-watch-source"),
+    );
+    await requested.promise;
+  });
+  await screen.unmount();
+  expect(watching).toBe(true);
+  await act(async () => {
+    downloaded.resolve(new Response("notes", { headers: { "Content-Type": "image/png" } }));
+    await settled.promise;
+  });
+
+  expect(store.getComposerDraft(target)?.images.map(({ name }) => name)).toEqual(["shot.png"]);
+  expect(slotsWhileSaving).toBe(1);
+  await vi.waitFor(() => expect(watching).toBe(false));
 });
 
 it("lands two moved question imports that settle together in the thread's last two slots", async () => {
