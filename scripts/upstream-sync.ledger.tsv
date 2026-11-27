@@ -3939,3 +3939,4 @@ ef4a1643ed	skip	telemetry only: Onicode removed AnalyticsService, relay tracing 
 c5d6aa19de	take	kept Onicode's last-wins topLevelCwd assignment, gated off for Pi
 80659c54a3	take	taken as is
 5ebb275c2b	take	taken as is
+4a8f2be96a	take	kept Onicode's background flag on finished launches, boundText/command/detail in normalizeAntigravityToolCall
