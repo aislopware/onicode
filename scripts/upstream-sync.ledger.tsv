@@ -4063,3 +4063,4 @@ e6641e6ec6	take	kept Onicode's anchorOpenHandlers on the profile anchor (also ha
 520e670cb5	take	avdsAvailable wired at Onicode's makeDeviceHubOperations call
 b9b1f5745b	take	taken as is
 abc0c4ae55	take	thread query context wraps Onicode's results, keeping its folder-search empty states
+2ae731530d	take	Onicode's route body inlined flat as upstream does, keeping its props (threadTitleText title); upstream's new useStableCallback already exists in Onicode
