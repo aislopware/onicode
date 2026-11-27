@@ -87,23 +87,23 @@ export const test = base.extend<{ onicode: MobileOni }>({
         const workspace = screen.getByTestId("adaptive-workspace-layout");
         const loadFailed = screen.getByText("Failed to load app", { exact: false });
         // A loaded host can time out the accept of iOS's open-link prompt, and the app then never
-        // launches; reads only say it is not running. Open it again instead of waiting that out.
-        for (let attempt = 1; attempt < LAUNCH_ATTEMPTS; attempt += 1) {
-          const shown = await workspace
+        // launches. A locate right after a launch reads a not-running app as one still arriving,
+        // so a wait that ends without the app asks a whole-screen read, which says it plainly.
+        const notRunning = (error: unknown) =>
+          String(error).includes("is not running")
+            ? Promise.resolve(true)
+            : screen.tree({ timeout: 15_000 }).then(
+                () => false,
+                (probe: unknown) => String(probe).includes("is not running"),
+              );
+        // Once shown, or up and still bundling, the waits below and the test's own take over.
+        for (let relaunches = 0; relaunches < LAUNCH_ATTEMPTS - 1; relaunches += 1) {
+          const down = await workspace
             .or(loadFailed)
             .waitFor({ state: "visible", timeout: 45_000 })
-            .then(
-              () => true,
-              (error: unknown) => {
-                if (String(error).includes("is not running")) return false;
-                // Still bundling, or a read cut off at the deadline: the next wait tells which.
-                if (error instanceof Error && "code" in error && error.code === "LOCATOR_NOT_FOUND")
-                  return undefined;
-                throw error;
-              },
-            );
-          if (shown) break;
-          if (shown === false) await load();
+            .then(() => false, notRunning);
+          if (!down) break;
+          await load();
         }
         // The first load bundles the app; the pairing link only works once it is on screen.
         if (paired) return;
