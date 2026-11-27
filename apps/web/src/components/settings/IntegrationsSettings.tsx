@@ -1145,7 +1145,7 @@ function BrowserAutoShowFloatingPreviewSetting() {
       {...searchableSetting("browser-auto-show-floating-preview")}
       devicePreference
       description={gt(
-        "Show the floating preview when an agent opens a browser or device unless the agent says otherwise.",
+        "Show the floating preview when an agent opens a browser or device unless the agent says otherwise, and when you close the right panel.",
       )}
       resetAction={
         autoShow !== DEFAULT_BROWSER_AUTO_SHOW_FLOATING_PREVIEW ? (

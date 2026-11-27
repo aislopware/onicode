@@ -4579,3 +4579,4 @@ f46957a76b	take	clean; OpenCode follows upstream
 e19b84de74	take	clean
 289dd3f89c	take	clean
 a6e147bbec	take	clean
+d898612a03	take	docs/user/browser.md bullet rewritten in Onicode's voice; i18n key renamed in all web locales; mobile has no floating preview
