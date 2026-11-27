@@ -704,7 +704,8 @@ describe("question answer paths", () => {
           },
         ],
       });
-      NodeFS.writeFileSync(path, notebook);
+      const notebookWithBom = `\uFEFF${notebook}`;
+      NodeFS.writeFileSync(path, notebookWithBom);
       // Older extractors wrote these sidecars without the raw cell label or with terminal styling.
       NodeFS.writeFileSync(`${path}.txt`, `## Cell 3\n${rawSource}`);
       NodeFS.writeFileSync(`${path}.v2.txt`, "Output:\n\u001b[32m301\u001b[0m\n");
@@ -738,7 +739,7 @@ describe("question answer paths", () => {
         "ZeroDivisionError: division by zero\nCell In[1], line 1\n----> 1 1 / 0\nZeroDivisionError: division by zero",
       );
       expect(extracted).not.toContain("\u001b");
-      expect(NodeFS.readFileSync(path, "utf8")).toBe(notebook);
+      expect(NodeFS.readFileSync(path, "utf8")).toBe(notebookWithBom);
       const before = NodeFS.statSync(DocumentText.extractedTextPath(path)).mtimeMs;
       // A changed binary would fail parsing if the cached extraction were not reused.
       NodeFS.writeFileSync(path, "invalid notebook");
