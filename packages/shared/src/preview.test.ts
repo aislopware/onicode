@@ -94,6 +94,7 @@ describe("resolveAddressBarInput", () => {
     expect(resolveAddressBarInput(" https://example.com/a b ")).toBe("https://example.com/a%20b");
     expect(resolveAddressBarInput("example.com:8080")).toBe("https://example.com:8080/");
     expect(resolveAddressBarInput("[::1]:3000")).toBe("http://[::1]:3000/");
+    expect(resolveAddressBarInput("app.localhost:5173")).toBe("http://app.localhost:5173/");
     expect(resolveAddressBarInput("192.168.1.5:3000")).toBe("https://192.168.1.5:3000/");
     // The host follows the last `@`, as the URL parser reads it.
     expect(resolveAddressBarInput("a@b@localhost")).toBe("http://a%40b@localhost/");
@@ -176,6 +177,9 @@ describe("normalizePreviewUrl", () => {
     ["0x7f.0.0.2:3000", "http://127.0.0.2:3000/"],
     ["127.0.0.2.example.com:3000", "https://127.0.0.2.example.com:3000/"],
     ["https://127.0.0.2:80/path", "https://127.0.0.2:80/path"],
+    ["app.localhost:5173", "http://app.localhost:5173/"],
+    ["https://app.localhost:5173", "https://app.localhost:5173/"],
+    ["localhost.example.com:3000", "https://localhost.example.com:3000/"],
   ])("infers the scheme for loopback-looking %s", (input, expected) => {
     expect(normalizePreviewUrl(input)).toBe(expected);
   });

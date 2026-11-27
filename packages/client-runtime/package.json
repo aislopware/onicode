@@ -734,6 +734,7 @@
     "@onicode/source-control-core": "workspace:*",
     "@onicode/source-control-definitions": "workspace:*",
     "@pierre/diffs": "catalog:",
+    "@zip.js/zip.js": "2.25.0",
     "effect": "catalog:",
     "fflate": "0.8.3",
     "gt-i18n": "1.0.45",

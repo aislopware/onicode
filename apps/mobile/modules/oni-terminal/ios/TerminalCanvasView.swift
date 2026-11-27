@@ -2,20 +2,23 @@ import CoreText
 import QuartzCore
 import UIKit
 
-private enum TerminalFontFiles {
-  static let regular = load("MesloLGS-NF-Regular")
-  static let bold = load("MesloLGS-NF-Bold")
-
-  // The pod ships the Android app's bundled fonts in its OniTerminalFonts resource bundle.
-  private static func load(_ name: String) -> CGFont? {
-    let bundle = [Bundle(for: TerminalCanvasView.self), Bundle.main].lazy
-      .compactMap { $0.url(forResource: "OniTerminalFonts", withExtension: "bundle") }
-      .compactMap(Bundle.init(url:))
-      .first
-    guard let url = bundle?.url(forResource: name, withExtension: "ttf"),
-      let provider = CGDataProvider(url: url as CFURL)
-    else { return nil }
-    return CGFont(provider)
+private enum TerminalFonts {
+  /// `ui-monospace` is the system monospace font; another family is a font app.config.ts registers.
+  static func make(family: String, size: CGFloat) -> (regular: CTFont, bold: CTFont) {
+    if family != "ui-monospace", let named = UIFont(name: family, size: size) {
+      let regular = named as CTFont
+      // A bundled family registers its bold face as its own name (MesloLGS-NF-Bold).
+      let boldName = family.hasSuffix("-Regular") ? String(family.dropLast("-Regular".count)) + "-Bold" : nil
+      let bold =
+        boldName.flatMap { UIFont(name: $0, size: size) as CTFont? }
+        ?? CTFontCreateCopyWithSymbolicTraits(regular, size, nil, .traitBold, .traitBold)
+        ?? regular
+      return (regular, bold)
+    }
+    return (
+      UIFont.monospacedSystemFont(ofSize: size, weight: .regular),
+      UIFont.monospacedSystemFont(ofSize: size, weight: .bold)
+    )
   }
 }
 
@@ -41,22 +44,14 @@ final class TerminalFontSet {
   private var glyphs: [[String: TerminalGlyph]]
   private static let glyphCacheLimit = 4096
 
-  init(size: CGFloat, scale: CGFloat) {
-    let fallback = CTFontCreateWithName("Menlo-Regular" as CFString, size, nil)
-    func make(_ file: CGFont?, italic: Bool) -> CTFont {
-      // Meslo has no italic face; slant it the way Android synthesizes one.
-      var slant = CGAffineTransform(a: 1, b: 0, c: italic ? 0.2 : 0, d: 1, tx: 0, ty: 0)
-      guard let file else { return CTFontCreateCopyWithAttributes(fallback, size, &slant, nil) }
-      return CTFontCreateWithGraphicsFont(file, size, &slant, nil)
+  init(size: CGFloat, scale: CGFloat, family: String) {
+    let (regular, bold) = TerminalFonts.make(family: family, size: size)
+    func slanted(_ font: CTFont) -> CTFont {
+      // Slant italics the way Android synthesizes them; Meslo has no italic face.
+      var slant = CGAffineTransform(a: 1, b: 0, c: 0.2, d: 1, tx: 0, ty: 0)
+      return CTFontCreateCopyWithAttributes(font, size, &slant, nil)
     }
-    let regular = make(TerminalFontFiles.regular, italic: false)
-    let bold = make(TerminalFontFiles.bold ?? TerminalFontFiles.regular, italic: false)
-    fonts = [
-      regular,
-      bold,
-      make(TerminalFontFiles.regular, italic: true),
-      make(TerminalFontFiles.bold ?? TerminalFontFiles.regular, italic: true),
-    ]
+    fonts = [regular, bold, slanted(regular), slanted(bold)]
     asciiGlyphs = Array(repeating: Array(repeating: nil, count: 128), count: 4)
     glyphs = Array(repeating: [:], count: 4)
 
@@ -193,10 +188,18 @@ final class TerminalCanvasView: UIView {
     }
   }
 
+  /// A React Native family name; `ui-monospace` selects the system monospace font.
+  var fontFamily = "ui-monospace" {
+    didSet {
+      guard oldValue != fontFamily else { return }
+      updateFonts()
+    }
+  }
+
   init(fontSize: CGFloat) {
     self.fontSize = fontSize
     fontScale = max(UITraitCollection.current.displayScale, 1)
-    fonts = TerminalFontSet(size: fontSize, scale: fontScale)
+    fonts = TerminalFontSet(size: fontSize, scale: fontScale, family: fontFamily)
     super.init(frame: .zero)
     contentScaleFactor = fontScale
     isOpaque = true
@@ -276,7 +279,7 @@ final class TerminalCanvasView: UIView {
   }
 
   private func updateFonts() {
-    fonts = TerminalFontSet(size: fontSize, scale: fontScale)
+    fonts = TerminalFontSet(size: fontSize, scale: fontScale, family: fontFamily)
     setNeedsDisplay()
     updateCursor()
   }

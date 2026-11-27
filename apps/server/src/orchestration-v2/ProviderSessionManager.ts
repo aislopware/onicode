@@ -284,6 +284,7 @@ export interface ProviderSessionManagerV2Shape {
     readonly threadId: ThreadId;
     readonly detail?: string;
     readonly revokeMcpCredential?: boolean;
+    readonly handoffProviderThread?: OrchestrationV2ProviderThread;
   }) => Effect.Effect<void, ProviderSessionManagerV2Error>;
   /**
    * Takes the thread off every live session it is attached to before returning, so its next
@@ -3627,6 +3628,8 @@ export const layerWithOptions = (
           readonly threadId: ThreadId;
           readonly detached: LiveSessionEntry;
           readonly providerThreads: ReadonlyArray<OrchestrationV2ProviderThread>;
+          /** A thread handed to another account, already unloaded before the detach. */
+          readonly handoff?: OrchestrationV2ProviderThread;
         }) {
           const unloadThread = input.detached.exposedRuntime.unloadThread;
           if (!input.detached.supportsMultipleProviderThreads || unloadThread === undefined) {
@@ -3635,7 +3638,8 @@ export const layerWithOptions = (
           // The projection includes native children owned by other app threads;
           // lock each owner so an attached child stays loaded and later attaches wait.
           for (const providerThread of input.providerThreads) {
-            if (providerThread.nativeThreadRef === null) continue;
+            if (providerThread.nativeThreadRef === null || providerThread.id === input.handoff?.id)
+              continue;
             const ownerThreadId = providerThread.appThreadId ?? input.threadId;
             yield* threadAttachment.withLock(
               threadAttachmentKey({
@@ -3647,6 +3651,16 @@ export const layerWithOptions = (
                 if (
                   entry?.runtime !== input.detached.runtime ||
                   entry.attachedThreadIds.has(ownerThreadId)
+                ) {
+                  return;
+                }
+                if (
+                  input.handoff !== undefined &&
+                  (providerThread.ownerNodeId !== null || ownerThreadId !== input.threadId) &&
+                  entry.runtime.hasPendingBackgroundWorkForThread !== undefined &&
+                  (yield* entry.runtime
+                    .hasPendingBackgroundWorkForThread(providerThread)
+                    .pipe(Effect.orElseSucceed(() => true)))
                 ) {
                   return;
                 }
@@ -4084,6 +4098,23 @@ export const layerWithOptions = (
                 );
               }
             }
+            const handoff = input.handoffProviderThread;
+            // Keep the source attached until it confirms release so a retry can still find it.
+            if (handoff?.nativeThreadRef != null) {
+              yield* threadAttachment.withLock(
+                threadAttachmentKey(input),
+                Effect.gen(function* () {
+                  const entry = (yield* Ref.get(sessions)).get(sessionKey(input.providerSessionId));
+                  if (!entry?.supportsMultipleProviderThreads) return;
+                  const unloadThread = entry.exposedRuntime.unloadThread;
+                  if (unloadThread !== undefined) {
+                    yield* unloadThread({ providerThread: handoff, awaitClosed: true }).pipe(
+                      Effect.timeout(UNLOAD_THREAD_TIMEOUT_MS),
+                    );
+                  }
+                }),
+              );
+            }
             const ownedProviderThreadIds = detachedProviderThreads.flatMap((providerThread) =>
               (providerThread.appThreadId ?? input.threadId) === input.threadId
                 ? [providerThread.id]
@@ -4121,6 +4152,7 @@ export const layerWithOptions = (
               threadId: input.threadId,
               detached: detached.value,
               providerThreads: detachedProviderThreads,
+              ...(handoff === undefined ? {} : { handoff }),
             });
             yield* scheduleIdleRelease(input.providerSessionId);
           },

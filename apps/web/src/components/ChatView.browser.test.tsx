@@ -17,14 +17,11 @@ import {
   type ThreadIssueLink,
 } from "@onicode/contracts";
 import { DEFAULT_CLIENT_SETTINGS } from "@onicode/contracts/settings";
-import {
-  compileResolvedKeybindingsConfig,
-  mergeWithDefaultKeybindings,
-} from "@onicode/shared/keybindings";
 import type * as Context from "effect/Context";
 import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
 import { runAtomCommand } from "@onicode/client-runtime/state/runtime";
+import * as Stream from "effect/Stream";
 import { expect, it, vi } from "vite-plus/test";
 import { cdp, page, userEvent } from "vite-plus/test/browser";
 
@@ -249,7 +246,7 @@ it.each([{ issueSummaries: false }, { issueSummaries: true }])(
         assignees: false,
         reactions: false,
         templates: false,
-        linkedPullRequests: false,
+        linkedPullRequests: true,
         events: false,
         search: false,
       },
@@ -262,11 +259,21 @@ it.each([{ issueSummaries: false }, { issueSummaries: true }])(
       },
       states: [],
       viewer: null,
-      body: "",
+      body: Array.from({ length: 40 }, (_, index) => `Reproduction step ${index + 1}`).join("\n\n"),
       comments: [],
       commentsCursor: null,
       events: [],
-      linkedPullRequests: [],
+      linkedPullRequests: [
+        {
+          repository: "aislopware/onicode",
+          number: 124,
+          url: "https://github.com/aislopware/onicode/pull/124",
+          title: "Fix keyboard shortcuts",
+          state: "open",
+          isDraft: false,
+          closesIssue: false,
+        },
+      ],
     } satisfies IssueDetail;
     const completedDetail = {
       ...liveDetail,
@@ -275,6 +282,9 @@ it.each([{ issueSummaries: false }, { issueSummaries: true }])(
       url: completed.url,
       title: completed.title,
       state: { category: "closed", closeReason: "completed", name: "Done" },
+      capabilities: { ...liveDetail.capabilities, linkedPullRequests: false },
+      body: "",
+      linkedPullRequests: [],
     } satisfies IssueDetail;
     const detailFor = (input: IssueRef) => {
       const isCompleted = input.key === completed.key;
@@ -376,6 +386,33 @@ it.each([{ issueSummaries: false }, { issueSummaries: true }])(
     await userEvent.click(issueRow);
     expect(router.history.location.pathname).toBe(`/${ENVIRONMENT_ID}/${linked.id}`);
     await expect.element(page.getByRole("heading", { name: liveTitle })).toBeVisible();
+    const linkedPr = page.getByRole("link", { name: /Fix keyboard shortcuts/ });
+    const issueScroller = () =>
+      linkedPr.element().closest<HTMLElement>("[data-pull-request-summary-scroll]")!;
+    const prRow = await linkedPr.findElement();
+    await expect.element(page.getByText("Reproduction step 40", { exact: true })).toBeVisible();
+    // The panel saves its position from the scroll event, which lands after scrollIntoView.
+    const scrolled = new Promise((resolve) =>
+      issueScroller().addEventListener("scroll", resolve, { once: true }),
+    );
+    prRow.scrollIntoView({ block: "center" });
+    await scrolled;
+    const issueScrollTop = issueScroller().scrollTop;
+    expect(issueScrollTop).toBeGreaterThan(0);
+    // A Linear issue's pull request opens through its repository's project, which this fixture
+    // lacks, so the pull request tab opens from the store.
+    await act(() =>
+      useRightPanelStore.getState().openPullRequest(scopeThreadRef(ENVIRONMENT_ID, linked.id), {
+        projectId: PROJECT_ID,
+        host: "github.com",
+        repository: "aislopware/onicode",
+        number: 124,
+        url: "https://github.com/aislopware/onicode/pull/124",
+      }),
+    );
+    await expect.element(linkedPr).not.toBeInTheDocument();
+    await userEvent.click(page.getByRole("button", { name: issue.key, exact: true }));
+    await vi.waitFor(() => expect(issueScroller().scrollTop).toBe(issueScrollTop));
     // Closed elsewhere: refreshing the panel also refreshes the state its tab shows.
     Object.assign(liveDetail, { state: { category: "closed", name: "Shipped" } });
     await userEvent.click(page.getByRole("button", { name: "Refresh issue" }));
@@ -1189,14 +1226,8 @@ it("a mounted thread view lets go of the thread structures it has replaced", asy
 it("a shortcut conditioned on rightPanelOpen sees the thread's open right panel", async () => {
   await page.viewport(1280, 800);
   const thread = threadWithHistory("thread-panel-shortcut", 1);
-  using _environment = installFakeEnvironment([thread], {
-    keybindings: mergeWithDefaultKeybindings(
-      compileResolvedKeybindingsConfig([
-        { key: "ctrl+t", command: "rightPanel.new", when: "rightPanelOpen && !terminalFocus" },
-        { key: "ctrl+t", command: "rightPanel.toggle", when: "!rightPanelOpen" },
-      ]),
-    ),
-  });
+  using _environment = installFakeEnvironment([thread]);
+  using _platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
   __setClientSettingsForTests({
     ...DEFAULT_CLIENT_SETTINGS,
     onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
@@ -1215,9 +1246,44 @@ it("a shortcut conditioned on rightPanelOpen sees the thread's open right panel"
   await toggle.click();
   await page.getByRole("button", { name: /^Files/ }).click();
   await composer.click();
-  await userEvent.keyboard("{Control>}t{/Control}");
+  await userEvent.keyboard("{Meta>}t{/Meta}");
   await expect.element(page.getByRole("menuitem", { name: /Files/ })).toBeVisible();
   await expect.element(toggle).toHaveAttribute("aria-pressed", "true");
+});
+
+it("Cmd+W closes the selected right-panel tabs together", async () => {
+  await page.viewport(1280, 800);
+  const thread = threadWithHistory("thread-close-selected-tabs", 1);
+  using _environment = installFakeEnvironment([thread]);
+  using _platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+  __setClientSettingsForTests({
+    ...DEFAULT_CLIENT_SETTINGS,
+    onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
+  });
+  const threadRef = scopeThreadRef(ENVIRONMENT_ID, thread.id);
+  const panels = useRightPanelStore.getState();
+  panels.open(threadRef, "diff");
+  panels.openFile(threadRef, "notes.md");
+  panels.openFile(threadRef, "routes.ts");
+  const router = getRouter(
+    createMemoryHistory({ initialEntries: [`/${ENVIRONMENT_ID}/${thread.id}`] }),
+  );
+  await router.load();
+  await using _app = await render(<AppRoot router={router} />, {
+    // AppRoot brings its own router.
+    router: false,
+  });
+
+  const tab = (name: string) => page.getByRole("button", { name, exact: true });
+  await userEvent.click(tab("notes.md"), { modifiers: ["Shift"] });
+  await expect.element(tab("notes.md")).toHaveAttribute("aria-pressed", "true");
+  await userEvent.keyboard("{Meta>}w{/Meta}");
+  await expect.element(tab("notes.md")).not.toBeInTheDocument();
+  await expect.element(tab("routes.ts")).not.toBeInTheDocument();
+  await expect.element(tab("Diff")).toHaveAttribute("aria-pressed", "true");
+
+  await userEvent.keyboard("{Meta>}w{/Meta}");
+  await expect.element(tab("Diff")).not.toBeInTheDocument();
 });
 
 it("selecting a side-chat tab focuses that side chat's composer", async () => {
@@ -1702,4 +1768,56 @@ it("a send held for onicode.json says it was not sent once the user leaves its d
   expect(useComposerDraftStore.getState().getComposerDraft(opened.draftId)?.prompt).toBe(
     "Held for the project file",
   );
+});
+
+it("a new thread on a branch with changes opens them from thread details", async () => {
+  // Wide enough that thread details sit inline, where they start open.
+  await page.viewport(1400, 900);
+  using _environment = installFakeEnvironment([]);
+  using _status = answerRpc(WS_METHODS.subscribeVcsStatus, () =>
+    Stream.concat(
+      Stream.make({
+        _tag: "snapshot" as const,
+        local: {
+          isRepo: true,
+          hasPrimaryRemote: false,
+          isDefaultRef: false,
+          refName: "feature",
+          hasWorkingTreeChanges: false,
+          workingTree: { files: [], insertions: 0, deletions: 0 },
+          branchChanges: { baseRef: "main", insertions: 150, deletions: 97 },
+        },
+        remote: null,
+      }),
+      Stream.never,
+    ),
+  );
+  __setClientSettingsForTests({
+    ...DEFAULT_CLIENT_SETTINGS,
+    onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
+  });
+  const draftId = DraftId.make("draft-43905");
+  useComposerDraftStore
+    .getState()
+    .setProjectDraftThreadId(scopeProjectRef(ENVIRONMENT_ID, PROJECT_ID), draftId, {
+      threadId: ThreadId.make("thread-43905"),
+      // Its own checkout, so the status subscription is this test's and not an earlier one's.
+      worktreePath: "/workspace/render-43905",
+    });
+
+  const router = getRouter(createMemoryHistory({ initialEntries: [`/draft/${draftId}`] }));
+  await router.load();
+  await using _app = await render(<AppRoot router={router} />, {
+    // AppRoot brings its own router.
+    router: false,
+  });
+  const changesRow = page
+    .getByRole("region", { name: "Thread details" })
+    .getByRole("button", { name: /^Changes\s*vs main\s*\+150/ });
+  // The row already shows the branch's totals, so it has to open them.
+  await expect.element(changesRow).toBeEnabled();
+
+  await changesRow.click();
+  // The panel reads the draft's checkout; without one it asks for a thread instead.
+  await expect.element(page.getByText("Loading changes…")).toBeVisible();
 });

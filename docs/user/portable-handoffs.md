@@ -30,9 +30,10 @@ Recovery leaves running background work intact. Let it finish or stop it before 
 
 Server operators can set `ONICODE_CONTEXT_HANDOFF_TOKEN_CAP` to change the initial history allowance
 (default 16,000; clamped to 1,024–64,000). This is an upper bound, not a provider context-window
-guarantee. Text accounting conservatively charges one token per UTF-8 byte, including attribution
-and JSON escaping. Imported history has a separate 64,000-byte ceiling; your current input and
-attachment payloads do not consume that ceiling.
+guarantee. Imported history is budgeted at about four UTF-8 bytes per token of that allowance,
+including attribution and JSON escaping, up to a 64,000-byte ceiling; your current input and
+attachment payloads do not consume that ceiling. The room left in the model's context window is
+still counted conservatively, at one token per UTF-8 byte.
 
 Onicode uses available capacity information for your selected model and options, together with
 provider context telemetry. Starting a fresh provider conversation clears prior usage, while keeping

@@ -27,5 +27,5 @@ Set the defaults in **Settings → Browser**:
 Agents can open tabs, navigate, click, type, read the page, and take screenshots.
 
 - Turn this on or off with **Settings → Browser → Agent browser access**, for an environment or as a project override. A change reaches the next agent session that starts.
-- **Floating preview**: Tabs an agent opens float over the chat by default (**Settings → Browser → Auto-show floating preview**). Turn this off to open them in the right panel.
+- **Floating preview**: Tabs an agent opens float over the chat by default, and closing the right panel floats its browser or device (**Settings → Browser → Auto-show floating preview**). Turn this off to open agent tabs in the right panel and close the panel without a float.
 - **Take control**: Click **Take control** before you use an agent's tab, and **Release control** to let the agent continue.

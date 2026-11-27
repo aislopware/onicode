@@ -288,6 +288,7 @@ class OniComposerEditorView(context: Context, appContext: AppContext) : ExpoView
   }
 
   fun setFontFamily(fontFamily: String) {
+    chipTypeface = OniContextChip.typefaceFor(fontFamily)
     editor.typeface = if (fontFamily.contains("Mono", ignoreCase = true)) {
       Typeface.MONOSPACE
     } else {
@@ -295,6 +296,7 @@ class OniComposerEditorView(context: Context, appContext: AppContext) : ExpoView
     }
     applyLineHeight()
     editor.applyPlaceholder()
+    applyTokenSpans()
   }
 
   fun setFontSize(fontSize: Float) {
@@ -497,6 +499,8 @@ class OniComposerEditorView(context: Context, appContext: AppContext) : ExpoView
       x >= minOf(left, right) && x <= maxOf(left, right)
   }
 
+  private var chipTypeface = OniContextChip.typefaceFor("DMSans-Regular")
+
   private fun applyTokenSpans() {
     val editable = editor.text ?: return
     editable.getSpans(
@@ -519,6 +523,7 @@ class OniComposerEditorView(context: Context, appContext: AppContext) : ExpoView
               tintsIcon = token.tintsIcon
             ),
             fontSize = editor.textSize,
+            chipTypeface = chipTypeface,
             color = OniContextChip.color(token.accent, editor.currentTextColor),
             maximumWidth = (
               editor.width.takeIf {

@@ -441,6 +441,11 @@ If nothing on the device can show a format, save or share it to open it elsewher
 50 MB opens as a folder list on every surface; on mobile, select a file inside it to preview,
 save, or add it to chat.
 
+When a preview asks for a file password, enter it and select **Unlock**. Onicode uses the
+password on your device. The desktop app can unlock supported PDF, ZIP, Office, and OpenDocument
+files. The mobile app can unlock ZIP attachments, and Android can unlock PDFs. Ebooks protected
+by DRM need a compatible reader.
+
 ## Images and videos in messages
 
 Select an image or video attachment or link to preview it. Playback support depends

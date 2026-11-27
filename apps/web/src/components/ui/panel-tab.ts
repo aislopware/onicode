@@ -9,6 +9,11 @@ export const panelTabVariants = cva(
         true: "bg-accent text-foreground",
         false: "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
       },
+      // A tab in a multi-tab selection: a flat theme wash, so the range reads apart from the open tab.
+      selected: {
+        true: "bg-primary/15 text-foreground hover:bg-primary/20",
+        false: "",
+      },
     },
   },
 );

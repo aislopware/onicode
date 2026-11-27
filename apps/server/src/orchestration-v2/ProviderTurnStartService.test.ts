@@ -1495,6 +1495,7 @@ function makeLocalCommandHarness(input: {
         }),
         Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({
           open,
+          forgetLoadedProviderThread: () => Effect.void,
           get: () =>
             Effect.succeed(
               input.previousTurn?.liveSession === false

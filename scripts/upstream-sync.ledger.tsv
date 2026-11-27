@@ -4432,3 +4432,158 @@ e18c8fc2e5	take	applied cleanly; one web key in all locales, i18n:check green; t
 ce2611312d	take	new it.each placed before Onicode's renamed draft test; source applied cleanly; mobile already says Minutes
 bba8114809	skip	relay infra only (infra/relay); Onicode removed the relay
 284c8d2d55	take	applied cleanly
+c959fac84c	take	enriched-markdown fork cut 1.2.0-oni.29-ee8be1d9 with software-mansion#1251 (merged upstream; cherry-picked as ff30f53f) in place of upstream's t3.19 tarball, README lists it; iOS terminal mirrors upstream's Android change on Onicode's libghostty-vt canvas: fontFamily prop, TerminalCanvasView resolves ui-monospace to the system monospace font or a registered family (MesloLGS-NF-Bold for bold), pod font bundle removed since fonts move to app assets; selection sheet takes a font and keeps Onicode's labels; kept Onicode's Ghostty notice line (Onicode vendors the iOS library), Meslo notice moved; review diff iOS gains code/ui font families without upstream's empty-state font (Onicode removed it); kept Onicode's single-appearance terminal theme and MobileThemeAppearance names, widened text variables to string|number; composer keeps Onicode's useNativePaste form; mobile i18n regenerated (key order only besides the 6 new keys); native builds owed at the wave gate
+236202ad5f	take	conflict in useComposerSend: kept Onicode's preparing indicator and left/edited notices, added upstream's result === false bail (failed checkout keeps the prompt unsent); holdSendForWorkspaceDefault now returns the checkout result; Onicode's detached (voice) send bails the same way, since it also waits on the hold; scenario ported as is and typechecked
+f38b7dbb86	take	hand-ported into Onicode's resumable scanMarkdown: upstream's list tracking (LIST_ITEM, NESTED_LIST_MARKERS, BLOCK_QUOTE, indentationColumn, opensNonParagraph, per-line indent/dedented, paragraphOpen) on local indices; the new list state needs no resume field since a cut line is dedented and resets it, and the held-cut rescan resets it; Onicode's definitions case now runs for fence indents up to three spaces in place of upstream's duplicate, upstream's three new tables added (12 fail on the old source), plus an extendMarkdownSplit equivalence row with a list and an indented fence; scenario ported as is and typechecked
+ee5b8469be	take	applied cleanly
+da0c243658	take	conflict in useComposerSend: kept Onicode's toast notices and preparing indicator in place of upstream's reportDraftChangedBeforeSend thread error; a 'moved' checkout outcome ends the send with Onicode's draft-changed notice; Onicode's detached (voice) send treats 'moved' like its own moved state; hold type follows CheckoutOutcome; draftWorkspaceDefaults and the PR actions applied cleanly; scenario ported as is and typechecked
+78de9d80ed	skip	only touches guest attachments (apps/server/src/guest), removed with guest links
+270fb873f4	take	applied cleanly beside Onicode's scan-slot return; Onicode's slot test now uses a shorter transcript for its unrecordable changed session, since a longer one is now recorded into a thread with no runs
+ca1680bec6	take	hand-ported into Onicode's resumable scanMarkdown (planner suggested skipping; both of its reasons are handled): adopted upstream's shared footnotes over Onicode's keep-whole-under-128-KB rule on desktop, since it chunks those files and resolves footnotes past 128 KB too; a new footnoteMode keeps 'whole' for mobile, whose renderer has no shared footnotes section; each piece carries its footnote references (MarkdownChunk.footnoteRefs) and the resume carries the captured definitions, so extendMarkdownSplit reuses pieces; a differential fuzz over 3,000 documents matched upstream's chunks and footnotes exactly; prepareMarkdownChunk also returns its prefix for Onicode's FileMarkdownPreview definitions prop; ChunkedMarkdown routes footnote links through Onicode's heading reveal (markdownFragmentSlug replaces upstream's normalizeMarkdownFragmentId); Onicode's whole-file test now names the whole mode, upstream's single-piece test gets a trailing line break, and an extendMarkdownSplit row covers shared footnotes
+a4f7b1e8b7	take	applies cleanly
+aed2db70ee	take	BOM sourceOffset merged into Onicode's one-entry fencedCodeRanges cache (keyed by full markdown, BOM included); scenario composer-bom-fenced-thread-link ported adapted: environment id via environmentId(app.baseUrl), desktop routes by hash
+9d963e3116	take	applies cleanly; mobile locale key bc86d0e75a37411b -> 5286056f1e375e8c
+34846ca8d6	take	code applies cleanly; Onicode-only docs/user/portable-handoffs.md rewritten: history budgeted at ~4 bytes per token up to the 64,000-byte ceiling, context-window reservation still one token per byte
+75fff25369	take	removed-area tag false positive (connection/); mobile ping 10s, desktop keeps 5s default; PING_TIMEOUT 15s and server 20s heartbeat unaffected; fine over LAN/Tailscale/Funnel
+002594adbe	take	applies cleanly after 34846ca8d6
+1d2a9b5277	take	GitManager CONFLICT: recordCheckout added beside Onicode's guardCheckoutMove; createRef+switchRef stay inside the guard, record on success or when a failing post-checkout hook leaves HEAD on the new branch; contracts createdBranch optional (wire-safe); mobile onProgress pass-through with gitActionResultTitle kept; scenario failed-new-branch-commit-keeps-excluded-files ported as is (WEB), typechecked
+13a910f50e	take	ThemeSearchSection and test taken; web locales regenerated and key 90d1efbdea5f026b filled from upstream's values (pt-BR 'download' is upstream's Portuguese); mobile has no theme search
+ac20e4d95a	take	applies cleanly
+b4d3a6b270	take	applies cleanly
+7a93ea0acd	take	adopted upstream over Onicode's blanket "template" entry in HIDDEN (949df015f6): upstream drops only XHTML-namespace templates while parsing, so a foreign meta:template keeps its text; Onicode's stale-row/cell template test still passes
+48d6296979	skip	already in Onicode (6fc8aa79c4). kept Onicode's selectMarkUnreadThreads + buildBulkMarkUnreadContextMenuItem in Sidebar.logic.ts: same rule (completedAt and threadRuntimeCanArchive), unit-tested in Sidebar.logic.test.ts, and kept out of Sidebar.tsx's hook body, whose order the React Compiler cache depends on
+903879f3a6	take	"article" added to the block list beside Onicode's text-box line handling (3-way merge)
+0b42e2e2fe	take	applies cleanly
+1f56ac62d8	take	applies cleanly; only shared state is the replacingDraftId route param
+99e3d8bb55	take	source applies cleanly; test file rebuilt from Onicode's with upstream's new test appended plus the Stream import; test adapted: opens Onicode's thread details panel first (closed by default) and waits for Onicode's 'Loading changes…' ellipsis
+02d7a67f22	take	dropped the markdownTextDirection.test.ts hunk and the markdownWithTextDirection row in the new markdownDocument.test.ts: kept Onicode's fork-based mobile text direction (a5602667eb), mobile injects no direction marks (same call as 002ad240ca); splitLeadingBom, source-offset fixes and applyMarkdownEdits embeds taken as is
+56db9ef1d6	skip	kept Onicode's ProcessLauncher.isServerChild (5a2bdc5dd9, see 4c31da157b): register already accepts launcher-spawned providers, every live launcher counts, and its PID-set removal on exit covers the reuse guard; upstream's currentPid Reference is absent and its test duplicates "registers a CLI spawned through the process launcher"
+cdb798a327	take	applies with -C1; private, no-cache works over LAN, Tailscale and Funnel
+047590dc25	take	kept Onicode's holdScrollTop/isScrollTopHeld (5fd749cd79): the hold flag lives with the scroller, so upstream's restoringScroll ref and onStop callback are dropped and onScroll checks isScrollTopHeld; test merged by hand into Onicode's it.each Linear case (aislopware/onicode PR, completed detail keeps no linked PRs); adapted: Onicode opens a Linear issue's PR through its repository's project, which the fixture lacks, so the PR tab opens from the store, and the test awaits the scroll event before leaving; fails without the fix
+5f65976040	take	applies cleanly after its slice-09/10/13 dependencies; mobile has no hosted author search
+c035572ea2	take	applies cleanly; labelFromChildren still used
+14ae67a9a8	take	resource diagnostics panel is Onicode's own, not T3 telemetry; i18n regenerated: new key 57320c95780c065c in all ten locales, 85f0adb1de45cbc1 removed
+09e4c7c636	take	applies after its slice-07/10/12 dependencies; ONICODE_CODE_ORCHESTRATION_SECTIONS has only the two upstream callers; default text unchanged (nativeSubagents defaults true)
+fb2e365579	take	end of the documentTextWorker chain; NodeUtil stays imported
+769d3bcb1e	take	applies after slice-09 a8a64ce565 and slice-11 39388dd0d6
+65f1ec8c79	take	not a removed area (Connection catalog = LAN/Tailscale/Funnel peers). adopted upstream over Onicode's f7807fcc79 'surface the error and keep the file': after OS keyring loss Electron regenerates its key, so the catalog can never decrypt again; upstream backs it up once (content-hashed .undecryptable) and starts fresh. kept Onicode's no-Relay/no-remoteDpopTokens catalog and the no-Keychain-ask guard; test keeps Onicode's Effect-capable encryptionAvailable with upstream's key Ref. Follow-up: no UI notice that saved environments were reset
+df6378b8c6	take	Orchestrator CONFLICT: kept Onicode's settledRunIds (#723) as the third parameter of readDelegatedChildControls and added upstream's options fourth, passed to both delegatedTaskProgress calls and holdRunAwaitingCapture kept; call site passes cancelledRunIds plus upstream's unsettled; cancelDelegatedTask keeps Onicode's queued-hold followUpRun and drops the inline monitorRunIds filter; taskAwaitsCapture uses monitorUpdateRunIds(messages, runs). Reviewer note: a still-waiting task's Monitor-woken run awaiting capture is still an acknowledgement in taskAwaitsCapture, where upstream counts it as work
+4d6946278d	take	applies after slice-11 fb84179e19
+ddcc48f21e	take	RightPanelTabs styles stay in Onicode's panelTabVariants: added a selected variant (flat bg-primary/15 theme wash, no ring; shadcn/no-restyle) instead of upstream's className; drag-peer positioning classes stay on the tab; aria-pressed merged into Onicode's panel-tab-label button; docs/user/keybindings.md rewrites Onicode's mod+w sentence (no 'On web' line); i18n key 7a5864ba348e1f8e generated; mobile has no tab strip. Captures of the selected look owed to the maintainer
+09824d168e	take	applies after ac20e4d95a; mobile i18n regenerated
+9e38b0fe75	take	applies cleanly; key 2bc15e77eb0c700f already exists
+3dbefda287	take	documentTextWorker chain after fb2e365579
+a7e204bb78	take	applies cleanly
+543956a149	take	applies after slice-08 f1ff53853f
+bdfc038904	take	applies after its slice-09/10/14 dependencies; desktop GitActionsControl untouched
+4358c929b9	take	applies cleanly
+3066bad848	take	CONFLICT: kept Onicode's CLIPROXY_COOLDOWN prefix that also matches 'Server is temporarily limiting requests' and added upstream's optional 'via provider <name>' to both reset regexes
+0e08cf3404	take	kept Onicode's JSZip-free archive (23d36e1b2d): epubPreview reads OfficeArchive (has/get/archiveText; .xml entries arrive decoded, font bytes copied before de-obfuscation), boundedArchive passes the EPUB entry limit to readZipDirectory, no jszip dep; kept Onicode's raw-path-first container.xml rootfile lookup; parse5 pinned to the lockfile's 8.1.1 and added to lazyPreviewDependencies; @noble/hashes/legacy.js for noble v2; documentPreviewXml helpers match Onicode's (only archive access differed); tests: JSZip fixtures become a TestArchive Map (FilePreviewPanel) and zipFixture (AttachmentFilePreview); Onicode's 'bounds EPUB markup' rendered-too-large case replaced by upstream's per-chapter case, since chapters now load one at a time under a 48 MiB page bound
+460ee0f89d	take	right after 0e08cf3404, which creates EpubViewer.tsx
+7a5f9c2ecc	take	after 3dbefda287 in the documentTextWorker chain
+bddcfb717c	take	adopted upstream's tool_call proxy over Antigravity's eager listing of every Onicode tool (agy drops ACP MCP tools past ~58 KB; the proxy lists core tools plus tool_search/tool_call). Kept Onicode's preview-driver withholding (DRIVEN_PAGE_TOOLS/isWithheld) in McpToolExposure, tool_search's post-filter and layerDeferredListing ahead of upstream's mode logic; Antigravity permission check returns the tool a tool_call names, so Plan mode's read-only allowance follows the target (test rows added); kept Onicode's server regex (onicode|oni-code), fixing upstream's rebranded t3-code pattern in unwrapOniToolCallProxy; no hostedThreadLink import; tests merged with Onicode's environment_links/driver cases and its stdio servers. Covers the onicode server only: the computer/browser MCP-hub budget stays a follow-up. Evals (mcp-tool-use deferred/orchestration) owed at the gate
+76531c91d5	take	applies cleanly
+d8295b367d	take	right after ddcc48f21e
+61180588a2	take	applies cleanly
+538032a982	take	after 02d7a67f22; CONFLICT: kept Onicode's HTML-comment stripping before the protected-tag scan, reading the tag from upstream's BOM-free source
+dae752080b	take	not a removed area (features/connection/ is Onicode's LAN/Tailscale add-environment flow); visual fix, iOS before/after capture of a long address owed; lineBreakModeIOS typechecks
+ec2777c370	take	follows 0e08cf3404's EPUB styles test
+3e76d0a36f	take	clean; mobile key 694e089caefce25f -> 4aa6f8d0d5800dca in all locales
+5dc88e4708	take	contracts PullRequestCommit.changedFiles optional (wire-safe); GitLab per-commit scope falls back to loaded count, follow-up
+bb263b9d8a	take	clean; mobile has no theme-copy naming
+8e622f9801	take	documentTextWorker chain after 7a5f9c2ecc
+0ce6663f32	take	clean on both web and mobile changeDraftProject
+75f768bca6	take	applies cleanly
+9b586010f6	take	right after 8e622f9801; renames epubNavigation to epubBlock
+3c72b4e781	take	after slice-11 5389ed620c; command palette entry point included; mobile has no settings search
+faceb33bb8	take	adopted upstream's BetterOffice 0.6.1/fonts 0.5.0 over Onicode's fonts 0.4.2 pin (superseded); no @clerk deps; all @betteroffice license overrides removed (packages ship LICENSES/); lockfile regenerated with vp i (fonts-latin 0.5.0 resolves); officeArchive keeps Onicode's JSZip-free archive (archiveText/set, zipSync) with upstream's digitWidth view and dropped engine workarounds; tests keep zipFixture/zipEntries fixtures, upstream's new column-width test converted; fonts stay local (configureFontCdn baseUrl false). Desktop pass owed: xlsx gridlines/default width/resize, CJK docx
+0f381168fe	take	translation-only
+d20571f9b9	take	kept Onicode's dropThreadAttachment/unloadDetachedThreads helpers (shared with retire paths); added upstream's handoff unload before detach, handoff skip and pending-background-work guard inside unloadDetachedThreads; thread/closed resolves the close waiter before Onicode's terminalization (unknown-outcome commands kept)
+f6e19aed9b	take	clean; follow-up: mobile zipTree shows a '.' folder for ./-prefixed entries
+bb312b12b7	take	clean; shared by desktop and mobile
+e0fd8f67f5	take	clean
+0404f700e8	take	kept Onicode's own ZIP reader (no JSZip): the directory scan reports encrypted entries (checkZipDirectory) and boundedZip routes them to upstream's zip.js readEncryptedZip with the same limits; officeArchive/openDocumentEncryption/epubPreview adapted to OfficeArchive (OpenDocument parts stay bytes); kept Onicode's lazyPreviewDependencies with the @noble entries added (one list pre-bundles lazy worker deps for dev and browser tests); officeEncryption Hash typed as CHash for @noble/hashes 2; composer.md says the desktop app (no web app); mobile ZIP and Android PDF unlock as upstream, iOS PDF unchanged; passwords stay on the device
+07b8554188	take	clean; preview browser is an Onicode desktop feature agents drive over MCP
+985d59e326	take	clean; ends the documentTextWorker chain
+3436f5fbf5	take	clean; serves GitHub and GitLab SCP remotes
+b312bc3c9b	take	kept Onicode's hit-strip wheel target (compositor reason holds), merged with upstream's rail ref into one callback ref; adopted upstream's mark grouping (at most railHeight/5 strip spans)
+351c9d1ee3	take	clean; message lives in client-runtime, key renamed in web and mobile locales
+10efbcbec1	take	Russian translations only; kept Onicode's other mobile ru keys
+d3aa2dd496	take	kept Onicode's per-session toolResults (epoch, capture opt-in) and added upstream's withinByteLimit to it; analytics wrapper hunk not taken (Onicode has no analytics); screenshot recovery taken; tests register a capturing session as Onicode requires
+aee6cf558d	take	clean; index exists, no migration
+1d90fe89f7	take	passive rescans only from RunFinalizationService (skip within 60 s or while a native scan runs); WorkspaceFileSystem write path stays a full refresh
+7b5c7463d9	take	clean
+656a1ac2e5	take	clean
+f0a2574793	take	clean
+a86ac01b0a	take	clean; command palette shares settingsSearch.ts; mobile has no settings search
+c5699927ff	take	prepareDirectories guard around Onicode's directory creates (no startupPresentation in Onicode); doctor test imports merged with Onicode's service/bootService path
+88107272ff	take	canMarkLatestRunUnread used by Onicode's selectMarkUnreadThreads helper (upstream's inline Sidebar filter dropped; no guest-share line), Sidebar.tsx and useThreadActionMenu; hook order unchanged, row-render test green; added an interrupted-run row
+f22ff0003b	take	desktop renderer taken (captions, TTML to WebVTT, SMIL read-along narration, sm-touch button variant in Onicode's sizing); captions read through OfficeArchive; tests use TestArchive/zipFixture; skipped upstream's mobile EPUB WebView of a server-served /epub-preview.html (Onicode's server serves no UI to browsers): EpubFilePreview, mobile EPUB branches, epub-preview.html, epubPreviewMain.tsx, vite input, knip entry, epubPreviewUrl, EpubMediaDialog and the WKWebView media row, DialogPopup closeButtonSize
+958c26f0bf	take	kept Onicode's link label that also excludes [ and added upstream's capture group; kept Onicode's borrowed-checkout cwd and full-strength video border; kind probe is one Range: bytes=0-0 request per unknown GitHub upload, works over LAN/Tailscale/Funnel; GitLab has no mediaUrl
+ee385281f6	take	clean
+a1ea15e360	take	clean; web and mobile share ThreadUndo.restoresAfterDeviceCancel
+f4c5267d9a	take	test rebuilt with fflate zipSync and local dates (Onicode has no JSZip); mobile zipTree shows no dates
+8d31c3c9da	take	kept Onicode's ProjectionStore namespace import
+186f6aac57	take	clean; visual only
+a0ad0c6c79	take	clean; two extra field compares per row, re-render only on real change
+65452f8789	take	clean
+3d7512a30b	take	clean
+937ea8978f	take	clean
+dc37556a93	take	clean
+1f7cb36e06	take	documentTextWorker chain; tests userInputAttachments xlsx
+3fcfcaee23	take	clean
+d2c7c73ab5	take	clean
+5340fcfc5f	take	adapted: release-smoke.ts hunk dropped (T3 release pipeline); i18n tails unioned; docs/user keeps Onicode's text plus a Jira Cloud paragraph; @muse-code/sdk stays 1.4.25; mobile keeps onDisconnected and adds upstream's drafts reset; lockfile regenerated in a follow-up commit; wire: new fields optional, old mobile shows Jira without site/email and the server answers 'Jira needs its site too'
+f40f78eb5e	take	clean
+3e9a0106ff	take	clean
+15c42f7a67	take	adapted: kept Onicode's lazy chat-link metadata: upstream's render-time useFileMetadata stats every file link in every rendered message over the websocket; MarkdownFileLink now asks once when its context menu opens (executeAtomQuery, same pattern as the terminal link check); test mocks the one-shot query; i18n tails unioned; mobile chat file links have no Download (follow-up), the mobile Files route already downloads
+56dbca3bc5	take	clean
+c2b86cd5e7	take	import conflict only (Onicode keeps its own preview pieces, no SourceFileSurface); filePath logic as upstream
+3de7e376c6	take	adapted: kept Onicode's desktopCdp reuse (upstream moved PDF/Chrome setup after the tab; Onicode's moved block now passes handleAuthRequests: !desktop); stalled-frames overlay hides under an auth dialog; agentContextBudget keeps Onicode's numbers, re-measured in the gate; i18n tails unioned; wire: authChallengeId optional; an old mobile build sees an auth dialog without fields and its Dismiss is refused (navigating away still dismisses); preview_dialog description is upstream's (eval owed)
+8124f2e973	take	clean; shared by web and mobile
+74707f256a	take	adopted upstream's comment placement and test rows; logic already identical from Onicode a6e2733464
+83b6c4cd13	take	clean; Antigravity first-tier: tests run in the batch gate
+d00283405b	take	clean
+45b53dd8c1	take	clean
+a6b3c2d683	take	clean
+f2254fd6c4	take	adopted upstream over Onicode's 'no required checks: ignore advisory gate growth' guard: upstream accumulates told names when nothing is required, so a varying check list cannot wake twice and a genuinely new passing check still wakes; Onicode's owes/rerun logic kept; lockfile hunk dropped (pnpm exe churn); pullRequestWatch tests 60 passed
+b22bd40be3	take	clean
+ab9ca1efed	take	clean
+e67034a885	take	clean; shared by web and mobile
+2e4e8f1f35	take	test import conflict only (kept Onicode's Deferred, added HostProcess)
+609178f9f4	take	adapted: dropped the hosted-link test row (Onicode has no hosted thread links)
+affe0cdf9d	skip	kept Onicode's single mcp__onicode__ Pi registration: the fix keeps upstream's hidden alias tools active after tool_search; Onicode dropped those aliases (829d4cf43a) and its reconcileDiscovery never drops a loaded tool, so the cache-busting re-declaration cannot happen
+fd9b7e83ec	take	clean; Codex (follows upstream)
+a62266d842	take	adapted: test draws /splash-logo.png (Onicode's public dir has no favicon-32x32.png); server already answers API routes with CORS
+37534874ea	take	clean
+f7d8d3a89c	take	clean; mobile does not apply theme CSS
+658bbaf6f6	take	adapted: test archive built with zipFixture (Onicode has no JSZip)
+c53d40ff83	take	clean
+3d441d72f4	take	clean
+ba72661837	take	clean
+bd0c128791	take	adapted: tests keep zipFixture (no JSZip); Onicode-only RTF expectations (font code page, \cpg0 row) updated to data-rtf-whitespace
+286be544ad	skip	already in Onicode d4e776df8e: formatDateTimeTimestamp formats wallClockAsUtc(date) in UTC and the zone-change test exists
+35db7c90e5	take	clean
+7556bb6fee	take	clean
+1f63e7f385	take	clean
+bcce7efca2	take	clean
+798c7b24eb	take	clean
+e6b74ecb80	take	clean; one label in the selection menu handler, no hook added; row-render test runs in the gate
+bcd85a358a	take	clean merge; iterator-helper .find on Onicode's all() generator (Node 26); test row lands after Onicode's Heading2 docx row
+a853a4aafe	take	clean; shared by web and mobile
+3afe72c8b3	skip	already in Onicode ade942317a: startThreadTurn's message.dispatch forwards titleSeed, covered by commands.test.ts
+f46957a76b	take	clean; OpenCode follows upstream
+6b8a528f58	take	clean
+8317f7dd6b	take	conflicts beside Onicode's steer code only (kept both); Onicode callers of thread.metadata.update set expectedWorktreePath or are the launch bind; a UI worktree switch mid-turn now says 'Stop the current turn', as upstream
+3074fc37dc	take	adopted upstream's leading-space resolution; the untrimmed lookup was already Onicode's (second hunk not needed)
+e19b84de74	take	clean
+289dd3f89c	take	clean
+a6e147bbec	take	clean
+d898612a03	take	docs/user/browser.md bullet rewritten in Onicode's voice; i18n key renamed in all web locales; mobile has no floating preview
+52c5a9ae6d	take	adapted: test archive is a Map (no JSZip)
+d01ce6da1d	take	adapted: kept Onicode's deliverySession condition (skips the delivery wrapper with nothing pending) beside upstream's recoverLostNativeSession; kept Onicode's same-native-id refusal after the forced replacement; adopted upstream's effect-acp AcpRequestError check (effect-acp already a server dep); Onicode-only resume-fallback test mock gains forgetLoadedProviderThread; ProviderSwitch integration + ProviderTurnStartService + RunExecutionService 335 passed; ACP family only (Antigravity first tier)
+ea8e968024	skip	already in Onicode 59b82f3fd3: addBrowserSurface forwards zoomFactor and colorScheme when duplicating, covered by openPreviewSession.test.ts
+7b8942b009	take	clean; shared by web and mobile
+7d13649477	take	clean; mobile has no closed-view store
+84bcfab359	take	import conflict only (added proper-lockfile beside SubscriptionRef); server-side publish (oni_theme_set, Settings) shares the lock; theme tests 40 passed
+dc2c7db0b6	take	clean; iOS release-build device check owed

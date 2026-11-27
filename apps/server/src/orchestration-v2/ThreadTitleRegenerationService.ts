@@ -93,6 +93,11 @@ const isTextGenerationError = Schema.is(TextGenerationError);
 const isProjectionStoreThreadNotFoundError = Schema.is(
   ProjectionStore.ProjectionStoreThreadNotFoundError,
 );
+// An auth, permission or quota refusal fails the same way on every attempt.
+const PROVIDER_REFUSAL = /\b(?:40[13]|forbidden|unauthori[sz]ed|quota|usage limit)\b/iu;
+
+const isRetryableFailure = (error: unknown) =>
+  !(isTextGenerationError(error) && PROVIDER_REFUSAL.test(error.detail));
 
 function failureMessage(cause: Cause.Cause<unknown>): string {
   const error = Cause.squash(cause);
@@ -328,6 +333,7 @@ const make = Effect.gen(function* () {
       Effect.retry({
         times: input.kind.type === "initial" ? 2 : 0,
         schedule: Schedule.exponential("2 seconds"),
+        while: isRetryableFailure,
       }),
       Effect.catchCause((cause) =>
         Cause.hasInterruptsOnly(cause)

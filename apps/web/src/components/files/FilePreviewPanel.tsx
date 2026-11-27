@@ -1268,11 +1268,12 @@ function RenderedMarkdownSurface({
         changeFileSaveSession(saveTarget, nextContents);
       };
 
-  const { chunks, definitions } = splitMarkdown(contents, undefined, true);
+  const { chunks, definitions, footnotes } = splitMarkdown(contents, undefined, true);
   return (
     <ChunkedMarkdown
       chunks={chunks}
       definitions={definitions}
+      footnotes={footnotes}
       cwd={cwd}
       relativePath={relativePath}
       threadRef={threadRef}

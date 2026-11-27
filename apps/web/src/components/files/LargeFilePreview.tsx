@@ -152,13 +152,14 @@ function MarkdownText(
   },
 ) {
   // The preview ahead of the download splits once, as its text does not change between swaps.
-  const { chunks, definitions } =
+  const { chunks, definitions, footnotes } =
     useFullFileMarkdown(props.src, props.file.text) ??
     splitMarkdown(props.file.text, undefined, props.file.done);
   return (
     <ChunkedMarkdown
       chunks={chunks}
       definitions={definitions}
+      footnotes={footnotes}
       loading={!props.file.done}
       cwd={props.markdownCwd}
       relativePath={props.name}

@@ -1,4 +1,4 @@
-import { readZipDirectory } from "./zipDirectory.ts";
+import { checkZipDirectory, decodeLegacyName, readZipDirectory } from "./zipDirectory.ts";
 import { ZipError } from "./zipError.ts";
 
 export const ARCHIVE_MAX_BYTES = 50 * 1024 * 1024;
@@ -14,10 +14,30 @@ export async function boundedZip(
     xmlLimit?: number;
     ratioFloor?: number;
     markupLimit?: number;
+    password?: string | undefined;
+    maxEntries?: number;
+    signal?: AbortSignal | undefined;
   } = {},
 ) {
   if (bytes.byteLength > ARCHIVE_MAX_BYTES) throw new ZipError({ code: "file-too-large" });
-  const entries = readZipDirectory(bytes, ARCHIVE_MAX_ENTRIES);
+  const maxEntries = limits.maxEntries ?? ARCHIVE_MAX_ENTRIES;
+  const { encrypted } = checkZipDirectory(bytes, maxEntries);
+  if (encrypted) {
+    if (limits.password === undefined) throw new ZipError({ code: "password-required" });
+    const { readEncryptedZip } = await import("./encryptedZip.ts");
+    return readEncryptedZip(bytes, limits.password, {
+      entryLimit,
+      totalLimit: Math.min(
+        limits.totalLimit ?? ARCHIVE_MAX_BYTES,
+        Math.max(limits.ratioFloor ?? 0, bytes.byteLength * ARCHIVE_MAX_RATIO),
+      ),
+      xmlLimit: limits.xmlLimit ?? 8 * 1024 * 1024,
+      markupLimit: limits.markupLimit,
+      signal: limits.signal,
+      decodeFileName: decodeLegacyName,
+    });
+  }
+  const entries = readZipDirectory(bytes, maxEntries);
   const files = new Map<
     string,
     { bytes: Uint8Array<ArrayBuffer>; date: Date; directory: boolean }

@@ -146,10 +146,11 @@ describe("deleteSelectedThreadEntries", () => {
 function makeLatestRun(overrides?: {
   completedAt?: string | null;
   startedAt?: string | null;
+  status?: NonNullable<Thread["latestRun"]>["status"];
 }): NonNullable<Thread["latestRun"]> {
   return {
     runId: "turn-1" as never,
-    status: "completed",
+    status: overrides?.status ?? "completed",
     assistantMessageId: null,
     requestedAt: "2026-03-09T10:00:00.000Z",
     startedAt:
@@ -178,6 +179,7 @@ describe("selectMarkUnreadThreads", () => {
       },
       { id: "never-completed", latestRun: makeLatestRun({ completedAt: null }), runtime: null },
       { id: "no-run", latestRun: null, runtime: null },
+      { id: "stopped", latestRun: makeLatestRun({ status: "interrupted" }), runtime },
     ];
     expect(selectMarkUnreadThreads(threads).map((thread) => thread.id)).toEqual(["done"]);
   });

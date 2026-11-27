@@ -34,6 +34,10 @@ class OniTerminalModule : Module() {
         view.fontSize = fontSize.toFloat()
       }
 
+      Prop("fontFamily") { view: OniTerminalView, fontFamily: String ->
+        view.fontFamily = fontFamily
+      }
+
       Prop("focusRequest") { view: OniTerminalView, focusRequest: Double ->
         view.focusRequest = focusRequest
       }

@@ -15,7 +15,6 @@ Pod::Spec.new do |s|
   s.source_files = 'ios/**/*.{h,m,mm,swift}', 'cpp/**/*.{h,cpp}'
   s.public_header_files = 'cpp/oni_terminal_core.h'
   s.vendored_frameworks = 'Vendor/libghostty-vt.xcframework'
-  s.resource_bundles = { 'OniTerminalFonts' => ['android/src/main/assets/fonts/*.ttf'] }
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
     'CLANG_CXX_LANGUAGE_STANDARD' => 'c++17',

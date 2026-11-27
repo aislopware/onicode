@@ -4,7 +4,7 @@ import { buildRuntimeInstructions } from "@onicode/provider-core/server/runtimeI
 import {
   ONICODE_CODE_BROWSER_TOOL_INSTRUCTIONS,
   ONICODE_CODE_DEVICE_TOOL_INSTRUCTIONS,
-  ONICODE_CODE_ORCHESTRATION_SECTIONS,
+  onicodeOrchestrationSections,
 } from "@onicode/provider-core/server/orchestrationInstructions";
 
 /** Codex silently truncates additionalContext values over 1,000 tokens, counted as UTF-8 bytes / 4. */
@@ -13,6 +13,7 @@ export const CODEX_ADDITIONAL_CONTEXT_VALUE_MAX_BYTES = 4_000;
 export interface OnicodeToolAvailability {
   readonly browser: boolean;
   readonly device: boolean;
+  readonly nativeSubagents?: boolean;
 }
 
 const normalizeAvailability = (
@@ -21,15 +22,13 @@ const normalizeAvailability = (
   typeof availability === "boolean" ? { browser: availability, device: false } : availability;
 
 /** Instructions for unavailable tools would steer the model away from its remaining automation. */
-const toolInstructions = (availability: boolean | OnicodeToolAvailability): string => {
-  const tools = normalizeAvailability(availability);
-  return [
+const toolInstructions = (tools: OnicodeToolAvailability): string =>
+  [
     tools.browser ? ONICODE_CODE_BROWSER_TOOL_INSTRUCTIONS : "",
     tools.device ? ONICODE_CODE_DEVICE_TOOL_INSTRUCTIONS : "",
   ]
     .filter(Boolean)
     .join("\n\n");
-};
 
 export interface CodexRuntimeInfo {
   readonly model: string;
@@ -42,11 +41,12 @@ export function buildCodexAdditionalContext(
   runtime: CodexRuntimeInfo,
   toolsAvailable: boolean | OnicodeToolAvailability = true,
 ): Record<string, V2TurnStartParams__AdditionalContextEntry> {
-  const tools = toolInstructions(toolsAvailable);
+  const availability = normalizeAvailability(toolsAvailable);
+  const tools = toolInstructions(availability);
   // Split values to fit per-entry caps; number keys because Codex emits them in key order.
   return {
     ...Object.fromEntries(
-      ONICODE_CODE_ORCHESTRATION_SECTIONS.map((section, index) => [
+      onicodeOrchestrationSections(availability.nativeSubagents).map((section, index) => [
         `oni_code_orchestration_${String(index + 1).padStart(2, "0")}`,
         { kind: "application" as const, value: section },
       ]),

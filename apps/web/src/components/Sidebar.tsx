@@ -173,6 +173,7 @@ import { ProjectRowActions } from "./ProjectComboboxRow";
 import {
   buildDraftActionMenuItems,
   buildThreadActionMenuItems,
+  canMarkLatestRunUnread,
   isThreadTriageAction,
   threadActionRequiresOperate,
 } from "./threadActionMenu.logic";
@@ -2450,7 +2451,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               : []),
             {
               id: "settle",
-              label: gt("Settle ({count})", { count }),
+              label: gt("Settle ({count})", { count: settlingThreads.length }),
               disabled: settlingThreads.length === 0 || !canOperateThreads(settlingThreads, true),
             },
             ...(canSnoozeSelection
@@ -2782,7 +2783,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               canSnoozeNow: canSnooze(thread, { now: new Date().toISOString() }),
               isRegeneratingTitle,
               isRunning: !threadRuntimeCanArchive(thread.runtime),
-              hasCompletedRun: thread.latestRun?.completedAt != null,
+              hasCompletedRun: canMarkLatestRunUnread(thread.latestRun),
               canTurnIntoProject: canTurnThreadIntoProject(threadRef),
               canRename: !fromSearch,
               supports: {

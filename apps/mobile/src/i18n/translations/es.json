@@ -3,7 +3,6 @@
   "59c888898cca0a57": "Tu organización no permite agentes externos en este entorno.",
   "a80458a4ad02acde": "Este dispositivo no puede conceder ese acceso. Elige un nivel inferior.",
   "a256081b5ce634fd": "No se pudo crear el acceso del agente. Inténtalo de nuevo.",
-  "035aab5e99159bd8": "{count, plural, one {… No se muestra {hidden} carácter del medio.} other {… No se muestran {hidden} caracteres del medio.}} El texto termina con:",
   "4bcfa3b976a421cf": "Chat lateral",
   "23be753133ae6950": "Hilo",
   "0001ae5846061bb6": "Hilo en {machine}",
@@ -33,6 +32,7 @@
   "eebc538e25b09fe2": "La política de {organization} no permite importar cookies del navegador.",
   "986b0873f913a840": "La política de {organization} no permite tareas por webhook.",
   "7642a133db05f164": "La política de {organization} no permite abrir los servidores locales de esta máquina en otros dispositivos.",
+  "e0856d6a402ad821": "La política de {organization} no permite comandos de diseño de worktrees de proyectos.",
   "39f6771b49f9b3b6": "Usar valor predeterminado",
   "45bb0e90e1c42046": "Cuando vuelvas",
   "d8fa0a55446bbb0d": "Antes de que caduque la caché (beta)",
@@ -455,6 +455,7 @@
   "834ca879c14c167b": "Trabajando",
   "582d6df7dfab86fb": "En pausa",
   "ea6583ce92507ee3": "Durmiendo",
+  "7150557773b3818b": "En cola",
   "7ea8cb8af281ce93": "Esperando",
   "1347868f2523140e": "Terminada",
   "57d76c4614054271": "Detenida",
@@ -466,6 +467,7 @@
   "d3890f4eb1508781": "Ejecuta sus propios pasos",
   "3e7ced10c9482af0": "{step} está trabajando",
   "237e1bcb1cf1bdec": "Durmiendo en {step}",
+  "efbeb3993ee2c3f5": "En cola para {pool}",
   "3f7b17ac5a20c8d2": "Ejecuta {run}",
   "0306f5f324b8aaa5": "{count} ejecuciones en curso",
   "e8fd779b84a202a2": "Esperando",
@@ -686,9 +688,11 @@
   "8360d689ebc7f829": "¿Hacer push y crear {shortLabel} desde la rama predeterminada?",
   "daa408bb99d21d18": "{kind, select, pr {Esta acción hará push de los commits locales y creará una PR en \"{branch}\". Puedes continuar en esta rama o crear una rama de funcionalidad y ejecutar allí la misma acción.} mr {Esta acción hará push de los commits locales y creará una MR en \"{branch}\". Puedes continuar en esta rama o crear una rama de funcionalidad y ejecutar allí la misma acción.} generic {Esta acción hará push de los commits locales y creará una solicitud de cambios en \"{branch}\". Puedes continuar en esta rama o crear una rama de funcionalidad y ejecutar allí la misma acción.} other {Esta acción hará push de los commits locales y creará {changeRequest} en \"{branch}\". Puedes continuar en esta rama o crear una rama de funcionalidad y ejecutar allí la misma acción.}}",
   "8471c4c5a50ffde3": "Todavía no se pueden explorar las issues de este host.",
-  "2f4a47129f89fe22": "Sin conexión. Añade una clave de API personal para listar sus issues.",
+  "4a727b074bbbc5b2": "Sin conexión. Añade tu clave de API personal para listar sus issues.",
+  "b40c70c4488dcebe": "Sin conexión. Añade tu token de API para listar sus issues.",
   "024baab60525a419": "Se rechazó la credencial guardada.",
-  "2613c232516f3c72": "Conectado como {account} · aún no hay proyectos vinculados. Elige un equipo para un proyecto para listar sus issues.",
+  "1e89798e3a9050c6": "Conectado como {account} · aún no hay proyectos vinculados. Vincula uno a un equipo de Linear para listar sus issues.",
+  "c3ab6f9e8b29fbf1": "Conectado como {account} · aún no hay proyectos vinculados. Vincula uno a un proyecto de Jira para listar sus issues.",
   "77d07bfe2f8ee19d": "{count, plural, one {Conectado como {account} · {count} proyecto vinculado} other {Conectado como {account} · {count} proyectos vinculados}}",
   "3eb9a01099aaf799": "{count} s",
   "3618302947c280f0": "{count} min",
@@ -840,12 +844,13 @@
   "1c7254ae11bf7cdc": "{days} d",
   "352655bb7a196642": "{kind, select, sideChat {{need, select, input {El chat lateral necesita una respuesta} approval {El chat lateral necesita aprobación} other {El chat lateral te necesita}}} other {{need, select, input {El subagente necesita una respuesta} approval {El subagente necesita aprobación} other {El subagente te necesita}}}}",
   "e931fd397ade526b": "{kind, select, sideChat {{need, select, input {{count} chats laterales necesitan una respuesta} approval {{count} chats laterales necesitan aprobación} other {{count} chats laterales te necesitan}}} subagent {{need, select, input {{count} subagentes necesitan una respuesta} approval {{count} subagentes necesitan aprobación} other {{count} subagentes te necesitan}}} other {{need, select, input {{count} hilos necesitan una respuesta} approval {{count} hilos necesitan aprobación} other {{count} hilos te necesitan}}}}",
-  "4bed196a655ab14f": "{live} de {total} agentes trabajando",
+  "f7b40089dae502b6": "{total, plural, one {{live} de {total} agente trabajando} other {{live} de {total} agentes trabajando}}",
   "ba1727ddc7a0a0b6": "{count, plural, one {{count} agente terminado} other {{count} agentes terminados}}",
   "4dd09c829329a994": "Mensaje en cola",
   "3f0b962160edbe6d": "No se pudo sincronizar el hilo.",
   "752b4d69669b0019": "No se pudo cargar la actividad anterior.",
   "44de9731d5b8eb38": "El historial de trabajo cambió. Vuelve a cargarlo.",
+  "6ea901338c803e3e": "No se pudo usar el crédito de restablecimiento.",
   "c0ea8898cd494336": "No se pudo comprobar el acceso de esta conexión al diagnóstico y al uso.",
   "953b6473de4b9ad6": "Esta conexión no tiene acceso al diagnóstico ni al uso.",
   "8c68febc86a3f651": "Actualizando {provider}…",
@@ -1250,8 +1255,8 @@
   "bb34eaf6ddc55a72": "Esta cuenta no tiene límites de suscripción.",
   "42a2622893a6bced": "No se pudieron leer los límites.",
   "4897e228d3185c96": "No se informaron límites.",
-  "e27d2cb964df5dd5": "{source}: no se informaron cuentas.",
   "161135f0aea4d1ca": "{source}: no hay cuentas de Codex, Claude ni Grok. Se omitieron: {providers}.",
+  "e27d2cb964df5dd5": "{source}: no se informaron cuentas.",
   "1b503134018285f4": "{days} d {hours} h",
   "fc7f69efcfa6fa32": "No hay créditos de restablecimiento acumulados",
   "be7fd67c538a99a0": "{count} acumulados · caduca en {expires}",
@@ -1409,7 +1414,6 @@
   "9bbecec926c3b695": "Reintentar",
   "aed763efb0a6d555": "Nuevo hilo",
   "94ab2b4bb8e7cb82": "No se pudo cargar el PDF.",
-  "7795100449857924": "No se pudo renderizar el PDF. Puede estar dañado o protegido con contraseña.",
   "3c78584416531f84": "No se pudo cargar el PDF",
   "fe8ed6127f1d8a28": "Volver a intentar",
   "509efbd3376d6f4c": "Cargando PDF…",
@@ -1475,6 +1479,7 @@
   "b994adb6050417c2": "Modelo de {provider} no disponible",
   "587c7245ff60b79f": "Configura {provider} en la web o el escritorio, o elige otro modelo.",
   "6d84c8851d691303": "El servidor no devolvió un PDF. Comprueba la conexión y vuelve a intentarlo.",
+  "20283eb1dd6119f9": "{count, plural, one {{count} adjunto} other {{count} adjuntos}}",
   "082c5effa2a3e4ab": "Permite que {app} añada fotos en Ajustes.",
   "3f143ed3bf34b9b0": "Fotos no pudo guardar esta imagen.",
   "06379558d82cc6dd": "La imagen ya no está disponible.",
@@ -1623,7 +1628,6 @@
   "992f89224a4e8f78": "Abriendo la hoja para compartir…",
   "20d0dc27ac27d5b4": "Compartir",
   "a0e89e8db116bfd5": "Guardar o compartir",
-  "20283eb1dd6119f9": "{count, plural, one {{count} adjunto} other {{count} adjuntos}}",
   "7280baf7517dad1c": "No se pudieron cargar las refs.",
   "567c0fed6ab8efc1": "Esta conexión no puede buscar archivos del host.",
   "bb2392ace5755e54": "La conexión se cortó antes de que esto terminara.",
@@ -1937,6 +1941,8 @@
   "59c87648d44b958c": "Elegir archivo",
   "6f321f153b8711bb": "Elige una opción",
   "61a552a67e9e3eac": "Respuesta al cuadro de diálogo",
+  "cb5c27218e96e407": "Nombre de usuario",
+  "182a659d70f8ea72": "Contraseña",
   "1d9bd868fafea18a": "Descartar",
   "1d0a7acef4a95536": "Aceptar",
   "255ae21697461ef6": "Toma el control para responder.",
@@ -2293,7 +2299,7 @@
     }
   ],
   "17d363d5ff1f038f": "{seconds, plural, one {Queda {seconds} segundo aproximadamente} other {Quedan unos {seconds} segundos}}",
-  "bc86d0e75a37411b": "{minutes, plural, one {Queda {minutes} minuto aproximadamente} other {Quedan unos {minutes} minutos}}",
+  "5286056f1e375e8c": "{minutes, plural, one {Queda {minutes} minuto aproximadamente} other {Quedan unos {minutes} minutos}}",
   "89555f39918ea6cc": "Buscar hilos",
   "889266d70ae46113": "Buscando en los mensajes de los hilos…",
   "35727ced1d37da7f": "Buscando \"{query}\" en los mensajes.",
@@ -2427,6 +2433,7 @@
   "a6eeff30440d26a2": "Issue {key}",
   "c0e2d952114e7d59": "de {author}",
   "2195cdd7774c1c23": "autor desconocido",
+  "4276743ee60a3c62": "{count, plural, one {{count} comentario} other {{count} comentarios}}",
   "217e1e7b60469736": "Estado de la issue, {state}",
   "5fd6c9c736b80b62": "Estado de la issue",
   "a749275f1ad66618": "Autor desconocido",
@@ -2786,7 +2793,6 @@
   "91e832d25ff2aba9": "{term, select, mr {Merge request} cr {Solicitud de cambios} other {Pull request}} {number}",
   "bbb7d40a7ad7ab71": "Privado",
   "37f84b2c7830febb": "pila {position} de {size}",
-  "0469747f4bb9caac": "{additions} adiciones, {deletions} eliminaciones",
   "4e3cdb7e814e8962": "Toca dos veces para abrir. Mantén pulsado para ver acciones rápidas.",
   "d50c8bcf494b1158": "Ver adjunto: {caption}",
   "868d7f357f06cdd2": "Vuelve a conectarte para fusionar.",
@@ -3087,7 +3093,6 @@
   "fa9012d7acfe1205": "Resolver conflictos",
   "6e45b380d5850b5c": "Seguir la {term, select, mr {MR} cr {solicitud de cambios} other {PR}}",
   "77c61ac22770f619": "Vídeo",
-  "4276743ee60a3c62": "{count, plural, one {{count} comentario} other {{count} comentarios}}",
   "a5b611e6548652c1": "Línea anterior {line}",
   "e4bc1643eb024e23": "Línea {line}",
   "b29eea552b16d20a": "{count, plural, one {{count} comentario · Toca para abrir} other {{count} comentarios · Toca para abrir}}",
@@ -3103,6 +3108,7 @@
   "5f8ec467e3228996": "Revisiones aprobadas",
   "0a5031567a04178b": "Se solicitó tu revisión",
   "f4be944ea960d671": "Revisión",
+  "3920accacc91683e": "{additions, plural, one {{additions} adición} other {{additions} adiciones}}, {deletions, plural, one {{deletions} eliminación} other {{deletions} eliminaciones}}",
   "8b2b5dd056680555": "Esta {term, select, mr {merge request} cr {solicitud de cambios} other {pull request}} ya no está en la pila. Actualízala.",
   "204e205fb3ea14de": "No hay capas abiertas que fusionar hasta esta {term, select, mr {merge request} cr {solicitud de cambios} other {pull request}}.",
   "428b4ba1895d313f": "Reabre las capas cerradas antes de fusionar esta pila.",
@@ -4432,15 +4438,6 @@
       "v": "v"
     }
   ],
-  "705cf2b2ee4e0e42": [
-    "La app ",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " salió de su página y se detuvo"
-  ],
   "796b81c4875c4feb": [
     "La app ",
     {
@@ -4455,6 +4452,15 @@
       "v": "v"
     },
     " más reciente en este entorno. Actualiza el servidor para usarla."
+  ],
+  "705cf2b2ee4e0e42": [
+    "La app ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " salió de su página y se detuvo"
   ],
   "5ef18e4d39b398bf": [
     "No se puede cargar la app ",
@@ -4593,6 +4599,7 @@
   "1d160d4ad1e53219": "Permitir una vez",
   "fb7f5d610fdf9a08": "Permitir en la sesión",
   "d13cbdad4a0e38e9": "Rechazar",
+  "035aab5e99159bd8": "{count, plural, one {… No se muestra {hidden} carácter del medio.} other {… No se muestran {hidden} caracteres del medio.}} El texto termina con:",
   "3554fbab5a8480ce": "Se necesita aprobación",
   "a5060e6a344b5097": "El proceso del proveedor de esta solicitud ya no está disponible. Interrumpe o reinicia la ejecución para continuar.",
   "72eea7fa7943b0d7": "Esta conexión no puede responder a aprobaciones.",
@@ -4732,12 +4739,12 @@
   "1b30548ce8e56b75": "Editar tarea",
   "2269639b96d04225": "No se pudo iniciar la tarea",
   "63163a401eaea6cc": "Tu prompt se conservó en el borrador del proyecto.",
+  "5536ab75119ee3f9": "No se pudo actualizar el hilo",
+  "04c7bba52daa6f53": "No se pudo actualizar el objetivo",
   "55b562c00e37321b": "No se pudo forzar la detención del agente",
   "ede15a83eedec569": "Turno detenido; el agente aún se está cerrando",
   "f360accf1ccac178": "Turno detenido; el proceso del agente siguió ejecutándose",
   "72e41eb83e88cefa": "{count, plural, =0 {Se comparte con otros hilos en curso. Detenlos para liberarlo.} one {Se comparte con {count} hilo en curso. Detenlo para liberarlo.} other {Se comparte con {count} hilos en curso. Detenlos para liberarlo.}}",
-  "5536ab75119ee3f9": "No se pudo actualizar el hilo",
-  "04c7bba52daa6f53": "No se pudo actualizar el objetivo",
   "7161c775bd96511c": "Deteniendo…",
   "e734a8e4a58a3835": "Detener",
   "0ce0ab7586e91607": "Detener el trabajo en segundo plano",
@@ -5017,11 +5024,12 @@
   "0a271ec720fbe202": "Expande los hilos resueltos.",
   "905197486607072f": "Descartar",
   "13300e8565fbd665": "{label} ({count})",
-  "694e089caefce25f": "{count, plural, one {Mostrar {count} hilo resuelto más} other {Mostrar {count} hilos resueltos más}}",
+  "4aa6f8d0d5800dca": "{count, plural, one {Mostrar {count} hilo resuelto más} other {Mostrar {count} hilos resueltos más}}",
   "ece9e2869077cbb6": "Descartar {title}",
   "306a6f95ad9d52f7": "Sin enviar",
   "11276ab6c58b7a25": "Abre el borrador en el cuadro de mensaje de la tarea nueva. Desliza a la izquierda para descartarlo.",
   "99950f3a28d425fa": "Se envía cuando el entorno se vuelve a conectar. Abre la tarea para editarla. Desliza a la izquierda para eliminarla.",
+  "d71048f4fb9cf44a": "Esperando sincronización",
   "be451f475c514b37": "Descartar notificación de reactivación",
   "54ccc22be28a985d": "Personalizado…",
   "bdd8716a3d6f1a53": "Organizar hilos…",
@@ -5075,6 +5083,7 @@
   "5a2d803b3ea43f18": "Se alcanzó el límite de uso.",
   "d5365c5e28a18442": "{summary}: {message}",
   "bff5692f10fc10b0": "Mantén pulsado para copiar.",
+  "1a1beecff68a6e61": "Verificar cuenta de Google",
   "a1984c617f973156": "{preview}, falló la llamada a la herramienta",
   "38574c0d1e49b278": "{preview}, sesión iniciada",
   "fd0d04d5a6627f70": "Abre el hilo de este agente. Mantén pulsado para copiar.",
@@ -5276,7 +5285,6 @@
   "1a92fa2f744401bc": "Ahora mismo no hay nada que restablecer.",
   "fff9b7f838279ee3": "No quedan créditos de restablecimiento.",
   "cea3cf346788481d": "Ese crédito ya se canjeó.",
-  "6ea901338c803e3e": "No se pudo usar el crédito de restablecimiento.",
   "8864ac914d8205e8": "¿Usar un crédito de restablecimiento?",
   "e32c2c7e61a16f4b": "Usar crédito",
   "b58a90dc5356f80a": "se restablece ahora",
@@ -5378,6 +5386,8 @@
   "cd5d90cbbfae32f6": "Grabando {time}",
   "6236e2f587bc4eb4": "Transcribiendo",
   "4e430d5ea01c249b": "No se pudo enviar la respuesta",
+  "a3c43735e1a81498": "Motivo de {title}",
+  "bfad234f016cfa3f": "El porqué, en una frase. Acompaña a la respuesta que elijas.",
   "e721a8b98f44d5f7": "Preguntar antes al agente",
   "e39f89c909df4db0": "No se pudo reanudar la ejecución",
   "28c9dd162825c117": "¿Cancelar esta ejecución?",
@@ -5404,6 +5414,14 @@
       "v": "v"
     }
   ],
+  "e114d37b32ab0dc7": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " necesita un motivo."
+  ],
   "9de4e24c9273b496": "Esta conexión puede leer ejecuciones, pero no responderlas.",
   "6dac41769b114edf": [
     {
@@ -5419,21 +5437,62 @@
       "v": "v"
     }
   ],
+  "46d614fa7b4bf1e5": "Ejecuciones de flujos de trabajo",
   "204e2afe64cae32b": "Trabajando",
   "abd6c3f4734b9f97": "Falló",
   "59a3213338779c6e": "Terminado",
   "5a3b1fe78182d8dc": "Respondió {choice}",
   "b17bd06e3b1ec0d2": "Respondió {choice}: {reason}",
+  "99451a5d2d40440f": "Retirada por {by}.",
+  "3ee30a50b70fffab": "Retirada por {by}: {reason}",
   "89102905bf09b0e8": "Ver en directo",
   "eea0013efc9e4339": "Transcripción",
   "ba8337dca3232880": "Abrir ejecución",
+  "235902a19e95833b": [
+    "por ti,",
+    " ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
+  "3759768c5d342c22": [
+    "respondida",
+    " ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
+  "8afa4fbe16f95bcf": [
+    "por ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    ",",
+    " ",
+    {
+      "i": 2,
+      "k": "_gt_value_2",
+      "v": "v"
+    }
+  ],
   "cab70ed0237438ef": "Cargando el paso…",
   "30a5be40eb956663": "trabajando",
   "edc8f6e9720f4eda": "en espera",
   "0684698b49273da5": "esperando",
+  "0398ca6c1d24b92d": "en cola, el siguiente",
+  "0af6d5ffd5166214": "{count, plural, one {en cola, {count} delante} other {en cola, {count} delante}}",
   "063173aa16052cb9": "en curso",
   "3ba4cf953dd20f22": "falló",
+  "0f93532dd76391fc": "Respondiste {choice}",
+  "7e1fd2eb570a372b": "{who} respondió {choice}",
   "e777db2880f53a46": "nadie respondió",
+  "201490988858b511": "retirada por {by}",
   "34f59bbbead0b97f": "{names} y {count} más",
   "ac1556f6ce89a5ea": "{count} en paralelo",
   "e197c4963bacc746": "{count} en curso",
@@ -5446,12 +5505,15 @@
   "f25af5332ffc3734": "Nada espera tu respuesta.",
   "c3f0119b8d6231f8": "No hay nada en ejecución.",
   "33028dfc1229eaa6": "Aún no hay ejecuciones.",
+  "e4d1316c85ed7066": "No hay preguntas de este tipo esperándote.",
   "156ff7b625287a1e": "Ocultar omitidos",
   "69b985b97ab45e6b": "Mostrar {count} omitidos",
   "8f6589c9e0ac5d4e": "Ningún entorno conectado",
   "744127f8dfad7d22": "Conecta un entorno para ver sus ejecuciones de flujos de trabajo.",
   "b9aae2f7cdb1a379": "Aún no hay ejecuciones de flujos de trabajo",
   "ace8fc1c643cf9f6": "Un flujo de trabajo une agentes, código, programaciones y preguntas para ti en una sola ejecución que sobrevive a los reinicios. Escribe uno en tu ordenador, en Flujos de trabajo y luego Definiciones.",
+  "fc9c3a00cfc18b55": "Todos los tipos",
+  "45a94c724845ec1d": "Otras",
   "fceb81aa6685fb47": "Chats",
   "ab94a098e562cedc": "Cerrar la barra de navegación",
   "f2d004982f8d8538": "Contraer la barra de navegación",
@@ -5707,7 +5769,13 @@
   "c95f71b09b6a1b77": "{size} pt",
   "bf29303038cb6705": "Salto de línea",
   "2aba3a08e7d6bc35": "Terminal",
+  "068d11f809c530d4": "Sistema",
+  "0677b40d0e3d6718": "DM Sans",
+  "985e41da9877b95a": "MesloLGS NF",
+  "fdb76b85a4c28193": "Incluye símbolos de Nerd Font",
   "77d16b9b4b86c88f": "Texto",
+  "d3e95bb2b4934bbf": "Fuente",
+  "e6d2dc99ef49d071": "Fuente monoespaciada",
   "eeca51fe648d9317": "Renderizar matemáticas",
   "e148604db412abfb": "Arboleda",
   "3b06efe927b51386": "Océano",
@@ -5731,63 +5799,10 @@
   "3328503592789bed": "Zen",
   "856812e7e1fc445e": "Llamadas a herramientas en el chat",
   "8d545d54c0a9e950": "Oculta los comandos, ediciones y búsquedas que ejecutan los agentes. Ocultar las correctas mantiene los fallos. Zen solo muestra las respuestas finales. Las aprobaciones, preguntas y errores siempre se muestran.",
-  "e0856d6a402ad821": "La política de {organization} no permite comandos de diseño de worktrees de proyectos.",
-  "fc9c3a00cfc18b55": "Todos los tipos",
-  "e4d1316c85ed7066": "No hay preguntas de este tipo esperándote.",
-  "45a94c724845ec1d": "Otras",
-  "d71048f4fb9cf44a": "Esperando sincronización",
-  "a3c43735e1a81498": "Motivo de {title}",
-  "bfad234f016cfa3f": "El porqué, en una frase. Acompaña a la respuesta que elijas.",
-  "e114d37b32ab0dc7": [
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " necesita un motivo."
-  ],
-  "235902a19e95833b": [
-    "por ti,",
-    " ",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    }
-  ],
-  "3759768c5d342c22": [
-    "respondida",
-    " ",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    }
-  ],
-  "8afa4fbe16f95bcf": [
-    "por ",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    ",",
-    " ",
-    {
-      "i": 2,
-      "k": "_gt_value_2",
-      "v": "v"
-    }
-  ],
-  "0f93532dd76391fc": "Respondiste {choice}",
-  "7e1fd2eb570a372b": "{who} respondió {choice}",
-  "1a1beecff68a6e61": "Verificar cuenta de Google",
-  "99451a5d2d40440f": "Retirada por {by}.",
-  "3ee30a50b70fffab": "Retirada por {by}: {reason}",
-  "201490988858b511": "retirada por {by}",
-  "7150557773b3818b": "En cola",
-  "efbeb3993ee2c3f5": "En cola para {pool}",
-  "0398ca6c1d24b92d": "en cola, el siguiente",
-  "0af6d5ffd5166214": "{count, plural, one {en cola, {count} delante} other {en cola, {count} delante}}",
-  "46d614fa7b4bf1e5": "Ejecuciones de flujos de trabajo"
+  "3771480d7421e412": "Este archivo requiere una contraseña.",
+  "00fa8cef0040eed9": "Contraseña incorrecta. Inténtalo de nuevo.",
+  "ad70bb0e647d4f2a": "La vista previa no puede abrir archivos con este tipo de cifrado.",
+  "153f20058cfb8da1": "No se pudo mostrar el PDF. Puede estar dañado.",
+  "541090660afda71b": "Contraseña del archivo",
+  "8db7663daebcd333": "Desbloquear"
 }

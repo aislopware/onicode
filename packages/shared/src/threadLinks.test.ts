@@ -152,6 +152,78 @@ describe("thread links", () => {
     );
   });
 
+  it.each(["\r", "\r\n", "\n"])(
+    "keeps BOM-prefixed thread link examples literal with %j line endings",
+    (eol) => {
+      const link = "<oni-thread://v2/local/t>";
+      for (const fence of ["~~~", "```"]) {
+        const example = [`\uFEFF${fence}`, link, fence].join(eol);
+        expect(replaceThreadLinks(`${example}${eol}${link}`, () => "linked")).toBe(
+          `${example}${eol}linked`,
+        );
+      }
+    },
+  );
+
+  it.each([
+    ["    ", ""],
+    ["\t", ""],
+    [">     ", "> "],
+    ["-     ", ""],
+  ])(
+    "rewrites prose links after an indented code line that looks like a fence (%j)",
+    (indent, prose) => {
+      for (const bom of ["", "\uFEFF"]) {
+        const example = `${bom}${indent}~~~\n${prose.trimEnd()}\n${prose}See `;
+        expect(replaceThreadLinks(`${example}<oni-thread://v2/local/t>`, () => "linked")).toBe(
+          `${example}linked`,
+        );
+      }
+    },
+  );
+
+  it.each([
+    ["4 spaces", "    ```md\n    <oni-thread://v1/abc>\n    ```", ""],
+    ["tab", "\t```md\n\t<oni-thread://v1/abc>\n\t```", ""],
+    ["list + 5 spaces", "-     ```md\n      <oni-thread://v1/abc>\n      ```", ""],
+    ["nested list", "- a\n  -     ```md\n        <oni-thread://v1/abc>\n        ```", ""],
+    ["nested list with tab", "-\t-     ~~~\n          <oni-thread://v1/abc>", ""],
+    ["quote + 5 spaces", ">     ```md\n>     <oni-thread://v1/abc>\n>     ```", "> "],
+    [
+      "spaced nested quote + 5 spaces",
+      ">    >     ```md\n>    >     <oni-thread://v1/abc>",
+      ">    > ",
+    ],
+    ["quote + list + 5 spaces", "> -     ```md\n>       <oni-thread://v1/abc>\n>       ```", "> "],
+    ["quote + space + tab + list", "> \t-     ```md\n>         <oni-thread://v1/abc>", "> "],
+    [
+      "quote + list after para",
+      "> para\n> -     ```md\n>       <oni-thread://v1/abc>\n>       ```",
+      "> ",
+    ],
+    ["1. after paragraph", "Intro\n1.     ```md\n       <oni-thread://v1/abc>\n       ```", ""],
+    ["ordered list >= 2 after blank", "Intro\n\n2.     ```md\n       <oni-thread://v1/abc>", ""],
+    [
+      "quote after blank line past closer",
+      "Example\n\n>       ~~~\n>       ~~~\n>       <oni-thread://v1/abc>",
+      "> ",
+    ],
+    ["quote after autolink", "<https://example.com>\n>     ~~~\n>     <oni-thread://v1/abc>", "> "],
+    ["blank line inside indented code", "    ```md\n\n    <oni-thread://v1/abc>", ""],
+    ["quote after indented code", "    ```md\n>     ```\n>     <oni-thread://v1/abc>", "> "],
+    ["4 spaces after closer", "    ```md\n    a\n    ```\n    <oni-thread://v1/abc>", ""],
+    ["4 spaces with U+2028", "    ```\u2028<oni-thread://v1/t1>```", ""],
+  ])(
+    "keeps links inside fence-looking indented code blocks literal (%s)",
+    (_name, block, prose) => {
+      expect(replaceThreadLinks(block, () => "linked")).toBe(block);
+      const after = `${block}\n${prose.trimEnd()}\n${prose}See `;
+      expect(replaceThreadLinks(`${after}<oni-thread://v2/local/t>`, () => "linked")).toBe(
+        `${after}linked`,
+      );
+    },
+  );
+
   it("leaves links inside code spans and fences as written", () => {
     const markdown = [
       "Live [old](oni-thread://v1/t1), literal `[old](oni-thread://v1/t1)`.",
@@ -178,6 +250,8 @@ describe("thread links", () => {
     expect(relabelThreadLinks(nested.join("\n"), local, () => "New")).toBe(
       [...nested.slice(0, 3), "> > [New](oni-thread://v2/local/t1)"].join("\n"),
     );
+    const deepNested = "> > > > > ```\n> > > > > <oni-thread://v2/local/t1> ```";
+    expect(relabelThreadLinks(deepNested, local, () => "New")).toBe(deepNested);
     const labels: Array<string | undefined> = [];
     const separated = "[Label\u2028> > example](oni-thread://v1/t1)";
     expect(replaceThreadLinks(separated, (_link, label) => void labels.push(label))).toBe(
@@ -206,6 +280,30 @@ describe("thread links", () => {
       ["1. Run:", "", "    ```bash", '    echo "```"', `    ${hidden}`, "    ```", "", after],
       ["````md", "```", hidden, "````", after],
       ["Use ~~~ to mark it.", after],
+      ["> para", ">     ~~~", `>     ${after}`],
+      ["> para", `>     ~~~ ${after}`],
+      ["- > para", "  >     ```md", `  >     ${after}`],
+      [`Intro\u2028-     ~~~ ${after}`],
+      ["Intro", `2.     ~~~ ${after}`],
+      ["Intro", `2. -     ~~~ ${after}`],
+      [">\t-     ```md", `>       ${after}`],
+      ["> para", "lazy", ">     ~~~", `>     ${after}`],
+      ["> para", "> 2. >", `> 2.     ~~~ ${after}`],
+      ["> para\r", ">     ~~~\r", `>     ${after}`],
+      [`> para\r\r>     ~~~\r>     ${hidden}\r> ${after}`],
+      ["para", "    -     ```", `    ${after}`],
+      ["para", "    -     ```", `          ${after}`],
+      ["    ~~~", `-   ${after}`],
+      ["    ~~~md", "    ~~~", "    ~~~", after],
+      ["- item", "  >     ~~~", `  >     ${hidden}`, `    ${after}`],
+      ["10. >     ```md", `    >     ${hidden} \`\`\``, "", after],
+      ["  - >     ```md", `    >     ${hidden} \`\`\``, "", after],
+      ["> - Run this:", ">", ">     ```bash", ">   echo hi", ">", ">     ```", `>     ${after}`],
+      ["Example", "", ">     ~~~", ">\t\t~~~", `>     ${hidden}`, ">\t\t~~~", `> ${after}`],
+      [after, ">     ~~~", `>     ${hidden}`],
+      [`1.       \`\`\`md ${hidden}`, `   \t${after}`],
+      [">      ```md", `> \t${after}`],
+      [">     ```md", `>\t ${after}`],
       ["```" + hidden + "``` then", after],
       ["Use ```example", hidden, "end``` then", after],
       ["Stray ` tick", "", after, "and `code`"],

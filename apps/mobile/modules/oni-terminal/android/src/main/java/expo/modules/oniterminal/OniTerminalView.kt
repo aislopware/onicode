@@ -105,6 +105,13 @@ class OniTerminalView(context: Context, appContext: AppContext) : ExpoView(conte
       emitResize()
     }
 
+  var fontFamily: String = "monospace"
+    set(value) {
+      field = value
+      terminalCanvas.fontFamily = value
+      emitResize()
+    }
+
   var appearanceScheme: String = "dark"
 
   // The PTY grid shared by every attached client, or empty before the server reports one.

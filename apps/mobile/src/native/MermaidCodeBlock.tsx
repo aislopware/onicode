@@ -46,7 +46,6 @@ function loadDiagram(source: string): Promise<Diagram> {
   return load;
 }
 
-const MONOSPACE = Platform.OS === "ios" ? "Menlo" : "monospace";
 // Pele measures labels with metrics close to Helvetica when no canvas is available.
 const DIAGRAM_FONT = Platform.OS === "ios" ? "Helvetica" : "sans-serif";
 
@@ -161,7 +160,7 @@ function MermaidBlock(props: MermaidCodeBlockProps & { readonly diagram: Diagram
           "--pele-border": themeColorWithAlpha(textStyle.color, 0.28),
           "--pele-accent": textStyle.linkColor,
           "--pele-font": DIAGRAM_FONT,
-          "--pele-font-mono": MONOSPACE,
+          "--pele-font-mono": textStyle.monoFontFamily,
         })
       : null;
   const exportXml =
@@ -263,7 +262,7 @@ function MermaidBlock(props: MermaidCodeBlockProps & { readonly diagram: Diagram
             selectable
             style={{
               color: textStyle.codeColor,
-              fontFamily: MONOSPACE,
+              fontFamily: textStyle.monoFontFamily,
               fontSize: codeFontSize,
               lineHeight: codeFontSize * 1.45,
             }}

@@ -49,6 +49,8 @@ import {
   compactOniMcpToolOutput,
   htmlRenderFromToolItem,
   mcpToolResultOutput,
+  omitToolOutputImageData,
+  toolOutputImages,
 } from "@onicode/shared/toolOutput";
 import { FILE_HEADERS_ONLY, formatPatch, structuredPatch } from "diff";
 import * as Cause from "effect/Cause";
@@ -543,8 +545,11 @@ export interface AcpAdapterV2Flavor {
     EffectAcpSchema.InitializeRequest["clientCapabilities"]
   >["_meta"];
   readonly mcpOverHttp?: boolean;
-  /** The agent has no tool search of its own, so Onicode lists optional tools on demand. */
-  readonly deferMcpTools?: boolean;
+  /**
+   * The agent has no tool search of its own, so Onicode lists optional tools on demand.
+   * `"proxy"` keeps a fixed core set plus `tool_search` and `tool_call` for agents that freeze tools per turn.
+   */
+  readonly deferMcpTools?: boolean | "proxy";
   readonly normalizeSessionUpdate?: (
     notification: EffectAcpSchema.SessionNotification,
   ) => EffectAcpSchema.SessionNotification;
@@ -670,8 +675,8 @@ export interface AcpAdapterV2Flavor {
   readonly subagentsIdleOnTurnCompletion?: boolean;
   /**
    * Subagents the agent goes on running after its prompt, with no update when one ends. Asked
-   * when the prompt ends and when a reply the agent started by itself ends; the native task ids
-   * it returns hold the turn open and the rest become idle.
+   * when the prompt ends and whenever a reply ends, including mid-prompt and in a steered prompt
+   * that stays open; the native task ids it returns hold the turn open and the rest become idle.
    */
   readonly subagentsOutlivingPrompt?: (input: {
     readonly sessionId: string;
@@ -1233,6 +1238,15 @@ interface AcpMcpContext {
   readonly processEnvironment?: NodeJS.ProcessEnv;
   readonly endpoint?: string;
   readonly authorization?: string;
+  /** Only proxy mode reaches the stdio and MCP-over-ACP bridges; Copilot lists every tool there. */
+  readonly bridgeToolExposure?: McpProviderSession.McpToolExposureMode;
+}
+
+function mcpToolExposureMode(
+  deferMcpTools: boolean | "proxy" | undefined,
+): McpProviderSession.McpToolExposureMode | undefined {
+  if (deferMcpTools === "proxy") return "deferred-proxy";
+  return deferMcpTools === true ? "deferred" : undefined;
 }
 
 // A GUI-subsystem executable (packaged Windows desktop) does not hold the console, so PowerShell
@@ -1272,7 +1286,7 @@ function acpMcpContext(
   session: McpProviderSession.McpProviderSessionConfig | undefined,
   self: SelfInvocation,
   mcpOverHttp: boolean | undefined,
-  deferMcpTools: boolean | undefined,
+  deferMcpTools: boolean | "proxy" | undefined,
   callLauncher: string | undefined,
 ): AcpMcpContext {
   if (session === undefined) {
@@ -1287,6 +1301,8 @@ function acpMcpContext(
     args: [...server.args],
     env: Object.entries(server.env).map(([name, value]) => ({ name, value })),
   }));
+  const exposure = mcpToolExposureMode(deferMcpTools);
+  const bridgeToolExposure = exposure === "deferred-proxy" ? exposure : undefined;
   // codex-acp 1.2.0 and pi-acp drop injected HTTP servers, so HTTP is opt-in per flavor.
   return {
     servers: [
@@ -1298,6 +1314,9 @@ function acpMcpContext(
           { name: "ELECTRON_RUN_AS_NODE", value: "1" },
           { name: "ONICODE_ACP_MCP_ENDPOINT", value: session.endpoint },
           { name: "ONICODE_ACP_MCP_AUTHORIZATION", value: session.authorizationHeader },
+          ...(bridgeToolExposure === undefined
+            ? []
+            : [{ name: "ONICODE_ACP_MCP_TOOL_EXPOSURE", value: bridgeToolExposure }]),
         ],
       },
       ...stdioServers,
@@ -1312,9 +1331,9 @@ function acpMcpContext(
               url: session.endpoint,
               headers: [
                 { name: "Authorization", value: session.authorizationHeader },
-                ...(deferMcpTools === true
-                  ? [{ name: McpProviderSession.MCP_TOOL_EXPOSURE_HEADER, value: "deferred" }]
-                  : []),
+                ...(exposure === undefined
+                  ? []
+                  : [{ name: McpProviderSession.MCP_TOOL_EXPOSURE_HEADER, value: exposure }]),
               ],
             },
             ...stdioServers,
@@ -1322,6 +1341,7 @@ function acpMcpContext(
         : [],
     endpoint: session.endpoint,
     authorization: session.authorizationHeader,
+    ...(bridgeToolExposure === undefined ? {} : { bridgeToolExposure }),
     processEnvironment: {
       // The thread id every process the agent starts inherits, so a tool run
       // from its shell can find its Onicode thread. Claude and Codex sessions set
@@ -1450,6 +1470,25 @@ function appendToolContentText(content: unknown, text: string): unknown[] {
     next.push({ type: "content", content: { type: "text", text } });
   }
   return next;
+}
+
+// Claims live until the turn ends; past this, recovered screenshots keep their details only.
+const MAX_RECOVERED_IMAGE_CHARS_PER_TURN = 32 * 1024 * 1024;
+
+function withinRecoveredImageBudget(
+  context: Pick<ActiveAcpTurn, "recoveredImageChars">,
+  output: unknown,
+): unknown {
+  const chars = toolOutputImages(output).reduce(
+    (total, image) => total + (image.data?.length ?? 0),
+    0,
+  );
+  if (chars === 0) return output;
+  if (context.recoveredImageChars + chars > MAX_RECOVERED_IMAGE_CHARS_PER_TURN) {
+    return omitToolOutputImageData(output);
+  }
+  context.recoveredImageChars += chars;
+  return output;
 }
 
 function acpMcpToolCallOutput(rawOutput: unknown): unknown {
@@ -1957,6 +1996,8 @@ interface ActiveAcpTurn {
   readonly tools: Map<string, AcpToolCallState & { readonly backgroundCommandTaskId?: string }>;
   /** Confirmed Onicode MCP tool outputs keyed by `${toolCallId}\0${tool}\0${inputHash}`. */
   readonly claimedToolResults: Map<string, unknown>;
+  /** Image characters recovered into `claimedToolResults` this turn. */
+  recoveredImageChars: number;
   /** `${toolCallId}\0${tool}\0${inputHash}` keys that already drained a recorded MCP result. */
   readonly drainedToolResultKeys: Set<string>;
   /** `${toolCallId}\0${tool}\0${inputHash}` keys that reached terminal failure and must never do input-only recovery. */
@@ -2571,6 +2612,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
   const idAllocator = yield* IdAllocator.IdAllocatorV2;
   const host = yield* ProviderHost.ProviderHost;
   const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
+  yield* mcpSessions.recoversToolResultImages(options.instanceId);
   const { flavor, selfInvocation: self } = options;
   const callLauncher = yield* writeAcpMcpCallLauncher(host.paths.stateDir);
   const readMcpContext = (threadId: ThreadId | null) =>
@@ -6250,6 +6292,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                   );
                   if (recoveredOutput !== undefined) {
                     context.drainedToolResultKeys.add(callInputKey);
+                    recoveredOutput = withinRecoveredImageBudget(context, recoveredOutput);
                   }
                 }
                 if (recoveredOutput !== undefined) {
@@ -7132,7 +7175,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             } else if (context.nativeThreadId === notification.sessionId) {
               if (update.sessionUpdate === "usage_update") {
                 context.replyOpen = false;
-                if (context.promptSettled) yield* idleReportedSubagents(context);
+                yield* idleReportedSubagents(context);
                 yield* rearmDeferredFinalize(context);
               } else if (acpRootSessionUpdateIngestsOutput(notification)) {
                 context.replyOpen = true;
@@ -9124,6 +9167,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           const mcpBridge = yield* makeAcpMcpOverAcpBridge({
             endpoint: mcpContext.endpoint,
             authorization: mcpContext.authorization,
+            toolExposure: mcpContext.bridgeToolExposure,
             allocateConnectionId: random.uuidV4(),
           });
           yield* Scope.addFinalizer(scope, mcpBridge.dispose);
@@ -10578,10 +10622,12 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           sessionId: string,
         ) {
           const mcpSession = yield* mcpSessions.read(turnInput.threadId);
+          const toolExposure = mcpToolExposureMode(flavor.deferMcpTools);
           const instructionState = {
             interactionMode: turnInput.runtimePolicy.interactionMode,
             hasOniMcp: mcpSession !== undefined,
             hasDeviceTools: mcpSession?.capabilities?.has("device") === true,
+            ...(toolExposure === undefined ? {} : { toolExposure }),
           } satisfies OniAcpInstructionState;
           const userText =
             flavor.rewriteUserText === undefined
@@ -11274,6 +11320,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               nativeMetadata: initialNativeMetadata,
               tools: new Map(),
               claimedToolResults: new Map(),
+              recoveredImageChars: 0,
               drainedToolResultKeys: new Set(),
               blockedInputRecoveryKeys: new Set(),
               attemptedInputRecoveryKeys: new Set(),

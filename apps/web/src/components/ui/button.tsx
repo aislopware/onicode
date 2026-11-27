@@ -32,6 +32,7 @@ const buttonVariants = cva(
           "h-5 gap-1.5 rounded-sm px-1.5 text-2xs sm:text-2xs [&_svg:not([class*='size-'])]:size-3 sm:[&_svg:not([class*='size-'])]:size-3",
         multiline: "min-h-9 px-2.5 py-1.5 whitespace-normal sm:min-h-8",
         sm: "h-8 gap-1.5 px-2 sm:h-7 sm:text-xs sm:[&_svg:not([class*='size-'])]:size-3.5",
+        "sm-touch": "h-11 gap-1.5 px-2 sm:h-7 sm:text-xs sm:[&_svg:not([class*='size-'])]:size-3.5",
         "sm-pill":
           "h-8 gap-1.5 rounded-full px-2.5 sm:h-7 sm:text-xs sm:[&_svg:not([class*='size-'])]:size-3.5",
         "sm-multiline":

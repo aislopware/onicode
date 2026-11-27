@@ -1,6 +1,9 @@
 import { thrownErrorMessage } from "@onicode/client-runtime/errors";
 import type { EnvironmentProject } from "@onicode/client-runtime/state/shell";
-import { isAttachmentOnlyBootstrapPrompt } from "@onicode/shared/composerContextReferences";
+import {
+  isAttachmentOnlyBootstrapPrompt,
+  replaceComposerContextReferences,
+} from "@onicode/shared/composerContextReferences";
 import {
   type ModelSelection,
   repositoryGroupingKeyOf,
@@ -58,7 +61,9 @@ export function composerPromptLink(input: {
 }): string | null {
   const draft = useComposerDraftStore.getState().getComposerDraft(input.target);
   if (!draft) return null;
-  if (!input.withContext) return promptLinkFor(draft.prompt);
+  // A link carries plain text, so context chips become their labels, as on a sent message.
+  const prompt = replaceComposerContextReferences(draft.prompt, (reference) => reference.label);
+  if (!input.withContext) return promptLinkFor(prompt);
   const selection =
     (draft.activeProvider && draftModelSelectionApplies(draft, input.threadStarted)
       ? draft.modelSelectionByProvider[draft.activeProvider]
@@ -67,7 +72,7 @@ export function composerPromptLink(input: {
     ? (input.providers.find((candidate) => candidate.instanceId === selection.instanceId)?.driver ??
       null)
     : null;
-  return promptLinkFor(draft.prompt, {
+  return promptLinkFor(prompt, {
     repository: promptLinkRepositoryOf(input.project),
     provider,
     model: provider === null ? null : (selection?.model ?? null),

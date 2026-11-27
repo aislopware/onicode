@@ -57,6 +57,7 @@ import { isModelPickerOpen, subscribeToModelPickerVisibility } from "../modelPic
 import { shortcutModifierStore } from "../shortcutModifierState";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
+import { canMarkLatestRunUnread } from "./threadActionMenu.logic";
 
 export function shouldNavigateAfterThreadPark(input: {
   readonly threadKey: string;
@@ -641,7 +642,7 @@ export function selectMarkUnreadThreads<
   T extends Pick<SidebarThreadSummary, "latestRun" | "runtime">,
 >(threads: readonly T[]): T[] {
   return threads.filter(
-    (thread) => thread.latestRun?.completedAt != null && threadRuntimeCanArchive(thread.runtime),
+    (thread) => canMarkLatestRunUnread(thread.latestRun) && threadRuntimeCanArchive(thread.runtime),
   );
 }
 

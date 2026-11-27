@@ -1,6 +1,7 @@
 import type { ScopedThreadRef } from "@onicode/contracts";
 
 import ChatMarkdown from "~/components/ChatMarkdown";
+import type { MarkdownExtensions } from "~/markdown/wordsHast";
 import { resolvePathLinkTarget } from "@onicode/shared/fileLinks";
 import { withMarkdownDefinitions } from "@onicode/shared/markdownChunks";
 import { maskMarkdownFrontmatter } from "@onicode/shared/markdownFrontmatter";
@@ -15,6 +16,7 @@ export function FileMarkdownPreview(props: {
   readonly className?: string;
   /** Link definitions shared from elsewhere in the file; never laid out, so never cut. */
   readonly definitions?: string;
+  readonly extensions?: MarkdownExtensions | undefined;
   readonly onTaskListChange?:
     | ((input: { readonly markerOffset: number; readonly checked: boolean }) => void)
     | undefined;
@@ -39,6 +41,7 @@ export function FileMarkdownPreview(props: {
       threadRef={props.threadRef}
       workspaceMutationId={props.workspaceMutationId}
       className={props.className ?? "mx-auto max-w-4xl px-6 py-5"}
+      {...(props.extensions ? { extensions: props.extensions } : {})}
       // Task offsets point into the shown text, which no longer matches a file with a cut line.
       onTaskListChange={text === masked ? props.onTaskListChange : undefined}
     />

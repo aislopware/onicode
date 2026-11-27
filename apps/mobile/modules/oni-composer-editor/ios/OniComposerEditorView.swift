@@ -1160,7 +1160,7 @@ public final class OniComposerEditorView: ExpoView, UITextViewDelegate, UITextDr
   private func makeAttachmentString(_ token: ComposerTokenPayload) -> NSAttributedString {
     let color = token.accent.flatMap { UIColor(composerHex: $0) }
       ?? UIColor(composerHex: theme.text) ?? .label
-    let chipFont = UIFont(name: "DMSans-Medium", size: fontSize)
+    let chipFont = (fontFamily.hasPrefix("DMSans") ? UIFont(name: "DMSans-Medium", size: fontSize) : nil)
       ?? UIFont.systemFont(ofSize: fontSize, weight: .medium)
     let icon = token.iconUri.flatMap(iconImage(for:)).map {
       token.tintsIcon == true ? Self.tinted($0, color: color) : $0

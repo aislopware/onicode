@@ -1,4 +1,9 @@
 import { useNativeFileDrag } from "../../useNativeFileDrag";
+import { getFileMetadataQueryAtom } from "../../hooks/useFileMetadata";
+import { FileMetadataThreadContext } from "../../hooks/FileMetadataThreadProvider";
+import { appAtomRegistry } from "../../rpc/atomRegistry";
+import { readEnvironmentScope } from "../../state/session";
+import { executeAtomQuery } from "@onicode/client-runtime/state/runtime";
 import { useAssetUrlState } from "../../assets/assetUrls";
 import { formatFilePathForClipboard } from "@onicode/client-runtime/media-actions";
 import {
@@ -6,8 +11,13 @@ import {
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@onicode/client-runtime/state/runtime";
-import type { ContextMenuSource, EnvironmentId, ScopedThreadRef } from "@onicode/contracts";
-import { memo, useState, type MouseEvent as ReactMouseEvent } from "react";
+import {
+  AuthFilesystemReadScope,
+  type ContextMenuSource,
+  type EnvironmentId,
+  type ScopedThreadRef,
+} from "@onicode/contracts";
+import { memo, useContext, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { useGT } from "gt-react";
 import { FolderIcon } from "lucide-react";
 
@@ -51,9 +61,12 @@ interface MarkdownFileLinkProps {
   onOpenMedia?: (() => void) | undefined;
   onReveal?: (() => Promise<AtomCommandResult<unknown, unknown>>) | undefined;
   revealLabel?: string | undefined;
+  onDownload?: (() => void) | undefined;
 }
 
 const MARKDOWN_FILE_LINK_CLASS_NAME = "chat-markdown-file-link";
+
+const DIRECTORY_CHECK_LIMIT_MS = 400;
 
 export const MarkdownFileLink = memo(function MarkdownFileLink({
   environmentId,
@@ -75,11 +88,29 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
   onOpenMedia,
   onReveal,
   revealLabel,
+  onDownload,
   resolveCopyPaths,
   resolveDragPath,
 }: MarkdownFileLinkProps) {
   const gt = useGT();
   const nativeDrag = useNativeFileDrag(environmentId, resolveDragPath);
+  const metadataThreadRef = useContext(FileMetadataThreadContext);
+  // Asked when the menu opens, not on render: a chat can hold many file links.
+  const isKnownDirectory = async () => {
+    if (!environmentId || !readEnvironmentScope(environmentId, AuthFilesystemReadScope)) {
+      return false;
+    }
+    const query = getFileMetadataQueryAtom(environmentId, iconPath, undefined, metadataThreadRef);
+    if (!query) return false;
+    const isDirectory = executeAtomQuery(appAtomRegistry, query, { reportFailure: false }).then(
+      (result) => result._tag === "Success" && result.value?.kind === "directory",
+    );
+    // A slow or stalled remote must not hold the menu; an unknown kind still offers Download.
+    return Promise.race([
+      isDirectory,
+      new Promise<boolean>((resolve) => setTimeout(resolve, DIRECTORY_CHECK_LIMIT_MS, false)),
+    ]);
+  };
   const handleOpenInEditor = () => {
     if (!onOpen) {
       return;
@@ -256,6 +287,7 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
 
     try {
       const copyItems = markdownFileCopyMenuItems({ targetPath, workspaceRelativePath });
+      const isDirectory = onDownload ? await isKnownDirectory() : false;
       const clicked = await api.contextMenu.show(
         [
           ...(onOpenMedia ? ([{ id: "preview-media", label: gt("Preview media") }] as const) : []),
@@ -264,6 +296,11 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
             ? ([{ id: "open-in-browser", label: gt("Open in integrated browser") }] as const)
             : []),
           ...(onReveal && revealLabel ? ([{ id: "reveal", label: revealLabel }] as const) : []),
+          ...(onDownload && !isDirectory
+            ? ([
+                { id: "download", label: gt("Download", { $context: "verb, saves a file" }) },
+              ] as const)
+            : []),
           ...copyItems.map(({ id, label }) => ({ id, label })),
         ] as const,
         position,
@@ -284,6 +321,10 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
       }
       if (clicked === "reveal") {
         handleRevealInFileManager();
+        return;
+      }
+      if (clicked === "download") {
+        onDownload?.();
         return;
       }
       if (clicked === "copy-relative" || clicked === "copy-full") {
@@ -435,7 +476,8 @@ function areMarkdownFileLinkPropsEqual(
     previous.onReveal === next.onReveal &&
     previous.resolveCopyPaths === next.resolveCopyPaths &&
     previous.resolveDragPath === next.resolveDragPath &&
-    previous.revealLabel === next.revealLabel
+    previous.revealLabel === next.revealLabel &&
+    previous.onDownload === next.onDownload
   );
 }
 

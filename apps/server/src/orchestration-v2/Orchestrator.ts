@@ -1397,6 +1397,26 @@ type DelegatedChildControls = ProjectionRecords<
   readonly runsFloor?: OrchestrationV2Run | undefined;
 };
 
+/**
+ * Callers pass the task's latest work run. A cancel also covers it when the run the cancel stopped
+ * can never be a result: it ended before starting, or it completed as a monitor acknowledgement.
+ */
+function cancelCoversRun(
+  controls: Pick<DelegatedChildControls, "runs" | "messages">,
+  cancelledRunId: RunId | undefined,
+  run: OrchestrationV2Run,
+): boolean {
+  if (cancelledRunId === run.id) return true;
+  if (cancelledRunId === undefined) return false;
+  const cancelled = controls.runs.find((candidate) => candidate.id === cancelledRunId);
+  if (cancelled === undefined || cancelled.completedAt === null) return false;
+  const neverResult =
+    cancelled.startedAt === null ||
+    (cancelled.status === "completed" &&
+      monitorUpdateRunIds(controls.messages, [cancelled]).has(cancelled.id));
+  return neverResult && runRanAfter(cancelled, run);
+}
+
 function ranSince(run: OrchestrationV2Run, floor: OrchestrationV2Run): boolean {
   return run.id === floor.id || runRanAfter(run, floor);
 }
@@ -1411,7 +1431,7 @@ function reportRunsRead(
   if (floor === undefined || run.status !== "completed") return true;
   const oldest = reportRuns.at(-1) ?? run;
   if (!ranSince(oldest, floor)) return false;
-  const monitorRuns = monitorUpdateRunIds(controls.messages);
+  const monitorRuns = monitorUpdateRunIds(controls.messages, controls.runs);
   return controls.runs.some(
     (candidate) =>
       candidate.id !== run.id &&
@@ -3761,6 +3781,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               type: "provider-session.detach" as const,
               providerSessionId: session.id,
               detail: detachReason,
+              ...(canResumeAcrossInstances && activeProviderThread.providerSessionId === session.id
+                ? { handoffProviderThread: activeProviderThread, handoffRunId: queuedRun.id }
+                : {}),
             },
           })),
           {
@@ -3990,6 +4013,18 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       yield* effectOutbox.awaitSettled(
         RunExecutionService.checkpointCaptureEffectId(latest.id, latest.activeAttemptId),
       );
+    },
+    (effect) => Effect.ignore(effect),
+  );
+
+  // A launch without a message prepares its worktree with no run to queue behind. A message
+  // waits for it, outside the thread lock the bind needs, rather than start in the checkout.
+  const awaitLaunchWorktree = Effect.fn("Orchestrator.awaitLaunchWorktree")(
+    function* (threadId: ThreadId) {
+      if (!(yield* worktreeSetupTracker.workspaceIsHeld(threadId))) return;
+      const { thread, runs } = yield* projectionStore.getThreadRecords(threadId, ["runs"]);
+      if (thread.worktreePath !== null || runs.some(isActiveRun)) return;
+      yield* worktreeSetupTracker.awaitWorkspaceRelease(threadId);
     },
     (effect) => Effect.ignore(effect),
   );
@@ -5244,6 +5279,22 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       command.type !== "thread.settle" &&
       liveSessions.length > 0
     ) {
+      // Detaching ends a started turn, which may never report completion. Only a workspace
+      // handoff (compare-and-set or continuation) ends its own caller's turn on purpose.
+      if (
+        command.type === "thread.metadata.update" &&
+        command.expectedWorktreePath === undefined &&
+        command.continuation === undefined &&
+        (yield* loadProjectionForCommand(command, ["runs"], { turnItemTypes: [] })).runs.some(
+          (run) => run.status === "starting" || run.status === "running",
+        )
+      ) {
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: `Thread ${command.threadId} has an active turn. Stop the current turn to switch worktrees.`,
+        });
+      }
       // The provider context holds only the active and target provider threads; a session kept
       // busy by an earlier queued hand-off owns neither, so probe every thread of this one.
       const { providerThreads } = yield* projectionStore
@@ -8700,6 +8751,21 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       command.steerMissedRunId === undefined
         ? undefined
         : projection.runs.find((run) => run.id === command.steerMissedRunId);
+    // A launch without a message prepares its worktree with no run to queue behind; a message
+    // now would start in the project checkout and lose its turn when the worktree is bound.
+    if (
+      activeRun === undefined &&
+      worktreeMissingRun === undefined &&
+      (dispatchMode.type === "queue_after_active" || dispatchMode.type === "start_immediately") &&
+      projection.thread.worktreePath === null &&
+      (yield* worktreeSetupTracker.workspaceIsHeld(command.threadId))
+    ) {
+      return yield* new OrchestratorDispatchError({
+        commandId: command.commandId,
+        commandType: command.type,
+        cause: `Thread ${command.threadId} is still preparing its worktree. Send the message once its worktree is set up.`,
+      });
+    }
     // A steer whose run already ended still keeps its place in the queue.
     const steerFollowUpSource =
       command.steerFollowUpOfRunId === undefined
@@ -10822,6 +10888,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             type: "provider-session.detach",
             providerSessionId: session.id,
             detail: detachDetail,
+            ...(canResumeAcrossInstances && activeProviderThread.providerSessionId === session.id
+              ? { handoffProviderThread: activeProviderThread, handoffRunId: runId }
+              : {}),
           },
         } satisfies PendingOrchestrationEffectV2,
       ]);
@@ -16393,6 +16462,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       taskIds: ReadonlyArray<NodeId>,
       // Runs whose task outcome no capture can change, such as a cancelled task's.
       settledRunIds: ReadonlyArray<RunId>,
+      options?: Parameters<typeof delegatedTaskProgress>[1],
     ) {
       // Progress tells a held wake from a held message the user wrote by the run's message.
       const withHeldMessages = Effect.fn("Orchestrator.readHeldRunMessages")(function* <
@@ -16419,7 +16489,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ),
         settledRunIds,
       );
-      const progress = delegatedTaskProgress(controls);
+      const progress = delegatedTaskProgress(controls, options);
       // The latest result may have ended before the runs read above; then read them all.
       if (
         controls.runsFloor !== undefined &&
@@ -16429,7 +16499,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           yield* withHeldMessages(yield* readAllDelegatedChildControls(childThreadId)),
           settledRunIds,
         );
-        return { controls: all, progress: delegatedTaskProgress(all) };
+        return { controls: all, progress: delegatedTaskProgress(all, options) };
       }
       return { controls, progress };
     },
@@ -16610,7 +16680,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       // A cancelled task's completed run ends it interrupted, as does one whose provider turn its
       // parent's Stop interrupted to kill background work. Stop's marker on an idle run names no
       // provider turn and interrupted nothing.
-      const cancelled = task.cancelledRunId === childRun.id;
+      const cancelled = cancelCoversRun(childControls, task.cancelledRunId, childRun);
       const stopped =
         task.completionDelivery?.state === "disposed" &&
         childResult.turnItems.some(
@@ -16810,6 +16880,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       childThreadId,
       openTasks.map((task) => task.id),
       openTasks.flatMap((task) => task.cancelledRunId ?? []),
+      {
+        unsettled: openTasks.some(
+          (task) => task.id === forkedFrom.nodeId && task.cancelledRunId === undefined,
+        ),
+      },
     );
     const cancelAwaitsWork = progress.state === "working" && !progress.onlyAwaitsUserRun;
     for (const task of openTasks) {
@@ -16833,7 +16908,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const resultTaskId = resultRun?.delegatedTaskId ?? forkedFrom.nodeId;
     const resultTask = parent.subagents.find((task) => task.id === resultTaskId);
     const taskCancelled =
-      resultTask?.cancelledRunId !== undefined && resultTask.cancelledRunId === resultRun?.id;
+      resultRun !== undefined &&
+      cancelCoversRun(childControls, resultTask?.cancelledRunId, resultRun);
     if (
       resultRun === undefined ||
       (taskCancelled ? cancelAwaitsWork : progress.state !== "result_available")
@@ -18020,6 +18096,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     ) {
       yield* awaitLatestRunCapture(command.sourceThreadId);
     }
+    if (
+      command.type === "message.dispatch" &&
+      (command.dispatchMode.type === "start_immediately" ||
+        command.dispatchMode.type === "queue_after_active")
+    ) {
+      yield* awaitLaunchWorktree(command.threadId);
+    }
     const dispatch = threadDispatch.withLock(
       commandThreadId(command),
       dispatchWithReceiptEffect(command),
@@ -18759,8 +18842,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     child: Pick<OrchestrationV2ThreadProjection, "thread" | "runs" | "messages">,
     taskId: NodeId,
     capturing: OrchestrationV2Run | undefined,
+    task: Pick<OrchestrationV2Subagent, "result" | "cancelledRunId"> | undefined,
   ) => {
     if (capturing === undefined) return false;
+    // A Monitor-woken run is an unsettled task's work, not an acknowledgement after its report.
+    const unsettled =
+      task !== undefined && task.result === null && task.cancelledRunId === undefined;
     const owns = (id: NodeId) =>
       delegatedTaskRuns(child, id).some((run) => run.id === capturing.id);
     if (owns(taskId)) return true;
@@ -18770,7 +18857,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       child.thread.forkedFrom?.type === "node" &&
       child.thread.forkedFrom.nodeId === taskId &&
       !followUpIds.has(taskId) &&
-      !monitorUpdateRunIds(child.messages).has(capturing.id) &&
+      (unsettled || !monitorUpdateRunIds(child.messages, child.runs).has(capturing.id)) &&
       ![...followUpIds].some(owns)
     );
   };
@@ -18807,7 +18894,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           mapDispatchError(command),
         );
         const unsettled =
-          taskAwaitsCapture(child, input.taskId, capturing) ||
+          taskAwaitsCapture(child, input.taskId, capturing, task) ||
           (followUpRun === undefined
             ? child.thread.forkedFrom?.type === "node" &&
               child.thread.forkedFrom.nodeId === input.taskId &&
@@ -18830,13 +18917,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                 run.status === "queued" ? { ...run, queueHeld: true } : run,
               ),
             );
-            const monitorRunIds = new Set(
-              child.messages
-                .filter((message) => message.notification?.source.kind === "monitor")
-                .map((message) => message.runId),
-            );
             const activeRun = child.runs
-              .filter((run) => isLiveRun(run) && !monitorRunIds.has(run.id))
+              .filter(isLiveRun)
               .toSorted((a, b) => b.ordinal - a.ordinal)[0];
             const cancelledRun = followUpRun ?? activeRun ?? progressAfterTurn(child).resultRun;
             const now = yield* DateTime.now;
@@ -18873,7 +18955,14 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         const child = yield* projectionStore.getThreadRecords(childThreadId, ["runs", "messages"], {
           messageRoles: ["user"],
         });
-        return taskAwaitsCapture(child, taskId, yield* runAwaitingCapture(childThreadId));
+        const parentThreadId = child.thread.lineage.parentThreadId;
+        const task =
+          parentThreadId === null
+            ? undefined
+            : (yield* projectionStore.getThreadRecords(parentThreadId, ["subagents"], {
+                subagentIds: [taskId],
+              })).subagents.find((candidate) => candidate.id === taskId);
+        return taskAwaitsCapture(child, taskId, yield* runAwaitingCapture(childThreadId), task);
       },
       (effect, threadId) =>
         effect.pipe(
