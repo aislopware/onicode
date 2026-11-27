@@ -1,4 +1,4 @@
-import { disposeHighlighter, Virtualizer } from "@pierre/diffs";
+import { DEFAULT_THEMES, disposeHighlighter, preloadHighlighter, Virtualizer } from "@pierre/diffs";
 import {
   EnvironmentId,
   ThreadId,
@@ -30,6 +30,7 @@ const state = vi.hoisted(() => ({
   mintUrl: vi.fn<() => Promise<string | null>>(),
   browserAssetMints: 0,
   openedBrowserUrls: [] as string[],
+  diffWorkersReady: true,
 }));
 
 vi.mock(import("@onicode/client-runtime/state/runtime"), async (original) => ({
@@ -67,6 +68,7 @@ vi.mock(import("~/remoteOpen"), async (original) => ({
 vi.mock(import("~/hooks/useTheme"), async (original) => ({
   ...(await original()),
   useTheme: () => ({ resolvedTheme: "dark" }) as never,
+  useRenderedAppearance: () => "dark",
 }));
 vi.mock(import("~/hooks/useWorkspaceMutationRefresh"), () => ({
   useWorkspaceMutationRefresh: vi.fn(),
@@ -150,7 +152,10 @@ vi.mock(import("./FileBrowserPanel"), () => ({
   ),
 }));
 vi.mock(import("../DiffWorkerPoolProvider"), () => ({
-  DiffWorkerPoolProvider: ({ children }: { children?: ReactNode }) => <>{children}</>,
+  // Like the real provider, a pool that is still starting unmounts the viewer it wraps.
+  DiffWorkerPoolProvider: ({ children }: { children?: ReactNode }) => (
+    <>{state.diffWorkersReady ? children : null}</>
+  ),
 }));
 vi.mock(import("./projectFilesQueryState"), async (original) => ({
   ...(await original()),
@@ -190,6 +195,7 @@ function setup() {
   state.assetUrl = { _tag: "Loading" };
   state.assetResources = [];
   state.openedBrowserUrls = [];
+  state.diffWorkersReady = true;
   let mints = 0;
   state.mintUrl.mockReset().mockImplementation(async () => `/assets/report.docx?mint=${++mints}`);
   state.writeFile.mockReset().mockResolvedValue(AsyncResult.success(undefined));
@@ -224,7 +230,7 @@ function filePreview(
   relativePath: string,
   workspaceMutationId: string | null = null,
   composerDraftTarget: ScopedThreadRef | DraftId = threadRef,
-  revealLine: number | null = null,
+  reveal: { line: number; requestId: number } | null = null,
 ) {
   return (
     <FilePreviewPanel
@@ -237,8 +243,8 @@ function filePreview(
       keybindings={[]}
       availableEditors={[]}
       openInShortcutEnabled={false}
-      revealLine={revealLine}
-      revealRequestId={revealLine === null ? 0 : 1}
+      revealLine={reveal?.line ?? null}
+      revealRequestId={reveal?.requestId ?? 0}
       onOpenFile={vi.fn()}
       onNavigateFolder={vi.fn()}
       folderTrail={undefined}
@@ -327,7 +333,7 @@ describe("large file previews", () => {
     };
     await using _screen = await render(
       <div style={{ height: 400, display: "flex", flexDirection: "column" }}>
-        {filePreview("reveal.txt", null, threadRef, 150)}
+        {filePreview("reveal.txt", null, threadRef, { line: 150, requestId: 1 })}
       </div>,
     );
     await vi.waitFor(() =>
@@ -494,6 +500,57 @@ describe("source file scroll", () => {
     await screen.rerender(sourceFile("a.ts", 2000));
 
     await vi.waitFor(() => expect(scroller()?.scrollTop).toBe(4200));
+  });
+
+  it("centers a linked line in a scrolled read-only file, and again when the viewer is rebuilt", async () => {
+    await using _settings = setup();
+    const style = document.createElement("style");
+    style.textContent = appCss;
+    document.head.append(style);
+    using _style = { [Symbol.dispose]: () => style.remove() };
+    await preloadHighlighter({ themes: Object.values(DEFAULT_THEMES), langs: ["text"] });
+    // Wrapped lines of differing lengths, so the viewer estimates heights until it measures them.
+    const contents = Array.from(
+      { length: 140 },
+      (_, i) =>
+        `Line ${i + 1}. ${"Notes that wrap across the preview. ".repeat(2 + ((i * 7) % 9))}`,
+    ).join("\n");
+    // A file outside the workspace is read-only, which CodeView renders.
+    const hostFile = (reveal: { line: number; requestId: number } | null) => {
+      const relativePath = "/outside/notes.txt";
+      state.file = { relativePath, contents, byteLength: contents.length, truncated: false };
+      return (
+        <div style={{ height: 400, width: 500, display: "flex", flexDirection: "column" }}>
+          {filePreview(relativePath, null, threadRef, reveal)}
+        </div>
+      );
+    };
+    const scroller = () => document.querySelector<HTMLElement>(".file-preview-virtualizer");
+    const row = (line: number) =>
+      document.querySelector("diffs-container")?.shadowRoot?.querySelector(`[data-line="${line}"]`);
+    const middle = (element: Element | null | undefined) => {
+      const rect = element?.getBoundingClientRect();
+      return rect ? (rect.top + rect.bottom) / 2 : Number.NaN;
+    };
+    const lineIsCentered = () =>
+      expect(Math.abs(middle(row(82)) - middle(scroller()))).toBeLessThan(2);
+
+    await using screen = await render(hostFile(null));
+    await vi.waitFor(() => expect(scroller()?.scrollHeight).toBeGreaterThan(3000));
+    scroller()!.scrollTop = 2500;
+    // The viewer has moved its window of mounted rows to the new offset.
+    await vi.waitFor(() => expect(row(1)).toBeNull());
+
+    await screen.rerender(hostFile({ line: 82, requestId: 1 }));
+    await vi.waitFor(lineIsCentered);
+
+    // Starting the worker pool unmounts the viewer and mounts a new one.
+    state.diffWorkersReady = false;
+    await screen.rerender(hostFile({ line: 82, requestId: 1 }));
+    await vi.waitFor(() => expect(scroller()).toBeNull());
+    state.diffWorkersReady = true;
+    await screen.rerender(hostFile({ line: 82, requestId: 1 }));
+    await vi.waitFor(lineIsCentered);
   });
 
   it.each([
