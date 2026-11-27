@@ -4136,3 +4136,4 @@ be0b94683a	take	took upstream's code placeholders and split _/* emphasis passes;
 be5b14d842	take	taken as is
 428684301a	take	applied cleanly onto Onicode's paragraphs() (hr line after br)
 8515b31c8d	take	kept Onicode's DiscoveryListRow device rows (one button each) and added a trailing slot beside the row for the Stop button, since a button cannot nest in a button; took shutdown, per-environment stopping/stopErrors, Stop all devices and the tests; mobile has no stop yet (follow-up)
+6d21ad2b25	take	taken as is
