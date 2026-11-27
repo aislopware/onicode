@@ -4337,3 +4337,4 @@ d9e28d4640	take	kept Onicode's balanced-bracket FILE_LINK_LABEL_CHAR, now counti
 afc71642c9	take	taken as is
 2ecbb3a9d3	take	one-entry fence-range cache added: several composer readers parse the same text per edit
 44a5333786	take	test's spoken phrase is "Open Oni code" for the rebranded Onicode term
+0360a00296	take	fence check edited by hand in Onicode's scanMarkdown; Onicode's fuller definitions test made into upstream's it.each
