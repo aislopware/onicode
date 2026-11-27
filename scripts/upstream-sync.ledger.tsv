@@ -4402,3 +4402,4 @@ dcee01cbfd	take	applied cleanly; scenario ported, typechecked
 beb24ffed8	take	took hasNonCatalogModels; kept wave 3's customApiEndpoint gate so a first-party probe stays complete and claudeModelsOfferedByReport sticks
 1dba8e21bc	take	source merged cleanly; scenario adapted: environment id read in Node via environmentId(app.baseUrl), since the desktop renderer routes by hash
 04770fe6c1	take	applied cleanly; mobile n.a. (native picker)
+314f59d1e7	take	usage scan cache bumped to Onicode v19 (Onicode's v18 already meant the Codex state re-parse): v18 file added to legacy names, Grok legacy check version < 19, Codex clause kept, comments merged; test asserts v19
