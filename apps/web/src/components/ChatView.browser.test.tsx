@@ -1771,6 +1771,8 @@ it("a send held for onicode.json says it was not sent once the user leaves its d
 });
 
 it("a new thread on a branch with changes opens them from thread details", async () => {
+  // Wide enough that thread details sit inline, where they start open.
+  await page.viewport(1400, 900);
   using _environment = installFakeEnvironment([]);
   using _status = answerRpc(WS_METHODS.subscribeVcsStatus, () =>
     Stream.concat(
@@ -1809,9 +1811,9 @@ it("a new thread on a branch with changes opens them from thread details", async
     // AppRoot brings its own router.
     router: false,
   });
-  // Onicode opens thread details on request.
-  await userEvent.click(page.getByRole("button", { name: "Toggle thread details panel" }));
-  const changesRow = page.getByRole("button", { name: /^Changes\s*vs main\s*\+150/ });
+  const changesRow = page
+    .getByRole("region", { name: "Thread details" })
+    .getByRole("button", { name: /^Changes\s*vs main\s*\+150/ });
   // The row already shows the branch's totals, so it has to open them.
   await expect.element(changesRow).toBeEnabled();
 
