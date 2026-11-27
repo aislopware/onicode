@@ -4424,3 +4424,4 @@ b79a254620	take	hand-ported into Onicode's resumable scanMarkdown: flow state on
 a71d749335	take	applied cleanly
 382f4b2c6c	take	3-way merge kept Onicode's isPickableProjectMember filter; both folder-name sites use workspaceFolderName
 d034b66f99	take	applied cleanly; every adapter helper it calls exists
+9534f2aab7	take	applied cleanly on the ported document worker chain
