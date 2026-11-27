@@ -3924,3 +3924,4 @@ e2c3c4250d	take	anchor reads Onicode's connectionRef viewport (no viewportRef); 
 20a3bed880	take	taken as is
 f43b1c19c8	take	taken as is
 3e74a0aac5	take	kept Onicode's boundedRedactedTail and redacted failure codes; verificationUrl is optionalKey (old mobile ignores it)
+22d9e73c0c	take	taken as is
