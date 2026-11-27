@@ -4552,3 +4552,4 @@ ab9ca1efed	take	clean
 e67034a885	take	clean; shared by web and mobile
 2e4e8f1f35	take	test import conflict only (kept Onicode's Deferred, added HostProcess)
 609178f9f4	take	adapted: dropped the hosted-link test row (Onicode has no hosted thread links)
+affe0cdf9d	skip	kept Onicode's single mcp__onicode__ Pi registration: the fix keeps upstream's hidden alias tools active after tool_search; Onicode dropped those aliases (829d4cf43a) and its reconcileDiscovery never drops a loaded tool, so the cache-busting re-declaration cannot happen
