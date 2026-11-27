@@ -3966,3 +3966,5 @@ feecca53e4	take	kept Onicode's per-package npm outdated fallback; added the regi
 d38dcccef8	take	taken as is
 226113fee0	take	taken as is
 b125918f4b	take	test uses Onicode's fflate zip fixture (files override) instead of JSZip
+341864854b	take	applied to service/bootService.ts (moved from cloud/); span renamed service.boot_service.*
+341864854b	take	applied to service/bootService.ts (moved from cloud/); span renamed service.boot_service.*
