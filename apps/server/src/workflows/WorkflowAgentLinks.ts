@@ -20,6 +20,7 @@ import * as Schedule from "effect/Schedule";
 import type * as Schema from "effect/Schema";
 
 import { ProjectToolkit } from "../mcp/toolkits/project/tools.ts";
+import { refusesBeforePosition } from "../peer/PeerForwarding.ts";
 import * as PeerLinks from "../peer/PeerLinks.ts";
 import * as PeerMcpClient from "../peer/PeerMcpClient.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -46,12 +47,6 @@ const isFinal = (error: OrchestratorMcpFailure) =>
 
 // The other machine asleep or a dropped route is worth a few more tries before the run pauses.
 const retried = { schedule: Schedule.exponential("2 seconds"), times: 5 };
-
-// Older peers accept only afterPosition >= 0, and read from the start without one.
-const START_POSITION_REFUSAL =
-  /^Invalid parameters for tool 'oni_thread_read': [\s\S]*\["afterPosition"\]/;
-const refusesStartPosition = (error: OrchestratorMcpFailure) =>
-  error.code === "invalid_request" && START_POSITION_REFUSAL.test(error.message);
 
 type Service = WorkflowAgents["Service"];
 
@@ -145,31 +140,51 @@ export const make = Effect.gen(function* () {
     return (yield* listed(environment, path)) ?? (yield* created.failure);
   });
 
+  const stalled = (environment: string, threadId: string) =>
+    new WorkflowAgentError({
+      reason: `Environment ${environment} answered the same page of thread ${threadId} again, so the step's reply could not be read.`,
+    });
+
   /** The whole text of the run's last assistant message. */
   const reply = Effect.fn("WorkflowAgentLinks.reply")(function* (
     turn: AgentTurn,
     environment: string,
   ) {
-    let last: OrchestratorMcpThreadReadResult["items"][number] | undefined;
-    let afterPosition = -1;
-    while (true) {
-      const page = { threadId: turn.threadId, view: "messages", limit: 100 };
-      const read = yield* ask(environment, "oni_thread_read", OrchestratorMcpThreadReadResult, {
-        ...page,
-        afterPosition,
-      }).pipe(
-        Effect.catchIf(
-          (error) => afterPosition === -1 && refusesStartPosition(error),
-          () => ask(environment, "oni_thread_read", OrchestratorMcpThreadReadResult, page),
-        ),
-        refused(environment, "oni_thread_read"),
-      );
-      last =
-        read.items.findLast(
-          (item) => item.type === "assistant_message" && item.runId === turn.turnId,
-        ) ?? last;
-      if (!read.hasMore || read.nextPosition === null) break;
-      afterPosition = read.nextPosition;
+    const isReply = (item: OrchestratorMcpThreadReadResult["items"][number]) =>
+      item.type === "assistant_message" && item.runId === turn.turnId;
+    const page = { threadId: turn.threadId, view: "messages", limit: 100 };
+    const readPage = (args: Record<string, unknown>) =>
+      ask(environment, "oni_thread_read", OrchestratorMcpThreadReadResult, args);
+    let beforePosition = Number.MAX_SAFE_INTEGER;
+    // Peers older than beforePosition refuse it or ignore it; either way they read from the start.
+    let read = yield* readPage({ ...page, beforePosition }).pipe(
+      Effect.catchIf(refusesBeforePosition, () => readPage(page)),
+      refused(environment, "oni_thread_read"),
+    );
+    let last = read.items.findLast(isReply);
+    let earlier = read.earlierPosition;
+    if (earlier !== undefined) {
+      while (last === undefined && earlier !== null) {
+        if (earlier >= beforePosition) return yield* stalled(environment, turn.threadId);
+        beforePosition = earlier;
+        read = yield* call(environment, "oni_thread_read", OrchestratorMcpThreadReadResult, {
+          ...page,
+          beforePosition,
+        });
+        last = read.items.findLast(isReply);
+        earlier = read.earlierPosition ?? null;
+      }
+    } else {
+      let afterPosition = -1;
+      while (read.hasMore && read.nextPosition !== null) {
+        if (read.nextPosition <= afterPosition) return yield* stalled(environment, turn.threadId);
+        afterPosition = read.nextPosition;
+        read = yield* call(environment, "oni_thread_read", OrchestratorMcpThreadReadResult, {
+          ...page,
+          afterPosition,
+        });
+        last = read.items.findLast(isReply) ?? last;
+      }
     }
     if (last === undefined) return "";
     let text = last.text ?? "";
@@ -184,7 +199,9 @@ export const make = Effect.gen(function* () {
       const part = rest.items[0];
       if (part === undefined) break;
       text += part.text ?? "";
-      textOffset = part.textTruncated ? (part.nextTextOffset ?? null) : null;
+      const next = part.textTruncated ? (part.nextTextOffset ?? null) : null;
+      if (next !== null && next <= textOffset) return yield* stalled(environment, turn.threadId);
+      textOffset = next;
     }
     return text;
   });
