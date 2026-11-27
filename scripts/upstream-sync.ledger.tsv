@@ -4297,3 +4297,4 @@ fce54e67a6	take	applied cleanly
 c80bd64514	take	kept Onicode's server|loopback roles; dropped scripts/lib/dev-share.test.ts (no dev --share in Onicode)
 5b1934d052	skip	telemetry AnalyticsService only; Onicode removed telemetry
 0a20eef491	take	applied without hosted links; test takes upstream's nested-quote rows
+6479386b6d	take	kept Onicode's early-return shape over upstream's task.offset; device check of same-line markers in the mobile pass
