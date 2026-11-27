@@ -1212,12 +1212,15 @@ export function cutSourceLines(text: string, targetChars = CHUNK_TARGET_CHARS): 
   return runs;
 }
 
-/** GitHub's heading anchor for a heading's rendered text, before duplicates are numbered. */
+/**
+ * GitHub's heading anchor for a heading's rendered text, before duplicates are numbered.
+ * GitHub keeps Ruby's \p{Word} (UTS #18 \w), spaces and hyphens.
+ */
 export function githubHeadingSlug(text: string): string {
   return text
     .trim()
     .toLowerCase()
-    .replace(/[^\p{L}\p{M}\p{N}\p{Pc} -]/gu, "")
+    .replace(/[^\p{Alphabetic}\p{M}\p{Nd}\p{Pc}\p{Join_Control} -]/gu, "")
     .replace(/ /g, "-");
 }
 

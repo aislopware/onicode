@@ -11,6 +11,7 @@ import {
   cutSourceLines,
   extendMarkdownSplit,
   findFootnoteRefChunkIndex,
+  githubHeadingSlug,
   joinMarkdownChunks,
   LARGE_MARKDOWN_CHUNK_MAX_CHARS,
   markdownHeadingPiece,
@@ -1224,5 +1225,15 @@ describe("chunked Markdown footnotes", () => {
     // The unreferenced `[^a]` definition is dropped when the section renders.
     const section = buildMarkdownFootnotesSection(definitions, footnotes)!.text;
     expect(section.startsWith("[^1] [^2]\n\n")).toBe(true);
+  });
+});
+
+describe("githubHeadingSlug", () => {
+  it.each([
+    ["Area of r²", "area-of-r"],
+    ["Ⓜ\uFE0F Metro", "ⓜ\uFE0F-metro"],
+    ["می\u200Cخواهم", "می\u200Cخواهم"],
+  ])("slugs %j like GitHub", (heading, expected) => {
+    expect(githubHeadingSlug(heading)).toBe(expected);
   });
 });
