@@ -110,8 +110,9 @@ vi.mock(import("@onicode/client-runtime/state/runtime"), async (original) => {
     ...actual,
     executeAtomQuery: ((...args: Parameters<typeof actual.executeAtomQuery>) => {
       const path = (args[1] as { fileMetadataPath?: string }).fileMetadataPath;
-      return path === undefined
-        ? actual.executeAtomQuery(...args)
+      if (path === undefined) return actual.executeAtomQuery(...args);
+      return path.includes("stalled")
+        ? new Promise(() => {})
         : Promise.resolve({ _tag: "Success", value: fileMetadata(path) });
     }) as never,
   };
@@ -233,6 +234,11 @@ it("offers download unless the link is a known folder", async () => {
   await using basename = await renderMarkdown("[user.ts](user.ts)");
   await basename.openContextMenu();
   expect(offeredActions()).toContain("download");
+  // A remote that never answers does not hold the menu.
+  state.choose.mockClear();
+  await using stalled = await renderMarkdown("[Notes](./stalled/notes.md)");
+  await stalled.openContextMenu();
+  await vi.waitFor(() => expect(offeredActions()).toContain("download"));
 });
 
 it.each(["[Docs](https://example.com/docs)", "[Readme](docs/readme.md)"])(

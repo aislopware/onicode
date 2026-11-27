@@ -66,6 +66,8 @@ interface MarkdownFileLinkProps {
 
 const MARKDOWN_FILE_LINK_CLASS_NAME = "chat-markdown-file-link";
 
+const DIRECTORY_CHECK_LIMIT_MS = 400;
+
 export const MarkdownFileLink = memo(function MarkdownFileLink({
   environmentId,
   href,
@@ -100,8 +102,14 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
     }
     const query = getFileMetadataQueryAtom(environmentId, iconPath, undefined, metadataThreadRef);
     if (!query) return false;
-    const result = await executeAtomQuery(appAtomRegistry, query, { reportFailure: false });
-    return result._tag === "Success" && result.value?.kind === "directory";
+    const isDirectory = executeAtomQuery(appAtomRegistry, query, { reportFailure: false }).then(
+      (result) => result._tag === "Success" && result.value?.kind === "directory",
+    );
+    // A slow or stalled remote must not hold the menu; an unknown kind still offers Download.
+    return Promise.race([
+      isDirectory,
+      new Promise<boolean>((resolve) => setTimeout(resolve, DIRECTORY_CHECK_LIMIT_MS, false)),
+    ]);
   };
   const handleOpenInEditor = () => {
     if (!onOpen) {
