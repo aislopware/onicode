@@ -1412,7 +1412,6 @@
   "9bbecec926c3b695": "Tentar novamente",
   "aed763efb0a6d555": "Nova thread",
   "94ab2b4bb8e7cb82": "Não foi possível carregar o PDF.",
-  "7795100449857924": "Não foi possível renderizar o PDF. Ele pode estar danificado ou protegido por senha.",
   "3c78584416531f84": "Não foi possível carregar o PDF",
   "fe8ed6127f1d8a28": "Tentar novamente",
   "509efbd3376d6f4c": "Carregando PDF…",
@@ -5795,5 +5794,11 @@
   "ad208e3e32c85029": "Ocultar todas",
   "3328503592789bed": "Zen",
   "856812e7e1fc445e": "Chamadas de ferramentas no chat",
-  "8d545d54c0a9e950": "Oculta os comandos, edições e pesquisas que os agentes executam. \"Ocultar bem-sucedidas\" mantém as falhas. Zen mostra só as respostas finais. Aprovações, perguntas e erros sempre aparecem."
+  "8d545d54c0a9e950": "Oculta os comandos, edições e pesquisas que os agentes executam. \"Ocultar bem-sucedidas\" mantém as falhas. Zen mostra só as respostas finais. Aprovações, perguntas e erros sempre aparecem.",
+  "3771480d7421e412": "Este arquivo exige uma senha.",
+  "00fa8cef0040eed9": "Senha incorreta. Tente novamente.",
+  "ad70bb0e647d4f2a": "A visualização não abre arquivos com este tipo de criptografia.",
+  "153f20058cfb8da1": "Não foi possível exibir o PDF. Ele pode estar danificado.",
+  "541090660afda71b": "Senha do arquivo",
+  "8db7663daebcd333": "Desbloquear"
 }

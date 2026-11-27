@@ -1412,7 +1412,6 @@
   "9bbecec926c3b695": "Reintentar",
   "aed763efb0a6d555": "Nuevo hilo",
   "94ab2b4bb8e7cb82": "No se pudo cargar el PDF.",
-  "7795100449857924": "No se pudo renderizar el PDF. Puede estar dañado o protegido con contraseña.",
   "3c78584416531f84": "No se pudo cargar el PDF",
   "fe8ed6127f1d8a28": "Volver a intentar",
   "509efbd3376d6f4c": "Cargando PDF…",
@@ -5795,5 +5794,11 @@
   "ad208e3e32c85029": "Ocultar todo",
   "3328503592789bed": "Zen",
   "856812e7e1fc445e": "Llamadas a herramientas en el chat",
-  "8d545d54c0a9e950": "Oculta los comandos, ediciones y búsquedas que ejecutan los agentes. Ocultar las correctas mantiene los fallos. Zen solo muestra las respuestas finales. Las aprobaciones, preguntas y errores siempre se muestran."
+  "8d545d54c0a9e950": "Oculta los comandos, ediciones y búsquedas que ejecutan los agentes. Ocultar las correctas mantiene los fallos. Zen solo muestra las respuestas finales. Las aprobaciones, preguntas y errores siempre se muestran.",
+  "3771480d7421e412": "Este archivo requiere una contraseña.",
+  "00fa8cef0040eed9": "Contraseña incorrecta. Inténtalo de nuevo.",
+  "ad70bb0e647d4f2a": "La vista previa no puede abrir archivos con este tipo de cifrado.",
+  "153f20058cfb8da1": "No se pudo mostrar el PDF. Puede estar dañado.",
+  "541090660afda71b": "Contraseña del archivo",
+  "8db7663daebcd333": "Desbloquear"
 }

@@ -34,7 +34,7 @@ const strictUtf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 
 // A name without the UTF-8 flag or a Unicode path field is often UTF-8 anyway, so CP437 (the
 // ZIP spec's default) is only the fallback; replacing invalid bytes would merge distinct names.
-function decodeLegacyName(raw: Uint8Array) {
+export function decodeLegacyName(raw: Uint8Array) {
   try {
     return strictUtf8.decode(raw);
   } catch {
@@ -44,7 +44,7 @@ function decodeLegacyName(raw: Uint8Array) {
   }
 }
 
-export function readZipDirectory(input: ArrayBuffer | Uint8Array, entryLimit = 2048) {
+function scanZipDirectory(input: ArrayBuffer | Uint8Array, entryLimit: number) {
   const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   let directoryEnd = -1;
@@ -109,10 +109,12 @@ export function readZipDirectory(input: ArrayBuffer | Uint8Array, entryLimit = 2
   if (directoryEnd < 0 || directorySize > directoryEnd)
     throw new ZipError({ code: "zip-unreadable" });
   const records: number[] = [];
+  let encrypted = false;
   for (let offset = directoryEnd - directorySize; offset < directoryEnd;) {
     if (offset + 46 > directoryEnd || view.getUint32(offset, true) !== 0x02014b50)
       throw new ZipError({ code: "zip-directory-damaged" });
     if (records.push(offset) > entryLimit) throw new ZipError({ code: "archive-too-many-entries" });
+    encrypted ||= (view.getUint16(offset + 8, true) & 1) !== 0;
     const nameLength = view.getUint16(offset + 28, true);
     if (nameLength > 1024) throw new ZipError({ code: "archive-path-too-long" });
     offset +=
@@ -120,7 +122,15 @@ export function readZipDirectory(input: ArrayBuffer | Uint8Array, entryLimit = 2
     if (offset > directoryEnd) throw new ZipError({ code: "zip-directory-damaged" });
   }
   // Data prepended to the archive (such as a self-extractor stub) shifts every local offset.
-  const shift = directoryEnd - directorySize - directoryOffset;
+  return { bytes, view, records, encrypted, shift: directoryEnd - directorySize - directoryOffset };
+}
+
+export function checkZipDirectory(input: ArrayBuffer | Uint8Array, entryLimit = 2048) {
+  return { encrypted: scanZipDirectory(input, entryLimit).encrypted };
+}
+
+export function readZipDirectory(input: ArrayBuffer | Uint8Array, entryLimit = 2048) {
+  const { bytes, view, records, shift } = scanZipDirectory(input, entryLimit);
   const entries = new Map<string, ZipEntry>();
   for (const offset of records) {
     const entry = zipEntry(bytes, view, offset, shift);

@@ -1412,7 +1412,6 @@
   "9bbecec926c3b695": "Retry",
   "aed763efb0a6d555": "New thread",
   "94ab2b4bb8e7cb82": "The PDF could not be loaded.",
-  "7795100449857924": "The PDF could not be rendered. It may be damaged or password protected.",
   "3c78584416531f84": "Could not load PDF",
   "fe8ed6127f1d8a28": "Try again",
   "509efbd3376d6f4c": "Loading PDF…",
@@ -5803,5 +5802,11 @@
   "ad208e3e32c85029": "Hide all",
   "3328503592789bed": "Zen",
   "856812e7e1fc445e": "Tool calls in chat",
-  "8d545d54c0a9e950": "Hide the commands, edits, and searches agents run. Hide successful keeps failures. Zen shows only final answers. Approvals, questions, and errors always show."
+  "8d545d54c0a9e950": "Hide the commands, edits, and searches agents run. Hide successful keeps failures. Zen shows only final answers. Approvals, questions, and errors always show.",
+  "3771480d7421e412": "This file requires a password.",
+  "00fa8cef0040eed9": "Incorrect password. Try again.",
+  "ad70bb0e647d4f2a": "This file uses encryption that the preview cannot open.",
+  "153f20058cfb8da1": "The PDF could not be rendered. It may be damaged.",
+  "541090660afda71b": "File password",
+  "8db7663daebcd333": "Unlock"
 }

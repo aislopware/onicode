@@ -5388,9 +5388,7 @@
   "87b291f622900431": "Ce classeur a des feuilles non valides ou trop nombreuses.",
   "e355efff77791140": "Il manque une feuille dans ce classeur.",
   "13e79167614022e3": "Le document décompressé est trop volumineux pour un aperçu sûr.",
-  "bf65cedd89849991": "Ce fichier est endommagé, chiffré ou n’est pas un document Office valide.",
   "a6e5ef4b138e6a43": "Ce fichier contient trop d’entrées d’archive pour l’aperçu.",
-  "73b9f84158ee314d": "Ce n’est pas un fichier Office Open XML valide. Les fichiers chiffrés ne sont pas pris en charge.",
   "75315613ba8fdf22": "Le moteur Office s’est arrêté",
   "c5e464f821c84612": "Le moteur Office a envoyé une réponse illisible",
   "307a2cb3be7a765b": "Ce navigateur n’a pas de polices dans les workers",
@@ -12340,5 +12338,14 @@
   "27d76249d09eb69f": "Guide de revue prêt",
   "faa3bb26abb39c93": "Échec du guide de revue",
   "b7df38b7d8792d78": "Ouvrir le guide",
-  "9e91e9a77b664e4e": "Impossible de démarrer un guide de revue"
+  "9e91e9a77b664e4e": "Impossible de démarrer un guide de revue",
+  "3771480d7421e412": "Ce fichier nécessite un mot de passe.",
+  "00fa8cef0040eed9": "Mot de passe incorrect. Réessayez.",
+  "ad70bb0e647d4f2a": "L’aperçu ne peut pas ouvrir les fichiers utilisant ce chiffrement.",
+  "541090660afda71b": "Mot de passe du fichier",
+  "51cbb1c3dc221ce0": "Déverrouiller",
+  "bbe126c259d4d596": "Le déchiffrement de ce document demande trop de calculs pour l’aperçu.",
+  "53c28271192e5707": "Ce fichier est endommagé ou n’est pas un document Office valide.",
+  "0f959b69c5eb2499": "Ce livre numérique nécessite une liseuse compatible avec son DRM.",
+  "533f7af3d2552cd0": "Ce fichier Office Open XML n’est pas valide."
 }

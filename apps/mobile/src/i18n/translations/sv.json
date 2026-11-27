@@ -1412,7 +1412,6 @@
   "9bbecec926c3b695": "Försök igen",
   "aed763efb0a6d555": "Ny tråd",
   "94ab2b4bb8e7cb82": "PDF-filen kunde inte läsas in.",
-  "7795100449857924": "PDF-filen kunde inte återges. Den kan vara skadad eller lösenordsskyddad.",
   "3c78584416531f84": "Kunde inte läsa in PDF-filen",
   "fe8ed6127f1d8a28": "Försök igen",
   "509efbd3376d6f4c": "Läser in PDF…",
@@ -5801,5 +5800,11 @@
   "ad208e3e32c85029": "Dölj alla",
   "3328503592789bed": "Zen",
   "856812e7e1fc445e": "Verktygsanrop i chatten",
-  "8d545d54c0a9e950": "Dölj kommandon, redigeringar och sökningar som agenter kör. Dölj lyckade behåller misslyckanden. Zen visar bara slutliga svar. Godkännanden, frågor och fel visas alltid."
+  "8d545d54c0a9e950": "Dölj kommandon, redigeringar och sökningar som agenter kör. Dölj lyckade behåller misslyckanden. Zen visar bara slutliga svar. Godkännanden, frågor och fel visas alltid.",
+  "3771480d7421e412": "Den här filen kräver ett lösenord.",
+  "00fa8cef0040eed9": "Fel lösenord. Försök igen.",
+  "ad70bb0e647d4f2a": "Förhandsvisningen kan inte öppna filer med den här krypteringen.",
+  "153f20058cfb8da1": "PDF-filen kunde inte visas. Den kan vara skadad.",
+  "541090660afda71b": "Filens lösenord",
+  "8db7663daebcd333": "Lås upp"
 }

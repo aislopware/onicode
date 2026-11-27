@@ -65,6 +65,12 @@ const browserTestApiPort = 20_000 + ((Hash.string(import.meta.dirname) >>> 0) % 
 // follow. Found late, each one re-optimizes and reloads the page, in dev and mid test run.
 const lazyPreviewDependencies = [
   "saxes",
+  "@noble/ciphers/aes.js",
+  "@noble/hashes/hmac.js",
+  "@noble/hashes/legacy.js",
+  "@noble/hashes/pbkdf2.js",
+  "@noble/hashes/sha2.js",
+  "@noble/hashes/utils.js",
   "@betteroffice/docx/editor",
   "@betteroffice/docx/layout",
   "@betteroffice/docx/layout/render",
@@ -205,6 +211,7 @@ export default defineConfig(() => {
         "@pierre/diffs/edit",
         "@pierre/diffs/react",
         "@pierre/diffs/worker/worker.js",
+        "@onicode/client-runtime > @zip.js/zip.js/index-native.cjs",
         "effect/Array",
         "effect/Order",
         "react-dom/client",

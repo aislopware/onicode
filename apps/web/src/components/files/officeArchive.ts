@@ -1,6 +1,12 @@
 import * as Schema from "effect/Schema";
 import { strToU8, zipSync } from "fflate";
-import { readZipDirectory, UnreadableZipEntryError } from "@onicode/client-runtime/zip/directory";
+import { boundedZip } from "@onicode/client-runtime/zip/bounded-zip";
+import {
+  checkZipDirectory,
+  readZipDirectory,
+  UnreadableZipEntryError,
+  type ZipEntry,
+} from "@onicode/client-runtime/zip/directory";
 import { parseUrl } from "@onicode/shared/url";
 import { SaxesParser } from "saxes";
 import { externalUrl } from "./office/links";
@@ -1138,19 +1144,26 @@ function wordExpansion(
 
 // Stream each entry before handing it to an engine. A tiny compressed archive
 // must not turn into an unbounded allocation on the UI thread.
-export async function boundedArchive(input: Extract<OfficeWorkerRequest, { type: "open" }>) {
+export async function boundedArchive(
+  input: Extract<OfficeWorkerRequest, { type: "open" }>,
+  password?: string,
+) {
   const { bytes } = input;
   const spreadsheet = input.kind === "xlsx";
+  const openDocument = input.kind === "odt" || input.kind === "ods" || input.kind === "odp";
   if (bytes.byteLength > OFFICE_PREVIEW_MAX_BYTES)
     throw new PreviewError({ code: "file-too-large" });
-  let directory: ReturnType<typeof readZipDirectory>;
+  const entryLimit = input.kind === "epub" ? 8192 : 2048;
+  let directory: ZipEntry[];
   try {
-    directory = readZipDirectory(bytes, input.kind === "epub" ? 8192 : 2048);
+    directory = checkZipDirectory(bytes, entryLimit).encrypted
+      ? await readEncryptedOfficeArchive(bytes, entryLimit, password)
+      : [...readZipDirectory(bytes, entryLimit).values()];
   } catch (cause) {
     if (!isUnreadableZipEntry(cause)) throw cause;
     throw new PreviewError({ code: "office-invalid" });
   }
-  const entries = [...directory.values()].filter((entry) => !entry.directory);
+  const entries = directory.filter((entry) => !entry.directory);
   if (
     input.kind === "docx" &&
     entries.some((entry) => entry.name.includes("\\") || entry.name.startsWith("/"))
@@ -1253,7 +1266,11 @@ export async function boundedArchive(input: Extract<OfficeWorkerRequest, { type:
         continue;
       }
       if (media) mediaSizes.set(entry.name, Math.ceil((content.length * 4) / 3));
-      archive.set(entry.name, /\.(?:xml|rels)$/i.test(entry.name) ? officeXml(content) : content);
+      // OpenDocument can store ciphertext in an XML part, including content.xml.
+      archive.set(
+        entry.name,
+        !openDocument && /\.(?:xml|rels)$/i.test(entry.name) ? officeXml(content) : content,
+      );
     }
   }
   if (word) {
@@ -1301,11 +1318,32 @@ export async function boundedArchive(input: Extract<OfficeWorkerRequest, { type:
   return { archive, word, workbook };
 }
 
+async function readEncryptedOfficeArchive(
+  bytes: ArrayBuffer,
+  maxEntries: number,
+  password?: string,
+) {
+  const files = await boundedZip(bytes, OFFICE_PREVIEW_MAX_BYTES, { password, maxEntries });
+  return [...files].map(([name, file]): ZipEntry => ({
+    name,
+    originalName: name,
+    directory: file.directory,
+    date: file.date,
+    size: file.bytes.length,
+    // Word section parsing needs the same 64 KiB chunks the ZIP reader emits.
+    async read(onChunk) {
+      for (let at = 0; at < file.bytes.length; at += 64 * 1024)
+        onChunk(file.bytes.subarray(at, at + 64 * 1024));
+    },
+  }));
+}
+
 export async function prepareOffice(
   bytes: ArrayBuffer,
   kind: Extract<OfficeWorkerRequest, { type: "open" }>["kind"],
+  password?: string,
 ) {
-  const result = await boundedArchive({ type: "open", kind, bytes });
+  const result = await boundedArchive({ type: "open", kind, bytes }, password);
   const root =
     kind === "docx"
       ? "word/document.xml"

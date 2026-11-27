@@ -6,7 +6,7 @@ import {
   terminalOutputPlainText,
 } from "@onicode/shared/terminalOutput";
 
-import { archiveText, type OfficeArchive } from "./officeArchive";
+import { officeXmlDecoder, type OfficeArchive } from "./officeArchive";
 import { type OfficeWorkerResult, type NotebookCell } from "./officePreviewProtocol";
 import { PreviewError } from "./previewFailure";
 import {
@@ -160,9 +160,11 @@ export async function openDocument(
   kind: "odt" | "ods" | "odp",
 ): Promise<OfficeWorkerResult> {
   markupBytes = 0;
-  const source = archiveText(archive, "content.xml");
-  if (!source) throw new PreviewError({ code: "odf-no-content" });
-  const root = parseXml(source);
+  const content = archive.get("content.xml");
+  if (!content?.length) throw new PreviewError({ code: "odf-no-content" });
+  const root = parseXml(
+    typeof content === "string" ? content : officeXmlDecoder(content).decode(content),
+  );
   if (kind === "ods") {
     const tables = find(root, "table:table");
     if (!tables.length || tables.length > 100) throw new PreviewError({ code: "ods-sheet-count" });
