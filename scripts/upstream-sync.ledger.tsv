@@ -4580,3 +4580,4 @@ e19b84de74	take	clean
 289dd3f89c	take	clean
 a6e147bbec	take	clean
 d898612a03	take	docs/user/browser.md bullet rewritten in Onicode's voice; i18n key renamed in all web locales; mobile has no floating preview
+52c5a9ae6d	take	adapted: test archive is a Map (no JSZip)
