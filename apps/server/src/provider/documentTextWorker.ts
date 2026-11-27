@@ -16,6 +16,7 @@ const LINE_START = Symbol("line-start");
 const THEMATIC_BREAK = Symbol("thematic-break");
 const MARKUP_COMPATIBILITY_NS = "http://schemas.openxmlformats.org/markup-compatibility/2006";
 const MATHML_NS = "http://www.w3.org/1998/Math/MathML";
+const ODF_DRAW_NS = "urn:oasis:names:tc:opendocument:xmlns:drawing:1.0";
 type TextPart =
   | string
   | typeof CELL_START
@@ -81,6 +82,7 @@ interface XmlNode {
   epubTable?: boolean;
   mathmlFirstChildSeen?: boolean;
   epubBlock?: boolean;
+  odfTextBox?: "inline" | "block";
 }
 
 // ODF 1.3 Part 3 §6.1.2: paragraph character data turns TAB, CR and LF into spaces, collapses
@@ -179,6 +181,8 @@ function xml(source: string, extension: string): XmlNode {
     if (odf && node.name === "s") node.spaceCount = repeatCount(node.attrs.c);
     stack.at(-1)!.children.push(node);
     stack.push(node);
+    if (odf && node.name === "text-box" && namespaceOf(tag.name, stack) === ODF_DRAW_NS)
+      node.odfTextBox = stack.at(-2)?.attrs["anchor-type"] === "as-char" ? "inline" : "block";
     if (
       extension === ".epub" &&
       node.name === "semantics" &&
@@ -338,7 +342,6 @@ function* all(
     else yield* all(child, name, skip);
   }
 }
-const TEXT_BOXES = new Set(["txbxContent", "text-box"]);
 /** The enclosing paragraph's current line, so a text box inside it starts a line of its own. */
 interface Line {
   open: boolean;
@@ -351,8 +354,9 @@ function* text(node: XmlNode, line?: Line): Generator<TextPart, void> {
     yield { imageDescription: node.imageDescription };
     return;
   }
-  // Word and OpenDocument text boxes hold their own paragraphs inside the anchoring paragraph.
-  if (TEXT_BOXES.has(node.name)) {
+  // Word and anchored OpenDocument text boxes hold their own paragraphs inside the anchoring
+  // paragraph.
+  if (node.name === "txbxContent" || node.odfTextBox === "block") {
     // Held until the box shows something, so an empty box adds no line.
     const held: Array<TextPart> = [];
     let shown = false;
@@ -374,6 +378,20 @@ function* text(node: XmlNode, line?: Line): Generator<TextPart, void> {
         line.boxes--;
         line.afterBox ||= shown;
       }
+    }
+  } else if (node.odfTextBox === "inline") {
+    // A box anchored as a character sits in the line, so only its own paragraphs break.
+    let seenParagraph = false;
+    for (const child of node.children) {
+      if (typeof child === "string") {
+        yield child;
+        continue;
+      }
+      if (child.name === "p" || child.name === "h") {
+        if (seenParagraph) yield "\n";
+        seenParagraph = true;
+      }
+      yield* text(child, line);
     }
   } else if (["tab", "ptab", "cell"].includes(node.name)) yield "\t";
   else if (["br", "line-break", "cr"].includes(node.name)) yield "\n";

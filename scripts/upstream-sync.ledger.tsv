@@ -4624,3 +4624,4 @@ c103563d84	take	taken as is
 f765ce36fe	take	adopted upstream's scpRemoteHost over Onicode's last-@ SCP_REMOTE regex (1977b26df4): same last-@ split, plus Git's connect.c rules (bracketed hosts, a slash before the colon, option-looking user/path rejected), so it is stricter and matches git; GitHub definition 14, GitLab discovery 10 passed
 c443bbfc9d	take	taken as is
 a7b4502c41	take	taken as is
+8335c0951b	take	conflict with Onicode's text-box lines (f456fb8cc0, which broke every text-box onto its own lines): adopted upstream's draw-namespace check (a foreign text-box is plain text) and its inline flow for boxes anchored as-char (only their own paragraphs break); kept Onicode's own-line handling for paragraph-anchored ODF boxes and Word txbxContent, where the box floats beside the text; Onicode's unprefixed ODT box row now uses the draw namespace real files carry; userInputAttachments 74 passed

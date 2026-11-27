@@ -1408,7 +1408,7 @@ describe("question answer paths", () => {
           bounded: true,
           parts: {
             "content.xml":
-              '<document><p>Before<frame><text-box><p>Callout</p><p>Second</p></text-box></frame>after</p><p>Total<frame><text-box><table><table-row><table-cell office:value-type="float" office:value="42"/></table-row></table></text-box></frame>end</p></document>',
+              '<document xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0"><p>Before<draw:frame><draw:text-box><p>Callout</p><p>Second</p></draw:text-box></draw:frame>after</p><p>Total<draw:frame><draw:text-box><table><table-row><table-cell office:value-type="float" office:value="42"/></table-row></table></draw:text-box></draw:frame>end</p></document>',
           },
           expected: ["Before\nCallout\nSecond\nafter", "Total\n42"],
         },
@@ -1905,6 +1905,21 @@ describe("question answer paths", () => {
           },
           expected: [
             `## Orchard\n19   violet crates shipped today\tDock\nGate\u00a0B\nSecond\nA B${"\nContents\nOrchard 1".repeat(7)}`,
+          ],
+        },
+        {
+          ext: "odt",
+          parts: {
+            "content.xml":
+              '<office:document-content xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:other="urn:example:other">' +
+              "<office:body><office:text><text:p>Inspection route</text:p>" +
+              '<text:p><draw:frame text:anchor-type="as-char"><draw:text-box><text:p>North loading dock</text:p><text:p>South loading dock</text:p></draw:text-box></draw:frame></text:p>' +
+              '<text:p>Meeting point: <draw:frame text:anchor-type="as-char"><draw:text-box><text:p>Gate 4</text:p></draw:text-box></draw:frame> at noon</text:p>' +
+              "<text:p>End <other:text-box>of <text:span>route</text:span>.</other:text-box></text:p>" +
+              "</office:text></office:body></office:document-content>",
+          },
+          expected: [
+            "Inspection route\nNorth loading dock\nSouth loading dock\nMeeting point: Gate 4 at noon\nEnd of route.",
           ],
         },
         {
