@@ -3990,3 +3990,4 @@ f7ec366acd	take	taken as is
 1c3f0ee88f	skip	removed surface: only touches the relay ManagedEndpointRuntime, which Onicode removed
 c991a91ec6	take	code page added to Onicode's rtfCodePage; scenario ported to desktop (ControlOrMeta+p)
 e6738fd8bc	take	kept Onicode's withWorkspaceLease(fileSystem, path, cwd, ...) and added the snapshot map; new fields optional and opt-in, old mobile unaffected
+25bbfb34c8	skip	T3 release pipeline and server-served web UI: the asset manifest is read only by upstream's static web serving, which Onicode removed
