@@ -62,6 +62,7 @@ vi.mock("./composerImages", () => ({
 vi.mock("./uuid", () => ({ uuidv4: () => `import-${++mocks.sequence}` }));
 
 import {
+  composerContextLinkMarkdown,
   copiedComposerContextText,
   importComposerContextClipboard,
 } from "./composerContextClipboard";
@@ -444,6 +445,23 @@ describe("mobile context clipboard copies", () => {
     ];
     for (const [copied, format, expected] of cases) {
       expect(copiedComposerContextText(copied, format, message, fragment)).toEqual(expected);
+    }
+  });
+});
+
+describe("mobile context links", () => {
+  it("renders references as links and keeps a ! before one as text", () => {
+    const reference = formatComposerContextReference(image);
+    const href = "oni-context://v1/image/image-source";
+    const cases: ReadonlyArray<[string, string]> = [
+      [`See ${reference} now`, `See [Checkout](${href}) now`],
+      [`Look!${reference}`, `Look\\![Checkout](${href})`],
+      [`!${reference}`, `\\![Checkout](${href})`],
+      [`Look\\!${reference}`, `Look\\![Checkout](${href})`],
+      [`Look\\\\!${reference}`, `Look\\\\\\![Checkout](${href})`],
+    ];
+    for (const [text, expected] of cases) {
+      expect(composerContextLinkMarkdown(text, () => "Checkout")).toBe(expected);
     }
   });
 });
