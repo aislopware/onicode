@@ -4646,3 +4646,4 @@ cef444e553	take	taken as is
 d7ea20f3d9	take	taken as is
 f771ee89a4	take	taken as is; shared by desktop and mobile
 e70368d582	take	styles.xml read from Onicode's OfficeArchive (string or bytes); test uses TestArchive (no JSZip)
+2c019f21ec	take	kept Onicode's measured context limits (effectiveContextLimits, /context per process) and added upstream's per-session model ledger anchor
