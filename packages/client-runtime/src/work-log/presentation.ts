@@ -26,6 +26,7 @@ import { toolOutputIndicatesFailure } from "@onicode/shared/toolOutput";
 
 import {
   summarizeOniToolCalls,
+  oniToolOutcomeLabel,
   oniToolResultIndicatesFailure,
   type OniToolSummaryCall,
 } from "@onicode/client-runtime/oniToolSummary";
@@ -304,13 +305,24 @@ export function resolveWorkEntryToolPresentation(
     workEntryToolName(entry),
     workEntryToolInput(entry),
   );
+  const output = workEntryToolOutput(entry);
+  const failed = definition !== null && oniToolResultIndicatesFailure(output);
   const status = entry.toolLifecycleStatus ?? fallbackStatus;
-  return resolveOniMcpToolPresentation(
+  const presentation = resolveOniMcpToolPresentation(
     definition,
-    definition && oniToolResultIndicatesFailure(workEntryToolOutput(entry)) ? "failed" : status,
+    failed ? "failed" : status,
     entry.toolData,
     resolve,
   );
+  if (definition === null || presentation === null || failed || status !== "completed") {
+    return presentation;
+  }
+  const outcomeLabel = oniToolOutcomeLabel(
+    definition.summaryAction,
+    { input: workEntryToolInput(entry), output, outcome: "completed" },
+    resolve,
+  );
+  return outcomeLabel === undefined ? presentation : { ...presentation, displayName: outcomeLabel };
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

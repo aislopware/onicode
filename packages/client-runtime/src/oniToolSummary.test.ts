@@ -1,3 +1,4 @@
+import { compactOniMcpToolOutput } from "@onicode/shared/toolOutput";
 import { describe, expect, it } from "vite-plus/test";
 
 import { summarizeOniToolCalls, type OniToolSummaryCall } from "./oniToolSummary.ts";
@@ -98,6 +99,66 @@ describe("summarizeOniToolCalls", () => {
       failedCount: 1,
     });
     expect(summarizeOniToolCalls("ci-rerun", [rerun()]).label).toBe(
+      "Found no failed checks to re-run",
+    );
+  });
+
+  it("preserves pull request summary outcomes after MCP tool output compaction", () => {
+    const createExisting = completed(
+      { title: "t" },
+      compactOniMcpToolOutput("onicode.pull_request_create", {
+        number: 1,
+        repository: "o/r",
+        url: "https://github.com/o/r/pull/1",
+        created: false,
+      }),
+    );
+    expect(summarizeOniToolCalls("create-pr", [createExisting]).label).toBe(
+      "Found 1 open pull request",
+    );
+
+    const mergeQueued = completed(
+      { auto: false },
+      compactOniMcpToolOutput("onicode.pull_request_merge", { number: 1, state: "open" }),
+    );
+    const mergeLanded = completed(
+      { auto: true },
+      compactOniMcpToolOutput("onicode.pull_request_merge", { number: 2, state: "merged" }),
+    );
+    expect(summarizeOniToolCalls("merge-pr", [mergeQueued]).label).toBe(
+      "Queued 1 pull request to merge",
+    );
+    expect(summarizeOniToolCalls("merge-pr", [mergeLanded]).label).toBe("Merged 1 pull request");
+
+    const guidesMixed = completed(
+      {},
+      compactOniMcpToolOutput("onicode.write_pull_request_guides", {
+        guides: [
+          { number: 1, outcome: "started", detail: null },
+          { number: 2, outcome: "failed", detail: "Guides disabled" },
+        ],
+      }),
+    );
+    expect(summarizeOniToolCalls("write-pr-guides", [guidesMixed])).toEqual({
+      label: "Started 1 review guide, 1 failed",
+      failedCount: 1,
+    });
+
+    const rerunMixed = completed(
+      {},
+      compactOniMcpToolOutput("onicode.ci_rerun", {
+        checks: [
+          { name: "test", rerun: true, detail: null },
+          { name: "external", rerun: false, detail: "Cannot rerun" },
+        ],
+      }),
+    );
+    const rerunEmpty = completed({}, compactOniMcpToolOutput("onicode.ci_rerun", { checks: [] }));
+    expect(summarizeOniToolCalls("ci-rerun", [rerunMixed])).toEqual({
+      label: "Re-ran 1 check, 1 refused",
+      failedCount: 1,
+    });
+    expect(summarizeOniToolCalls("ci-rerun", [rerunEmpty]).label).toBe(
       "Found no failed checks to re-run",
     );
   });
