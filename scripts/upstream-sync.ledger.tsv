@@ -4111,3 +4111,4 @@ bf20415ea6	take	taken as is
 4fd24866ab	take	taken as is
 84490014d1	take	taken as is
 923fe897d6	take	taken as is (Claude only); docs paragraph lands before Onicode's 'Claude can still ask in Full access…'
+b888f3c3ba	take	kept Onicode's markdownMathRanges argument and its titleSeed call shape (deriveComposerSendTitle(snapshot, m)); scenario terminal-excerpt-title-follows-language ported to the desktop target (Ctrl+Shift+A select-all, as the Linux desktop scenarios run)
