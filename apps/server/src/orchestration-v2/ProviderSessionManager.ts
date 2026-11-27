@@ -419,9 +419,10 @@ function sessionScopedArtifactThreadId(
   }
 }
 
-// Past these bounds the oldest entries go: an item reported that long ago has left the run's queue.
-const REPORTED_TURN_ITEM_RUNS = 16;
-const REPORTED_TURN_ITEMS_PER_RUN = 128;
+// Past these bounds the oldest entries go. A run's queue holds at most ProviderCommitBatch's
+// backlog (256 events), so an item reported further back has been written.
+const REPORTED_TURN_ITEM_RUNS = 64;
+const REPORTED_TURN_ITEMS_PER_RUN = 256;
 
 /**
  * The order the pump saw each run's turn items in. A direct session-scoped write passes it on,
@@ -440,15 +441,14 @@ function makeReportedTurnItems() {
     note: (item: OrchestrationV2TurnItem) => {
       if (item.runId === null) return;
       const key = `${item.threadId}\u0000${item.runId}`;
-      const known = runs.get(key);
-      if (known?.ids.has(item.id)) return;
-      const run = known ?? {
+      const run = runs.get(key) ?? {
         threadId: item.threadId,
         runId: item.runId,
         ids: new Set<OrchestrationV2TurnItem["id"]>(),
       };
       runs.delete(key);
       runs.set(key, run);
+      if (run.ids.has(item.id)) return;
       run.ids.add(item.id);
       if (run.ids.size > REPORTED_TURN_ITEMS_PER_RUN) {
         run.ids.delete(run.ids.values().next().value!);

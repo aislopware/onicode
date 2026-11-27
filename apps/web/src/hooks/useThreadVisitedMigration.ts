@@ -28,7 +28,7 @@ export function startThreadVisitedMigration(registry: AtomRegistry.AtomRegistry)
         registry,
         threadEnvironment.visit,
         { environmentId: thread.environmentId, input: { threadId: thread.id, visitedAt: local } },
-        { reportFailure: false },
+        { reportFailure: false, reportDefect: false },
       );
     }
   };
