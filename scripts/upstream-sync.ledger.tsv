@@ -4556,3 +4556,4 @@ affe0cdf9d	skip	kept Onicode's single mcp__onicode__ Pi registration: the fix ke
 fd9b7e83ec	take	clean; Codex (follows upstream)
 a62266d842	take	adapted: test draws /splash-logo.png (Onicode's public dir has no favicon-32x32.png); server already answers API routes with CORS
 37534874ea	take	clean
+f7d8d3a89c	take	clean; mobile does not apply theme CSS
