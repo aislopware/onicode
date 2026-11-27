@@ -4384,3 +4384,4 @@ e66a0063aa	take	kept Onicode's interrupted-steer note restore (a different event
 2858e6caff	take	toggle.tsx: Onicode's pressed background is in the base class, so data-pressed:bg-accent became bg-(--contrast-accent) there and Onicode's ghost variant stays; --contrast-accent sits beside --contrast-input (equals --accent at 100%); scenario ported, typechecked
 3f7acd7e8b	take	applied cleanly; scenario ported, typechecked; mobile n.a. (native fences)
 c66881ff2b	take	applied cleanly; scenario ported, typechecked
+7a8f65a5ff	take	applied cleanly; scenario change typechecked
