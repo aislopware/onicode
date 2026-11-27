@@ -491,6 +491,10 @@ function markdownLinkTailScanner(markdown: string) {
     markdown,
     new RegExp(`${ESCAPE}|'|${PARAGRAPH_END}`, "g"),
   );
+  const parenthesisEnd = markdownRunEndFinder(
+    markdown,
+    new RegExp(`${ESCAPE}|[()]|${PARAGRAPH_END}`, "g"),
+  );
   const titleWhitespaceEnd = markdownRunEndFinder(
     markdown,
     new RegExp(`\\S|${PARAGRAPH_END}`, "g"),
@@ -499,9 +503,11 @@ function markdownLinkTailScanner(markdown: string) {
     const end = whitespaceEnd(start);
     const quote = markdown[end];
     if (quote === ")") return end + 1;
-    if (end === start || (quote !== '"' && quote !== "'")) return null;
-    const quoteEnd = (quote === '"' ? doubleQuoteEnd : singleQuoteEnd)(end + 1);
-    if (markdown[quoteEnd] !== quote) return null;
+    if (end === start || (quote !== '"' && quote !== "'" && quote !== "(")) return null;
+    const titleEnd =
+      quote === '"' ? doubleQuoteEnd : quote === "'" ? singleQuoteEnd : parenthesisEnd;
+    const quoteEnd = titleEnd(end + 1);
+    if (markdown[quoteEnd] !== (quote === "(" ? ")" : quote)) return null;
     const close = titleWhitespaceEnd(quoteEnd + 1);
     return markdown[close] === ")" ? close + 1 : null;
   };
