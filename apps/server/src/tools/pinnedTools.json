@@ -25,19 +25,19 @@
     }
   },
   "obu": {
-    "version": "4.11.0",
+    "version": "4.12.0",
     "assets": {
       "darwin-arm64": {
-        "bytes": 7720672,
-        "sha256": "3c7516123d599a7e69fede01b7db44f2ddc7b87787d13d573368f535ac6f6a61"
+        "bytes": 7753920,
+        "sha256": "6f7b46454f0f625e77a2c88be24fae7f34d196cd2cc2c9d7beea9434d0f327bc"
       },
       "linux-x64": {
-        "bytes": 9115320,
-        "sha256": "f898db1941fe0f3e981f158e3f32644af22b6e9dda00e0788f337f0304d7e213"
+        "bytes": 9142048,
+        "sha256": "98ee8267dac74f93eb376f21eaa9676a856bf0078d55b129be4c1e72405caecf"
       },
       "windows-x64": {
-        "bytes": 8544768,
-        "sha256": "9708da3d57ca9a0b0653e0fc9830f81572977be020e749642d745b10e2cf4b06"
+        "bytes": 10905600,
+        "sha256": "a9c10480c0adc72dcadb5bfc6f0e09f36ed22ab4786697984c05a94e11710855"
       }
     }
   }
