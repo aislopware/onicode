@@ -2943,11 +2943,11 @@ it("renders EPUB publisher styles and follows an anchored link to a fixed-layout
       #opening { background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=="); }`,
     "OPS/styles/accent.css": "\uFEFF#opening { color: rgb(30, 45, 60); }",
     "OPS/illustration.svg": `<?xml-stylesheet href="styles/poster.css" type="text/css"?>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100">
+        <svg xmlns="http://www.w3.org/2000/svg" xmlns:epub="http://www.idpf.org/2007/ops" epub:type="figure" viewBox="0 0 200 100">
           <defs><marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" orient="auto">
             <path d="M 0 0 L 10 5 L 0 10 z" />
           </marker></defs>
-          <rect id="poster" width="200" height="100"/>
+          <rect id="poster" epub:type="cover-image" width="200" height="100"/>
           <line x1="10" y1="10" x2="100" y2="10" stroke="black" marker-end="url(#arrow)"/>
         </svg>`,
     "OPS/styles/poster.css": "#poster { fill: rgb(230, 200, 12); }",
