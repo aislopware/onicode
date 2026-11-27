@@ -4629,3 +4629,4 @@ a7b4502c41	take	taken as is
 54dacaddf4	take	handler fix taken as is; Onicode's test file lacked upstream's refusal test, so it is added for the title-only path (refuses a model, accepts null): Onicode's folder-backed create saves its model default rather than refusing it, covered by Onicode's own tests; project handlers 26 passed
 6f2e02c1e1	take	taken as is
 77d14ad8a6	take	taken as is
+270fb2a654	take	applied cleanly; Sidebar divergence checked: the new state lives in useSidebarThreads (not Sidebar's hook body) and Sidebar.browser.test.tsx passes in full (17) including 'does not re-render thread rows when the sidebar renders with nothing changed'; motion layout key now joins each folder's shown thread keys (at most 7 per folder, cheap); web catalogs regenerated (existing translated keys reordered only), i18n:check passes
