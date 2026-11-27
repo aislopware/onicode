@@ -4074,3 +4074,4 @@ eb9e8ae42f	take	kept Onicode's ungated pairing-link prefill in ConnectionsNewRou
 159bcd8e7d	take	kept Onicode's tailnetOnly in the connection string; headless output now via headlessServeOutput({serviceManaged: launcher.managed}) in Onicode's desktop-skipping block (no browser-open branch); only the service sentence of Onicode's serve description changed
 b76d0f023f	take	dropped managedRelayState/TunnelUsage and the SavedEnvironmentRows T3ConnectTunnelUsage hunk (relay); dropped BrowserKeybindingNotice (web surface removed); section preload added to Onicode's nav markup (search results, group links, arrow keys); new Voice test uses Onicode's Bearer httpAuthorization; i18n key 800966eb58181745 in all 10 locales
 153671166c	take	applied cleanly onto Onicode's settingsSecrets (keeps commandCode/muse imports); OpenCode is the only provider package with a SettingsSecretValue address field, so providerSecretDestinations is complete
+14e4a5097f	take	taken as is
