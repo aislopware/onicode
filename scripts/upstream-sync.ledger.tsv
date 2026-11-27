@@ -4336,3 +4336,4 @@ d9e28d4640	take	kept Onicode's balanced-bracket FILE_LINK_LABEL_CHAR, now counti
 6eb817e521	take	kept Onicode's border-border; test keeps the fflate fixture (no jszip) with the DST-midnight entry and upstream's Nuuk table
 afc71642c9	take	taken as is
 2ecbb3a9d3	take	one-entry fence-range cache added: several composer readers parse the same text per edit
+44a5333786	take	test's spoken phrase is "Open Oni code" for the rebranded Onicode term
