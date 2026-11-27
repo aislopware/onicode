@@ -3928,21 +3928,32 @@ it.layer(Layer.merge(layerTest, ProviderContinuationRequests.layer))(
         }),
     );
 
-    it.effect("a monitor update's capture does not hold the task the thread was forked for", () =>
+    it.effect.each([
+      {
+        name: "does not hold the task that already reported",
+        key: "reported",
+        monitorRunning: false,
+      },
+      {
+        name: "holds the task while it still waits on the monitor",
+        key: "waiting",
+        monitorRunning: true,
+      },
+    ])("a monitor update's capture $name", ({ key, monitorRunning }) =>
       Effect.gen(function* () {
         const orchestrator = yield* Orchestrator.OrchestratorV2;
         const eventSink = yield* EventSink.EventSinkV2;
         const now = yield* DateTime.now;
-        const parentThreadId = ThreadId.make("thread:monitor-capturing-parent");
-        const projectId = ProjectId.make("project:monitor-capturing");
-        const parentRunId = RunId.make("run:monitor-capturing-parent");
-        const rootNodeId = NodeId.make("node:monitor-capturing-parent");
+        const parentThreadId = ThreadId.make(`thread:monitor-capturing-${key}-parent`);
+        const projectId = ProjectId.make(`project:monitor-capturing-${key}`);
+        const parentRunId = RunId.make(`run:monitor-capturing-${key}-parent`);
+        const rootNodeId = NodeId.make(`node:monitor-capturing-${key}-parent`);
         yield* seedParentWithTerminalTask({
           threadId: parentThreadId,
           projectId,
           runId: parentRunId,
           rootNodeId,
-          taskId: NodeId.make("node:monitor-capturing-seed"),
+          taskId: NodeId.make(`node:monitor-capturing-${key}-seed`),
           deliveryState: "acknowledged",
           now,
         });
@@ -3951,19 +3962,44 @@ it.layer(Layer.merge(layerTest, ProviderContinuationRequests.layer))(
           projectId,
           parentRunId,
           rootNodeId,
-          name: "monitor-capturing-child",
+          name: `monitor-capturing-${key}-child`,
           completionWake: "always",
           continuationPending: false,
           runStatus: "completed",
           now,
         });
+        if (monitorRunning) {
+          const parent = yield* orchestrator.getThreadProjection(parentThreadId);
+          yield* eventSink.write({
+            commandId: reconcileCommandId(`monitor-capturing-${key}-left-monitor`),
+            events: [
+              {
+                id: EventId.make(`event:monitor-capturing-${key}-left-monitor`),
+                type: "provider-thread.updated",
+                threadId: child.childThreadId,
+                runId: child.childRunId,
+                driver,
+                providerInstanceId: modelSelection.instanceId,
+                occurredAt: now,
+                payload: {
+                  ...parent.providerThreads[0]!,
+                  id: ProviderThreadId.make(`provider-thread:monitor-capturing-${key}-child`),
+                  appThreadId: child.childThreadId,
+                  pendingBackgroundTasks: [
+                    { taskId: "monitor-1", kind: "monitor" as const, awaited: true as const },
+                  ],
+                },
+              },
+            ],
+          });
+        }
         yield* orchestrator.recoverDelegatedTasks;
-        const monitorMessageId = MessageId.make("message:monitor-capturing-update");
+        const monitorMessageId = MessageId.make(`message:monitor-capturing-${key}-update`);
         yield* orchestrator.dispatch({
           type: "message.dispatch",
           createdBy: "agent",
           creationSource: "server",
-          commandId: CommandId.make("command:monitor-capturing-update"),
+          commandId: CommandId.make(`command:monitor-capturing-${key}-update`),
           threadId: child.childThreadId,
           messageId: monitorMessageId,
           text: "A monitor reported new output.",
@@ -3975,10 +4011,10 @@ it.layer(Layer.merge(layerTest, ProviderContinuationRequests.layer))(
           (run) => run.userMessageId === monitorMessageId,
         )!;
         yield* eventSink.writeWithEffects({
-          commandId: reconcileCommandId("monitor-capturing-ended"),
+          commandId: reconcileCommandId(`monitor-capturing-${key}-ended`),
           events: [
             {
-              id: EventId.make("event:monitor-capturing-completed"),
+              id: EventId.make(`event:monitor-capturing-${key}-completed`),
               type: "run.updated",
               threadId: child.childThreadId,
               runId: monitorRun.id,
@@ -3992,19 +4028,20 @@ it.layer(Layer.merge(layerTest, ProviderContinuationRequests.layer))(
                 monitorRun.id,
                 monitorRun.activeAttemptId,
               ),
-              commandId: reconcileCommandId("monitor-capturing-ended"),
+              commandId: reconcileCommandId(`monitor-capturing-${key}-ended`),
               threadId: child.childThreadId,
               request: {
                 type: "checkpoint.capture",
                 runId: monitorRun.id,
-                scopeId: CheckpointScopeId.make("scope:monitor-capturing"),
+                scopeId: CheckpointScopeId.make(`scope:monitor-capturing-${key}`),
               },
             },
           ],
         });
 
-        assert.isFalse(
+        assert.equal(
           yield* orchestrator.delegatedTaskAwaitsCapture(child.childThreadId, child.taskId),
+          monitorRunning,
         );
       }),
     );

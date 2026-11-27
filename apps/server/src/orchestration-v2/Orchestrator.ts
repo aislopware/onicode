@@ -18842,8 +18842,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     child: Pick<OrchestrationV2ThreadProjection, "thread" | "runs" | "messages">,
     taskId: NodeId,
     capturing: OrchestrationV2Run | undefined,
+    task: Pick<OrchestrationV2Subagent, "result" | "cancelledRunId"> | undefined,
   ) => {
     if (capturing === undefined) return false;
+    // A Monitor-woken run is an unsettled task's work, not an acknowledgement after its report.
+    const unsettled =
+      task !== undefined && task.result === null && task.cancelledRunId === undefined;
     const owns = (id: NodeId) =>
       delegatedTaskRuns(child, id).some((run) => run.id === capturing.id);
     if (owns(taskId)) return true;
@@ -18853,7 +18857,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       child.thread.forkedFrom?.type === "node" &&
       child.thread.forkedFrom.nodeId === taskId &&
       !followUpIds.has(taskId) &&
-      !monitorUpdateRunIds(child.messages, child.runs).has(capturing.id) &&
+      (unsettled || !monitorUpdateRunIds(child.messages, child.runs).has(capturing.id)) &&
       ![...followUpIds].some(owns)
     );
   };
@@ -18890,7 +18894,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           mapDispatchError(command),
         );
         const unsettled =
-          taskAwaitsCapture(child, input.taskId, capturing) ||
+          taskAwaitsCapture(child, input.taskId, capturing, task) ||
           (followUpRun === undefined
             ? child.thread.forkedFrom?.type === "node" &&
               child.thread.forkedFrom.nodeId === input.taskId &&
@@ -18951,7 +18955,14 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         const child = yield* projectionStore.getThreadRecords(childThreadId, ["runs", "messages"], {
           messageRoles: ["user"],
         });
-        return taskAwaitsCapture(child, taskId, yield* runAwaitingCapture(childThreadId));
+        const parentThreadId = child.thread.lineage.parentThreadId;
+        const task =
+          parentThreadId === null
+            ? undefined
+            : (yield* projectionStore.getThreadRecords(parentThreadId, ["subagents"], {
+                subagentIds: [taskId],
+              })).subagents.find((candidate) => candidate.id === taskId);
+        return taskAwaitsCapture(child, taskId, yield* runAwaitingCapture(childThreadId), task);
       },
       (effect, threadId) =>
         effect.pipe(
