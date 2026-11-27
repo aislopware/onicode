@@ -514,8 +514,11 @@ const make = Effect.gen(function* () {
     const pointer = yield* fileSystem
       .readFileString(path.join(folder, ".git"))
       .pipe(Effect.orElseSucceed(() => ""));
-    const gitDir = /^gitdir:\s*(.+?)\s*$/m.exec(pointer)?.[1];
-    if (gitDir === undefined) return null;
+    const prefix = "gitdir: ";
+    const gitDir = pointer.startsWith(prefix)
+      ? pointer.slice(prefix.length).replace(/[\r\n]+$/u, "")
+      : "";
+    if (gitDir === "") return null;
     if (path.isAbsolute(gitDir)) return path.resolve(gitDir);
     // Git follows links before `..`: lexically, a folder reached through a link resolves elsewhere.
     const real = yield* fileSystem.realPath(folder).pipe(Effect.orElseSucceed(() => folder));
