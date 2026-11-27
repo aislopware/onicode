@@ -12,10 +12,11 @@ import { runMigrations } from "../Migrations.ts";
 const layer = it.layer(NodeSqliteClient.layer({ filename: ":memory:" }));
 
 layer("105_TurnStartReadIndexes", (it) => {
-  it.effect("keeps a user message with a malformed payload migratable", () =>
+  it.effect("keeps user messages with malformed payloads migratable", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
-      yield* runMigrations({ toMigrationInclusive: 104 });
+      // From before 86, so every later migration that reads payload_json meets the bad rows.
+      yield* runMigrations({ toMigrationInclusive: 85 });
       yield* sql`
         INSERT INTO orchestration_v2_projection_messages (
           message_id, thread_id, role, streaming, created_at, updated_at, payload_json
@@ -24,6 +25,11 @@ layer("105_TurnStartReadIndexes", (it) => {
           (
             'malformed', 'thread-1', 'user', 0,
             '2026-11-14T00:00:00.000Z', '2026-11-14T00:00:00.000Z', '{not json'
+          ),
+          (
+            'malformed-link', 'thread-1', 'user', 0,
+            '2026-11-14T00:00:30.000Z', '2026-11-14T00:00:30.000Z',
+            '{"text":"see [a\\\\_b](oni-citation://x) $review'
           ),
           (
             'valid-slash', 'thread-1', 'user', 0,
