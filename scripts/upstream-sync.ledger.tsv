@@ -4412,3 +4412,4 @@ da36859cbe	take	applied cleanly; visual, captures in the integrated pass
 8592f1b1b7	take	new test placed before Onicode's renamed identical-labels test; source merged cleanly
 6db795afd7	take	applied cleanly; shared device stream serves desktop and mobile
 7068f98453	take	applied cleanly; visual, capture in the integrated pass
+0ac7c99ef7	take	upstream's runtimeIncompatibility/external identity block placed before Onicode's runtimeBuilds WeakMap (kept for isRuntimeOutdated); startCompatible and probe took upstream's versions, probe keeps audio: false; Onicode's token-watch test mock gains compatibility, which the probe now calls
