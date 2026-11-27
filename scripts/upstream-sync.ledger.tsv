@@ -4058,3 +4058,4 @@ c4d0e05d96	take	Onicode's source:refs/heads push calls get pushes: true; McpHttp
 82f22ef115	take	import merged beside Onicode's findStoredHtmlRenderBootstrap; HTML still served as text/html; charset=utf-8 so the render bootstrap path is unchanged
 bf961f8121	take	ported the idea onto Onicode's per-steer note tracking: delivered notes stored as sha256 digests, persisted in claudeDeliveredAppContext and restored at turn start; kept Onicode's recordAppContextOffer (merges only notes actually sent) over upstream's appContextOffered overwrite
 e6641e6ec6	take	kept Onicode's anchorOpenHandlers on the profile anchor (also handles middle click) instead of an onClick-only handler
+000ea81099	take	taken as is
