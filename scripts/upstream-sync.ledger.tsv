@@ -4463,3 +4463,4 @@ cdb798a327	take	applies with -C1; private, no-cache works over LAN, Tailscale an
 5f65976040	take	applies cleanly after its slice-09/10/13 dependencies; mobile has no hosted author search
 c035572ea2	take	applies cleanly; labelFromChildren still used
 14ae67a9a8	take	resource diagnostics panel is Onicode's own, not T3 telemetry; i18n regenerated: new key 57320c95780c065c in all ten locales, 85f0adb1de45cbc1 removed
+09e4c7c636	take	applies after its slice-07/10/12 dependencies; ONICODE_CODE_ORCHESTRATION_SECTIONS has only the two upstream callers; default text unchanged (nativeSubagents defaults true)
