@@ -4587,3 +4587,46 @@ ea8e968024	skip	already in Onicode 59b82f3fd3: addBrowserSurface forwards zoomFa
 7d13649477	take	clean; mobile has no closed-view store
 84bcfab359	take	import conflict only (added proper-lockfile beside SubscriptionRef); server-side publish (oni_theme_set, Settings) shares the lock; theme tests 40 passed
 dc2c7db0b6	take	clean; iOS release-build device check owed
+452acd7a15	take	clean
+1b383ed093	take	conflict: Onicode's text-box-aware paragraph body kept, upstream's outline level feeds its heading level; userInputAttachments 72 passed
+91bbd5f99c	take	test import conflict only; tooltip tests 16 passed
+cf87a9586c	take	clean; two handler lines, no hook added
+54fcf5e9c3	take	clean
+5d94090ed0	take	clean; one profile read per settled turn (Antigravity first tier)
+a9ad9afa09	take	test fixture conflict (Onicode's zipFixture map); same epub:type attributes as upstream
+853318d6ce	take	test import conflict resolved (kept Onicode's OrchestrationV2GetThreadProjectionError beside upstream's imports); code applied as is
+9268aa9b27	take	taken as is (mobile already passes its message resolver)
+4f7c529085	take	code merged into Onicode's Map archive (archive.set); test kept Onicode's zipFixture wordFile (files map) with upstream's svg content type added
+6665327fb3	take	taken as is
+0d233a338c	take	taken as is
+cbcc74737d	take	fileName uses Onicode's NonBlankString over upstream's Schema.NonEmptyString: keeps trailing spaces, and still rejects a blank name as old mobile decoders do (they trim, so trailing spaces stay wire-compatible)
+a515034c59	skip	only serves telemetry (ProviderUsageAnalytics reads observedModel from turnTokenUsage.models; ProviderDimensions effort suffix), both removed in Onicode; the executed model already reaches turn.model via 345843cb15
+8458f00788	take	test conflict only: kept Onicode's turn-end capture case beside upstream's antigravity-default case
+fc7cfe96f1	take	taken as is; scenario ported as is (WEB = desktop target), typechecked at the batch check
+9b53f9619c	take	import conflict only (Onicode already imported ProseMirrorNode type); paste slice logic applied as is
+2e90f75413	take	taken as is
+83bb098614	take	taken as is
+f7ec68be88	take	conflict: kept Onicode's cwd from the history metadata read beside upstream's native-turn-id guard; Codex adapter + revert tests 274 passed
+c92d75e486	take	taken as is
+950e5cc357	take	taken as is
+88191b61a3	take	conflict: LINK_PATTERNS keeps Onicode's patterns without the hosted-app link (removed surface); adapted: the remark parse falls back to plain CommonMark on RangeError, since GFM's autolink transform overflows the stack at ~6000 nested quotes with Onicode's newer unist-util-visit-parents 6.1.0 (upstream's 'deeply nested quotes' row failed; plain parse survives 20000); threadLinks 57 passed
+e3cd83a299	take	taken as is
+0712c3891d	take	conflict: kept Onicode's split \cpg/\fcharset font maps (fontCodePages, fontCharsets) beside upstream's openGroup and \upr destination; userInputAttachments 74 passed
+858e19c790	take	conflict: kept Onicode's own-pPr pStyle lookup and text-box-aware heading marker, now reading the style's outline level as upstream does; Onicode's all() takes a Set, so the pPrChange skip is a Set; userInputAttachments 74 passed
+41424f1533	take	taken as is
+81e16ac3eb	take	taken as is
+99582d429f	take	hand-merged into Onicode's question-work model: adopted upstream's core (bytes land in the draft that still holds the chip, checked against that draft's prompt instead of promptRef/attachmentTargetKeyRef/composerFilesRef, image saved record prepared before publishing and appended with appendPersistedAttachments so an unmounted draft keeps it across reload); kept Onicode's startQuestionDraftWork (discarded/movedThread claims, moved-thread slot accounting) over upstream's question preparation counter + pendingRequestsAtom mount, which it already covers, so upstream's question-switch/close rows are not added (Onicode's stopped/answered-question rows cover them); test rows switch (now lands), reload, cached image and the deleted-chip no-serialization assertion added to Onicode's table; 24 passed; scenario ported as is (WEB), typechecked at the batch check
+3765debc8d	take	taken as is
+4c72563d94	take	taken as is
+fe03466f24	take	fix already in Onicode (949df015f6: currentRouteThreadKeyRef guards the reset and the focus frame, covered by 'leaves the composer on screen alone when a save from another thread lands' and 'skips the focus frame when the thread changes before it runs'), so the source and browser-test hunks are dropped; kept Onicode's version: same behavior, already tested; scenario late-queued-edit-keeps-focus ported as is (WEB)
+c103563d84	take	taken as is
+68b3c575b9	take	taken as is
+f765ce36fe	take	adopted upstream's scpRemoteHost over Onicode's last-@ SCP_REMOTE regex (1977b26df4): same last-@ split, plus Git's connect.c rules (bracketed hosts, a slash before the colon, option-looking user/path rejected), so it is stricter and matches git; GitHub definition 14, GitLab discovery 10 passed
+c443bbfc9d	take	taken as is
+a7b4502c41	take	taken as is
+8335c0951b	take	conflict with Onicode's text-box lines (f456fb8cc0, which broke every text-box onto its own lines): adopted upstream's draw-namespace check (a foreign text-box is plain text) and its inline flow for boxes anchored as-char (only their own paragraphs break); kept Onicode's own-line handling for paragraph-anchored ODF boxes and Word txbxContent, where the box floats beside the text; Onicode's unprefixed ODT box row now uses the draw namespace real files carry; userInputAttachments 74 passed
+0a476381fb	take	test conflict only: upstream's JPEG/unquoted rows merged into Onicode's Record-based archive fixture; preview tests 12 passed
+54dacaddf4	take	handler fix taken as is; Onicode's test file lacked upstream's refusal test, so it is added for the title-only path (refuses a model, accepts null): Onicode's folder-backed create saves its model default rather than refusing it, covered by Onicode's own tests; project handlers 26 passed
+6f2e02c1e1	take	taken as is
+77d14ad8a6	take	taken as is
+270fb2a654	take	applied cleanly; Sidebar divergence checked: the new state lives in useSidebarThreads (not Sidebar's hook body) and Sidebar.browser.test.tsx passes in full (17) including 'does not re-render thread rows when the sidebar renders with nothing changed'; motion layout key now joins each folder's shown thread keys (a string join per render, cheap); web catalogs regenerated (existing translated keys reordered only), i18n:check passes

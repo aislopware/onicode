@@ -20,7 +20,7 @@ function wordFile(
   files: Record<string, string> = {},
 ) {
   return zipFixture({
-    "[Content_Types].xml": `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`,
+    "[Content_Types].xml": `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="svg" ContentType="image/svg+xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`,
     "_rels/.rels": `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${relationship("officeDocument", "word/document.xml")}</Relationships>`,
     "word/_rels/document.xml.rels": `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${Object.keys(
       parts,
@@ -192,6 +192,30 @@ describe("Word preview limits", () => {
       ),
     );
     expect(result.part("word/document.xml")).toContain("Body text");
+  });
+
+  it("keeps a document with an embedded SVG image", async () => {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>';
+    const body = `${paragraph("Before")}<w:p><w:r><w:drawing><a:blip xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" r:embed="image"/></w:drawing></w:r></w:p>`;
+    const result = await prepared(
+      await wordFile(body, {}, "", relationship("image", "media/image1.svg"), {
+        "word/media/image1.svg": svg,
+      }),
+    );
+    expect(result.truncated).toBe(false);
+    expect(await result.part("word/document.xml")).toContain("Before");
+    expect(await result.part("word/media/image1.svg")).toBe(svg);
+  });
+
+  it("keeps a VML picture whose imagedata carries a shape id before r:id", async () => {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>';
+    const body = `<w:p><w:r><w:pict><v:shape><v:imagedata id="_x0000_i1025" r:id="image"/></v:shape></w:pict></w:r></w:p>`;
+    const result = await prepared(
+      await wordFile(body, {}, "", relationship("image", "media/image1.svg"), {
+        "word/media/image1.svg": svg,
+      }),
+    );
+    expect(await result.part("word/media/image1.svg")).toBe(svg);
   });
 });
 

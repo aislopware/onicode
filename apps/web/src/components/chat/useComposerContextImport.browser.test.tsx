@@ -1,4 +1,5 @@
 import { threadContextRecord } from "@onicode/shared/composerContextReferences";
+import { Atom } from "effect/reactivity";
 import { useEffect } from "react";
 import {
   ChatAttachmentId,
@@ -17,7 +18,12 @@ import { act, render, stubGlobal } from "../../../test/render";
 import { DraftId, composerTargetKey, useComposerDraftStore } from "../../composerDraftStore";
 import { formatInlineContextReference } from "../../lib/composerContextReferences";
 import { rememberCopiedComposerAttachments } from "../../lib/copiedComposerAttachments";
-import { countMovedQuestionImports, questionAttachmentDraftId } from "../../questionAttachments";
+import {
+  countMovedQuestionImports,
+  countQuestionAttachments,
+  questionAttachmentDraftId,
+} from "../../questionAttachments";
+import { environmentThreadDetails } from "../../state/threads";
 import { toastManager } from "../ui/toast";
 import { pendingDraftWork } from "./pendingDraftWork";
 import {
@@ -63,7 +69,9 @@ it.each([
   { kind: "file", edit: "undo" },
   { kind: "file", edit: "retain" },
   { kind: "file", edit: "switch" },
+  { kind: "image", edit: "reload" },
   { kind: "file", edit: "cached" },
+  { kind: "image", edit: "cached" },
   { kind: "file", edit: "question" },
   { kind: "image", edit: "question" },
   { kind: "file", edit: "stopped-question" },
@@ -97,13 +105,20 @@ it.each([
   rememberCopiedComposerAttachments(
     sourceEnvironmentId,
     edit === "cached"
-      ? new Map([["source-attachment", new File(["notes"], "notes.txt")]])
+      ? new Map([
+          [
+            "source-attachment",
+            new File(["notes"], "notes.txt", {
+              type: kind === "image" ? "image/png" : "text/plain",
+            }),
+          ],
+        ])
       : new Map(),
   );
   using _copy = {
     [Symbol.dispose]: () => rememberCopiedComposerAttachments(sourceEnvironmentId, new Map()),
   };
-  const promptRef = { current: "" };
+  let expectedPrompt = "";
   const downloaded = deferred<Response>();
   const requested = deferred<void>();
   const settled = deferred<void>();
@@ -115,18 +130,15 @@ it.each([
     composerDraftTarget: target,
     attachmentDraftTarget: target,
     attachmentTargetKey: target,
-    attachmentTargetKeyRef: { current: target },
     questionAttachmentTarget: question ? target : null,
     pendingUserInputs: [],
     composerContextRecords: new Map(),
     composerImages: [],
-    composerFilesRef: { current: [] },
-    promptRef,
     addComposerFilesToDraft: (files: Parameters<typeof store.addFiles>[1]) =>
       store.addFiles(target, files, { appendReference: !question }),
-  } satisfies ImportInput & { promptRef: { current: string } };
+  } satisfies ImportInput;
   let importer!: Importer;
-  await using _screen = await render(
+  await using screen = await render(
     <Harness
       input={input}
       ready={(value) => {
@@ -144,6 +156,7 @@ it.each([
     requested.resolve();
     return downloaded.promise;
   });
+  using reader = vi.spyOn(FileReader.prototype, "readAsDataURL");
   const contextId = ComposerContextId.make(`${kind}_source`);
   const attachmentFields = {
     version: 1 as const,
@@ -195,7 +208,7 @@ it.each([
       label: annotated ? "Page annotation" : "notes.txt",
     });
     if (question) pastedPrompt = "Question answer";
-    promptRef.current = pastedPrompt;
+    expectedPrompt = pastedPrompt;
     store.setPrompt(target, pastedPrompt);
     if (edit !== "cached") await requested.promise;
   });
@@ -206,25 +219,26 @@ it.each([
       edit !== "retain" &&
       edit !== "cached" &&
       !question &&
-      edit !== "switch"
+      edit !== "switch" &&
+      edit !== "reload"
     ) {
-      promptRef.current = "Keep this edit";
-      store.setPrompt(target, promptRef.current);
+      expectedPrompt = "Keep this edit";
+      store.setPrompt(target, expectedPrompt);
     }
     if (edit === "undo") {
-      promptRef.current = pastedPrompt;
+      expectedPrompt = pastedPrompt;
       store.setPrompt(target, pastedPrompt);
     }
-    if (edit === "switch") input.attachmentTargetKeyRef.current = DraftId.make("other-draft");
     if (stopped || answered) {
       makeThreadRequestsResolvedAnnouncer(
         environmentId,
         thread.threadId,
       )([{ id: requestId, status: stopped ? "cancelled" : "resolved" }]);
-      promptRef.current = "";
+      expectedPrompt = "";
     }
-    if (stopped) input.attachmentTargetKeyRef.current = DraftId.make(composerTargetKey(thread));
   });
+  // The pasting composer goes away; the bytes still land in the draft that holds their chip.
+  if (edit === "switch" || edit === "reload") await screen.unmount();
   // The thread's send is blocked by, and its slots count, the import that moved there.
   if (stopped) {
     expect(pendingDraftWork.has(composerTargetKey(thread))).toBe(true);
@@ -261,8 +275,19 @@ it.each([
   expect(pendingDraftWork.has(target)).toBe(false);
   expect(pendingDraftWork.has(composerTargetKey(thread))).toBe(false);
   expect(countMovedQuestionImports(composerTargetKey(thread))).toBe(0);
+  // A deleted chip's image is never prepared for saving.
+  if (kind === "image" && (edit === "delete" || edit === "delete-annotation")) {
+    expect(reader).not.toHaveBeenCalled();
+  }
+  if (edit === "reload") {
+    const inMemoryFile = store.getComposerDraft(target)?.images[0]?.file;
+    await useComposerDraftStore.persist.rehydrate();
+    const restored = store.getComposerDraft(target)?.images[0]?.file;
+    expect(restored).not.toBe(inMemoryFile);
+    expect(await restored?.text()).toBe("notes");
+  }
   const draft = store.getComposerDraft(stopped ? thread : target);
-  expect(draft?.prompt ?? "").toBe(promptRef.current);
+  expect(draft?.prompt ?? "").toBe(expectedPrompt);
   const attachments = (kind === "file" ? draft?.files : draft?.images) ?? [];
   if (kind === "image" && edit === "retain")
     expect(draft?.images[0]?.source).toEqual(
@@ -271,6 +296,8 @@ it.each([
   expect(attachments.map((file) => file.name)).toEqual(
     edit === "undo" ||
       edit === "retain" ||
+      edit === "switch" ||
+      edit === "reload" ||
       edit === "annotation" ||
       edit === "cached" ||
       (question && !answered && edit !== "stopped-question-full")
@@ -310,13 +337,10 @@ it.each(["same", "other-environment"] as const)(
           composerDraftTarget: target,
           attachmentDraftTarget: target,
           attachmentTargetKey: target,
-          attachmentTargetKeyRef: { current: target },
           questionAttachmentTarget: null,
           pendingUserInputs: [],
           composerContextRecords: new Map([[first.contextId, { kind: "thread", record: first }]]),
           composerImages: [],
-          composerFilesRef: { current: [] },
-          promptRef: { current: "" },
           addComposerFilesToDraft: () => [],
         }}
         ready={(value) => {
@@ -399,13 +423,10 @@ it.each([
         composerDraftTarget: target,
         attachmentDraftTarget: target,
         attachmentTargetKey: target,
-        attachmentTargetKeyRef: { current: target },
         questionAttachmentTarget: null,
         pendingUserInputs: [],
         composerContextRecords: new Map(),
         composerImages: [],
-        composerFilesRef: { current: marker ? [reattach] : [] },
-        promptRef: { current: "" },
         addComposerFilesToDraft: (files) => store.addFiles(target, files),
       }}
       ready={(value) => {
@@ -448,6 +469,104 @@ it.each([
   }
 });
 
+it("a question's image import watches its thread's requests and holds one slot while it saves", async () => {
+  const environmentId = EnvironmentId.make("question-watch-target");
+  const thread = scopeThreadRef(environmentId, ThreadId.make("question-watch"));
+  const target = questionAttachmentDraftId(
+    environmentId,
+    thread.threadId,
+    RuntimeRequestId.make("question-watch-request"),
+    "answer",
+  );
+  const store = useComposerDraftStore.getState();
+  using _draft = { [Symbol.dispose]: () => store.clearComposerContent(target) };
+  // Answering or stopping the question elsewhere is only seen while its requests are mounted.
+  let watching = false;
+  const requests = Atom.make<null>((get) => {
+    watching = true;
+    get.addFinalizer(() => {
+      watching = false;
+    });
+    return null;
+  }).pipe(Atom.setIdleTTL(0));
+  using _requests = vi
+    .spyOn(environmentThreadDetails, "pendingRequestsAtom")
+    .mockImplementation((ref) => {
+      expect(ref).toEqual(thread);
+      return requests;
+    });
+  const downloaded = deferred<Response>();
+  const requested = deferred<void>();
+  using _fetch = stubGlobal("fetch", () => {
+    requested.resolve();
+    return downloaded.promise;
+  });
+  let slotsWhileSaving: number | undefined;
+  const append = store.appendPersistedAttachments;
+  using _append = vi.spyOn(store, "appendPersistedAttachments").mockImplementation((...args) => {
+    slotsWhileSaving = countQuestionAttachments([target]);
+    return append(...args);
+  });
+  const settled = deferred<void>();
+  const end = pendingDraftWork.end.bind(pendingDraftWork);
+  using _settled = vi.spyOn(pendingDraftWork, "end").mockImplementation((key) => {
+    end(key);
+    if (key === target) settled.resolve();
+  });
+  let importer!: Importer;
+  await using screen = await render(
+    <Harness
+      input={{
+        environmentId,
+        linkedEnvironments: new Map(),
+        activeThread: undefined,
+        activeThreadId: thread.threadId,
+        composerDraftTarget: target,
+        attachmentDraftTarget: target,
+        attachmentTargetKey: target,
+        questionAttachmentTarget: target,
+        pendingUserInputs: [],
+        composerContextRecords: new Map(),
+        composerImages: [],
+        addComposerFilesToDraft: (files) =>
+          store.addFiles(target, files, { appendReference: false }),
+      }}
+      ready={(value) => {
+        importer = value;
+      }}
+    />,
+  );
+
+  await act(async () => {
+    importer.importContextRecords(
+      [
+        {
+          version: 1,
+          kind: "image",
+          contextId: ComposerContextId.make("image_question-watch"),
+          label: "shot.png",
+          attachmentId: "question-watch-shot",
+          name: "shot.png",
+          mimeType: "image/png",
+          sizeBytes: 5,
+        },
+      ],
+      EnvironmentId.make("question-watch-source"),
+    );
+    await requested.promise;
+  });
+  await screen.unmount();
+  expect(watching).toBe(true);
+  await act(async () => {
+    downloaded.resolve(new Response("notes", { headers: { "Content-Type": "image/png" } }));
+    await settled.promise;
+  });
+
+  expect(store.getComposerDraft(target)?.images.map(({ name }) => name)).toEqual(["shot.png"]);
+  expect(slotsWhileSaving).toBe(1);
+  await vi.waitFor(() => expect(watching).toBe(false));
+});
+
 it("lands two moved question imports that settle together in the thread's last two slots", async () => {
   const environmentId = EnvironmentId.make("moved-pair-target");
   const thread = scopeThreadRef(environmentId, ThreadId.make("moved-pair"));
@@ -488,13 +607,10 @@ it("lands two moved question imports that settle together in the thread's last t
     composerDraftTarget: target,
     attachmentDraftTarget: target,
     attachmentTargetKey: target,
-    attachmentTargetKeyRef: { current: target },
     questionAttachmentTarget: target,
     pendingUserInputs: [],
     composerContextRecords: new Map(),
     composerImages: [],
-    composerFilesRef: { current: [] },
-    promptRef: { current: "" },
     addComposerFilesToDraft: (files: Parameters<typeof store.addFiles>[1]) =>
       store.addFiles(target, files, { appendReference: false }),
   } satisfies ImportInput;
@@ -527,7 +643,6 @@ it("lands two moved question imports that settle together in the thread's last t
       environmentId,
       thread.threadId,
     )([{ id: requestId, status: "cancelled" }]);
-    input.attachmentTargetKeyRef.current = DraftId.make(threadKey);
   });
   expect(countMovedQuestionImports(threadKey)).toBe(2);
   store.addFiles(
@@ -591,13 +706,10 @@ it("pasting back a removed queued attachment counts against the queued message's
         composerDraftTarget: target,
         attachmentDraftTarget: target,
         attachmentTargetKey: target,
-        attachmentTargetKeyRef: { current: target },
         questionAttachmentTarget: null,
         pendingUserInputs: [],
         composerContextRecords: new Map(),
         composerImages: [],
-        composerFilesRef: { current: [] },
-        promptRef: { current: "" },
         addComposerFilesToDraft: () => [],
         existingAttachmentCount: PROVIDER_SEND_TURN_MAX_ATTACHMENTS - 1,
         removedQueuedAttachments: [{ attachment: removed, contextIds: [contextId] }],
