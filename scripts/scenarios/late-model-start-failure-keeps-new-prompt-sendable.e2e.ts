@@ -74,7 +74,7 @@ test(
     await screen.getByRole("button", "New thread in demo", { exact: true }).tap();
     const picker = browser.locator("[data-chat-provider-model-picker]");
     await picker.tap();
-    await screen.getByPlaceholder("Search models...").fill("Multi turn");
+    await screen.getByPlaceholder("Search models").fill("Multi turn");
     await browser.keyboard.down("Shift");
     await screen.getByRole("option", /^Multi turn/).tap();
     await browser.keyboard.up("Shift");
