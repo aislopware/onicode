@@ -947,15 +947,15 @@ internal class SelectionAwareEditText(
 
   private fun pasteContextOrImages(): Boolean {
     val payload = OniComposerClipboard.read(context)
+    val text = payload["text"].orEmpty()
+    // JS restores links onto the plain text, so a clip without one pastes natively.
+    val linked = OniComposerClipboard.hasThreadLink(text) ||
+      (text.isNotEmpty() && OniComposerClipboard.hasWebLink(payload["html"].orEmpty()))
     return when {
       !payload["fragment"].isNullOrEmpty() ||
         payload["html"]?.contains("data-oni-context-fragment=") == true -> pasteContext(payload)
       pasteImagesOrInterceptedText() -> true
-      // JS restores links onto the plain text, so a clip without one pastes natively.
-      isSingleItemClip() &&
-        (OniComposerClipboard.hasThreadLink(payload["text"].orEmpty()) ||
-          (!payload["text"].isNullOrEmpty() &&
-            OniComposerClipboard.hasWebLink(payload["html"].orEmpty()))) -> pasteContext(payload)
+      isSingleItemClip() && linked -> pasteContext(payload)
       else -> false
     }
   }
