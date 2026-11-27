@@ -19,7 +19,7 @@ import {
 import { isMacPlatform } from "@onicode/shared/keybindings";
 import { flushSync } from "react-dom";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { userEvent } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 
 import { act, fakeTimers, render } from "../../test/render";
 import { openCommandPalette } from "../commandPaletteBus";
@@ -41,7 +41,7 @@ import Sidebar from "./Sidebar";
 import { THREAD_JUMP_HINT_SHOW_DELAY_MS } from "./Sidebar.logic";
 import { I18nProvider } from "../i18n/I18nProvider";
 import { SortableThreadRow } from "./sidebar/SidebarThreadRow";
-import { SidebarProvider } from "./ui/sidebar";
+import { SidebarProvider, useSidebar } from "./ui/sidebar";
 
 vi.mock(import("../state/olderSettledShelf"), async (original) => {
   const actual = await original();
@@ -559,6 +559,93 @@ describe("sidebar thread menu", () => {
     await userEvent.click(row, { button: "right" });
     await vi.waitFor(() => expect(show).toHaveBeenCalledTimes(2));
     expect(show.mock.lastCall?.[2]).toBe("mouse");
+  });
+});
+
+function MobileSheetProbe() {
+  const { openMobile, setOpenMobile } = useSidebar();
+  return (
+    <button type="button" onClick={() => setOpenMobile(true)}>
+      {openMobile ? "Sheet open" : "Sheet closed"}
+    </button>
+  );
+}
+
+async function usePhoneViewport() {
+  const viewport = { width: window.innerWidth, height: window.innerHeight };
+  await page.viewport(390, 844);
+  return { [Symbol.asyncDispose]: () => page.viewport(viewport.width, viewport.height) };
+}
+
+describe("sidebar thread menu on a phone", () => {
+  it("closes the sheet when New thread on branch starts the thread", async () => {
+    await using _viewport = await usePhoneViewport();
+    const activeProject = project("active");
+    const thread = makeThreadFixture({
+      environmentId: EnvironmentId.make("local"),
+      id: ThreadId.make("thread-branch"),
+      projectId: activeProject.id,
+      title: "Branch thread",
+      branch: "feature/login",
+    });
+    const threadRef = { environmentId: activeProject.environmentId, threadId: thread.id };
+    const show = vi.fn().mockResolvedValue("new-thread-on-branch");
+    const startThread = vi.fn().mockResolvedValue(null);
+    vi.mocked(readLocalApi).mockReturnValue({ contextMenu: { show } } as unknown as LocalApi);
+    vi.mocked(useProjects).mockReturnValue([activeProject]);
+    vi.mocked(useQuietThreadShells).mockReturnValue([thread]);
+    vi.mocked(useThreadRouteTarget).mockReturnValue({ kind: "server", threadRef });
+    vi.mocked(useHandleNewThread).mockReturnValue({
+      activeDraftThread: null,
+      activeThread: null,
+      defaultProjectRef: {
+        environmentId: activeProject.environmentId,
+        projectId: activeProject.id,
+      },
+      defaultProjectFallbackReady: true,
+      handleNewThread: startThread,
+      routeDraftId: null,
+      routeThreadRef: threadRef,
+    });
+    await using screen = await render(
+      <SidebarProvider>
+        <MobileSheetProbe />
+        <Sidebar routeReveal={{ observedKey: null, pendingKey: null }} />
+      </SidebarProvider>,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Sheet closed" }));
+    await expect.element(screen.getByRole("button", { name: "Sheet open" })).toBeInTheDocument();
+    await userEvent.click(screen.getByText("Branch thread").first(), { button: "right" });
+    await vi.waitFor(() => expect(startThread).toHaveBeenCalledTimes(1));
+    expect(startThread.mock.lastCall?.[1]).toMatchObject({ branch: "feature/login" });
+    await expect.element(screen.getByRole("button", { name: "Sheet closed" })).toBeInTheDocument();
+  });
+
+  it("closes the sheet when Add project opens the picker, as New thread does", async () => {
+    await using _viewport = await usePhoneViewport();
+    vi.mocked(useProjects).mockReturnValue([]);
+    vi.mocked(useQuietThreadShells).mockReturnValue([]);
+    vi.mocked(useThreadRouteTarget).mockReturnValue(null);
+    vi.mocked(useHandleNewThread).mockReturnValue({
+      activeDraftThread: null,
+      activeThread: null,
+      defaultProjectRef: null,
+      defaultProjectFallbackReady: true,
+      handleNewThread: vi.fn().mockResolvedValue(null),
+      routeDraftId: null,
+      routeThreadRef: null,
+    });
+    vi.mocked(openCommandPalette).mockClear();
+    await using screen = await render(
+      <SidebarProvider>
+        <MobileSheetProbe />
+        <Sidebar routeReveal={{ observedKey: null, pendingKey: null }} />
+      </SidebarProvider>,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Sheet closed" }));
+    await userEvent.click(screen.getByRole("button", { name: "Add project" }));
+    expect(openCommandPalette).toHaveBeenCalledExactlyOnceWith({ open: "add-project" });
+    await expect.element(screen.getByRole("button", { name: "Sheet closed" })).toBeInTheDocument();
   });
 });
 
