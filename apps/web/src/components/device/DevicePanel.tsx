@@ -371,17 +371,18 @@ export function DevicePanel(props: {
                         <DiscoveryList>
                           {group.devices.map((device) => {
                             // The host says something only when there is more than one, and a
-                            // stopped device is the ordinary case.
+                            // stopped device is the ordinary case. The host goes last, so a long
+                            // label truncates before Physical, which says the device is not wiped.
                             const details = [
-                              state.hosts.length > 1
-                                ? state.hosts.find((host) => host.id === device.hostId)?.label
-                                : undefined,
                               device.version,
                               device.physical
                                 ? gt("Physical", { $context: "physical device, not a simulator" })
                                 : undefined,
                               device.booted
                                 ? gt("Running", { $context: "device state" })
+                                : undefined,
+                              state.hosts.length > 1
+                                ? state.hosts.find((host) => host.id === device.hostId)?.label
                                 : undefined,
                             ]
                               .filter((part) => part !== undefined)
