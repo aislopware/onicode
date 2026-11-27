@@ -4572,3 +4572,4 @@ e6b74ecb80	take	clean; one label in the selection menu handler, no hook added; r
 bcd85a358a	take	clean merge; iterator-helper .find on Onicode's all() generator (Node 26); test row lands after Onicode's Heading2 docx row
 a853a4aafe	take	clean; shared by web and mobile
 3afe72c8b3	skip	already in Onicode ade942317a: startThreadTurn's message.dispatch forwards titleSeed, covered by commands.test.ts
+f46957a76b	take	clean; OpenCode follows upstream
