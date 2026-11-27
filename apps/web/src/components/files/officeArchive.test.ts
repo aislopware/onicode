@@ -291,3 +291,26 @@ describe("Workbook relationship targets", () => {
     expect(result.part("xl/worksheets/sheet1.xml")).toContain("42");
   });
 });
+
+describe("Workbook preview limits", () => {
+  it("does not split a surrogate pair when truncating cell text", async () => {
+    const prefix = "a".repeat(4095);
+    const result = await prepareOffice(
+      await workbookFile(
+        "worksheets/sheet1.xml",
+        "xl/worksheets/sheet1.xml",
+        "",
+        "Internal",
+        "xl/workbook.xml",
+        {
+          "xl/worksheets/sheet1.xml": `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>${prefix}🚀tail</t></is></c></row></sheetData></worksheet>`,
+        },
+      ),
+      "xlsx",
+    );
+    const sheet = zipEntries(result.bytes).text("xl/worksheets/sheet1.xml");
+    expect(result.truncated).toBe(true);
+    expect(sheet).toContain(`<t>${prefix}</t>`);
+    expect(sheet).not.toContain("\ufffd");
+  });
+});
