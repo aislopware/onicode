@@ -28,7 +28,7 @@ it only if it fails. **Hide all** hides every call and shows **Thinking** while 
 and the agent's last reply, which appears when the turn ends. If you steer while the agent is
 answering, the answer it finished before reading your steer stays too. On desktop, Find
 shows the in-between messages while it is open. Approvals, questions, and errors always show. The
-setting applies to this browser or device only.
+setting applies to this device only.
 
 ## Screen reader announcements
 

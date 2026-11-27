@@ -62,7 +62,7 @@ get branch and diff controls.
 
 ### Start in the background
 
-In a desktop browser or the desktop app, press `Cmd+Enter` on macOS or `Ctrl+Enter`
+In the desktop app, press `Cmd+Enter` on macOS or `Ctrl+Enter`
 on Windows and Linux to start a new thread and immediately open another draft. The
 next draft keeps the workspace mode and base branch you selected. With **New
 worktree**, each background submission creates its own worktree.
@@ -147,8 +147,7 @@ regenerated titles. Select a project to give it its own instructions.
 
 Agents connected through Onicode can use the same server-owned metadata workflow to
 rename a thread, regenerate its title, or link and unlink a pull request. These changes
-appear on desktop and mobile without requiring the originating browser to remain
-open.
+appear on desktop and mobile without requiring the originating app to remain open.
 
 ### Fold working threads (beta)
 

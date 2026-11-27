@@ -219,7 +219,7 @@ the current prompt and its attachments for later. Wait for uploads to finish fir
 With an empty composer, the same shortcut restores a single stash or opens the
 stash menu when there are several.
 
-The stash holds up to 100 prompts, and images take up most of its browser
+The stash holds up to 100 prompts, and images take up most of its local
 storage. When it is full, stashing leaves the composer as it is; restore or
 delete a stash to make room. Stashes are never discarded automatically.
 
@@ -449,7 +449,7 @@ by DRM need a compatible reader.
 ## Images and videos in messages
 
 Select an image or video attachment or link to preview it. Playback support depends
-on your browser or device; save an unsupported video to open it in another app.
+on your device; save an unsupported video to open it in another app.
 
 On desktop, right-click media to save it or copy its path or URL. On mobile,
 touch and hold an image or video thumbnail and choose **Save or share**. On iOS,

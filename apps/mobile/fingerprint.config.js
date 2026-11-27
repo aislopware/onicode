@@ -19,9 +19,10 @@ module.exports = {
     "PackageJsonScriptsAll",
     "GitIgnore",
   ],
-  // Gradle builds nested library projects (Sentry's android/expo-handler) in place, and Expo only
-  // ignores android/build, so the first build would change the hash of its own inputs.
-  ignorePaths: ["**/android/*/build/**/*", "**/android/*/.cxx/**/*", "**/android/*/.gradle/**/*"],
+  // Gradle builds Sentry's nested android/expo-handler project in place, and Expo only ignores
+  // android/build, so the first build would change the hash of its own inputs. Kept this narrow:
+  // Sentry ships other build output in its package, and hashing that keeps runtime versions put.
+  ignorePaths: ["**/android/expo-handler/{build,.cxx,.gradle}/**/*"],
   // Expo ignores the app version; the major keeps updates off older store binaries.
   extraSources: [
     { type: "contents", id: "appMajorVersion", contents: majorVersion },

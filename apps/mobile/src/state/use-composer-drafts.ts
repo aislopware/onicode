@@ -1876,6 +1876,7 @@ export function retargetNewTaskDraft(
               mode: workspaceSelection.mode,
               branch: null,
               worktreePath: null,
+              ...(workspaceSelection.mode === "local" ? { followsCurrentCheckout: true } : {}),
               ...(workspaceSelection.startFromOrigin !== undefined
                 ? { startFromOrigin: workspaceSelection.startFromOrigin }
                 : {}),
