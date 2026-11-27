@@ -45,6 +45,9 @@ test(
       await onicode.open("/settings/scheduled-tasks");
       await screen.getByRole("button", "New task").tap();
       await screen.getByRole("textbox", "Name").fill("Held recurring task");
+      // The dialog defaults to the first project, and other scenarios on this server add their own.
+      await screen.getByRole("combobox", "Project").tap();
+      await screen.getByRole("option", "scheduled-hold").tap();
       await screen.getByRole("combobox", "Destination").tap();
       await screen.getByRole("option", "One thread, continuing the conversation").tap();
       await screen.getByRole("combobox", "Destination thread").tap();
