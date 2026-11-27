@@ -4506,3 +4506,4 @@ e0fd8f67f5	take	clean
 07b8554188	take	clean; preview browser is an Onicode desktop feature agents drive over MCP
 985d59e326	take	clean; ends the documentTextWorker chain
 3436f5fbf5	take	clean; serves GitHub and GitLab SCP remotes
+b312bc3c9b	take	kept Onicode's hit-strip wheel target (compositor reason holds), merged with upstream's rail ref into one callback ref; adopted upstream's mark grouping (at most railHeight/5 strip spans)
