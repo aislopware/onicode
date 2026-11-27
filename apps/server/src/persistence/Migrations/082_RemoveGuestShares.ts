@@ -15,6 +15,6 @@ export default Effect.gen(function* () {
   yield* sql`
     UPDATE orchestration_v2_projection_threads
     SET payload_json = json_remove(payload_json, '$.guestShare')
-    WHERE json_type(payload_json, '$.guestShare') IS NOT NULL
+    WHERE json_valid(payload_json) AND json_type(payload_json, '$.guestShare') IS NOT NULL
   `;
 });
