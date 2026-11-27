@@ -9,6 +9,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import { IssueTrackerKind, type ProjectId } from "@onicode/contracts";
 import {
   IssueTrackerError,
+  type IssueTrackerCredential,
   type StandaloneIssueTrackerApi,
 } from "@onicode/source-control-core/server/IssueTracker";
 
@@ -19,6 +20,45 @@ import * as IssueTrackerConnections from "./IssueTrackerConnections.ts";
 import * as IssueTrackerRegistry from "./IssueTrackerRegistry.ts";
 
 const LINEAR = IssueTrackerKind.make("linear");
+const JIRA = IssueTrackerKind.make("jira");
+
+function connectionsLayer(
+  tracker: StandaloneIssueTrackerApi,
+  secrets: Map<string, string>,
+  written: Array<string> = [],
+) {
+  let random = 0;
+  return IssueTrackerConnections.layer.pipe(
+    Layer.provideMerge(IssueTrackerBindings.layer),
+    Layer.provideMerge(
+      Layer.mergeAll(
+        SqlitePersistence.layerMemory,
+        Layer.succeed(
+          IssueTrackerRegistry.IssueTrackerRegistry,
+          IssueTrackerRegistry.fromTrackers([tracker]),
+        ),
+        Layer.mock(ServerSecretStore.ServerSecretStore)({
+          get: (name) =>
+            Effect.succeed(
+              Option.map(Option.fromNullishOr(secrets.get(name)), (value) =>
+                new TextEncoder().encode(value),
+              ),
+            ),
+          set: (name, value) =>
+            Effect.sync(() => {
+              written.push(name);
+              secrets.set(name, new TextDecoder().decode(value));
+            }),
+          remove: (name) => Effect.sync(() => void secrets.delete(name)),
+        }),
+        Layer.succeed(
+          SecureRandom.SecureRandom,
+          SecureRandom.make((size) => new Uint8Array(size).fill(++random)),
+        ),
+      ),
+    ),
+  );
+}
 
 describe("IssueTrackerConnections", () => {
   it.effect("keeps each account's key and bindings apart, and no key past its account", () => {
@@ -26,7 +66,6 @@ describe("IssueTrackerConnections", () => {
     const written: Array<string> = [];
     const probing = Deferred.makeUnsafe<void>();
     const released = Deferred.makeUnsafe<void>();
-    let random = 0;
     const tracker = {
       kind: LINEAR,
       standalone: {
@@ -51,36 +90,7 @@ describe("IssueTrackerConnections", () => {
               { account: `user-${token}`, scopes: [] },
             ),
     } as unknown as StandaloneIssueTrackerApi;
-    const layer = IssueTrackerConnections.layer.pipe(
-      Layer.provideMerge(IssueTrackerBindings.layer),
-      Layer.provideMerge(
-        Layer.mergeAll(
-          SqlitePersistence.layerMemory,
-          Layer.succeed(
-            IssueTrackerRegistry.IssueTrackerRegistry,
-            IssueTrackerRegistry.fromTrackers([tracker]),
-          ),
-          Layer.mock(ServerSecretStore.ServerSecretStore)({
-            get: (name) =>
-              Effect.succeed(
-                Option.map(Option.fromNullishOr(secrets.get(name)), (value) =>
-                  new TextEncoder().encode(value),
-                ),
-              ),
-            set: (name, value) =>
-              Effect.sync(() => {
-                written.push(name);
-                secrets.set(name, new TextDecoder().decode(value));
-              }),
-            remove: (name) => Effect.sync(() => void secrets.delete(name)),
-          }),
-          Layer.succeed(
-            SecureRandom.SecureRandom,
-            SecureRandom.make((size) => new Uint8Array(size).fill(++random)),
-          ),
-        ),
-      ),
-    );
+    const layer = connectionsLayer(tracker, secrets, written);
     return Effect.gen(function* () {
       const connections = yield* IssueTrackerConnections.IssueTrackerConnections;
       yield* connections.connect({ tracker: LINEAR, token: "work" });
@@ -179,5 +189,64 @@ describe("IssueTrackerConnections", () => {
       expect(written).toHaveLength(1);
       expect([...secrets.keys()]).toEqual(["issue-tracker-bGluZWFy-token"]);
     }).pipe(Effect.provide(layer));
+  });
+
+  it.effect("reuses a saved account's fields when an old app replaces its key alone", () => {
+    const secrets = new Map<string, string>();
+    const probed: Array<IssueTrackerCredential> = [];
+    const tracker = {
+      kind: JIRA,
+      standalone: {
+        tracker: JIRA,
+        displayName: "Jira",
+        host: "atlassian.net",
+        credential: {
+          label: "API token",
+          helpUrl: null,
+          fields: [
+            { key: "site", label: "Site" },
+            { key: "email", label: "Account email" },
+          ],
+        },
+      },
+      probeCredential: (credential: IssueTrackerCredential) =>
+        Effect.sync(() => {
+          probed.push(credential);
+          return { account: credential.fields["email"], scopes: [] };
+        }),
+    } as unknown as StandaloneIssueTrackerApi;
+    return Effect.gen(function* () {
+      const connections = yield* IssueTrackerConnections.IssueTrackerConnections;
+      const work = { site: "acme.atlassian.net", email: "j@acme.test" };
+      const home = { site: "home.atlassian.net", email: "j@home.test" };
+      yield* connections.connect({ tracker: JIRA, token: "work", fields: work });
+      const { accountId } = yield* connections.connect({
+        tracker: JIRA,
+        token: "home",
+        addAccount: true,
+        fields: home,
+      });
+      // An app from before the tracker had fields replaces a token with the token alone.
+      yield* connections.connect({ tracker: JIRA, token: "work-new" });
+      yield* connections.connect({ tracker: JIRA, accountId, token: "home-new" });
+      probed.length = 0;
+      yield* connections.list;
+      expect(probed).toHaveLength(2);
+      expect(probed).toEqual(
+        expect.arrayContaining([
+          { token: "work-new", fields: work },
+          { token: "home-new", fields: home },
+        ]),
+      );
+
+      expect(
+        yield* Effect.flip(connections.connect({ tracker: JIRA, token: "new", addAccount: true })),
+      ).toMatchObject({
+        reason: "rejected",
+        detail:
+          "Jira also needs its site and account email, which this version of the app can't send. " +
+          "Update the app, or connect Jira from the desktop app.",
+      });
+    }).pipe(Effect.provide(connectionsLayer(tracker, secrets)));
   });
 });

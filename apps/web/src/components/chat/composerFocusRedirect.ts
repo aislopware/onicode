@@ -17,11 +17,19 @@ const TYPE_TO_FOCUS_INTERACTIVE_SELECTOR = [
   '[role="application"]',
   '[role="button"]',
   '[role="checkbox"]',
+  '[role="combobox"]',
+  '[role="grid"]',
+  '[role="link"]',
+  '[role="listbox"]',
   '[role="menuitem"]',
   '[role="option"]',
   '[role="radio"]',
+  '[role="slider"]',
+  '[role="spinbutton"]',
   '[role="switch"]',
   '[role="tab"]',
+  '[role="tree"]',
+  '[role="treegrid"]',
 ].join(",");
 // Closed popups can stay mounted; match only open or closing layers.
 export const TYPE_TO_FOCUS_FLOATING_LAYER_SELECTOR = [

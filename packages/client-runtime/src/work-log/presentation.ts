@@ -903,9 +903,28 @@ export function toolGroupSummaryKind(
   return fallbackKinds.size === 1 ? fallbackKinds.values().next().value! : "mixed";
 }
 
+// Footnote and link reference definitions, with a footnote's indented continuation lines.
+const REFERENCE_DEFINITION = /^[ \t]{0,3}\[(\^?[^\]\r\n]+)\]:.*(?:\r?\n(?: {4}|\t).*)*/gm;
+
+/** Drops definitions and the references they resolve; an undefined `[^a-z]` is literal text. */
+function withoutReferences(markdown: string, text: string): string {
+  const labels = new Set(
+    Array.from(markdown.matchAll(REFERENCE_DEFINITION), (match) => match[1]!.toLowerCase()),
+  );
+  if (labels.size === 0) return text;
+  return text
+    .replace(REFERENCE_DEFINITION, "")
+    .replace(/\[(\^[^\]\s]+)\]/g, (reference, label: string) =>
+      labels.has(label.toLowerCase()) ? "" : reference,
+    )
+    .replace(/(!?)\[([^[\]]*)\]\[([^[\]]*)\]/g, (reference, _image, text: string, label: string) =>
+      labels.has((label === "" ? text : label).toLowerCase()) ? text : reference,
+    );
+}
+
 export function liveThoughtLine(markdown: string): string {
   const heading = /^\s*\*\*([^*\r\n]+)\*\*[ \t]*\r?(?:\n|$)/.exec(markdown)?.[1];
-  const text = (heading ?? markdown)
+  const text = withoutReferences(markdown, heading ?? markdown)
     .replace(/!?\[([^[\]]*)\]\([^)]*\)/g, "$1")
     .replace(/^[ \t]*(?:#{1,6}|[-*+]|\d+\.)[ \t]+/gm, "")
     .replace(/`+|\*\*|~~/g, "")

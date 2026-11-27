@@ -158,6 +158,14 @@ const make = Effect.gen(function* () {
       ),
     );
 
+  const storedFields = (api: StandaloneIssueTrackerApi, accountId: IssueTrackerAccountId | null) =>
+    secrets.get(issueTrackerSecretName(api.kind, accountId)).pipe(
+      Effect.mapError(secretFailure(api.kind, "The stored credential could not be read.")),
+      Effect.map((stored) =>
+        Option.isNone(stored) ? undefined : decodeIssueTrackerCredential(stored.value).fields,
+      ),
+    );
+
   const list: IssueTrackerConnections["Service"]["list"] = Effect.all({
     trackers: Effect.forEach(registry.standalone, (api) => current(api, null), { concurrency: 4 }),
     accounts: bindings.listAccounts.pipe(
@@ -251,17 +259,30 @@ const make = Effect.gen(function* () {
       );
     }
     const wanted = api.standalone.credential.fields ?? [];
-    const missing = wanted.find((field) => input.fields?.[field.key] === undefined);
-    if (missing !== undefined) {
+    // A client from before the tracker had fields sends the token alone; replacing a saved
+    // account's token keeps the fields it was saved with.
+    const fields =
+      input.fields === undefined && !addAccount && wanted.length > 0
+        ? yield* storedFields(api, input.accountId ?? null)
+        : input.fields;
+    const missing = wanted.filter((field) => fields?.[field.key] === undefined);
+    if (missing.length > 0) {
+      const name = api.standalone.displayName;
+      const labels = missing.map((field) => field.label.toLowerCase());
       return yield* new IssueTrackerConnectionError({
         tracker: input.tracker,
         reason: "rejected",
-        detail: `${api.standalone.displayName} needs its ${missing.label.toLowerCase()} too.`,
+        detail:
+          input.fields === undefined
+            ? `${name} also needs its ${new Intl.ListFormat("en").format(labels)}, which this ` +
+              "version of the app can't send. " +
+              `Update the app, or connect ${name} from the desktop app.`
+            : `${name} needs its ${labels[0]} too.`,
       });
     }
     const credential: IssueTrackerCredential = {
       token,
-      fields: Object.fromEntries(wanted.map((field) => [field.key, input.fields![field.key]!])),
+      fields: Object.fromEntries(wanted.map((field) => [field.key, fields![field.key]!])),
     };
     // The tracker is asked before the lock, so a slow probe never holds up other settings.
     const probed = yield* api.probeCredential(credential).pipe(
