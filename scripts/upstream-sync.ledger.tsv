@@ -4678,3 +4678,4 @@ db7cba374e	take	fix(mobile): Changed files rows say 1 addition and 1 deletion (#
 23425c21aa	take	Adapted: DocumentText VERSION 19 -> 20 so cached ODT text is extracted again
 bb6fd7d69c	take	Serialized settle scripts; doc note moved to onicode-json.md; Onicode's subagent shared-worktree guard reads the queued thread
 af17c90f40	take	applied cleanly
+b9afe8b6fa	skip	T3 Connect relay/tunnel hops removed in Onicode; driver has no relay refusals
