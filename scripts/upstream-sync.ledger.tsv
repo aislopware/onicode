@@ -4666,3 +4666,4 @@ dcac7cfed6	take	taken; conflicts kept Onicode's: issue comment card border, comp
 38452ae605	take	conflict with Onicode's text-box model (from 8335c0951b): kept Onicode's own-line handling for paragraph-anchored ODF boxes (odfBlockTextBox), took upstream's odfInlineParagraphs for as-char boxes and note bodies; DocumentText VERSION 18 -> 19 so cached ODT text extracts again
 c2e6204332	take	taken as is
 a27ad36daa	take	fix(web): Markdown blocks keep the text direction their HTML sets (#44375)
+8f8f4501e8	take	Adapted: unbound read passes the link's workspace to the tracker (Onicode's multi-account check) instead of upstream's canonical-URL comparison, so renamed workspaces read on; kept Onicode's message when no project is named; docs into Onicode's Linear paragraph
