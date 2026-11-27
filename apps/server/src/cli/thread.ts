@@ -1,4 +1,5 @@
 import {
+  NonNegativeInt,
   OrchestratorMcpFailure,
   OrchestratorMcpThreadListResult,
   OrchestratorMcpThreadReadResult,
@@ -1117,6 +1118,7 @@ const threadShowCommand = Command.make("show", {
   ...projectLocationFlags,
   thread: threadArgument,
   messages: Flag.Int("messages").pipe(
+    Flag.withSchema(NonNegativeInt),
     Flag.withDescription("How many of the latest messages to print."),
     Flag.withDefault(10),
   ),
