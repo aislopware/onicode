@@ -1,8 +1,13 @@
 // A project bound to a standalone tracker (Linear) in settings lists it beside its git host's.
 // References outside the project's own repositories (upstream and fork) may be read on the host,
 // but every write must pass through requireWritable.
+import * as Cache from "effect/Cache";
 import * as Context from "effect/Context";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Equal from "effect/Equal";
+import * as Exit from "effect/Exit";
+import * as Hash from "effect/Hash";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import {
@@ -18,6 +23,7 @@ import {
   type IssueCreateInput,
   type IssueCreateResult,
   type IssueDetail,
+  type IssueDetailInput,
   type IssueError,
   type IssueListEntry,
   type IssueListInput,
@@ -44,6 +50,7 @@ import {
   type IssueTrackerApi,
   type StandaloneIssueTrackerApi,
   type TrackerIssueDetail,
+  type TrackerIssueSummary,
 } from "@onicode/source-control-core/server/IssueTracker";
 import { asIssueTrackerAccount } from "@onicode/source-control-core/server/IssueTrackerHost";
 import { parseUrl } from "@onicode/shared/url";
@@ -56,6 +63,36 @@ import * as IssueTrackerRegistry from "./IssueTrackerRegistry.ts";
 
 const DEFAULT_LIST_LIMIT = 50;
 const SCOPE_CONCURRENCY = 4;
+// Every client polls linked issues; one shared read per window keeps them off the tracker's quota.
+const DETAIL_CACHE_TTL = Duration.seconds(30);
+const DETAIL_CACHE_CAPACITY = 512;
+
+/** Equal by `key` alone, so the cache can run the read it carries on a miss. */
+class TrackerRead<A> implements Equal.Equal {
+  readonly key: string;
+  readonly lookup: Effect.Effect<A, IssueError>;
+  constructor(key: string, lookup: Effect.Effect<A, IssueError>) {
+    this.key = key;
+    this.lookup = lookup;
+  }
+  [Equal.symbol](that: unknown): boolean {
+    return that instanceof TrackerRead && that.key === this.key;
+  }
+  [Hash.symbol](): number {
+    return Hash.string(this.key);
+  }
+}
+
+/**
+ * One issue as one tracker account sees it; the host's credential is the server's own. The
+ * workspace keeps two Linear workspaces' `ENG-7` apart.
+ */
+function detailCacheKey(project: ProjectTrackerBinding, input: IssueRef): string {
+  return [project.tracker, project.host, project.accountId ?? "", project.scope, input.key]
+    .concat(input.workspace ?? "")
+    .map((part) => part.toLowerCase())
+    .join(" ");
+}
 
 const interactive =
   <I, A>(call: (input: I) => Effect.Effect<A, IssueError>) =>
@@ -164,7 +201,7 @@ export class IssueService extends Context.Service<
   IssueService,
   {
     readonly list: (input: IssueListInput) => Effect.Effect<IssueListResult, IssueError>;
-    readonly detail: (input: IssueRef) => Effect.Effect<IssueDetail, IssueError>;
+    readonly detail: (input: IssueDetailInput) => Effect.Effect<IssueDetail, IssueError>;
     readonly summary: (input: IssueRef) => Effect.Effect<IssueSummary, IssueError>;
     readonly comments: (
       input: IssueCommentsPageInput,
@@ -208,6 +245,28 @@ const make = Effect.gen(function* () {
   const projects = yield* ProjectService.ProjectService;
   const repositoryIdentities = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
   const bindings = yield* IssueTrackerBindings.IssueTrackerBindingsRepository;
+  const cacheOptions = {
+    capacity: DETAIL_CACHE_CAPACITY,
+    timeToLive: (exit: Exit.Exit<unknown, unknown>) =>
+      Exit.isSuccess(exit) ? DETAIL_CACHE_TTL : Duration.zero,
+  };
+  const details = yield* Cache.makeWith(
+    (read: TrackerRead<TrackerIssueDetail>) => read.lookup,
+    cacheOptions,
+  );
+  // Linked rows and the tab icon poll the summary, so it shares reads the same way.
+  const summaries = yield* Cache.makeWith(
+    (read: TrackerRead<TrackerIssueSummary | TrackerIssueDetail>) => read.lookup,
+    cacheOptions,
+  );
+  /** After a write, the next read must see it. */
+  const invalidateDetail = (project: ProjectTrackerBinding, input: IssueRef) => {
+    const key = detailCacheKey(project, input);
+    return Effect.all([
+      Cache.invalidate(details, new TrackerRead(key, Effect.never)),
+      Cache.invalidate(summaries, new TrackerRead(key, Effect.never)),
+    ]);
+  };
 
   const resolveStandaloneBindings = (
     binding: IssueTrackerProjectBinding | undefined,
@@ -561,11 +620,19 @@ const make = Effect.gen(function* () {
 
   const detail: IssueService["Service"]["detail"] = (input) =>
     requireProject(input).pipe(
+      Effect.tap((project) =>
+        input.refresh === true ? invalidateDetail(project, input) : Effect.void,
+      ),
       Effect.flatMap((project) =>
-        project.api.getIssue(issueTarget(project, input)).pipe(
-          Effect.mapError(toIssueError("detail")),
-          Effect.map((issue) => toDetail(project, issue)),
-        ),
+        Cache.get(
+          details,
+          new TrackerRead(
+            detailCacheKey(project, input),
+            project.api
+              .getIssue(issueTarget(project, input))
+              .pipe(Effect.mapError(toIssueError("detail"))),
+          ),
+        ).pipe(Effect.map((issue) => toDetail(project, issue))),
       ),
     );
 
@@ -573,8 +640,15 @@ const make = Effect.gen(function* () {
     requireProject(input).pipe(
       Effect.flatMap((project) => {
         const target = issueTarget(project, input);
-        return (project.api.getIssueSummary?.(target) ?? project.api.getIssue(target)).pipe(
-          Effect.mapError(toIssueError("summary")),
+        return Cache.get(
+          summaries,
+          new TrackerRead(
+            detailCacheKey(project, input),
+            (project.api.getIssueSummary?.(target) ?? project.api.getIssue(target)).pipe(
+              Effect.mapError(toIssueError("summary")),
+            ),
+          ),
+        ).pipe(
           // Named fields, so a tracker's fuller read never rides along to the client.
           Effect.map((issue): IssueSummary => ({
             tracker: project.tracker,
@@ -674,7 +748,10 @@ const make = Effect.gen(function* () {
                 ...issueTarget(project, input),
                 body: input.body,
               })
-              .pipe(Effect.mapError(toIssueError("comment")));
+              .pipe(
+                Effect.mapError(toIssueError("comment")),
+                Effect.ensuring(invalidateDetail(project, input)),
+              );
       }),
     );
 
@@ -703,7 +780,10 @@ const make = Effect.gen(function* () {
             labels: input.labels,
             assignees: input.assignees,
           })
-          .pipe(Effect.mapError(toIssueError("update")));
+          .pipe(
+            Effect.mapError(toIssueError("update")),
+            Effect.ensuring(invalidateDetail(project, input)),
+          );
       }),
     );
 
@@ -717,7 +797,10 @@ const make = Effect.gen(function* () {
             ...issueTarget(project, input),
             state: input.state,
           })
-          .pipe(Effect.mapError(toIssueError("setState")));
+          .pipe(
+            Effect.mapError(toIssueError("setState")),
+            Effect.ensuring(invalidateDetail(project, input)),
+          );
       }),
     );
 
@@ -733,7 +816,10 @@ const make = Effect.gen(function* () {
                 content: input.content,
                 reacted: input.reacted,
               })
-              .pipe(Effect.mapError(toIssueError("react"))),
+              .pipe(
+                Effect.mapError(toIssueError("react")),
+                Effect.ensuring(invalidateDetail(project, input)),
+              ),
       ),
     );
 

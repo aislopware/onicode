@@ -1,4 +1,5 @@
 import * as NodeNet from "node:net";
+import * as NodeOS from "node:os";
 
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -6,12 +7,26 @@ import * as Context from "effect/Context";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 
-import { listensOnLoopback } from "./hostClassification.ts";
+import * as HostProcess from "./HostProcess.ts";
+import { isWildcardHost, listensOnLoopback, normalizeHostname } from "./hostClassification.ts";
+
+const WILDCARD_PORT_ATTEMPTS = 8;
 
 export class NetError extends Schema.TaggedError<NetError>()("NetError", {
   message: Schema.String,
   cause: Schema.optional(Schema.Defect()),
 }) {}
+
+export class NetListenError extends Schema.TaggedError<NetListenError>()("NetListenError", {
+  host: Schema.String,
+  port: Schema.Number,
+  code: Schema.String,
+  cause: Schema.Defect(),
+}) {
+  override get message(): string {
+    return `Cannot listen on ${this.host}:${this.port} (${this.code}).`;
+  }
+}
 
 const isErrnoExceptionWithCode = (
   cause: unknown,
@@ -31,6 +46,12 @@ const closeServer = (server: NodeNet.Server) => {
 export interface NetServiceShape {
   readonly canListenOnHost: (port: number, host: string) => Effect.Effect<boolean>;
 
+  /** Like `canListenOnHost`, but only EADDRINUSE yields `false`; other bind errors fail. */
+  readonly probeListenOnHost: (
+    port: number,
+    host: string,
+  ) => Effect.Effect<boolean, NetListenError>;
+
   readonly isPortAvailableOnLoopback: (port: number) => Effect.Effect<boolean>;
 
   readonly hasListenerOnHost: (port: number, host: string) => Effect.Effect<boolean>;
@@ -46,34 +67,36 @@ export class NetService extends Context.Service<NetService, NetServiceShape>()(
 
 /** @public */
 export const make = () => {
-  const canListenOnHost = (port: number, host: string): Effect.Effect<boolean> =>
-    Effect.callback<boolean>((resume) => {
+  const probeListenOnHost = (port: number, host: string): Effect.Effect<boolean, NetListenError> =>
+    Effect.callback<boolean, NetListenError>((resume) => {
       const server = NodeNet.createServer();
       let settled = false;
 
-      const settle = (value: boolean) => {
+      const settle = (effect: Effect.Effect<boolean, NetListenError>) => {
         if (settled) return;
         settled = true;
-        resume(Effect.succeed(value));
+        resume(effect);
       };
 
       server.unref();
 
       server.once("error", (cause) => {
+        const code = isErrnoExceptionWithCode(cause) ? cause.code : "UNKNOWN";
         // Missing IPv6 addresses or kernel support do not mean the port is occupied.
-        if (
-          isErrnoExceptionWithCode(cause) &&
-          (cause.code === "EADDRNOTAVAIL" || cause.code === "EAFNOSUPPORT")
-        ) {
-          settle(true);
+        if (code === "EADDRNOTAVAIL" || code === "EAFNOSUPPORT") {
+          settle(Effect.succeed(true));
           return;
         }
-        settle(false);
+        if (code === "EADDRINUSE") {
+          settle(Effect.succeed(false));
+          return;
+        }
+        settle(Effect.fail(new NetListenError({ host, port, code, cause })));
       });
 
       server.once("listening", () => {
         server.close(() => {
-          settle(true);
+          settle(Effect.succeed(true));
         });
       });
 
@@ -83,6 +106,11 @@ export const make = () => {
         closeServer(server);
       });
     });
+
+  const canListenOnHost = (port: number, host: string): Effect.Effect<boolean> =>
+    probeListenOnHost(port, host).pipe(
+      Effect.catchTags({ NetListenError: () => Effect.succeed(false) }),
+    );
 
   const hasListenerOnHost = (port: number, host: string): Effect.Effect<boolean> =>
     Effect.callback<boolean>((resume) => {
@@ -132,6 +160,32 @@ export const make = () => {
     );
   });
 
+  // Outside Linux a wildcard bind can share a port with a listener on one interface address, which
+  // a bind to that exact address still reports. "::" and "" are dual-stack, so they check IPv4 too.
+  const hasInterfaceListener = Effect.fn("Net.hasInterfaceListener")(function* (
+    port: number,
+    wildcardHost: string,
+  ): Effect.fn.Return<boolean> {
+    if ((yield* HostProcess.Platform) === "linux") return false;
+    const free = yield* Effect.forEach(
+      Object.values(NodeOS.networkInterfaces())
+        .flatMap((entries) => entries ?? [])
+        .filter(
+          (entry) =>
+            !entry.internal &&
+            (entry.family === "IPv4" || (wildcardHost !== "0.0.0.0" && entry.scopeid === 0)),
+        )
+        .map((entry) => entry.address),
+      // Only EADDRINUSE counts; an odd interface error must not mark every port taken.
+      (address) =>
+        probeListenOnHost(port, address).pipe(
+          Effect.catchTags({ NetListenError: () => Effect.succeed(true) }),
+        ),
+      { concurrency: "unbounded" },
+    );
+    return free.includes(false);
+  });
+
   const isPortAvailableForHost = Effect.fn("Net.isPortAvailableForHost")(function* (
     port: number,
     host: string | undefined,
@@ -179,14 +233,39 @@ export const make = () => {
 
   return {
     canListenOnHost,
+    probeListenOnHost,
     isPortAvailableOnLoopback,
     hasListenerOnHost,
     reserveLoopbackPort,
     findAvailablePort: Effect.fn("Net.findAvailablePort")(function* (preferred, host) {
-      if (preferred > 0 && (yield* isPortAvailableForHost(preferred, host))) {
+      const wildcardHost =
+        host !== undefined && (host === "" || isWildcardHost(host))
+          ? normalizeHostname(host)
+          : undefined;
+      if (
+        preferred > 0 &&
+        (yield* isPortAvailableForHost(preferred, host)) &&
+        (wildcardHost === undefined ||
+          ((yield* canListenOnHost(preferred, wildcardHost)) &&
+            !(yield* hasInterfaceListener(preferred, wildcardHost))))
+      ) {
         return preferred;
       }
-      return yield* reserveLoopbackPort(listensOnLoopback(host) ? undefined : host);
+      if (wildcardHost === undefined) {
+        return yield* reserveLoopbackPort(listensOnLoopback(host) ? undefined : host);
+      }
+
+      // A wildcard bind can succeed while another address family owns the localhost port.
+      for (let attempt = 0; attempt < WILDCARD_PORT_ATTEMPTS; attempt += 1) {
+        const port = yield* reserveLoopbackPort(wildcardHost);
+        if (
+          (yield* isPortAvailableOnLoopback(port)) &&
+          !(yield* hasInterfaceListener(port, wildcardHost))
+        ) {
+          return port;
+        }
+      }
+      return yield* new NetError({ message: "Failed to find an available wildcard port" });
     }),
   } satisfies NetServiceShape;
 };

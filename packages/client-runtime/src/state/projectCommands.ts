@@ -86,8 +86,6 @@ export class ScratchProjectNotLoadedError extends Schema.TaggedError<ScratchProj
   }
 }
 
-export const PROJECT_READ_FILE_STALE_TIME_MS = 30_000;
-
 export function createProjectEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | SecureRandom.SecureRandom | R, E>,
   options: {
@@ -105,7 +103,9 @@ export function createProjectEnvironmentAtoms<R, E>(
   const readFile = createEnvironmentRpcQueryAtomFamily(runtime, {
     label: "environment-data:projects:read-file",
     tag: WS_METHODS.projectsReadFile,
-    staleTimeMs: PROJECT_READ_FILE_STALE_TIME_MS,
+    // A file can change outside this client, so reopening it reads it again. The idle TTL only
+    // keeps the last contents on screen while that read runs.
+    staleTimeMs: 0,
     idleTtlMs: 5 * 60_000,
     onAnswer: (target, _value, registry): Effect.Effect<void> =>
       Effect.sync(() => {

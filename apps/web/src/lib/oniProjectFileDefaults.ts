@@ -5,7 +5,6 @@ import {
   type OniProjectFile,
 } from "@onicode/contracts";
 import { parseOniProjectFile } from "@onicode/shared/oniProjectFile";
-import { PROJECT_READ_FILE_STALE_TIME_MS } from "@onicode/client-runtime/state/projects";
 import { executeAtomQuery } from "@onicode/client-runtime/state/runtime";
 import { AsyncResult } from "effect/reactivity";
 
@@ -34,12 +33,17 @@ function toOniProjectFile(
 export async function readOniProjectFile(
   environmentId: EnvironmentId,
   workspaceRoot: string,
-  options: { readonly refresh?: boolean } = {},
+  options: { readonly refresh?: boolean; readonly signal?: AbortSignal | undefined } = {},
 ): Promise<OniProjectFile | null> {
   const result = await executeAtomQuery(
     appAtomRegistry,
     getProjectFileQueryAtom(environmentId, workspaceRoot, ONICODE_PROJECT_FILE_NAME),
-    { reportDefect: false, reportFailure: false, refresh: options.refresh ?? false },
+    {
+      reportDefect: false,
+      reportFailure: false,
+      refresh: options.refresh ?? false,
+      signal: options.signal,
+    },
   );
   return toOniProjectFile(
     environmentId,
@@ -48,10 +52,12 @@ export async function readOniProjectFile(
   );
 }
 
+const PROJECT_FILE_CURRENT_MS = 30_000;
+
 /**
  * The project's onicode.json from an earlier read, or `undefined` when none has loaded yet. A
- * copy that is refetching or past the query's stale time, so the file may have changed, is not
- * `current`.
+ * copy that is refetching or older than `PROJECT_FILE_CURRENT_MS`, so the file may have changed, is
+ * not `current`.
  */
 export function peekOniProjectFile(
   environmentId: EnvironmentId,
@@ -63,7 +69,7 @@ export function peekOniProjectFile(
   return AsyncResult.isSuccess(result)
     ? {
         projectFile: toOniProjectFile(environmentId, workspaceRoot, result.value),
-        current: !result.waiting && Date.now() - result.timestamp < PROJECT_READ_FILE_STALE_TIME_MS,
+        current: !result.waiting && Date.now() - result.timestamp < PROJECT_FILE_CURRENT_MS,
       }
     : undefined;
 }

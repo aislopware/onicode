@@ -513,6 +513,60 @@ describe("IssueService", () => {
     }),
   );
 
+  it.effect("shares one tracker read of an issue until a write or an explicit refresh", () =>
+    Effect.gen(function* () {
+      let reads = 0;
+      let summaryReads = 0;
+      const service = yield* makeService({
+        projects: [
+          project({ id: "web", repository: "acme/web" }),
+          project({ id: "worktree", repository: "acme/web" }),
+        ],
+        trackers: [
+          fakeTracker({
+            getIssue: (input) => Effect.sync(() => (reads++, issue(input.key))),
+            getIssueSummary: (input) => Effect.sync(() => (summaryReads++, issue(input.key))),
+          }),
+        ],
+      });
+      const ref = { projectId: "web" as ProjectId, tracker: GITHUB, scope: "acme/web", key: "42" };
+      // Every client and project polling one issue costs the tracker one read.
+      yield* Effect.all(
+        [
+          service.detail(ref),
+          service.detail(ref),
+          service.detail({ ...ref, projectId: "worktree" as ProjectId }),
+        ],
+        { concurrency: "unbounded" },
+      );
+      expect((yield* service.detail(ref)).projectId).toBe("web");
+      expect(reads).toBe(1);
+      yield* service.detail({ ...ref, key: "43" });
+      expect(reads).toBe(2);
+      // Another workspace's issue with the same key is another issue.
+      yield* service.detail({ ...ref, workspace: "other" });
+      expect(reads).toBe(3);
+      // Linked rows poll the summary, which shares its reads the same way.
+      yield* Effect.all([service.summary(ref), service.summary(ref)], {
+        concurrency: "unbounded",
+      });
+      expect(summaryReads).toBe(1);
+
+      yield* service.comment({ ...ref, body: "Repro attached." });
+      yield* service.detail(ref);
+      yield* service.summary(ref);
+      expect(reads).toBe(4);
+      expect(summaryReads).toBe(2);
+
+      // An explicit refresh sees what changed on the tracker itself.
+      yield* service.detail({ ...ref, refresh: true });
+      yield* service.detail(ref);
+      yield* service.summary(ref);
+      expect(reads).toBe(5);
+      expect(summaryReads).toBe(3);
+    }),
+  );
+
   it.effect("refuses what the tracker did not declare before calling it", () =>
     Effect.gen(function* () {
       let calls = 0;

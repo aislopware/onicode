@@ -3,9 +3,6 @@
   "59c888898cca0a57": "Tu organización no permite agentes externos en este entorno.",
   "a80458a4ad02acde": "Este dispositivo no puede conceder ese acceso. Elige un nivel inferior.",
   "a256081b5ce634fd": "No se pudo crear el acceso del agente. Inténtalo de nuevo.",
-  "6c6e16b9488f8b91": "Desplázate para leerlo todo.",
-  "035aab5e99159bd8": "{count, plural, one {… No se muestra {hidden} carácter del medio.} other {… No se muestran {hidden} caracteres del medio.}} El texto termina con:",
-  "011b1ef726fa9928": "Desplázate en cada parte para leerla entera.",
   "4bcfa3b976a421cf": "Chat lateral",
   "23be753133ae6950": "Hilo",
   "0001ae5846061bb6": "Hilo en {machine}",
@@ -35,6 +32,7 @@
   "eebc538e25b09fe2": "La política de {organization} no permite importar cookies del navegador.",
   "986b0873f913a840": "La política de {organization} no permite tareas con webhook.",
   "7642a133db05f164": "La política de {organization} no permite abrir los servidores locales de esta máquina en otros dispositivos.",
+  "e0856d6a402ad821": "La política de {organization} no permite comandos de diseño de worktrees de proyectos.",
   "39f6771b49f9b3b6": "Usar valor predeterminado",
   "45bb0e90e1c42046": "Cuando vuelvas",
   "d8fa0a55446bbb0d": "Antes de que caduque la caché (beta)",
@@ -59,7 +57,7 @@
   "929a11e234f6e5d9": "Instala las herramientas de línea de comandos de Azure ({cli}) y activa la compatibilidad con Azure DevOps con {command}.",
   "ad599e9de33538dd": "Añade un token de Bitbucket en Ajustes → Control de versiones e issues.",
   "d810ecd91e8cf9d0": "Instala la CLI de Origin con {install} y ejecuta {login}.",
-  "eb0f60ef4f92ab7d": "Instala {fj} 0.6 o posterior desde {fjUrl} y ejecuta {fjLogin}, o instala {tea} 0.16 o posterior desde {teaUrl} y ejecuta {teaLogin} para cada servidor de Forgejo o Gitea.",
+  "1a04c8d36a7b29d3": "Instala {fj} 0.6 o posterior desde {fjUrl} y ejecuta {fjLogin}, o instala {gt} 2.0 o posterior desde {gtUrl} y ejecuta {gtLogin} para cada servidor de Forgejo o Gitea.",
   "d026a85e2e50e675": "Instala la CLI de GitCafe con {install} y ejecuta {login}, guarda un token en Ajustes o define {variable} en el servidor.",
   "22d3c0c48a34b5b3": "Instala la CLI de TanStack Source con {install} y ejecuta {login}, guarda un token en Ajustes o define {variable} en el servidor.",
   "79d776428f4d0650": "No se pudo cargar el archivo. Vuelve a conectarte e inténtalo de nuevo.",
@@ -457,6 +455,7 @@
   "834ca879c14c167b": "Trabajando",
   "582d6df7dfab86fb": "En pausa",
   "ea6583ce92507ee3": "Durmiendo",
+  "7150557773b3818b": "En cola",
   "7ea8cb8af281ce93": "Esperando",
   "1347868f2523140e": "Terminada",
   "57d76c4614054271": "Detenida",
@@ -468,6 +467,7 @@
   "d3890f4eb1508781": "Ejecuta sus propios pasos",
   "3e7ced10c9482af0": "{step} está trabajando",
   "237e1bcb1cf1bdec": "Durmiendo en {step}",
+  "efbeb3993ee2c3f5": "En cola para {pool}",
   "3f7b17ac5a20c8d2": "Ejecuta {run}",
   "0306f5f324b8aaa5": "{count} ejecuciones en curso",
   "e8fd779b84a202a2": "Esperando",
@@ -617,6 +617,7 @@
   "56b4ff3993c93eca": "{host} envió una configuración del servidor incompatible.",
   "368c4d4f99c66bfb": "Actualiza el cliente y el servidor a versiones compatibles.",
   "e5fd422e445391fc": "Error al subir. Toca para reintentar.",
+  "13b14784f8707ddd": "0 bytes",
   "b2bc6bd92ea24e5c": "{size} MB",
   "88f84178edbb7f57": "{size} KB",
   "5a78fd0a1d8e9945": "{count} MB",
@@ -1457,6 +1458,8 @@
   "4eb599c7f36c99ba": "Ese archivo de tema no es un JSON válido.",
   "29a5ff50ce55c4f9": "Tema de VS Code",
   "10348092dfed8b11": "Ese tema de VS Code no tiene el color \"editor.background\", así que no hay nada a partir de lo que crear una paleta.",
+  "206811f6f441bfc7": "Este proyecto prepara los worktrees con su propio comando, que nadie ha aprobado tal como está escrito ahora. Esta conexión no puede aprobarlo: apruébalo desde un cliente que pueda usar el terminal.",
+  "b8087c9a70c26da9": "No se pudo aprobar el comando de diseño de worktrees.",
   "6dff8d487001c6cf": "Adaptable",
   "f5f61c338cc5aeb5": "Barra de dispositivos del navegador",
   "3b4eb5b5ec5e60cb": "Dispositivo predefinido del navegador",
@@ -1771,7 +1774,6 @@
   "1d17dc60c59e0524": "Desfijar proyecto",
   "5cfaaa20c460c328": "Fijar proyecto",
   "24adf508b4c5d6b5": "Ajustes del proyecto",
-  "60e47b3da5901619": "Ajustes · {section}",
   "0c659f9a193255dd": "No se pudo añadir el proyecto",
   "4b3fc098d5a08a66": "Las rutas de estilo Windows solo son compatibles en Windows.",
   "2c2637dc1e236fb4": "Las rutas relativas requieren un proyecto activo.",
@@ -1865,6 +1867,7 @@
   "f844c41fac2d339c": "Actual",
   "69154433587763c0": "No hay acciones que coincidan.",
   "90c3a382ecefa0ce": "No hay comandos, proyectos ni hilos que coincidan.",
+  "60e47b3da5901619": "Ajustes · {section}",
   "a03e4c1348ad9ba8": "Sistema",
   "8bf65a425f50d140": "Claro",
   "d604bc5cf3386f00": "Oscuro",
@@ -1974,6 +1977,8 @@
   "87e8222236630e6b": "Cargando cambios…",
   "bcbd16c97c6c1215": "No hay cambios netos en esta selección.",
   "7e9cb3ca9f5470ae": "No hay ningún parche disponible para esta selección.",
+  "ccd5fc4db08374d7": "{count, plural, one {{count} archivo de prueba oculto} other {{count} archivos de prueba ocultos}}",
+  "a92edf8d81354772": "Mostrar archivos de prueba",
   "e797245c587e7e29": "Cambiar el tamaño de los archivos de Cambios",
   "99c76aa12c632a36": "Archivos de {section}",
   "3e9ddb26c2c59bcc": "Cambios",
@@ -2541,6 +2546,24 @@
   "3260b22f72f7effb": "{tooltipLead}: {title}",
   "feac8e54b30c5a03": "Proceso de terminal en ejecución",
   "fc2c9a91f498ad6b": "{count, plural, one {{count} proceso de terminal en ejecución. Abrir terminal} other {{count} procesos de terminal en ejecución. Abrir terminal}}",
+  "06d3fe3e6b255d15": [
+    "+",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " más"
+  ],
+  "f1b18820c0ab93ac": [
+    "+",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " más en Elementos vinculados"
+  ],
   "56f37ff8ca568059": "pila",
   "6831e9a46cbd8939": "cadena",
   "9aa9e74a3b7eee91": "Añadir al chat",
@@ -2580,6 +2603,24 @@
   "9206ecf328948f90": "Cerrar terminal",
   "906cf09cf2314856": "Nueva terminal ({shortcut})",
   "9b1326a11cfe3308": "Aún no hay sesiones de terminal en este hilo.",
+  "49eda70cfd56e621": "Se ejecuta cuando empieza un hilo en un worktree y cuando se restaura su carpeta",
+  "188ccaa1199f5611": "Se ejecuta cuando se elimina el worktree de un hilo",
+  "7e8476e7306acabe": "¿Permitir que este proyecto ejecute sus comandos de worktree?",
+  "0c8fe199f5a7aabd": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " prepara los hilos en worktrees con sus propios comandos de ",
+    {
+      "t": "code",
+      "i": 2,
+      "c": "onicode.json"
+    },
+    ". Se ejecutan en la máquina de este entorno con tus permisos, fuera de cualquier sandbox de agente. Se te volverá a preguntar cada vez que cambie su texto."
+  ],
+  "46807acd02a4ff72": "Aprobar y continuar",
   "2ac142f34e5dabc2": "Repositorios en el nuevo worktree: {selection}",
   "c514773a8031f00b": "Filtrar repositorios",
   "e32b730f6d27753f": "Elige los repositorios en los que trabaja este hilo",
@@ -2927,6 +2968,8 @@
   "4f14e3fc3a216f44": "Esto detiene el proceso en ejecución y borra su historial.",
   "16ce8443044b45fd": "{count, plural, one {¿Cerrar {count} terminal?} other {¿Cerrar {count} terminales?}}",
   "a9697e470d40706a": "Esto detiene sus procesos en ejecución y borra sus historiales: {labels}.",
+  "f3c70064a22a0c76": "{terminalLabel} línea {lineStart}",
+  "8ba6febaabeb6f14": "{terminalLabel} líneas {lineStart}–{lineEnd}",
   "ef4bae5c5f3684f4": "Contenido registrado antes",
   "5e4a0e56a0788d86": "Contenido registrado después",
   "6d5a8b471a561b9d": "Explorador de archivos",
@@ -3026,6 +3069,9 @@
   "f2a955905704b91d": "{hours} h {minutes} min",
   "3609f564a63c8eca": "{minutes} min",
   "9251bb742f60720d": "{hours} h",
+  "035aab5e99159bd8": "{count, plural, one {… No se muestra {hidden} carácter del medio.} other {… No se muestran {hidden} caracteres del medio.}} El texto termina con:",
+  "011b1ef726fa9928": "Desplázate en cada parte para leerla entera.",
+  "6c6e16b9488f8b91": "Desplázate para leerlo todo.",
   "a1e982c6047c0860": "Ir a la respuesta citada: {label}",
   "c156140c3f5ebb75": "Ir a la respuesta a la que contesta: {label}",
   "f8031a49c6e9fe25": "Ver el texto citado del asistente: {label}",
@@ -3292,12 +3338,12 @@
   "35e0b8f7418b4a86": "Clic para poner en cola, {modifier}-clic para redirigir",
   "eed080cf5eb25bfd": "Resumir {tokens} tokens del historial y enviar",
   "e4116d7f64a6f593": "Compactar {tokens} tokens del historial antes de enviar",
-  "d6143c122719b099": "Conservar",
-  "7335dc479a68818e": "Compactar",
-  "1486a422ba77a084": "Clic para compactar primero",
-  "b971f881c5dc4fca": "Clic para conservar todo el historial",
   "b2411ad43ce3b143": "El próximo envío conserva los {tokens} tokens.",
   "ab6720311ff3140d": "El próximo envío compacta primero {tokens} tokens.",
+  "1486a422ba77a084": "Clic para compactar primero",
+  "b971f881c5dc4fca": "Clic para conservar todo el historial",
+  "d6143c122719b099": "Conservar",
+  "7335dc479a68818e": "Compactar",
   "89426e9b039148d7": "Falló la entrada de voz",
   "2220a0fbb5b6fa47": "Descargando el modelo {percent} %",
   "5c05b24be2880672": "Grabando",
@@ -3366,14 +3412,20 @@
   "62d0c453f5803180": "Cerrar vista previa de la imagen",
   "fb9434aad2b5c0bb": "No se pudo cargar esta imagen.",
   "26aee5d4e97bfb28": "Imagen no disponible. Puede que el archivo se haya movido o eliminado.",
+  "07408a1ca3f33d8b": "Controles multimedia",
+  "419719298a7acaea": "Alejar",
+  "43878fb3f7e42f0e": "Ajustar a la pantalla",
+  "10ead3798109659b": "Tamaño real",
+  "8c32e9085e525c19": "Acercar",
+  "91755a23b20de76b": "Guardar vídeo",
+  "f8287a7d5c14efaf": "Guardar imagen",
   "47bae54b5f532ff3": "Elemento anterior",
   "c53bc5a4b0314342": "Elemento siguiente",
   "2950b1424a3cddf5": "Vuelve a conectarte a este entorno y abre de nuevo el contenido.",
   "ef638bf1479a5461": "El entorno devolvió una URL de contenido no válida.",
+  "76cf478e5674fd12": "{count, plural, one {{count} coincidencia} other {{count} coincidencias}}",
   "21888e302219891d": "Vista previa ampliada de {title}",
-  "419719298a7acaea": "Alejar",
   "ed8d5db95359cff4": "Restablecer zoom",
-  "8c32e9085e525c19": "Acercar",
   "18daf3df927c7251": "Abrir a pantalla completa",
   "b45bd7726f36df8f": "Página no disponible",
   "68883cb3342998e5": "Vuelve a conectarte al entorno e inténtalo de nuevo.",
@@ -3498,15 +3550,6 @@
     }
   ],
   "dff97202cbdaec5b": "Mostrar app",
-  "705cf2b2ee4e0e42": [
-    "La app ",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " salió de su página y se detuvo"
-  ],
   "796b81c4875c4feb": [
     "La app ",
     {
@@ -3521,6 +3564,15 @@
       "v": "v"
     },
     " más reciente en este entorno. Actualiza el servidor para usarla."
+  ],
+  "705cf2b2ee4e0e42": [
+    "La app ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " salió de su página y se detuvo"
   ],
   "5ef18e4d39b398bf": [
     "No se puede cargar la app ",
@@ -3835,8 +3887,6 @@
   "ac7416afe98ba5f8": "Fragmento de terminal, {label}",
   "bf04d61dc50685dc": "Línea {lineStart}",
   "000e3bef072f07c8": "Líneas {lineStart}–{lineEnd}",
-  "f3c70064a22a0c76": "{terminalLabel} línea {lineStart}",
-  "8ba6febaabeb6f14": "{terminalLabel} líneas {lineStart}–{lineEnd}",
   "b3336a0e9a6e3fba": "Salida de terminal capturada",
   "8d24730972ce4fd3": "Fragmento de terminal, {label}, caducado",
   "dd8f1439c88ef92b": "El contexto de la terminal caducó. Quita y vuelve a añadir {label} para incluirlo en tu mensaje.",
@@ -4050,6 +4100,7 @@
   "309b160785f6c473": "Abrir la bifurcación en este chat",
   "6676cd4b8299663f": "Abrir el hilo principal en este chat",
   "63e8c7a0ef0513b5": "Hilos relacionados",
+  "de93e39b51ae5ebf": "Detener el subagente {threadTitle}",
   "9996d9dac573001a": "Abrir en {label}",
   "15a601a94893277f": "No se pudo abrir el hilo principal",
   "5eb43f554a5b7a58": "El hilo principal se eliminó",
@@ -4068,7 +4119,6 @@
   "d8b65e5e9c5fbe26": "Desarchiva la conversación original para fusionar esta de vuelta",
   "36cf99230450eeaf": "Fusionar esta conversación de vuelta en {parentTitle}",
   "bda1cc7b91e07680": "Fusionar esta conversación de vuelta en su original",
-  "de93e39b51ae5ebf": "Detener el subagente {threadTitle}",
   "e7b97dccb035f744": "Linaje · {runningCount} en ejecución",
   "3f5e86e6d076a97b": "Linaje",
   "d52abd756b3da5ee": "Más acciones del hilo",
@@ -4082,6 +4132,7 @@
     },
     " falló"
   ],
+  "3237699bd13dd4bb": "Detener subagente",
   "0bc72950072ee1aa": [
     "en ",
     {
@@ -4090,7 +4141,6 @@
       "v": "v"
     }
   ],
-  "3237699bd13dd4bb": "Detener subagente",
   "075398ac562d74b0": "Desconectar la sesión del agente",
   "f169e59fe234e9f1": "No se pudo añadir {name}",
   "1de933b25248e5aa": "Repositorio {name}",
@@ -4167,13 +4217,13 @@
   "f8dfafaf42c3a957": "Agente",
   "0647cef26e3b1fa5": "La instantánea es demasiado grande para copiarla.",
   "c036ab3d20c54b5b": "Tú",
-  "75948010e112a8f4": "Redirección",
-  "e25ee617e3d67e87": "Redirección · enviando ahora",
-  "d1d1fed744318218": "Redirección · esperando a que se lea",
   "bb592d0a994e4013": "Haciendo sitio para que el agente lea esto ahora.",
   "1ccc41732907ca74": "Esperando a que el agente lea esto. Lee las redirecciones entre pasos, cuando termina un comando en ejecución.",
   "ae3f487ebde9db74": "Se puso en cola y luego se promovió para redirigir el turno activo",
   "4f2ec8c81b4efb22": "Redirigió el turno activo",
+  "75948010e112a8f4": "Redirección",
+  "e25ee617e3d67e87": "Redirección · enviando ahora",
+  "d1d1fed744318218": "Redirección · esperando a que se lea",
   "8765fa49f0929a40": "Enviando ahora",
   "369d63856fdb556b": "En espera",
   "08037b18bd65a4fa": "Enviar ahora",
@@ -4284,6 +4334,7 @@
       "c": "”"
     }
   ],
+  "91aadfc843c600de": "Verificar cuenta de Google",
   "a2aaca7ff8310186": "Abrir chat",
   "a3048aaa541b7744": "Actividad",
   "4a3cbccb2beedeb0": "imagen",
@@ -4321,8 +4372,9 @@
   "75cdbffdefbbae3a": "Modo Ultrafast activado",
   "79c3a186139f8c86": "Modo rápido activado",
   "a772b49a38a3db40": "¿Qué salió mal?",
-  "b29e1856c4aab31f": "Esta máquina",
   "8fe3f3096de558ef": "Aquí el agente lee los registros y el código fuente de Onicode, y pregunta antes de aplicar una corrección o publicar nada.",
+  "b29e1856c4aab31f": "Esta máquina",
+  "275a97b4af3c6482": "Copiar comando, para una terminal",
   "e7588632064e0364": "Copiado",
   "996f7752fa033da6": [
     "o ejecuta",
@@ -4336,7 +4388,6 @@
       }
     }
   ],
-  "275a97b4af3c6482": "Copiar comando, para una terminal",
   "2b07985d23563374": "Se reanuda {time}",
   "a4b4e5eb6d313af9": "Se restableció {time}",
   "c0c3aa756405c1df": "Se restablece {time}",
@@ -4362,7 +4413,6 @@
   "7f0f9b1ee42892db": "La salida ya no está disponible.",
   "e470bb79fa74a6ae": "Imagen de salida de la herramienta",
   "e8c80b6d40c0944c": "Resultado de búsqueda",
-  "76cf478e5674fd12": "{count, plural, one {{count} coincidencia} other {{count} coincidencias}}",
   "8d1906900b5c95c7": [
     "salida ",
     {
@@ -4638,6 +4688,8 @@
   "70b12bc1e1a26abb": "Vuelve a guardarlo en el stash cuando termine de comprimirse.",
   "f6b1ef37f7587664": "Vuelve a adjuntar los archivos soltados o quítalos antes de guardarlo en el stash",
   "120167bbfb6d5939": "Espera a que se suban los archivos antes de guardar este prompt en el stash",
+  "410dded6e21c280d": "El stash está lleno",
+  "1af8d12ac21cb183": "El stash admite {max} prompts. Restaura o elimina uno para hacer sitio; el campo de texto se dejó como estaba.",
   "afdf475db3ca2af7": "No se pudo guardar este prompt en el stash",
   "3f5c37167aa5034f": "El almacenamiento del navegador rechazó la escritura, así que el cuadro de mensaje se quedó como estaba. Libera datos del sitio y vuelve a intentarlo.",
   "41ba6c0b5c5e8b22": "El prompt del stash no sobrevivirá a una recarga",
@@ -4649,6 +4701,7 @@
   "13cf3cd978eef92a": "Mantener los adjuntos en esta máquina",
   "a4ca7da61227002d": "Quita los adjuntos antes de elegir el enrutamiento automático y adjúntalos en la máquina seleccionada.",
   "512d8afab852df1a": "No se pudo cambiar de máquina",
+  "ee3ea4351c88e7d7": "Este proyecto ya no está disponible.",
   "32e421d1e2dfdaff": "Comprobando máquinas…",
   "0db14066bd4ce117": "Equilibrio automático no disponible",
   "55b562c00e37321b": "No se pudo forzar la detención del agente",
@@ -4824,8 +4877,11 @@
   "c928303400ccaf24": "No se pudo iniciar el device hub.",
   "4cb21672153c1f18": "No se encontraron simuladores ni emuladores en este entorno.",
   "c82410197256eb53": "Simuladores de iOS",
+  "31a71fec6b5f2bf3": "Dispositivos Android",
   "ac18a5e35195a258": "Emuladores de Android",
   "94215375ea2558b8": "En ejecución",
+  "381ceed77cb8b2b3": "Detener {name}",
+  "5b9fda36b610d25c": "Detener",
   "b1687c7b2b91e569": "Abrir {name}",
   "4b4ef3f2e2ed2c56": "Iniciar {name}",
   "a34247bae083cebf": "Descartar el error del dispositivo",
@@ -4846,6 +4902,7 @@
   ],
   "e902f208c4e6146f": "No se encontraron dispositivos virtuales de Android. Crea uno en el Device Manager de Android Studio y actualiza.",
   "d9a71f3db685cb0e": "Actualizar dispositivos",
+  "1d372f6d555dde3c": "Detener todos los dispositivos",
   "4ad8ced64defdf73": "Dispositivo 3D interactivo. Arrastra la pantalla para interactuar. Arrastra fuera de ella o desliza con dos dedos para girarlo.",
   "84e4baf07ad8883d": "Activa este entorno para abrir simuladores y emuladores, tanto si se ejecutan aquí como en un host de dispositivos remoto.",
   "771365c337509a82": "Permite que las sesiones de agente nuevas de este entorno inicien y controlen dispositivos locales y remotos, con las herramientas necesarias configuradas automáticamente.",
@@ -5176,7 +5233,6 @@
   "6ad6c8fbb630657d": "El archivo no está disponible.",
   "9450d1827ef336a1": "Ya hay otra copia en curso.",
   "8f48999eb6d9e2e3": "{count, plural, one {{formatted} línea} other {{formatted} líneas}}",
-  "13b14784f8707ddd": "0 bytes",
   "6574fce81dc65af6": "Se muestran las primeras 1024 columnas. Copiar conserva todas las columnas.",
   "2a6e1b1f209c3888": "Este archivo está vacío.",
   "192fc79eb3b5b2cb": "Este diagrama contiene URL de recursos, marcado, metadatos de nodos o configuración personalizada. Muestra el código fuente de Mermaid para inspeccionarlo de forma segura.",
@@ -5599,31 +5655,29 @@
   "15b08f3f320c3b0a": "URL copiada",
   "02994b2bd9274ab4": "Copiar el mensaje y abrir {app}",
   "7be407c74afefa6d": "Mensaje copiado",
+  "b0ad71b8019bf199": "Falló la acción sobre el contenido.",
   "d7de18f04876f54e": "Este contenido no está disponible. Prueba a volver a abrir la vista previa.",
   "648d9c9d195935df": "Vuelve a conectarte a este entorno e inténtalo de nuevo.",
+  "932133fe6f6e618c": "Preparando la descarga de la imagen…",
+  "1b4d7bd2c671172a": "Preparando la descarga del vídeo…",
+  "d3cab753cd4b6a6c": "No se pudo guardar la imagen",
+  "643b2028fd7f40b8": "No se pudo guardar el vídeo",
   "e14cc7a5b8cb41bf": "No se pueden copiar imágenes. Usa una conexión segura del navegador o guarda la imagen.",
   "268904f54e904eb3": "No se pudo abrir el menú del contenido",
   "b8ce07553e143a5d": "Copiar URL",
   "d412cf9242b79265": "Abrir en el visor de archivos",
-  "f8287a7d5c14efaf": "Guardar imagen",
-  "91755a23b20de76b": "Guardar vídeo",
   "4970b3bf32e255c3": "Copiar imagen",
   "489a1b774558ce1c": "No se pudo copiar la ruta completa",
   "7f9ba27ddcf3f9b1": "No se pudo copiar la ruta relativa",
   "77420190206bd470": "No se pudo copiar la URL",
   "c78ecbf41432ebcb": "No se pudo abrir en el visor de archivos",
-  "d3cab753cd4b6a6c": "No se pudo guardar la imagen",
-  "643b2028fd7f40b8": "No se pudo guardar el vídeo",
-  "5fc5207c6b1adf4f": "No se pudo copiar la imagen",
   "273da1753fb50713": "No se pudo completar la acción",
   "b897a903788c226c": "La API del portapapeles no está disponible al copiar la ruta del archivo.",
   "fe689b8fa790d49a": "No se pudo copiar la ruta del archivo al portapapeles.",
   "1ca4f7d01e648324": "La API del portapapeles no está disponible al copiar la URL.",
   "017135d2ad9e1367": "No se pudo copiar la URL al portapapeles.",
-  "932133fe6f6e618c": "Preparando la descarga de la imagen…",
-  "1b4d7bd2c671172a": "Preparando la descarga del vídeo…",
   "a217d72dc2316c81": "Copiando la imagen…",
-  "b0ad71b8019bf199": "Falló la acción sobre el contenido.",
+  "5fc5207c6b1adf4f": "No se pudo copiar la imagen",
   "b021d034b7ed139d": "Reintentar vídeo",
   "80cb0fddbed7fcaf": "Vista previa del vídeo",
   "f9c21970dd6ed5e5": "Vista previa del vídeo no disponible",
@@ -6092,7 +6146,6 @@
   "2250f241daadd71b": "Añadir al agente",
   "be9b06fae29cc07a": "Todos los commits",
   "5ef391d5403d7bdd": "{count, plural, one {Mostrar más (queda {count})} other {Mostrar más (quedan {count})}}",
-  "ccd5fc4db08374d7": "{count, plural, one {{count} archivo de prueba oculto} other {{count} archivos de prueba ocultos}}",
   "c12871955b159db4": "visto en {app}",
   "98b353c208fd7977": "vistos",
   "d65b870952bbe4f0": "Estas marcas se guardan aquí, no en el host",
@@ -6101,7 +6154,6 @@
   "a35be3a33a60ada9": "Parte de este diff no se mostró",
   "74c7bae34db3147e": "Los comentarios de línea se escriben sobre el cambio completo",
   "4050f873dc790f8f": "Opciones del diff",
-  "a92edf8d81354772": "Mostrar archivos de prueba",
   "2af4561874bd8054": "Cargando el diff de la {term, select, mr {merge request} cr {solicitud de cambios} other {pull request}}…",
   "e76a1455903eef18": "Esta {term, select, mr {merge request} cr {solicitud de cambios} other {pull request}} no tiene cambios en archivos.",
   "50abbcbc41691cb5": "Este commit no tiene cambios en archivos.",
@@ -6115,8 +6167,8 @@
   "a2a7c71f984c4eef": "No hay diff de texto para este archivo.",
   "1239149344bb4b2b": "El diff es demasiado grande para mostrarlo.",
   "3e272ae9c5b76744": "Cargar diff",
-  "d4ccbc96f4d05950": "Cambiado",
   "c12888742e7bd0ce": "Se ha hecho push a este archivo desde que lo marcaste como visto.",
+  "d4ccbc96f4d05950": "Cambiado",
   "6594b013f63d2a3a": "Visto",
   "687f81dd084a5ab0": "No se pudo cargar el resto de este diff.",
   "cf44cf4e3479ea7a": "Todos los commits",
@@ -6241,8 +6293,6 @@
   "d156e1e294ab446b": "Preparando el checkout de la {term, select, mr {merge request} cr {solicitud de cambios} other {pull request}}…",
   "f5fd3733da6e3556": "No se pudo abrir un hilo para el checkout",
   "09f38e303898401f": "No se pudo preparar el checkout de la {term, select, mr {merge request} cr {solicitud de cambios} other {pull request}}",
-  "853a77d42f86c918": "Checkout hecho, pero el hilo se quedó donde estaba",
-  "0746dfa692f895cc": "El checkout está listo en `{branch}`. Apunta un hilo a él desde el selector de ramas y vuelve a preguntar.",
   "88db70a96177d202": "Checkout hecho aquí",
   "baa66fde3613022b": "Checkout hecho",
   "10feb68552356a08": "Este repositorio está en la rama de la {term, select, mr {merge request} cr {solicitud de cambios} other {pull request}}, con un hilo abierto en ella.",
@@ -6314,6 +6364,19 @@
   "36b7fbe31bde05f3": "Este repositorio no tiene etiquetas.",
   "2764eab1d2853980": "Este repositorio tiene más etiquetas de las que aparecen aquí. Aplica el resto en el host.",
   "5e5917c3b907c7d6": "Aplicada",
+  "4affc3da49f673c2": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " ",
+    {
+      "t": "span",
+      "i": 2,
+      "c": "comentó"
+    }
+  ],
   "404ee0e0134b60ae": "Buscando «{query}» en todos los hosts",
   "8b04f78f836b6c11": "No hay nada con estos filtros",
   "928f3b907784507e": "No hay pull requests",
@@ -6344,6 +6407,7 @@
   "7074711ac6cc6f5c": "Fallidas",
   "75b2bb15e4624860": "No disponible",
   "ff6b088c383bf910": "Buscar autores",
+  "a766a8ac2670096c": "{count, plural, one {{count} fusión cargada} other {{count} fusiones cargadas}}",
   "d6179a157948c07c": "No se encontraron autores",
   "353773803bf92ad4": "No se pudieron buscar autores en el host",
   "e3e2d073449a0289": "Cualquiera",
@@ -6427,8 +6491,8 @@
   "1df18577b47fe833": "Nadie con acceso coincide.",
   "605ed234cd084078": "No se pudo leer quién tiene acceso.",
   "3e63297ce2f404d6": "Ya se ha pedido",
-  "ad822604a0059e71": "coincide en la descripción",
   "3625557b4fc8ba68": "Coincide en la descripción",
+  "ad822604a0059e71": "coincide en la descripción",
   "ff1f73cd2455d0f6": "No hay ningún método de fusión disponible para este repositorio.",
   "59b38d59700e0a5f": "Cerrar",
   "25aa6faba20377ca": "Cerrar #{number}",
@@ -6608,19 +6672,6 @@
       "t": "span",
       "i": 2,
       "c": "revisó"
-    }
-  ],
-  "4affc3da49f673c2": [
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " ",
-    {
-      "t": "span",
-      "i": 2,
-      "c": "comentó"
     }
   ],
   "04ea50285b00dcdd": "General",
@@ -6956,9 +7007,20 @@
   "dc87902396b8ade4": "Letras, dígitos, '-' o '_'.",
   "251dfec07b7c3612": "Este driver no tiene configuración obligatoria. Puedes añadir la instancia ahora.",
   "08fe32f007e788f1": "Configurar manualmente",
+  "65300794c1edb929": "Token de portador (opcional)",
   "84eb2878dc17d3eb": "Clave de gestión",
   "7ac196c1e8175928": "Por defecto, el nombre de host del hub",
+  "0c026221dcd2820b": "Añadir una fuente de cuotas HTTP",
   "e3548407052e9e12": "Añadir un hub de CLIProxyAPI",
+  "d185c750156b2121": [
+    "Consulta las cuotas desde un punto de conexión en ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    "."
+  ],
   "432e85a50e2e7964": [
     "Muestra la cuota de cada cuenta que agrupa el hub, junto a los proveedores en",
     " ",
@@ -6969,9 +7031,12 @@
     },
     ". La clave se queda en ese servidor."
   ],
+  "2324770ba91371ac": "URL del punto de conexión",
   "556a695b117565ac": "URL del hub",
+  "e4e5b75bba51396c": "Token de portador (opcional)",
   "e62cedcbcdbafc75": "Clave de gestión",
   "f1b3d0634ec035cb": "Etiqueta (opcional)",
+  "b35256ca61016104": "Añadir origen",
   "52814dd6f7d0a15c": "Añadir hub",
   "27b770d3402abfa2": "Avanzado",
   "62d249854d197cef": "Paisaje",
@@ -7758,7 +7823,6 @@
   "e6886a7f77b73a8e": "{platform} no disponible",
   "b0b7610d9860d18d": "No configurado en esta máquina.",
   "f5b66c481aa3e4df": "Editar",
-  "b35256ca61016104": "Añadir origen",
   "3b20ef0670ae4b0b": "Máquina por SSH",
   "121ccffacb6b8c6d": "Simuladores de Expo",
   "130b55a1410a8030": "Pool de Simlock (alfa)",
@@ -8336,6 +8400,10 @@
   "f0e853acd2006d53": "Entornos vinculados",
   "beff9274b0f33385": "Ejecuta flujos de trabajo de varios pasos a partir de archivos en la carpeta workflows del directorio Onicode de este servidor. Ábrelos desde la paleta de comandos. Mientras está desactivado, no se ejecuta nada de esa carpeta; las ejecuciones esperan hasta que se vuelva a activar.",
   "2dadb2359422121c": "Flujos de trabajo",
+  "933dabf0700708af": "Cuántas ejecuciones omitidas conserva cada flujo de trabajo en su historial. Las ejecuciones omitidas más antiguas se eliminan; las que hicieron algo se conservan siempre.",
+  "f172d7e5deb24f75": "Restablecer las ejecuciones omitidas conservadas al valor predeterminado",
+  "ba94015389f327bc": "Ejecuciones omitidas conservadas",
+  "d52b3d6bf9f2a013": "Mixto",
   "13e86eb5d8287a71": "Muestra un mensaje siguiente previsto en el cuadro de mensaje vacío tras un turno de Claude o Codex. Tab lo usa. Cada uno es una solicitud extra en caché de tu plan. Requiere Codex 0.165+. Los hilos de Claude se actualizan al reiniciar.",
   "d4b2a2ec812aafb0": "Sugerir el siguiente prompt",
   "298c7150a7621c80": "Hosts de dispositivos Simlock",
@@ -8626,7 +8694,6 @@
   "b76e857a764ea02a": "Regla de agrupación de {path} en {environment}",
   "e6e55f343639ae71": "Predeterminado ({mode})",
   "87158e7b8e714bc6": "Añade un proyecto desde la barra lateral para configurarlo aquí.",
-  "ee3ea4351c88e7d7": "Este proyecto ya no está disponible.",
   "062d19d24615e108": "El título del proyecto no puede estar vacío",
   "303af9de2741db90": "No se pudo renombrar el proyecto",
   "f578154800d7af01": "No se pudo actualizar el icono del proyecto",
@@ -8663,6 +8730,28 @@
   "d2ad2df4c015f417": "La regla de agrupación decide cómo se une cada checkout a los grupos de proyectos de la barra lateral. Cambiarla puede mover un checkout a otro proyecto.",
   "0bdf6ae2117b6c23": "¿No encuentras un ajuste? Mantén este proyecto seleccionado arriba y ve a cualquier otra página de ajustes.",
   "3310e10f1efdc9bd": "Elegir icono",
+  "a9cb97fca6a6576b": "Comando de creación",
+  "90f45a354884ccdd": "Comando de eliminación",
+  "0cdc8cdbed3e5eae": "Diseño de worktrees",
+  "c17b25519e2b194e": "No se pudieron cargar los comandos de diseño de worktrees",
+  "78e308ada516928b": "No se pudo aprobar el comando",
+  "a0c772d32a233da6": "No se pudo revocar la aprobación",
+  "5ccd5614c65f8d1f": "Revocar la aprobación del comando {kind}",
+  "80c3794a5fa12f3a": "Aprobar el comando {kind}",
+  "35b0b7f9698cbffd": [
+    "El ",
+    {
+      "t": "code",
+      "i": 1,
+      "c": "onicode.json"
+    },
+    " de este proyecto prepara los hilos en worktrees con sus propios comandos. Se ejecutan en la máquina de este entorno con tus permisos y solo tal como se aprobaron aquí: un comando cuyo texto cambia necesita aprobación de nuevo."
+  ],
+  "8e73b883d41d4102": "Desactivado",
+  "f6a91589456cca50": "Aprobado",
+  "c92657bb7f2293ff": "Necesita aprobación",
+  "f1e5c1be1ac92361": "Aprobar",
+  "fcb5f3c4d4753326": "Esta conexión no puede aprobar comandos. Usa un cliente que pueda usar el terminal.",
   "65ccf4f8e049003e": "Elige un proyecto para gestionar su nombre, icono, checkouts y acciones.",
   "067beea7d8f6e2c9": "Mostrar todos los entornos",
   "1bf6da50131340d4": "Tono del color de acento",
@@ -9011,6 +9100,7 @@
   "9bc60e1d0ef816cf": "Bytes de almacenamiento",
   "85de927f664ee3cb": "Bytes lógicos",
   "ec1f81bc9b395fb9": "Todos los bytes de E/S",
+  "9fd31461cee8ff82": "{count, plural, one {{count} proceso} other {{count} procesos}}",
   "7905928d59208450": "Lectura",
   "637254a20a8e24a5": "Escritura",
   "ab9f29f78275f7bd": "Disponible cuando esta página se ejecuta dentro de la app de escritorio.",
@@ -9144,6 +9234,7 @@
   "543ef9fcaf8aa96f": "Apagado",
   "5173c50b0a60847c": "Actualización disponible: {serverVersion} → {clientVersion}",
   "987c5623ba70f390": "Rutas",
+  "36d52134b8b8d455": "{count, plural, one {{count} ruta} other {{count} rutas}}",
   "63348bbbf59c775d": "servidor {label}",
   "08f54865b364957d": "Actualizar",
   "b426469630d60955": "Apagar {label}",
@@ -9591,7 +9682,6 @@
   "16bdc70b858c223f": "Restablecer los paneles proactivos al valor predeterminado",
   "c5424f09d77138ff": "Cuándo compactar un hilo inactivo de Claude con más de 200 000 tokens: al volver, justo antes de que caduque su caché de prompts o nunca. Cada proveedor de Claude puede anularlo.",
   "3e99c5c14f4939c8": "Restablecer la compactación de hilos inactivos al valor predeterminado",
-  "d52b3d6bf9f2a013": "Mixto",
   "cd72fe451ba0d6aa": "Proyectos nuevos",
   "394c3bd0a1782c8e": "Déjalo vacío para usar \"~/\" cuando se abra el explorador de Añadir proyecto.",
   "f9b912a818bd869d": "Restablecer el directorio base para añadir proyectos al valor predeterminado",
@@ -10505,7 +10595,6 @@
   "b0d0aebadc521ed1": "Elimina las capturas del navegador guardadas tras este número de días. Los enlaces a capturas antiguas dejarán de abrirse.",
   "fe4208562792c313": "Eliminar registros rotados antiguos",
   "8debac9c8e9cff47": "Elimina los archivos de registro rotados inactivos tras este número de días. Se conservan los registros actuales.",
-  "8e73b883d41d4102": "Desactivado",
   "80d58a3fd4e4212a": "Proyecto",
   "de770505be25f1ff": "Carpeta",
   "ada7b9a4d96959d2": "Hilo",
@@ -10882,7 +10971,11 @@
   "404f92786aa9a22f": "Bloques de código, diffs, vistas previas de archivos y la terminal.",
   "5897f301f96f8abe": "Tipografía",
   "eb72dbf46620a039": "Familia de {title}",
+  "39f64d971ba424b5": "No hay fuentes de uso configuradas.",
+  "dbd877abdc2c7c81": "Fuente de cuotas HTTP",
   "4cf6a373a7535324": "{name} · Deshabilitado",
+  "c792e744936dbe1b": "Añadir fuente HTTP",
+  "4032a03ee5301037": "La conexión guardada y sus credenciales se eliminan de este entorno.",
   "0424112d5a0ecd71": "Automático",
   "3f0e1b77e45d53a9": "Toca para alternar, mantén para hablar",
   "45928549c050a1b4": "Mantener",
@@ -10977,6 +11070,7 @@
   "817dbf1c068b62e7": "Dónde se convierte tu voz en texto.",
   "710d3e4f0243014c": "Entorno elegido (no disponible)",
   "61088464d1b7174d": "entorno no disponible",
+  "800966eb58181745": "Comprobando qué idiomas admite el modelo…",
   "2b3e8ee4f31d1433": "Automático usa el idioma de tu Mac. La primera vez que se usa un idioma, se descarga.",
   "71184e5a54a69f1d": "El proveedor detecta tu idioma automáticamente.",
   "ffb2653eb2d9fc1a": "{model} detecta el idioma automáticamente.",
@@ -11214,9 +11308,6 @@
   "d443390c4d2dcfd4": "accesibilidad a11y lector de pantalla nvda jaws voiceover orca narrador título de ventana título de pestaña alt tab barra de tareas estado del hilo orden en curso aprobación",
   "f10c06cba0cdf7fe": "beta vincular otra máquina vps agentes pares trabajar allí delegar",
   "bc0b409d89ce086e": "beta flujo de trabajo workflow ejecuciones duraderas automatización pasos programación webhook carpeta",
-  "933dabf0700708af": "Cuántas ejecuciones omitidas conserva cada flujo de trabajo en su historial. Las ejecuciones omitidas más antiguas se eliminan; las que hicieron algo se conservan siempre.",
-  "f172d7e5deb24f75": "Restablecer las ejecuciones omitidas conservadas al valor predeterminado",
-  "ba94015389f327bc": "Ejecuciones omitidas conservadas",
   "4b2669dcdb7d3776": "workflow flujo historial retención eliminar antiguas ejecuciones omitidas webhook history retention skipped runs",
   "4a21cf825a2045b0": "beta tab autocompletar predecir siguiente mensaje claude codex texto fantasma",
   "fea2dc36585c4a20": "Hosts de dispositivos Simlock (alfa)",
@@ -11435,8 +11526,8 @@
   "8cf699ae75fd8067": "Fijados",
   "be451f475c514b37": "Descartar notificación de reactivación",
   "e9ced65134f2f36c": "Reactivar hilo ahora",
-  "374dac09151d4578": "Pendiente",
   "a8f30f631e2b010e": "Esperando para sincronizar con su entorno",
+  "374dac09151d4578": "Pendiente",
   "aca5896600bf173e": "Ahora mismo tienes otra rama en el checkout.",
   "f665b5be60d8c144": [
     "Traspasado desde ",
@@ -11586,10 +11677,10 @@
   "3d55c97a8189568e": "{label}: queda un {remaining}%",
   "d6961d3b4c9657da": "{label}: queda un {remaining}%, queda un {timeLeft}% de la ventana, {resetsIn}",
   "ade1cf4e2c1ff4b4": "{label}: queda un {remaining}%, queda un {timeLeft}% de la ventana",
-  "a01c358de99da345": "Se restablece {resetsAt} · {resetsIn}",
-  "93b30237a69f3fc4": "Se restablece {resetsAt}",
   "f6116fcec2d2ea7f": "Queda un {remaining}% · queda un {timeLeft}% de la ventana",
   "07f5912af296f9ea": "Queda un {remaining}%",
+  "a01c358de99da345": "Se restablece {resetsAt} · {resetsIn}",
+  "93b30237a69f3fc4": "Se restablece {resetsAt}",
   "69b2a63d2321a66c": "Usando…",
   "59e6cdf357f52c19": "La línea marca dónde estaría un gasto uniforme.",
   "82f94ffdb2c10992": "¿Usar un crédito de restablecimiento?",
@@ -11669,9 +11760,9 @@
   "d2d071e45a2d6b89": "Selecciona un entorno para ver los límites.",
   "c9180daea905a0a6": "Selecciona un entorno para ver el uso.",
   "f0297ec79e896a13": "{environment}: {error}",
+  "61571f4542da9903": "{count, plural, one {{formatted} sesión} other {{formatted} sesiones}}",
   "b01bf98dd90ee819": "Estimación de API",
   "bab34b28e9ee8e88": "Detalles del uso sin precio",
-  "61571f4542da9903": "{count, plural, one {{formatted} sesión} other {{formatted} sesiones}}",
   "2a57181a9d128463": "{share} del coste · {tokens} tokens",
   "d8a6a99fbdda0d3e": "{share} de los tokens · {cost}",
   "ae86762909d453d2": "Tokens procesados por hora",
@@ -11847,6 +11938,8 @@
   "b8dcbc93a2ca1861": "Esta ejecución ya no lo incluye.",
   "115c69de3202f664": "Abrir",
   "a2bbf464a3be4882": "{count, plural, =1 {1.er intento} =2 {2.º intento} =3 {3.er intento} other {{count}.º intento}}",
+  "0398ca6c1d24b92d": "en cola, el siguiente",
+  "0af6d5ffd5166214": "{count, plural, one {en cola, {count} delante} other {en cola, {count} delante}}",
   "e39f89c909df4db0": "No se pudo reanudar la ejecución",
   "865f034346b82f47": "¿Cancelar {title}? Sus agentes se detienen y la ejecución no se podrá reanudar.",
   "6bc75632fd9c9136": "No se pudo cancelar la ejecución",
@@ -11873,11 +11966,17 @@
   "dd7a1e58c2553933": "despierta en {duration}",
   "95cc952724dd7310": "a punto de despertar",
   "3cc34921c0128593": "en curso",
-  "e777db2880f53a46": "nadie respondió",
   "dc90739d391a5e67": "Dijiste {choice}",
+  "4e96712d839ccbff": "{who} dijo {choice}",
+  "e777db2880f53a46": "nadie respondió",
+  "201490988858b511": "retirada por {by}",
   "389f2563b5b763fd": "Pasos rápidos",
+  "99451a5d2d40440f": "Retirada por {by}.",
+  "3ee30a50b70fffab": "Retirada por {by}: {reason}",
+  "92e129bf413a1220": "retirada",
   "a41c8d758121ad81": "en espera",
   "9db248b770096984": "esperó",
+  "49be26a27dcb30e5": "en cola",
   "c76124517af28686": "en ejecución desde hace {duration}",
   "89102905bf09b0e8": "Ver en directo",
   "bdf338cdff4118f0": "Transcripción",
@@ -11911,6 +12010,49 @@
   "8bffb377e2a6a7de": "su versión ya no está registrada",
   "f92d9132f7b85d1a": "Cargando pasos…",
   "6ebc59f64c761a49": "Nada todavía.",
+  "19097cfb8f5a79cf": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " dijo",
+    " ",
+    {
+      "t": "span",
+      "i": 2,
+      "c": {
+        "i": 3,
+        "k": "_gt_value_3",
+        "v": "v"
+      }
+    },
+    "."
+  ],
+  "e7bbf693910057bf": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " dijo",
+    " ",
+    {
+      "t": "span",
+      "i": 2,
+      "c": {
+        "i": 3,
+        "k": "_gt_value_3",
+        "v": "v"
+      }
+    },
+    ": ",
+    {
+      "i": 4,
+      "k": "_gt_value_4",
+      "v": "v"
+    }
+  ],
   "a759dccd157d7dae": [
     "Dijiste",
     " ",
@@ -11944,6 +12086,15 @@
       "v": "v"
     }
   ],
+  "3759768c5d342c22": [
+    "respondida",
+    " ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
   "c98009be9a273b31": "Abrir ejecución",
   "c8eb9be36d4d51ad": [
     "Hilo en ",
@@ -11969,6 +12120,15 @@
   ],
   "02dfe6c63fd0b8a1": "Añadir un motivo",
   "19abd94828a3bdbc": "Preguntar antes al agente",
+  "e114d37b32ab0dc7": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " necesita un motivo."
+  ],
+  "46d614fa7b4bf1e5": "Ejecuciones de flujos de trabajo",
   "a18721fa8f328361": "Te necesitan",
   "bbf24e7920c1e86b": "En ejecución",
   "8d6e18d2ad832db6": "Todas",
@@ -11983,10 +12143,9 @@
   "b6409289e0c9a4dd": "Flujo de trabajo",
   "035cb02ca1ae4952": "Los {count} flujos de trabajo",
   "8eeb9cb07d7c59e1": "Tipo de pregunta",
-  "e4d1316c85ed7066": "No hay preguntas de este tipo esperándote.",
   "e2131cbec8accfe3": "Todos los tipos",
-  "46d614fa7b4bf1e5": "Ejecuciones de flujos de trabajo",
   "1c635faa2fb45b8b": "Aún no se ha ejecutado.",
+  "e4d1316c85ed7066": "No hay preguntas de este tipo esperándote.",
   "156ff7b625287a1e": "Ocultar omitidos",
   "69b985b97ab45e6b": "Mostrar {count} omitidos",
   "2400254d362de84d": "Cargando ejecuciones de flujos de trabajo…",
@@ -12168,162 +12327,5 @@
   "27d76249d09eb69f": "Guía de revisión lista",
   "faa3bb26abb39c93": "Falló la guía de revisión",
   "b7df38b7d8792d78": "Abrir guía",
-  "9e91e9a77b664e4e": "No se pudo iniciar una guía de revisión",
-  "e0856d6a402ad821": "La política de {organization} no permite comandos de diseño de worktrees de proyectos.",
-  "206811f6f441bfc7": "Este proyecto prepara los worktrees con su propio comando, que nadie ha aprobado tal como está escrito ahora. Esta conexión no puede aprobarlo: apruébalo desde un cliente que pueda usar el terminal.",
-  "b8087c9a70c26da9": "No se pudo aprobar el comando de diseño de worktrees.",
-  "49eda70cfd56e621": "Se ejecuta cuando empieza un hilo en un worktree y cuando se restaura su carpeta",
-  "188ccaa1199f5611": "Se ejecuta cuando se elimina el worktree de un hilo",
-  "7e8476e7306acabe": "¿Permitir que este proyecto ejecute sus comandos de worktree?",
-  "0c8fe199f5a7aabd": [
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " prepara los hilos en worktrees con sus propios comandos de ",
-    {
-      "t": "code",
-      "i": 2,
-      "c": "onicode.json"
-    },
-    ". Se ejecutan en la máquina de este entorno con tus permisos, fuera de cualquier sandbox de agente. Se te volverá a preguntar cada vez que cambie su texto."
-  ],
-  "46807acd02a4ff72": "Aprobar y continuar",
-  "a9cb97fca6a6576b": "Comando de creación",
-  "90f45a354884ccdd": "Comando de eliminación",
-  "78e308ada516928b": "No se pudo aprobar el comando",
-  "a0c772d32a233da6": "No se pudo revocar la aprobación",
-  "0cdc8cdbed3e5eae": "Diseño de worktrees",
-  "c17b25519e2b194e": "No se pudieron cargar los comandos de diseño de worktrees",
-  "5ccd5614c65f8d1f": "Revocar la aprobación del comando {kind}",
-  "80c3794a5fa12f3a": "Aprobar el comando {kind}",
-  "35b0b7f9698cbffd": [
-    "El ",
-    {
-      "t": "code",
-      "i": 1,
-      "c": "onicode.json"
-    },
-    " de este proyecto prepara los hilos en worktrees con sus propios comandos. Se ejecutan en la máquina de este entorno con tus permisos y solo tal como se aprobaron aquí: un comando cuyo texto cambia necesita aprobación de nuevo."
-  ],
-  "f6a91589456cca50": "Aprobado",
-  "c92657bb7f2293ff": "Necesita aprobación",
-  "f1e5c1be1ac92361": "Aprobar",
-  "fcb5f3c4d4753326": "Esta conexión no puede aprobar comandos. Usa un cliente que pueda usar el terminal.",
-  "65300794c1edb929": "Token de portador (opcional)",
-  "0c026221dcd2820b": "Añadir una fuente de cuotas HTTP",
-  "d185c750156b2121": [
-    "Consulta las cuotas desde un punto de conexión en ",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    "."
-  ],
-  "2324770ba91371ac": "URL del punto de conexión",
-  "e4e5b75bba51396c": "Token de portador (opcional)",
-  "39f64d971ba424b5": "No hay fuentes de uso configuradas.",
-  "dbd877abdc2c7c81": "Fuente de cuotas HTTP",
-  "c792e744936dbe1b": "Añadir fuente HTTP",
-  "4032a03ee5301037": "La conexión guardada y sus credenciales se eliminan de este entorno.",
-  "07408a1ca3f33d8b": "Controles multimedia",
-  "43878fb3f7e42f0e": "Ajustar a la pantalla",
-  "10ead3798109659b": "Tamaño real",
-  "4e96712d839ccbff": "{who} dijo {choice}",
-  "19097cfb8f5a79cf": [
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " dijo",
-    " ",
-    {
-      "t": "span",
-      "i": 2,
-      "c": {
-        "i": 3,
-        "k": "_gt_value_3",
-        "v": "v"
-      }
-    },
-    "."
-  ],
-  "e7bbf693910057bf": [
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " dijo",
-    " ",
-    {
-      "t": "span",
-      "i": 2,
-      "c": {
-        "i": 3,
-        "k": "_gt_value_3",
-        "v": "v"
-      }
-    },
-    ": ",
-    {
-      "i": 4,
-      "k": "_gt_value_4",
-      "v": "v"
-    }
-  ],
-  "3759768c5d342c22": [
-    "respondida",
-    " ",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    }
-  ],
-  "e114d37b32ab0dc7": [
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " necesita un motivo."
-  ],
-  "91aadfc843c600de": "Verificar cuenta de Google",
-  "201490988858b511": "retirada por {by}",
-  "99451a5d2d40440f": "Retirada por {by}.",
-  "3ee30a50b70fffab": "Retirada por {by}: {reason}",
-  "92e129bf413a1220": "retirada",
-  "7150557773b3818b": "En cola",
-  "efbeb3993ee2c3f5": "En cola para {pool}",
-  "0398ca6c1d24b92d": "en cola, el siguiente",
-  "0af6d5ffd5166214": "{count, plural, one {en cola, {count} delante} other {en cola, {count} delante}}",
-  "49be26a27dcb30e5": "en cola",
-  "800966eb58181745": "Comprobando qué idiomas admite el modelo…",
-  "410dded6e21c280d": "El stash está lleno",
-  "1af8d12ac21cb183": "El stash admite {max} prompts. Restaura o elimina uno para hacer sitio; el campo de texto se dejó como estaba.",
-  "381ceed77cb8b2b3": "Detener {name}",
-  "5b9fda36b610d25c": "Detener",
-  "1d372f6d555dde3c": "Detener todos los dispositivos",
-  "06d3fe3e6b255d15": [
-    "+",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " más"
-  ],
-  "f1b18820c0ab93ac": [
-    "+",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " más en Elementos vinculados"
-  ]
+  "9e91e9a77b664e4e": "No se pudo iniciar una guía de revisión"
 }

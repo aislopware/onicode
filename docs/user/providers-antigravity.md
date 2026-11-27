@@ -62,7 +62,7 @@ is available. Onicode checks Google's CLI release channel while provider update 
 are enabled. Installing or reinstalling also checks that channel. Updates keep
 your profile and existing runtime available if the new release fails validation.
 
-Onicode needs Antigravity 1.5 or newer and recommends 1.5.12 or newer. Sessions do not
+Onicode needs Antigravity 1.5.1 or newer and recommends 1.5.12 or newer. Sessions do not
 start on an older runtime: update the managed runtime here, or update the executable
 a custom binary path or `PATH` points at. You may need to sign in again after
 updating from a runtime older than 1.5. Threads already running finish with their
@@ -159,9 +159,8 @@ Onicode does not support Antigravity goal status, pause, resume, or clear comman
 
 ## Check access and troubleshoot
 
-Open **Usage > Limits** to see the remaining Gemini and shared Claude/GPT allowances
-for Google sign-ins. Each group has separate five-hour and weekly limits and reset
-times. Limits refresh with provider status and include usage outside Onicode.
+Onicode does not read your Google account's Antigravity allowances; **Usage** shows tokens
+and cost from Antigravity's local history.
 
 A server restart keeps your Google sign-in. The provider shows the saved account
 until a session, a refresh, or a sign-out reports something new.

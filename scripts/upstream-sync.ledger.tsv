@@ -4199,3 +4199,131 @@ b5592c6061	take	taken as is
 25525f9483	take	taken as is
 8213d1dda2	take	taken as is
 30ad6c2806	skip	launch-video skill (marketing launch videos) is not in Onicode, as with 77a553ab2c
+8ec9f4399f	take	applied without HOSTED_LINK (Onicode has no hosted thread URL); fenced-code and span alternatives as upstream
+6ea8886e8f	take	taken as is
+fc1f1bafde	take	taken as is
+3fa136a5c5	take	kept Onicode's leading-frontmatter mask in splitMarkdown (shares the renderer's closer rule, already counts a definition after a ... closer); took only the test assertions, both pass
+d878f7b192	take	taken as is (applies on Onicode's documentTextWorker after the earlier EPUB ports)
+65fc371bd8	take	taken as is
+7891c7288c	take	taken as is
+135e03b268	take	taken as is
+cc61cdb1e4	take	applied cleanly; kept Onicode's listedCommands tap (e18b04b22b) around loadOpenCodeCommands
+2a99314a47	take	taken as is
+5fda4f7bff	take	kept Onicode's sender-keyed auto-send barrier (e90d520d3b: agentSenderKey, projection-first reads) and added the explicitQueue filter to it; explicitQueue optional on the run and dispatch command (wire-compatible)
+12c1152924	take	taken as is
+0df79074ad	take	taken as is
+147028a265	take	took upstream's withOptionalChoices form; kept Onicode's cancel (not decline) when no form can be shown (#701: no card was shown, so the user declined nothing)
+6ac4edef8c	take	taken as is (imports match after the shared tooltip port)
+ab2348acbb	take	adopted upstream's single-query GitHub detail (IssueDetailFields + IssueDetailWithStatus) over Onicode's two-query getIssue, as Onicode already did for summaries; kept Onicode's IssueSummary queries and summary RPC (no linkMetadata); 30 s shared cache keyed with the Linear workspace, applied to summary too (Onicode's linked rows and tab icon poll summary), writes and refresh invalidate both; panel owes the detail refresh then rereads the summary; graphql.ts regenerated
+62d1264113	take	taken as is
+6c2e209401	take	kept Onicode's peekOniProjectFile {projectFile,current} (a current copy skips the read, a stale one refreshes) and readOniProjectFile options object (signal added there); scenario ported to the desktop target: startSecondEnvironment, ENVIRONMENT_LABEL, menuitemradio machine picker, hash route, unpair in finally
+b7c4f0a59a	take	taken as is
+f1ff53853f	take	taken as is
+b0edd30be4	take	taken as is
+e63b9ada75	take	taken as is
+5519a98a8e	take	code as is; kept Onicode's usage.md structure and rewrote its OpenCode paragraph (external OpenCode 2 servers now report limits)
+063c422ee1	take	taken as is
+4b3c79f01b	take	adopted upstream's watchComposerSendEdits over Onicode's content-only cancelOnEdit hold: also catches model, provider, mode, fan-out and new-image changes and covers the environment-refresh wait; holdSendForWorkspaceDefault loses cancelOnEdit (no caller left) and resolves void; kept Onicode's info toast (not a thread error), markSendPreparing, isShown/notifyLeftBeforeSend and draftPlaceChanged in holdComposerSend; scenario ported as is (desktop init-script WebSocket hold works as in file-picker-keeps-newer-file)
+a0a995b1ab	take	import merged beside Onicode's ErrorReportingSettings; process-name helpers moved to the logic module as upstream
+74c03088b0	take	THEMATIC_BREAK added first in Onicode's own p/h branch (pPr-only style lookup kept); kept Onicode's expectation for the shared DOCX row, whose fixture lacks upstream's demoted and box-title parts; new EPUB and DOCX text-box rows pass
+049e83f234	take	taken as is
+a8bbc2b241	skip	already done: Onicode's markdownTaskMarkerOffset takes the native renderer's document-wide task index since 23d36e1b2d (enriched-markdown fork); same behavior, covered by Onicode's iOS/Android hard-break tests
+f1568fae66	take	code as is; scenario ported to the desktop target: startSecondEnvironment, ENVIRONMENT_LABEL, Onicode's machine menu (Add to another machine submenu), unpair in finally
+0bc8405c2f	take	taken as is
+9955526619	take	taken as is
+7a2536e61b	take	taken as is
+75af7df38b	take	taken as is
+e6789ebdd2	take	taken as is
+12fda73203	take	taken as is
+a7ead0ea7f	take	parenthesis finder built from Onicode's ESCAPE and PARAGRAPH_END constants like its other tail finders
+e0370221a4	take	taken as is (the next-line expects land in Onicode's tapped-checkbox test)
+109970551e	take	code as is (web palette + mobile add project); scenario ported with ControlOrMeta+k like Onicode's palette scenarios
+d6b3593030	take	taken as is
+bf27eb196a	take	Onicode's send hold (holdSendForWorkspaceDefault with its 3 s give-up and disconnected-machine check, cancelOnEdit already gone) moved into upstream's new draftWorkspaceDefaults module on top of readPendingWorkspaceDefault; adopted upstream's acceptsWorkspaceDefault (adds workspaceExplicit) over keepsProvisionalWorkspace; kept carryFanoutSelections from draftFanoutSelections; dropped upstream's duplicate moved-machine test (Onicode's 'leaves a draft that moved to another machine' covers it); scenario ported: startSecondEnvironment, rpcClient on the second home, inline load preference rows, hash route, unpair in finally
+d1b4b60d16	take	taken as is
+813972e9d3	take	the singular message gets a new key; its translations copied from upstream into all 10 mobile locales in the old key's place
+a0885a9123	take	taken as is
+37096abc12	take	staleTimeMs 0 as upstream; peekOniProjectFile keeps its own 30s current window
+a95cb67f69	take	taken as is
+6a297f5dc9	take	taken as is
+387d1c170b	take	import placed after QueuedRunOrder; handler message uses rejectionText
+f437d6c30c	skip	relay client only; Onicode removed T3 relay
+b1cd22b2f3	take	taken as is
+044c59901a	take	taken as is
+1d98c97ca5	take	taken as is
+f822f02f66	take	scenario moved-draft-loads-project-workspace ported as is
+f0d4511921	take	taken as is
+898b83410d	take	taken as is
+eb30c13dcb	take	taken as is
+b4d93997eb	take	kept Onicode's config comment; added interface-address listener probe: upstream's LAN-listener test failed on macOS, where a wildcard bind shares a port with an interface listener
+b35358ee07	take	mobile vite list placed after GitConfirmSheet; scenario failed-commit-keeps-excluded-files ported as is
+01848baf6c	take	contracts reopenedAfterStop optional; kept Onicode's StoppedNoteHistory/stoppedNoteToldAt, its filter now uses cohortWasStopped; Orchestrator re-read placed after emitEvent, keeping background: true
+46692adb2b	take	taken as is
+407087823e	take	taken as is
+79f1432a17	take	plural via gt; kept Onicode's text-muted-foreground class
+ceb3d4584c	take	kept Onicode's revealHighlightedRow and command groups; scroll-top ref read from the revealed row; upstream tests appended with longItems
+cdb6764d75	take	applied to Onicode's resumable splitter by hand (cut needs an unindented #); scenario markdown-reference-after-indented-heading ported as is
+9a6a8a38ee	take	taken as is
+14f46dd1f2	take	taken as is
+d8f315a81f	take	taken as is
+a446449577	take	tests only; kept Onicode's IMPLIED_END/openSibling, which already passes upstream's rows
+8ac2613d78	take	only angleEnd changed; kept Onicode's PARAGRAPH_END whitespaceEnd
+84bd99210f	take	taken as is
+25f47db09e	take	taken as is
+8bf40d6c61	take	adopted upstream's buildAcpStandardToolTurnItem with Onicode's image paths and completionWake as an input (false for child transcripts); kept Onicode's pendingBackgroundWork (identical to upstream's sessionHasPendingBackgroundWork); exit-time carryover drop stops transcript followers
+001fa3e1ba	take	applied cleanly; i18n:generate dropped the two removed keys
+986826178c	take	taken as is
+500d99a5d0	take	applied without HOSTED_LINK
+002ad240ca	take	dropped mobile markdownDocument hunk and test (Onicode's fork owns mobile direction since a5602667eb); web test row uses textDirection since Onicode removed hasRightToLeftLetter; iOS fork gap queued
+cc7b91ea77	take	taken as is
+90fc3e900b	take	taken as is
+52a4afe2fb	take	taken as is
+411e49bd3f	take	non-priority forge, follows upstream; kept windowsEnvironmentVariable and SSH regex; rewrote Onicode's long-form Forgejo/Gitea doc section for gt
+e56b8d9cfc	take	route count via gt plural; kept Onicode's ring-2 class; i18n unioned
+d78106d5cc	take	taken as is
+7848ed0bf9	take	taken as is
+a8a64ce565	take	taken as is
+24f34c24bd	take	taken as is
+44a09c99f3	take	applied cleanly
+3d45d1d1ea	take	taken as is
+c2fcbd7952	take	taken as is
+a3e13b25dc	take	exec loop and code-span scan taken without the hosted-link bare group
+712f51f0a6	take	taken as is
+64a1f09186	take	applied by fuzz; test placed before Onicode's 'keeps links it may not chip' case
+36816d26be	take	comment updated under Onicode's canFastSettleDelegated branch; condition unchanged
+98f2a92fc1	skip	already done: Onicode's clearSearchOnEscape (09f564ad4a) handles Esc/IME/repeat in the ignored-file search, unit-tested in searchFieldEscape.test.ts
+fce54e67a6	take	applied cleanly
+5e37e6db56	take	removed Onicode's antigravityClientInfo, kept process-ownership helper; driver test takes upstream's two-version loop; docs keep Onicode's wording with 1.5.1 and the no-allowances sentence (also fixes the stale Usage > Limits paragraph 96423cb5e2 left)
+c80bd64514	take	kept Onicode's server|loopback roles; dropped scripts/lib/dev-share.test.ts (no dev --share in Onicode)
+5b1934d052	skip	telemetry AnalyticsService only; Onicode removed telemetry
+0a20eef491	take	applied without hosted links; test takes upstream's nested-quote rows
+6479386b6d	take	kept Onicode's early-return shape over upstream's task.offset; device check of same-line markers in the mobile pass
+694c1be67f	take	lock always taken after dryRun, before prepareFirstStart (Onicode has no dev:web or --share); tests use a temp devServerHome
+b4b94f7a7d	take	taken as is
+fc36e5d435	take	taken as is
+d389f8b3ac	take	test merged by hand: upstream's manifest rows plus Onicode's root SKILL.md (demo-root) path check
+3e54b0b7e0	take	taken as is
+b42cac5145	take	taken as is
+34d3f155b9	take	taken as is
+571d187ce5	take	taken as is
+266e92fa9d	take	codexAdditionalContextBytes measured 9002 (+175), Claude unchanged; README keeps Onicode's intro sentence with the #36192 clause; evals run at the wave gate
+2d959c7e88	take	taken as is
+c0eac79f85	take	taken as is
+92786ad451	take	taken as is
+52d80296e0	take	applied on Onicode's workflowOneLine; kept its link pattern
+8c6a4a578b	take	taken as is
+5ee9eb99d0	take	taken as is
+ae945dd42a	take	taken as is
+a64ca4ba1f	take	applied by fuzz past Onicode's extra comment line
+b37fa6870c	take	taken as is
+f28ced81b3	take	taken as is
+53141c860d	take	taken as is
+6e964c1db4	take	contracts modelsIncomplete optional; Onicode's claudeModelsOfferedByReport kept, reportedModels hoisted; Onicode's endpoint loop test asserts modelsIncomplete
+c2beadbcc0	take	taken as is
+b99dab9495	skip	already done: Onicode's d4e776df8e formats schedule times in UTC and pickers on 2000-01-01, tested in scheduledTaskPresentation.test.ts
+28e9072095	take	kept Onicode's useStableCallback handleThreadClick, openThreadKey computed inside it; setAnchor selector removed; row re-render test green
+37d3d199e8	take	extension patterns $-anchored; kept Onicode's MARKDOWN_LINK_PATTERN and its it.each rows, upstream's rows added beside them
+4fab242f6e	take	taken as is
+0894b42f11	take	taken as is
+d58b5c6485	take	taken as is
+b5c725b27d	take	taken as is

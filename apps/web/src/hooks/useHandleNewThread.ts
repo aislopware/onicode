@@ -5,19 +5,15 @@ import {
 } from "@onicode/client-runtime/environment";
 import {
   DEFAULT_SERVER_SETTINGS,
-  type EnvironmentId,
-  type ProjectId,
   type ScopedProjectRef,
   type OniProjectFile,
   type ThreadId,
 } from "@onicode/contracts";
 import { type AnyRouter, useRouter } from "@tanstack/react-router";
-import { flushSync } from "react-dom";
 import {
   composerDraftHasUserContent,
   markPromotedDraftThreadByRef,
   type DraftId,
-  type DraftSessionState,
   type DraftThreadEnvMode,
   type DraftThreadState,
   useComposerDraftStore,
@@ -47,8 +43,8 @@ import {
   threadHasStarted,
 } from "../lib/chatThreadActions";
 import type { EnvironmentProject } from "@onicode/client-runtime/state/shell";
+import { trackPendingWorkspaceDefault } from "../lib/draftWorkspaceDefaults";
 import { peekOniProjectFile, readOniProjectFile } from "../lib/oniProjectFileDefaults";
-import { composerDraftContentChanged } from "../components/chat/composerSend.logic";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentSummaries } from "../state/presentation";
 import { environmentServerConfigsAtom } from "../state/server";
@@ -73,91 +69,6 @@ export function readLastUsedProjectKey(): string | null {
   } catch {
     return null;
   }
-}
-
-// Drafts that opened before their project's onicode.json was read. A send waits for the file's
-// workspace default unless the user has already chosen a workspace.
-interface ProvisionalWorkspace {
-  readonly environmentId: EnvironmentId;
-  readonly projectId: ProjectId;
-  readonly envMode: DraftThreadEnvMode;
-  // A reused draft keeps an earlier "manual" marker; only a switch to manual after opening is a choice.
-  readonly openedManual: boolean;
-}
-
-const pendingWorkspaceDefaults = new Map<
-  DraftId,
-  ProvisionalWorkspace & { readonly settled: Promise<void> }
->();
-
-// Covers a warm read. A reconnecting machine's read never fails, so Send must not wait it out.
-export const WORKSPACE_DEFAULT_SEND_WAIT_MS = 3_000;
-
-function keepsProvisionalWorkspace(
-  draft: DraftSessionState | null,
-  provisional: ProvisionalWorkspace,
-): draft is DraftSessionState {
-  return (
-    draft !== null &&
-    draft.promotedTo == null &&
-    draft.environmentId === provisional.environmentId &&
-    draft.projectId === provisional.projectId &&
-    draft.envMode === provisional.envMode &&
-    draft.worktreePath === null &&
-    (provisional.openedManual || draft.environmentSelection !== "manual")
-  );
-}
-
-export type WorkspaceDefaultHold = { readonly status: "ready" | "cancelled" };
-
-/**
- * Holds a send from a draft whose onicode.json default has not landed. Ready once it lands or
- * after a short bound, which gives up on the default so it can no longer move the draft. With
- * `cancelOnEdit`, an edit to the draft's content cancels it. Null when nothing needs to wait.
- */
-export function holdSendForWorkspaceDefault(
-  draftId: DraftId,
-  options: { readonly cancelOnEdit: boolean },
-): Promise<WorkspaceDefaultHold> | null {
-  const pending = pendingWorkspaceDefaults.get(draftId);
-  if (pending === undefined) return null;
-  const store = useComposerDraftStore;
-  if (!keepsProvisionalWorkspace(store.getState().getDraftSession(draftId), pending)) return null;
-  const giveUp = () => {
-    if (pendingWorkspaceDefaults.get(draftId) === pending) pendingWorkspaceDefaults.delete(draftId);
-  };
-  if (
-    !appAtomRegistry
-      .get(environmentSummaries.connectedEnvironmentIdsAtom)
-      .includes(pending.environmentId)
-  ) {
-    giveUp();
-    return null;
-  }
-  return new Promise((resolve) => {
-    const draftAtPress = store.getState().getComposerDraft(draftId);
-    let done = false;
-    const settle = (status: WorkspaceDefaultHold["status"]) => {
-      if (done) return;
-      done = true;
-      clearTimeout(timer);
-      stopWatching();
-      resolve({ status });
-    };
-    const timer = setTimeout(() => {
-      giveUp();
-      settle("ready");
-    }, WORKSPACE_DEFAULT_SEND_WAIT_MS);
-    const stopWatching = options.cancelOnEdit
-      ? store.subscribe((state) => {
-          if (composerDraftContentChanged(draftAtPress, state.getComposerDraft(draftId))) {
-            settle("cancelled");
-          }
-        })
-      : () => {};
-    const ready = () => settle("ready");
-    void pending.settled.then(ready, ready);
-  });
 }
 
 /**
@@ -353,35 +264,15 @@ export function createNewThreadHandler(router: AnyRouter) {
       // A copy that is refetching or stale opens the draft, and the fresh read still lands.
       const envMode = envModeFor(cachedProjectFile?.projectFile ?? null);
       const applyProjectFile = (draftId: DraftId) => {
-        const provisional: ProvisionalWorkspace = {
-          environmentId: project.environmentId,
-          projectId: project.id,
-          envMode,
-          openedManual: getDraftSession(draftId)?.environmentSelection === "manual",
-        };
-        const settled: Promise<void> = projectFileRead
-          .then((projectFile) => {
-            // A send that stopped waiting took the provisional workspace.
-            if (pendingWorkspaceDefaults.get(draftId)?.settled !== settled) return;
-            const fileEnvMode = envModeFor(projectFile);
-            const draft = getDraftSession(draftId);
-            if (fileEnvMode === envMode || !keepsProvisionalWorkspace(draft, provisional)) return;
-            // Commit before a waiting send re-reads the composer's workspace.
-            flushSync(() =>
-              setDraftThreadContext(draftId, {
-                envMode: fileEnvMode,
-                ...(draft.startFromOrigin === startFromOriginFor(envMode)
-                  ? { startFromOrigin: startFromOriginFor(fileEnvMode) }
-                  : {}),
-              }),
-            );
-          })
-          .finally(() => {
-            if (pendingWorkspaceDefaults.get(draftId)?.settled === settled) {
-              pendingWorkspaceDefaults.delete(draftId);
-            }
-          });
-        pendingWorkspaceDefaults.set(draftId, { ...provisional, settled });
+        trackPendingWorkspaceDefault(
+          draftId,
+          projectRef,
+          { envMode, startFromOrigin: startFromOriginFor(envMode) },
+          projectFileRead.then((projectFile) => {
+            const envMode = envModeFor(projectFile);
+            return { envMode, startFromOrigin: startFromOriginFor(envMode) };
+          }),
+        );
       };
       return { envMode, applyProjectFile };
     };

@@ -1,3 +1,4 @@
+import * as Equal from "effect/Equal";
 import { msg } from "gt-react";
 import { thrownErrorMessage } from "@onicode/client-runtime/errors";
 import { m } from "~/i18n/messages";
@@ -75,11 +76,8 @@ import { recordPromptSent } from "../GitHubStarPrompt";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { newMessageId, newThreadId } from "~/lib/utils";
-import {
-  detachedDraftSendState,
-  holdSendForWorkspaceDefault,
-  useNewThreadHandler,
-} from "../../hooks/useHandleNewThread";
+import { detachedDraftSendState, useNewThreadHandler } from "../../hooks/useHandleNewThread";
+import { holdSendForWorkspaceDefault } from "../../lib/draftWorkspaceDefaults";
 import { buildThreadRouteParams } from "../../threadRoutes";
 import {
   beginBackgroundDraftSubmissionByRef,
@@ -135,7 +133,11 @@ import {
   startAttachmentUpload,
 } from "../../lib/attachmentUploadQueue";
 import { appAtomRegistry } from "../../rpc/atomRegistry";
-import { countPreparingComposerImages, holdComposerSend } from "./preparingComposerImages";
+import {
+  countPreparingComposerImages,
+  holdComposerSend,
+  watchComposerSendEdits,
+} from "./preparingComposerImages";
 import { fileAttachmentCapabilityBlockReason } from "./composerAttachmentFiles";
 import { useLinkedEnvironments } from "../../state/peerLinks";
 import { readEnvironmentScope } from "../../state/session";
@@ -145,6 +147,7 @@ import {
   ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
   threadContextsOutsideEnvironment,
 } from "@onicode/shared/composerContextReferences";
+import { draftFanoutSelectionsAtom } from "./draftFanoutSelections";
 import {
   draftSendState,
   type MultipleModelTarget,
@@ -1913,49 +1916,7 @@ export function useComposerSend(input: ComposerSendInput) {
     if (threadKey !== null) setPreparingSendThreadKey(threadKey);
     return () => setPreparingSendThreadKey((current) => (current === threadKey ? null : current));
   };
-  const sendWithEnvironmentRefresh = async (...args: Parameters<typeof onSend>) => {
-    const refresh =
-      args[4] || sendInFlightRef.current || readPendingEnvironmentChange() !== null
-        ? null
-        : refreshBeforeSend();
-    if (refresh === null) return onSend(...args);
-    sendInFlightRef.current = true;
-    const donePreparing = markSendPreparing();
-    return refresh
-      .finally(() => {
-        sendInFlightRef.current = false;
-      })
-      .then((ready) => {
-        if (!ready) return;
-        if (!isShown()) return notifyLeftBeforeSend();
-        return onSendLatest(...args);
-      })
-      .finally(donePreparing);
-  };
-  const sendWithEnvironmentRefreshLatest = useStableCallback(sendWithEnvironmentRefresh);
-  const onSendWithRouting = async (...args: Parameters<typeof onSend>) => {
-    args[0]?.preventDefault();
-    // The resumed send reads the live draft, so an edit meanwhile cancels it.
-    const workspaceDefault =
-      draftId && !sendInFlightRef.current
-        ? holdSendForWorkspaceDefault(draftId, { cancelOnEdit: true })
-        : null;
-    if (workspaceDefault === null) return sendWithEnvironmentRefresh(...args);
-    sendInFlightRef.current = true;
-    const donePreparing = markSendPreparing();
-    const { status } = await workspaceDefault
-      .finally(() => {
-        sendInFlightRef.current = false;
-      })
-      .catch((error: unknown) => {
-        donePreparing();
-        throw error;
-      });
-    if (status === "ready" && isShown()) {
-      return sendWithEnvironmentRefreshLatest(...args).finally(donePreparing);
-    }
-    donePreparing();
-    if (status === "ready") return notifyLeftBeforeSend();
+  const notifyDraftChanged = () => {
     // A draft sent or discarded meanwhile was the user's own doing.
     if (draftId && detachedDraftSendState(draftId, undefined) === "gone") return;
     toastManager.add(
@@ -1965,6 +1926,62 @@ export function useComposerSend(input: ComposerSendInput) {
       }),
     );
   };
+  // An edit while a send waits means the user is not done, so the send does not go.
+  const waitBeforeSend = async <T>(pending: Promise<T>) => {
+    const finishWatching = watchComposerSendEdits(composerDraftTarget);
+    const fanoutSelectionsAtom = draftFanoutSelectionsAtom(routeThreadKey);
+    const fanoutSelections = appAtomRegistry.get(fanoutSelectionsAtom);
+    sendInFlightRef.current = true;
+    const result = await pending
+      .catch((error: unknown) => {
+        finishWatching();
+        return Promise.reject(error);
+      })
+      .finally(() => {
+        sendInFlightRef.current = false;
+      });
+    const watchedStatus = finishWatching();
+    const draftStatus =
+      watchedStatus === "ready" &&
+      !Equal.equals(fanoutSelections, appAtomRegistry.get(fanoutSelectionsAtom))
+        ? "edited"
+        : watchedStatus;
+    return { result, draftStatus };
+  };
+  const sendWithEnvironmentRefresh = async (...args: Parameters<typeof onSend>) => {
+    const refresh =
+      args[4] || sendInFlightRef.current || readPendingEnvironmentChange() !== null
+        ? null
+        : refreshBeforeSend();
+    if (refresh === null) return onSend(...args);
+    const donePreparing = markSendPreparing();
+    return waitBeforeSend(refresh)
+      .then(({ result: ready, draftStatus }) => {
+        if (!isShown()) return notifyLeftBeforeSend();
+        if (draftStatus === "edited") return notifyDraftChanged();
+        if (ready && draftStatus === "ready") return onSendLatest(...args);
+      })
+      .finally(donePreparing);
+  };
+  const sendWithEnvironmentRefreshLatest = useStableCallback(sendWithEnvironmentRefresh);
+  const onSendWithRouting = async (...args: Parameters<typeof onSend>) => {
+    args[0]?.preventDefault();
+    // The resumed send reads the live draft, so an edit meanwhile cancels it.
+    const workspaceDefault =
+      draftId && !sendInFlightRef.current ? holdSendForWorkspaceDefault(draftId) : null;
+    if (workspaceDefault === null) return sendWithEnvironmentRefresh(...args);
+    const donePreparing = markSendPreparing();
+    const { draftStatus } = await waitBeforeSend(workspaceDefault).catch((error: unknown) => {
+      donePreparing();
+      throw error;
+    });
+    if (draftStatus === "ready" && isShown()) {
+      return sendWithEnvironmentRefreshLatest(...args).finally(donePreparing);
+    }
+    donePreparing();
+    if (draftStatus === "ready") return notifyLeftBeforeSend();
+    if (draftStatus === "edited") notifyDraftChanged();
+  };
   // No load-balancing refresh: it bails once the draft is no longer displayed, which is the
   // only time a detached send runs, so the draft keeps the environment it was dictated for.
   const captureDetachedSend = useStableCallback(() => {
@@ -1972,9 +1989,7 @@ export function useComposerSend(input: ComposerSendInput) {
     const envModeAtCapture = draftThread?.envMode;
     // The transcript carries its own text, which lands in the draft, so edits do not cancel.
     return async (...args: Parameters<typeof onSend>) => {
-      const workspaceDefault = draftId
-        ? holdSendForWorkspaceDefault(draftId, { cancelOnEdit: false })
-        : null;
+      const workspaceDefault = draftId ? holdSendForWorkspaceDefault(draftId) : null;
       if (workspaceDefault !== null) await workspaceDefault;
       const state = draftId ? detachedDraftSendState(draftId, envModeAtCapture) : "send";
       if (state === "gone") return;

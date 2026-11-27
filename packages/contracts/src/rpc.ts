@@ -223,6 +223,7 @@ import {
   IssueDetail,
   IssueLinkedThreadsInput,
   IssueLinkedThreadsResult,
+  IssueDetailInput,
   IssueSummary,
   IssueListInput,
   IssueListResult,
@@ -1497,7 +1498,7 @@ const WsIssuesListRpc = Rpc.make(WS_METHODS.issuesList, {
 });
 
 const WsIssuesDetailRpc = Rpc.make(WS_METHODS.issuesDetail, {
-  payload: IssueRef,
+  payload: IssueDetailInput,
   success: IssueDetail,
   error: IssueRpcError,
 });

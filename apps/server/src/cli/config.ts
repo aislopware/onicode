@@ -1,4 +1,5 @@
 import * as NetService from "@onicode/shared/Net";
+import { isWildcardHost, normalizeHostname } from "@onicode/shared/hostClassification";
 import {
   OtlpHeadersFromString,
   OtlpProtocol,
@@ -373,7 +374,7 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
     normalizedFlags.host,
     Option.fromUndefinedOr(env.host),
     Option.fromUndefinedOr(bootstrap?.host),
-  );
+  ).pipe(Option.map((host) => (isWildcardHost(host) ? normalizeHostname(host) : host)));
   // Private networks only, so clients learn a LAN address. `onicode service install`
   // writes ONICODE_LAN=false for a new service; one installed before ONICODE_LAN
   // existed keeps listening.

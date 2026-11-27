@@ -3,9 +3,6 @@
   "59c888898cca0a57": "Your organization does not allow outside agents on this environment.",
   "a80458a4ad02acde": "This device cannot grant that access. Choose a lower level.",
   "a256081b5ce634fd": "Could not create the agent's access. Try again.",
-  "6c6e16b9488f8b91": "Scroll to read all of it.",
-  "035aab5e99159bd8": "{count, plural, one {… {hidden} character in the middle is not shown.} other {… {hidden} characters in the middle are not shown.}} The text ends with:",
-  "011b1ef726fa9928": "Scroll each part to read all of it.",
   "4bcfa3b976a421cf": "Side chat",
   "23be753133ae6950": "Thread",
   "0001ae5846061bb6": "Thread on {machine}",
@@ -35,6 +32,7 @@
   "eebc538e25b09fe2": "{organization}'s policy does not allow importing browser cookies.",
   "986b0873f913a840": "{organization}'s policy does not allow webhook tasks.",
   "7642a133db05f164": "{organization}'s policy does not allow opening this machine's local servers on other devices.",
+  "e0856d6a402ad821": "{organization}'s policy does not allow project worktree layout commands.",
   "39f6771b49f9b3b6": "Use default",
   "45bb0e90e1c42046": "When you return",
   "d8fa0a55446bbb0d": "Before the cache expires (beta)",
@@ -59,7 +57,7 @@
   "929a11e234f6e5d9": "Install the Azure command-line tools ({cli}), then enable Azure DevOps support with {command}.",
   "ad599e9de33538dd": "Add a Bitbucket token in Settings → Source control & issues.",
   "d810ecd91e8cf9d0": "Install the Origin CLI with {install}, then run {login}.",
-  "eb0f60ef4f92ab7d": "Install {fj} 0.6 or later from {fjUrl} and run {fjLogin}, or install {tea} 0.16 or later from {teaUrl} and run {teaLogin} for each Forgejo or Gitea server.",
+  "1a04c8d36a7b29d3": "Install {fj} 0.6 or later from {fjUrl} and run {fjLogin}, or install {gt} 2.0 or later from {gtUrl} and run {gtLogin} for each Forgejo or Gitea server.",
   "d026a85e2e50e675": "Install the GitCafe CLI with {install}, then run {login}, save a token in Settings, or set {variable} on the server.",
   "22d3c0c48a34b5b3": "Install the TanStack Source CLI with {install}, then run {login}, save a token in Settings, or set {variable} on the server.",
   "79d776428f4d0650": "The file could not be loaded. Reconnect and try again.",
@@ -457,6 +455,7 @@
   "834ca879c14c167b": "Working",
   "582d6df7dfab86fb": "Paused",
   "ea6583ce92507ee3": "Sleeping",
+  "7150557773b3818b": "Queued",
   "7ea8cb8af281ce93": "Waiting",
   "1347868f2523140e": "Done",
   "57d76c4614054271": "Stopped",
@@ -468,6 +467,7 @@
   "d3890f4eb1508781": "Running its own steps",
   "3e7ced10c9482af0": "{step} is working",
   "237e1bcb1cf1bdec": "Sleeping at {step}",
+  "efbeb3993ee2c3f5": "Queued for {pool}",
   "3f7b17ac5a20c8d2": "Runs {run}",
   "0306f5f324b8aaa5": "{count} runs under way",
   "e8fd779b84a202a2": "Waiting",
@@ -617,6 +617,7 @@
   "56b4ff3993c93eca": "{host} sent an incompatible server configuration.",
   "368c4d4f99c66bfb": "Update the client and server to compatible versions.",
   "e5fd422e445391fc": "Upload failed. Tap to retry.",
+  "13b14784f8707ddd": "0 bytes",
   "b2bc6bd92ea24e5c": "{size} MB",
   "88f84178edbb7f57": "{size} KB",
   "5a78fd0a1d8e9945": "{count} MB",
@@ -1457,6 +1458,8 @@
   "4eb599c7f36c99ba": "That theme file is not valid JSON.",
   "29a5ff50ce55c4f9": "VS Code theme",
   "10348092dfed8b11": "That VS Code theme has no \"editor.background\" color, so there is nothing to build a palette from.",
+  "206811f6f441bfc7": "This project sets up worktrees with its own command, which nobody has approved as it is written now. This connection cannot approve it: approve it from a client that can use the terminal.",
+  "b8087c9a70c26da9": "Could not approve the worktree layout command.",
   "6dff8d487001c6cf": "Responsive",
   "f5f61c338cc5aeb5": "Browser device toolbar",
   "3b4eb5b5ec5e60cb": "Browser device preset",
@@ -1771,7 +1774,6 @@
   "1d17dc60c59e0524": "Unpin project",
   "5cfaaa20c460c328": "Pin project",
   "24adf508b4c5d6b5": "Project settings",
-  "60e47b3da5901619": "Settings · {section}",
   "0c659f9a193255dd": "Failed to add project",
   "4b3fc098d5a08a66": "Windows-style paths are only supported on Windows.",
   "2c2637dc1e236fb4": "Relative paths require an active project.",
@@ -1865,6 +1867,7 @@
   "f844c41fac2d339c": "Current",
   "69154433587763c0": "No matching actions.",
   "90c3a382ecefa0ce": "No matching commands, projects, or threads.",
+  "60e47b3da5901619": "Settings · {section}",
   "a03e4c1348ad9ba8": "System",
   "8bf65a425f50d140": "Light",
   "d604bc5cf3386f00": "Dark",
@@ -1974,6 +1977,8 @@
   "87e8222236630e6b": "Loading changes…",
   "bcbd16c97c6c1215": "No net changes in this selection.",
   "7e9cb3ca9f5470ae": "No patch available for this selection.",
+  "ccd5fc4db08374d7": "{count, plural, one {{count} test file hidden} other {{count} test files hidden}}",
+  "a92edf8d81354772": "Show test files",
   "e797245c587e7e29": "Resize Changes files",
   "99c76aa12c632a36": "{section} files",
   "3e9ddb26c2c59bcc": "Changes",
@@ -2541,6 +2546,24 @@
   "3260b22f72f7effb": "{tooltipLead}: {title}",
   "feac8e54b30c5a03": "Terminal process running",
   "fc2c9a91f498ad6b": "{count, plural, one {{count} terminal process running. Open terminal} other {{count} terminal processes running. Open terminal}}",
+  "06d3fe3e6b255d15": [
+    "+",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " more"
+  ],
+  "f1b18820c0ab93ac": [
+    "+",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " more in Linked items"
+  ],
   "56f37ff8ca568059": "stack",
   "6831e9a46cbd8939": "chain",
   "9aa9e74a3b7eee91": "Add to chat",
@@ -2580,6 +2603,24 @@
   "9206ecf328948f90": "Close Terminal",
   "906cf09cf2314856": "New Terminal ({shortcut})",
   "9b1326a11cfe3308": "No terminal sessions for this thread yet.",
+  "49eda70cfd56e621": "Runs when a worktree thread starts, and when its folder is restored",
+  "188ccaa1199f5611": "Runs when a thread's worktree is removed",
+  "7e8476e7306acabe": "Let this project run its worktree commands?",
+  "0c8fe199f5a7aabd": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " sets up worktree threads with its own commands from ",
+    {
+      "t": "code",
+      "i": 2,
+      "c": "onicode.json"
+    },
+    ". They run on this environment's machine with your permissions, outside any agent sandbox. You are asked again whenever their text changes."
+  ],
+  "46807acd02a4ff72": "Approve and continue",
   "2ac142f34e5dabc2": "Repositories in the new worktree: {selection}",
   "c514773a8031f00b": "Filter repositories",
   "e32b730f6d27753f": "Choose the repositories this thread works on",
@@ -2927,6 +2968,8 @@
   "4f14e3fc3a216f44": "This stops the running process and clears its history.",
   "16ce8443044b45fd": "Close {count, plural, one {{count} terminal} other {{count} terminals}}?",
   "a9697e470d40706a": "This stops their running processes and clears their histories: {labels}.",
+  "f3c70064a22a0c76": "{terminalLabel} line {lineStart}",
+  "8ba6febaabeb6f14": "{terminalLabel} lines {lineStart}-{lineEnd}",
   "ef4bae5c5f3684f4": "Recorded content before",
   "5e4a0e56a0788d86": "Recorded content after",
   "6d5a8b471a561b9d": "File Explorer",
@@ -3026,6 +3069,9 @@
   "f2a955905704b91d": "{hours}h {minutes}m",
   "3609f564a63c8eca": "{minutes}m",
   "9251bb742f60720d": "{hours}h",
+  "035aab5e99159bd8": "{count, plural, one {… {hidden} character in the middle is not shown.} other {… {hidden} characters in the middle are not shown.}} The text ends with:",
+  "011b1ef726fa9928": "Scroll each part to read all of it.",
+  "6c6e16b9488f8b91": "Scroll to read all of it.",
   "a1e982c6047c0860": "Go to quoted response: {label}",
   "c156140c3f5ebb75": "Go to the response this replies to: {label}",
   "f8031a49c6e9fe25": "View cited assistant text: {label}",
@@ -3292,12 +3338,12 @@
   "35e0b8f7418b4a86": "Click to queue, {modifier}-click to steer",
   "eed080cf5eb25bfd": "Summarize {tokens} tokens of history, then send",
   "e4116d7f64a6f593": "Compact {tokens} tokens of history before sending",
-  "d6143c122719b099": "Keep",
-  "7335dc479a68818e": "Compact",
-  "1486a422ba77a084": "Click to compact first",
-  "b971f881c5dc4fca": "Click to keep full history",
   "b2411ad43ce3b143": "Next send keeps all {tokens} tokens.",
   "ab6720311ff3140d": "Next send compacts {tokens} tokens first.",
+  "1486a422ba77a084": "Click to compact first",
+  "b971f881c5dc4fca": "Click to keep full history",
+  "d6143c122719b099": "Keep",
+  "7335dc479a68818e": "Compact",
   "89426e9b039148d7": "Voice input failed",
   "2220a0fbb5b6fa47": "Downloading model {percent}%",
   "5c05b24be2880672": "Recording",
@@ -3366,14 +3412,20 @@
   "62d0c453f5803180": "Close image preview",
   "fb9434aad2b5c0bb": "This image could not be loaded.",
   "26aee5d4e97bfb28": "Image unavailable. The file may have been moved or deleted.",
+  "07408a1ca3f33d8b": "Media controls",
+  "419719298a7acaea": "Zoom out",
+  "43878fb3f7e42f0e": "Fit to screen",
+  "10ead3798109659b": "Actual size",
+  "8c32e9085e525c19": "Zoom in",
+  "91755a23b20de76b": "Save video",
+  "f8287a7d5c14efaf": "Save image",
   "47bae54b5f532ff3": "Previous media",
   "c53bc5a4b0314342": "Next media",
   "2950b1424a3cddf5": "Reconnect to this environment and open the media again.",
   "ef638bf1479a5461": "The environment returned an invalid media URL.",
+  "76cf478e5674fd12": "{count, plural, one {{count} match} other {{count} matches}}",
   "21888e302219891d": "Expanded {title} preview",
-  "419719298a7acaea": "Zoom out",
   "ed8d5db95359cff4": "Reset zoom",
-  "8c32e9085e525c19": "Zoom in",
   "18daf3df927c7251": "Open full screen",
   "b45bd7726f36df8f": "Page unavailable",
   "68883cb3342998e5": "Reconnect to the environment and try again.",
@@ -3499,15 +3551,6 @@
     " app was closed"
   ],
   "dff97202cbdaec5b": "Show app",
-  "705cf2b2ee4e0e42": [
-    "The ",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " app left its page and was stopped"
-  ],
   "796b81c4875c4feb": [
     "The ",
     {
@@ -3522,6 +3565,15 @@
       "v": "v"
     },
     " server on this environment. Update the server to use it."
+  ],
+  "705cf2b2ee4e0e42": [
+    "The ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " app left its page and was stopped"
   ],
   "5ef18e4d39b398bf": [
     "Unable to load the ",
@@ -3837,8 +3889,6 @@
   "ac7416afe98ba5f8": "Terminal excerpt, {label}",
   "bf04d61dc50685dc": "Line {lineStart}",
   "000e3bef072f07c8": "Lines {lineStart}–{lineEnd}",
-  "f3c70064a22a0c76": "{terminalLabel} line {lineStart}",
-  "8ba6febaabeb6f14": "{terminalLabel} lines {lineStart}-{lineEnd}",
   "b3336a0e9a6e3fba": "Captured terminal output",
   "8d24730972ce4fd3": "Terminal excerpt, {label}, expired",
   "dd8f1439c88ef92b": "Terminal context expired. Remove and re-add {label} to include it in your message.",
@@ -4052,6 +4102,7 @@
   "309b160785f6c473": "Open fork in this chat",
   "6676cd4b8299663f": "Open parent thread in this chat",
   "63e8c7a0ef0513b5": "Related threads",
+  "de93e39b51ae5ebf": "Stop subagent {threadTitle}",
   "9996d9dac573001a": "Open on {label}",
   "15a601a94893277f": "Could not open the parent thread",
   "5eb43f554a5b7a58": "The parent thread was deleted",
@@ -4070,7 +4121,6 @@
   "d8b65e5e9c5fbe26": "Unarchive the source conversation to merge this one back",
   "36cf99230450eeaf": "Merge this conversation back into {parentTitle}",
   "bda1cc7b91e07680": "Merge this conversation back into its source",
-  "de93e39b51ae5ebf": "Stop subagent {threadTitle}",
   "e7b97dccb035f744": "Lineage · {runningCount} running",
   "3f5e86e6d076a97b": "Lineage",
   "d52abd756b3da5ee": "More thread actions",
@@ -4084,6 +4134,7 @@
     },
     " failed"
   ],
+  "3237699bd13dd4bb": "Stop subagent",
   "0bc72950072ee1aa": [
     "on ",
     {
@@ -4092,7 +4143,6 @@
       "v": "v"
     }
   ],
-  "3237699bd13dd4bb": "Stop subagent",
   "075398ac562d74b0": "Disconnect agent session",
   "f169e59fe234e9f1": "Could not add {name}",
   "1de933b25248e5aa": "Repository {name}",
@@ -4169,13 +4219,13 @@
   "f8dfafaf42c3a957": "Agent",
   "0647cef26e3b1fa5": "The snapshot is too large to copy.",
   "c036ab3d20c54b5b": "You",
-  "75948010e112a8f4": "Steer",
-  "e25ee617e3d67e87": "Steer · sending now",
-  "d1d1fed744318218": "Steer · waiting to be read",
   "bb592d0a994e4013": "Making room for the agent to read this now.",
   "1ccc41732907ca74": "Waiting for the agent to read this. It reads steers between steps, after a running command finishes.",
   "ae3f487ebde9db74": "Originally queued, then promoted to steer the active turn",
   "4f2ec8c81b4efb22": "Steered the active turn",
+  "75948010e112a8f4": "Steer",
+  "e25ee617e3d67e87": "Steer · sending now",
+  "d1d1fed744318218": "Steer · waiting to be read",
   "8765fa49f0929a40": "Sending now",
   "369d63856fdb556b": "Waiting",
   "08037b18bd65a4fa": "Send now",
@@ -4286,6 +4336,7 @@
       "c": "”"
     }
   ],
+  "91aadfc843c600de": "Verify Google account",
   "a2aaca7ff8310186": "Open chat",
   "a3048aaa541b7744": "Activity",
   "4a3cbccb2beedeb0": "image",
@@ -4323,8 +4374,9 @@
   "75cdbffdefbbae3a": "Ultrafast mode on",
   "79c3a186139f8c86": "Fast mode on",
   "a772b49a38a3db40": "What went wrong?",
-  "b29e1856c4aab31f": "This machine",
   "8fe3f3096de558ef": "The agent reads Onicode's logs and source here, and asks before it applies a fix or posts anything.",
+  "b29e1856c4aab31f": "This machine",
+  "275a97b4af3c6482": "Copy command, for a terminal",
   "e7588632064e0364": "Copied",
   "996f7752fa033da6": [
     "or run",
@@ -4338,7 +4390,6 @@
       }
     }
   ],
-  "275a97b4af3c6482": "Copy command, for a terminal",
   "2b07985d23563374": "Resumes {time}",
   "a4b4e5eb6d313af9": "Reset {time}",
   "c0c3aa756405c1df": "Resets {time}",
@@ -4364,7 +4415,6 @@
   "7f0f9b1ee42892db": "Output is no longer available.",
   "e470bb79fa74a6ae": "Tool output image",
   "e8c80b6d40c0944c": "Search result",
-  "76cf478e5674fd12": "{count, plural, one {{count} match} other {{count} matches}}",
   "8d1906900b5c95c7": [
     "exit ",
     {
@@ -4640,6 +4690,8 @@
   "70b12bc1e1a26abb": "Stash again once it finishes compressing.",
   "f6b1ef37f7587664": "Attach dropped files again or remove them before stashing",
   "120167bbfb6d5939": "Wait for file uploads before stashing this prompt",
+  "410dded6e21c280d": "Stash is full",
+  "1af8d12ac21cb183": "The stash holds {max} prompts. Restore or delete one to make room; the composer was left as-is.",
   "afdf475db3ca2af7": "Could not stash this prompt",
   "3f5c37167aa5034f": "Browser storage rejected the write, so the composer was left as-is. Free up site data and try again.",
   "41ba6c0b5c5e8b22": "Stashed prompt will not survive a reload",
@@ -4651,6 +4703,7 @@
   "13cf3cd978eef92a": "Keep attachments on this machine",
   "a4ca7da61227002d": "Remove attachments before choosing automatic routing, then attach them on the selected machine.",
   "512d8afab852df1a": "Could not switch machine",
+  "ee3ea4351c88e7d7": "This project is no longer available.",
   "32e421d1e2dfdaff": "Checking machines…",
   "0db14066bd4ce117": "Auto balance unavailable",
   "55b562c00e37321b": "Could not force stop the agent",
@@ -4826,8 +4879,11 @@
   "c928303400ccaf24": "The device hub failed to start.",
   "4cb21672153c1f18": "No simulators or emulators were found on this environment.",
   "c82410197256eb53": "iOS Simulators",
+  "31a71fec6b5f2bf3": "Android Devices",
   "ac18a5e35195a258": "Android Emulators",
   "94215375ea2558b8": "Running",
+  "381ceed77cb8b2b3": "Stop {name}",
+  "5b9fda36b610d25c": "Stop",
   "b1687c7b2b91e569": "Open {name}",
   "4b4ef3f2e2ed2c56": "Start {name}",
   "a34247bae083cebf": "Dismiss device error",
@@ -4848,6 +4904,7 @@
   ],
   "e902f208c4e6146f": "No Android virtual devices found. Create one in Android Studio's Device Manager, then refresh.",
   "d9a71f3db685cb0e": "Refresh devices",
+  "1d372f6d555dde3c": "Stop all devices",
   "4ad8ced64defdf73": "Interactive 3D device. Drag the screen to interact. Drag outside it or swipe with two fingers to turn.",
   "84e4baf07ad8883d": "Enable this environment to open simulators and emulators, whether they run here or on a remote device host.",
   "771365c337509a82": "Allow new agent sessions in this environment to start and control local and remote devices, with required tools set up automatically.",
@@ -5178,7 +5235,6 @@
   "6ad6c8fbb630657d": "The file is unavailable.",
   "9450d1827ef336a1": "Another copy is in progress.",
   "8f48999eb6d9e2e3": "{count, plural, one {{formatted} line} other {{formatted} lines}}",
-  "13b14784f8707ddd": "0 bytes",
   "6574fce81dc65af6": "Showing the first 1,024 columns. Copy keeps every column.",
   "2a6e1b1f209c3888": "This file is empty.",
   "192fc79eb3b5b2cb": "This diagram contains resource URLs, markup, node metadata, or custom configuration. Show Mermaid source to inspect it safely.",
@@ -5601,31 +5657,29 @@
   "15b08f3f320c3b0a": "URL copied",
   "02994b2bd9274ab4": "Copy message and open {app}",
   "7be407c74afefa6d": "Message copied",
+  "b0ad71b8019bf199": "The media action failed.",
   "d7de18f04876f54e": "This media is unavailable. Try reopening the preview.",
   "648d9c9d195935df": "Reconnect to this environment and try again.",
+  "932133fe6f6e618c": "Preparing image download…",
+  "1b4d7bd2c671172a": "Preparing video download…",
+  "d3cab753cd4b6a6c": "Could not save image",
+  "643b2028fd7f40b8": "Could not save video",
   "e14cc7a5b8cb41bf": "Image copying is unavailable. Use a secure browser connection or save the image.",
   "268904f54e904eb3": "Could not open media menu",
   "b8ce07553e143a5d": "Copy URL",
   "d412cf9242b79265": "Open in file viewer",
-  "f8287a7d5c14efaf": "Save image",
-  "91755a23b20de76b": "Save video",
   "4970b3bf32e255c3": "Copy image",
   "489a1b774558ce1c": "Could not copy full path",
   "7f9ba27ddcf3f9b1": "Could not copy relative path",
   "77420190206bd470": "Could not copy url",
   "c78ecbf41432ebcb": "Could not open in file viewer",
-  "d3cab753cd4b6a6c": "Could not save image",
-  "643b2028fd7f40b8": "Could not save video",
-  "5fc5207c6b1adf4f": "Could not copy image",
   "273da1753fb50713": "Could not complete media action",
   "b897a903788c226c": "Clipboard API is unavailable while copying file path.",
   "fe689b8fa790d49a": "Failed to copy file path to the clipboard.",
   "1ca4f7d01e648324": "Clipboard API is unavailable while copying URL.",
   "017135d2ad9e1367": "Failed to copy URL to the clipboard.",
-  "932133fe6f6e618c": "Preparing image download…",
-  "1b4d7bd2c671172a": "Preparing video download…",
   "a217d72dc2316c81": "Copying image…",
-  "b0ad71b8019bf199": "The media action failed.",
+  "5fc5207c6b1adf4f": "Could not copy image",
   "b021d034b7ed139d": "Retry video",
   "80cb0fddbed7fcaf": "Video preview",
   "f9c21970dd6ed5e5": "Video preview unavailable",
@@ -6099,7 +6153,6 @@
   "2250f241daadd71b": "Add to agent",
   "be9b06fae29cc07a": "All commits",
   "5ef391d5403d7bdd": "{count, plural, one {Show more ({count} left)} other {Show more ({count} left)}}",
-  "ccd5fc4db08374d7": "{count, plural, one {{count} test file hidden} other {{count} test files hidden}}",
   "c12871955b159db4": "viewed in {app}",
   "98b353c208fd7977": "viewed",
   "d65b870952bbe4f0": "These ticks are kept here, not on the host",
@@ -6108,7 +6161,6 @@
   "a35be3a33a60ada9": "Some of this diff was not shown",
   "74c7bae34db3147e": "Line comments are written from the whole change",
   "4050f873dc790f8f": "Diff options",
-  "a92edf8d81354772": "Show test files",
   "2af4561874bd8054": "Loading {term, select, mr {merge request} cr {change request} other {pull request}} diff…",
   "e76a1455903eef18": "This {term, select, mr {merge request} cr {change request} other {pull request}} has no file changes.",
   "50abbcbc41691cb5": "This commit has no file changes.",
@@ -6122,8 +6174,8 @@
   "a2a7c71f984c4eef": "No text diff for this file.",
   "1239149344bb4b2b": "Diff too large to display.",
   "3e272ae9c5b76744": "Load diff",
-  "d4ccbc96f4d05950": "Changed",
   "c12888742e7bd0ce": "This file has been pushed to since you marked it viewed.",
+  "d4ccbc96f4d05950": "Changed",
   "6594b013f63d2a3a": "Viewed",
   "687f81dd084a5ab0": "The rest of this diff could not be loaded.",
   "cf44cf4e3479ea7a": "All commits",
@@ -6248,8 +6300,6 @@
   "d156e1e294ab446b": "Preparing the {term, select, mr {merge request} cr {change request} other {pull request}} checkout…",
   "f5fd3733da6e3556": "Could not open a thread for the checkout",
   "09f38e303898401f": "Could not prepare the {term, select, mr {merge request} cr {change request} other {pull request}} checkout",
-  "853a77d42f86c918": "Checked out, but the thread stayed where it was",
-  "0746dfa692f895cc": "The checkout is ready on `{branch}`. Point a thread at it from the branch picker, then ask again.",
   "88db70a96177d202": "Checked out here",
   "baa66fde3613022b": "Checked out",
   "10feb68552356a08": "This repository is on the {term, select, mr {merge request} cr {change request} other {pull request}}'s branch, with a thread open on it.",
@@ -6321,6 +6371,19 @@
   "36b7fbe31bde05f3": "This repository has no labels.",
   "2764eab1d2853980": "This repository has more labels than are listed here. Apply the rest on the host.",
   "5e5917c3b907c7d6": "Applied",
+  "4affc3da49f673c2": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " ",
+    {
+      "t": "span",
+      "i": 2,
+      "c": "commented"
+    }
+  ],
   "404ee0e0134b60ae": "Searching every host for “{query}”",
   "8b04f78f836b6c11": "Nothing under these filters",
   "928f3b907784507e": "No pull requests",
@@ -6351,6 +6414,7 @@
   "7074711ac6cc6f5c": "Failing",
   "75b2bb15e4624860": "Unavailable",
   "ff6b088c383bf910": "Search authors",
+  "a766a8ac2670096c": "{count, plural, one {{count} merge loaded} other {{count} merges loaded}}",
   "d6179a157948c07c": "No authors found",
   "353773803bf92ad4": "Couldn't search authors on the host",
   "e3e2d073449a0289": "Anyone",
@@ -6434,8 +6498,8 @@
   "1df18577b47fe833": "Nobody with access matches that.",
   "605ed234cd084078": "The people with access could not be read.",
   "3e63297ce2f404d6": "Already asked",
-  "ad822604a0059e71": "matched in the description",
   "3625557b4fc8ba68": "Matched in the description",
+  "ad822604a0059e71": "matched in the description",
   "ff1f73cd2455d0f6": "No merge method is available for this repository.",
   "59b38d59700e0a5f": "Close",
   "25aa6faba20377ca": "Close #{number}",
@@ -6615,19 +6679,6 @@
       "t": "span",
       "i": 2,
       "c": "reviewed"
-    }
-  ],
-  "4affc3da49f673c2": [
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " ",
-    {
-      "t": "span",
-      "i": 2,
-      "c": "commented"
     }
   ],
   "04ea50285b00dcdd": "Overview",
@@ -6963,9 +7014,20 @@
   "dc87902396b8ade4": "Letters, digits, '-', or '_'.",
   "251dfec07b7c3612": "This driver has no required configuration. You can add the instance now.",
   "08fe32f007e788f1": "Configure manually",
+  "65300794c1edb929": "Bearer token (optional)",
   "84eb2878dc17d3eb": "Management key",
   "7ac196c1e8175928": "Defaults to the hub's host name",
+  "0c026221dcd2820b": "Add an HTTP quota source",
   "e3548407052e9e12": "Add a CLIProxyAPI hub",
+  "d185c750156b2121": [
+    "Read quotas from an endpoint on ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    "."
+  ],
   "432e85a50e2e7964": [
     "Show the quota of every account the hub pools, next to the providers on",
     " ",
@@ -6976,9 +7038,12 @@
     },
     ". The key stays on that server."
   ],
+  "2324770ba91371ac": "Endpoint URL",
   "556a695b117565ac": "Hub URL",
+  "e4e5b75bba51396c": "Bearer token (optional)",
   "e62cedcbcdbafc75": "Management key",
   "f1b3d0634ec035cb": "Label (optional)",
+  "b35256ca61016104": "Add source",
   "52814dd6f7d0a15c": "Add hub",
   "27b770d3402abfa2": "Advanced",
   "62d249854d197cef": "Scenery",
@@ -7766,7 +7831,6 @@
   "e6886a7f77b73a8e": "{platform} not available",
   "b0b7610d9860d18d": "Not set up on this machine.",
   "f5b66c481aa3e4df": "Edit",
-  "b35256ca61016104": "Add source",
   "3b20ef0670ae4b0b": "Machine over SSH",
   "121ccffacb6b8c6d": "Expo Simulators",
   "130b55a1410a8030": "Simlock pool (alpha)",
@@ -8346,6 +8410,10 @@
   "f0e853acd2006d53": "Linked environments",
   "beff9274b0f33385": "Run multi-step workflows from files in the workflows folder of this server's Onicode home. Open them from the command palette. While off, nothing in that folder runs; runs wait until it is on again.",
   "2dadb2359422121c": "Workflows",
+  "933dabf0700708af": "How many skipped runs each workflow keeps in its history. Older skipped runs are deleted; runs that did something are always kept.",
+  "f172d7e5deb24f75": "Reset skipped runs kept to default",
+  "ba94015389f327bc": "Skipped runs kept",
+  "d52b3d6bf9f2a013": "Mixed",
   "13e86eb5d8287a71": "Show a predicted next message in the empty composer after a Claude or Codex turn. Tab uses it. Each is an extra cached request on your plan. Needs Codex 0.165+. Claude threads update on restart.",
   "d4b2a2ec812aafb0": "Suggest next prompt",
   "298c7150a7621c80": "Simlock device hosts",
@@ -8636,7 +8704,6 @@
   "b76e857a764ea02a": "Grouping rule for {path} on {environment}",
   "e6e55f343639ae71": "Default ({mode})",
   "87158e7b8e714bc6": "Add a project from the sidebar to configure it here.",
-  "ee3ea4351c88e7d7": "This project is no longer available.",
   "062d19d24615e108": "Project title cannot be empty",
   "303af9de2741db90": "Failed to rename project",
   "f578154800d7af01": "Failed to update project icon",
@@ -8673,6 +8740,28 @@
   "d2ad2df4c015f417": "Grouping rule decides how each checkout joins project groups in the sidebar. Changing it can move a checkout to a different project.",
   "0bdf6ae2117b6c23": "Can't find a setting? Keep this project picked above and hop to any other settings page.",
   "3310e10f1efdc9bd": "Choose icon",
+  "a9cb97fca6a6576b": "Create command",
+  "90f45a354884ccdd": "Remove command",
+  "0cdc8cdbed3e5eae": "Worktree layout",
+  "c17b25519e2b194e": "Could not load the worktree layout commands",
+  "78e308ada516928b": "Could not approve the command",
+  "a0c772d32a233da6": "Could not revoke the approval",
+  "5ccd5614c65f8d1f": "Revoke approval of the {kind} command",
+  "80c3794a5fa12f3a": "Approve the {kind} command",
+  "35b0b7f9698cbffd": [
+    "This project's ",
+    {
+      "t": "code",
+      "i": 1,
+      "c": "onicode.json"
+    },
+    " sets up worktree threads with its own commands. They run on this environment's machine with your permissions, and only as approved here: a command whose text changes needs approval again."
+  ],
+  "8e73b883d41d4102": "Off",
+  "f6a91589456cca50": "Approved",
+  "c92657bb7f2293ff": "Needs approval",
+  "f1e5c1be1ac92361": "Approve",
+  "fcb5f3c4d4753326": "This connection cannot approve commands. Use a client that can use the terminal.",
   "65ccf4f8e049003e": "Choose a project to manage its name, icon, checkouts and actions.",
   "067beea7d8f6e2c9": "Show all environments",
   "1bf6da50131340d4": "Accent color hue",
@@ -9021,6 +9110,7 @@
   "9bc60e1d0ef816cf": "Storage bytes",
   "85de927f664ee3cb": "Logical bytes",
   "ec1f81bc9b395fb9": "All I/O bytes",
+  "9fd31461cee8ff82": "{count, plural, one {{count} process} other {{count} processes}}",
   "7905928d59208450": "Read",
   "637254a20a8e24a5": "Write",
   "ab9f29f78275f7bd": "Available when this page runs inside the desktop app.",
@@ -9156,6 +9246,7 @@
   "543ef9fcaf8aa96f": "Switched off",
   "5173c50b0a60847c": "Update available: {serverVersion} → {clientVersion}",
   "987c5623ba70f390": "Routes",
+  "36d52134b8b8d455": "{count, plural, one {{count} route} other {{count} routes}}",
   "63348bbbf59c775d": "{label} server",
   "08f54865b364957d": "Update",
   "b426469630d60955": "Switch off {label}",
@@ -9603,7 +9694,6 @@
   "16bdc70b858c223f": "Reset proactive panels to default",
   "c5424f09d77138ff": "When to compact an idle Claude thread over 200,000 tokens: after you return, just before its prompt cache expires, or never. Each Claude provider can override this.",
   "3e99c5c14f4939c8": "Reset compact idle threads to default",
-  "d52b3d6bf9f2a013": "Mixed",
   "cd72fe451ba0d6aa": "New projects",
   "394c3bd0a1782c8e": "Leave empty to use \"~/\" when the Add Project browser opens.",
   "f9b912a818bd869d": "Reset add project base directory to default",
@@ -10520,7 +10610,6 @@
   "b0d0aebadc521ed1": "Delete saved browser captures after this many days. Older capture links will no longer open.",
   "fe4208562792c313": "Delete old rotated logs",
   "8debac9c8e9cff47": "Delete inactive rotated log files after this many days. Current logs are kept.",
-  "8e73b883d41d4102": "Off",
   "80d58a3fd4e4212a": "Project",
   "de770505be25f1ff": "Folder",
   "ada7b9a4d96959d2": "Thread",
@@ -10897,7 +10986,11 @@
   "404f92786aa9a22f": "Code blocks, diffs, file previews, and the terminal.",
   "5897f301f96f8abe": "Typography",
   "eb72dbf46620a039": "{title} family",
+  "39f64d971ba424b5": "No usage sources configured.",
+  "dbd877abdc2c7c81": "HTTP quota source",
   "4cf6a373a7535324": "{name} · Disabled",
+  "c792e744936dbe1b": "Add HTTP source",
+  "4032a03ee5301037": "The saved connection and its credentials are removed from this environment.",
   "0424112d5a0ecd71": "Auto",
   "3f0e1b77e45d53a9": "Tap to toggle, hold to talk",
   "45928549c050a1b4": "Hold",
@@ -10992,6 +11085,7 @@
   "817dbf1c068b62e7": "Where your speech is turned into text.",
   "710d3e4f0243014c": "Chosen environment (unavailable)",
   "61088464d1b7174d": "unavailable environment",
+  "800966eb58181745": "Checking which languages the model supports…",
   "2b3e8ee4f31d1433": "Automatic uses your Mac’s language. The first use of a language downloads it.",
   "71184e5a54a69f1d": "The provider detects your language automatically.",
   "ffb2653eb2d9fc1a": "{model} detects the language automatically.",
@@ -11229,9 +11323,6 @@
   "d443390c4d2dcfd4": "accessibility a11y screen reader nvda jaws voiceover orca narrator window title tab title alt tab taskbar thread status order working approval",
   "f10c06cba0cdf7fe": "beta link another machine vps peer agents work there delegate",
   "bc0b409d89ce086e": "beta workflow durable runs automation steps schedule webhook folder",
-  "933dabf0700708af": "How many skipped runs each workflow keeps in its history. Older skipped runs are deleted; runs that did something are always kept.",
-  "f172d7e5deb24f75": "Reset skipped runs kept to default",
-  "ba94015389f327bc": "Skipped runs kept",
   "4b2669dcdb7d3776": "workflow history retention delete old skipped runs webhook",
   "4a21cf825a2045b0": "beta tab autocomplete predict next message claude codex ghost text",
   "fea2dc36585c4a20": "Simlock device hosts (alpha)",
@@ -11450,8 +11541,8 @@
   "8cf699ae75fd8067": "Pinned",
   "be451f475c514b37": "Dismiss Woke notification",
   "e9ced65134f2f36c": "Wake thread now",
-  "374dac09151d4578": "Pending",
   "a8f30f631e2b010e": "Waiting to sync with its environment",
+  "374dac09151d4578": "Pending",
   "aca5896600bf173e": "You're currently checked out on another branch.",
   "f665b5be60d8c144": [
     "Handed off from ",
@@ -11601,10 +11692,10 @@
   "3d55c97a8189568e": "{label}: {remaining}% left",
   "d6961d3b4c9657da": "{label}: {remaining}% left, {timeLeft}% of the window left, {resetsIn}",
   "ade1cf4e2c1ff4b4": "{label}: {remaining}% left, {timeLeft}% of the window left",
-  "a01c358de99da345": "Resets {resetsAt} · {resetsIn}",
-  "93b30237a69f3fc4": "Resets {resetsAt}",
   "f6116fcec2d2ea7f": "{remaining}% left · {timeLeft}% of the window left",
   "07f5912af296f9ea": "{remaining}% left",
+  "a01c358de99da345": "Resets {resetsAt} · {resetsIn}",
+  "93b30237a69f3fc4": "Resets {resetsAt}",
   "69b2a63d2321a66c": "Using…",
   "59e6cdf357f52c19": "The line is where even spending would be.",
   "82f94ffdb2c10992": "Use a reset credit?",
@@ -11684,9 +11775,9 @@
   "d2d071e45a2d6b89": "Select an environment to see limits.",
   "c9180daea905a0a6": "Select an environment to see usage.",
   "f0297ec79e896a13": "{environment}: {error}",
+  "61571f4542da9903": "{count, plural, one {{formatted} session} other {{formatted} sessions}}",
   "b01bf98dd90ee819": "API estimate",
   "bab34b28e9ee8e88": "Unpriced usage details",
-  "61571f4542da9903": "{count, plural, one {{formatted} session} other {{formatted} sessions}}",
   "2a57181a9d128463": "{share} of cost · {tokens} tokens",
   "d8a6a99fbdda0d3e": "{share} of tokens · {cost}",
   "ae86762909d453d2": "Hourly processed tokens",
@@ -11862,6 +11953,8 @@
   "b8dcbc93a2ca1861": "This run no longer lists it.",
   "115c69de3202f664": "Open",
   "a2bbf464a3be4882": "{count, selectordinal, one {{count}st try} two {{count}nd try} few {{count}rd try} other {{count}th try}}",
+  "0398ca6c1d24b92d": "queued, next in line",
+  "0af6d5ffd5166214": "{count, plural, one {queued, {count} ahead} other {queued, {count} ahead}}",
   "e39f89c909df4db0": "Could not resume the run",
   "865f034346b82f47": "Cancel {title}? Its agents stop and the run cannot be resumed.",
   "6bc75632fd9c9136": "Could not cancel the run",
@@ -11888,11 +11981,17 @@
   "dd7a1e58c2553933": "wakes in {duration}",
   "95cc952724dd7310": "about to wake",
   "3cc34921c0128593": "running",
-  "e777db2880f53a46": "nobody answered",
   "dc90739d391a5e67": "You said {choice}",
+  "4e96712d839ccbff": "{who} said {choice}",
+  "e777db2880f53a46": "nobody answered",
+  "201490988858b511": "withdrawn by {by}",
   "389f2563b5b763fd": "Quick steps",
+  "99451a5d2d40440f": "Withdrawn by {by}.",
+  "3ee30a50b70fffab": "Withdrawn by {by}: {reason}",
+  "92e129bf413a1220": "withdrawn",
   "a41c8d758121ad81": "slept",
   "9db248b770096984": "waited",
+  "49be26a27dcb30e5": "queued",
   "c76124517af28686": "running for {duration}",
   "89102905bf09b0e8": "Watch live",
   "bdf338cdff4118f0": "Transcript",
@@ -11926,6 +12025,49 @@
   "8bffb377e2a6a7de": "its version is no longer registered",
   "f92d9132f7b85d1a": "Loading steps…",
   "6ebc59f64c761a49": "Nothing yet.",
+  "19097cfb8f5a79cf": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " said",
+    " ",
+    {
+      "t": "span",
+      "i": 2,
+      "c": {
+        "i": 3,
+        "k": "_gt_value_3",
+        "v": "v"
+      }
+    },
+    "."
+  ],
+  "e7bbf693910057bf": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " said",
+    " ",
+    {
+      "t": "span",
+      "i": 2,
+      "c": {
+        "i": 3,
+        "k": "_gt_value_3",
+        "v": "v"
+      }
+    },
+    ": ",
+    {
+      "i": 4,
+      "k": "_gt_value_4",
+      "v": "v"
+    }
+  ],
   "a759dccd157d7dae": [
     "You said",
     " ",
@@ -11959,6 +12101,15 @@
       "v": "v"
     }
   ],
+  "3759768c5d342c22": [
+    "answered",
+    " ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
   "c98009be9a273b31": "Open run",
   "c8eb9be36d4d51ad": [
     "Thread on ",
@@ -11984,6 +12135,15 @@
   ],
   "02dfe6c63fd0b8a1": "Add a reason",
   "19abd94828a3bdbc": "Ask the agent first",
+  "e114d37b32ab0dc7": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " needs a reason."
+  ],
+  "46d614fa7b4bf1e5": "Workflow runs",
   "a18721fa8f328361": "Needs you",
   "bbf24e7920c1e86b": "Running",
   "8d6e18d2ad832db6": "All",
@@ -11998,10 +12158,9 @@
   "b6409289e0c9a4dd": "Workflow",
   "035cb02ca1ae4952": "All {count} workflows",
   "8eeb9cb07d7c59e1": "Kind of question",
-  "e4d1316c85ed7066": "No questions of this kind wait on you.",
   "e2131cbec8accfe3": "All kinds",
-  "46d614fa7b4bf1e5": "Workflow runs",
   "1c635faa2fb45b8b": "Has not run yet.",
+  "e4d1316c85ed7066": "No questions of this kind wait on you.",
   "156ff7b625287a1e": "Hide skipped",
   "69b985b97ab45e6b": "Show {count} skipped",
   "2400254d362de84d": "Loading workflow runs…",
@@ -12182,162 +12341,5 @@
   "27d76249d09eb69f": "Review guide ready",
   "faa3bb26abb39c93": "Review guide failed",
   "b7df38b7d8792d78": "Open guide",
-  "9e91e9a77b664e4e": "Could not start a review guide",
-  "e0856d6a402ad821": "{organization}'s policy does not allow project worktree layout commands.",
-  "206811f6f441bfc7": "This project sets up worktrees with its own command, which nobody has approved as it is written now. This connection cannot approve it: approve it from a client that can use the terminal.",
-  "b8087c9a70c26da9": "Could not approve the worktree layout command.",
-  "49eda70cfd56e621": "Runs when a worktree thread starts, and when its folder is restored",
-  "188ccaa1199f5611": "Runs when a thread's worktree is removed",
-  "7e8476e7306acabe": "Let this project run its worktree commands?",
-  "0c8fe199f5a7aabd": [
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " sets up worktree threads with its own commands from ",
-    {
-      "t": "code",
-      "i": 2,
-      "c": "onicode.json"
-    },
-    ". They run on this environment's machine with your permissions, outside any agent sandbox. You are asked again whenever their text changes."
-  ],
-  "46807acd02a4ff72": "Approve and continue",
-  "a9cb97fca6a6576b": "Create command",
-  "90f45a354884ccdd": "Remove command",
-  "78e308ada516928b": "Could not approve the command",
-  "a0c772d32a233da6": "Could not revoke the approval",
-  "0cdc8cdbed3e5eae": "Worktree layout",
-  "c17b25519e2b194e": "Could not load the worktree layout commands",
-  "5ccd5614c65f8d1f": "Revoke approval of the {kind} command",
-  "80c3794a5fa12f3a": "Approve the {kind} command",
-  "35b0b7f9698cbffd": [
-    "This project's ",
-    {
-      "t": "code",
-      "i": 1,
-      "c": "onicode.json"
-    },
-    " sets up worktree threads with its own commands. They run on this environment's machine with your permissions, and only as approved here: a command whose text changes needs approval again."
-  ],
-  "f6a91589456cca50": "Approved",
-  "c92657bb7f2293ff": "Needs approval",
-  "f1e5c1be1ac92361": "Approve",
-  "fcb5f3c4d4753326": "This connection cannot approve commands. Use a client that can use the terminal.",
-  "65300794c1edb929": "Bearer token (optional)",
-  "0c026221dcd2820b": "Add an HTTP quota source",
-  "d185c750156b2121": [
-    "Read quotas from an endpoint on ",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    "."
-  ],
-  "2324770ba91371ac": "Endpoint URL",
-  "e4e5b75bba51396c": "Bearer token (optional)",
-  "39f64d971ba424b5": "No usage sources configured.",
-  "dbd877abdc2c7c81": "HTTP quota source",
-  "c792e744936dbe1b": "Add HTTP source",
-  "4032a03ee5301037": "The saved connection and its credentials are removed from this environment.",
-  "07408a1ca3f33d8b": "Media controls",
-  "43878fb3f7e42f0e": "Fit to screen",
-  "10ead3798109659b": "Actual size",
-  "4e96712d839ccbff": "{who} said {choice}",
-  "19097cfb8f5a79cf": [
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " said",
-    " ",
-    {
-      "t": "span",
-      "i": 2,
-      "c": {
-        "i": 3,
-        "k": "_gt_value_3",
-        "v": "v"
-      }
-    },
-    "."
-  ],
-  "e7bbf693910057bf": [
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " said",
-    " ",
-    {
-      "t": "span",
-      "i": 2,
-      "c": {
-        "i": 3,
-        "k": "_gt_value_3",
-        "v": "v"
-      }
-    },
-    ": ",
-    {
-      "i": 4,
-      "k": "_gt_value_4",
-      "v": "v"
-    }
-  ],
-  "3759768c5d342c22": [
-    "answered",
-    " ",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    }
-  ],
-  "e114d37b32ab0dc7": [
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " needs a reason."
-  ],
-  "91aadfc843c600de": "Verify Google account",
-  "201490988858b511": "withdrawn by {by}",
-  "99451a5d2d40440f": "Withdrawn by {by}.",
-  "3ee30a50b70fffab": "Withdrawn by {by}: {reason}",
-  "92e129bf413a1220": "withdrawn",
-  "7150557773b3818b": "Queued",
-  "efbeb3993ee2c3f5": "Queued for {pool}",
-  "0398ca6c1d24b92d": "queued, next in line",
-  "0af6d5ffd5166214": "{count, plural, one {queued, {count} ahead} other {queued, {count} ahead}}",
-  "49be26a27dcb30e5": "queued",
-  "800966eb58181745": "Checking which languages the model supports…",
-  "410dded6e21c280d": "Stash is full",
-  "1af8d12ac21cb183": "The stash holds {max} prompts. Restore or delete one to make room; the composer was left as-is.",
-  "381ceed77cb8b2b3": "Stop {name}",
-  "5b9fda36b610d25c": "Stop",
-  "1d372f6d555dde3c": "Stop all devices",
-  "06d3fe3e6b255d15": [
-    "+",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " more"
-  ],
-  "f1b18820c0ab93ac": [
-    "+",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " more in Linked items"
-  ]
+  "9e91e9a77b664e4e": "Could not start a review guide"
 }

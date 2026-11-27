@@ -173,6 +173,14 @@ export function restartCancelledBackgroundWorkNote(
   ].join("\n");
 }
 
+/** The run's delegated tasks may include ones a Stop interrupted. */
+export function cohortWasStopped(run: Pick<OrchestrationV2Run, "delegatedCompletion">): boolean {
+  return (
+    run.delegatedCompletion?.disposition === "stopped" ||
+    run.delegatedCompletion?.reopenedAfterStop === true
+  );
+}
+
 type StoppedNoteHistory = {
   readonly providerThreadId: OrchestrationV2Run["providerThreadId"];
   readonly runs: ReadonlyArray<OrchestrationV2Run>;
@@ -220,11 +228,7 @@ export function pendingStoppedDelegatedTasks(
 ): ReadonlyArray<OrchestrationV2Subagent> {
   const stoppedRunIds = new Set(
     input.runs
-      .filter(
-        (run) =>
-          run.providerThreadId === input.providerThreadId &&
-          run.delegatedCompletion?.disposition === "stopped",
-      )
+      .filter((run) => run.providerThreadId === input.providerThreadId && cohortWasStopped(run))
       .map((run) => run.id),
   );
   if (stoppedRunIds.size === 0) return [];

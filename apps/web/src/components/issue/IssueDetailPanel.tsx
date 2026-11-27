@@ -256,7 +256,7 @@ function IssueAssigneePicker({
     open ? issueEnvironment.candidates({ environmentId, input: reference }) : null,
   );
   const update = useAtomCommand(issueEnvironment.update, { reportFailure: false });
-  const needle = query.toLowerCase();
+  const needle = query.trim().toLowerCase();
   const candidates = (candidatesQuery.data?.assignees ?? []).filter(
     (candidate) =>
       needle.length === 0 ||
@@ -668,12 +668,14 @@ export function IssueDetailPanel({
               disabled={detailQuery.isPending}
               onClick={() =>
                 void pager.refresh(registry, () => {
-                  // The tab icon and linked rows read the summary.
-                  registry.refresh(issueEnvironment.summary({ environmentId, input: reference }));
+                  issueEnvironment.oweDetailRefresh(registry, detailAtom);
                   return executeAtomQuery(registry, detailAtom, {
                     refresh: true,
                     reportFailure: false,
-                  });
+                  }).finally(() =>
+                    // The tab icon and linked rows read the summary; the owed read cleared its shared copy.
+                    registry.refresh(issueEnvironment.summary({ environmentId, input: reference })),
+                  );
                 })
               }
             >

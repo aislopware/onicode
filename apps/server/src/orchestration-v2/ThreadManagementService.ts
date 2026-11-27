@@ -1030,6 +1030,7 @@ const make = Effect.gen(function* () {
       ...(input.outputSchema === undefined ? {} : { outputSchema: input.outputSchema }),
       dispatchMode,
       ...(mode === "auto" ? { deliveryIntent: "auto" } : {}),
+      ...(mode === "queue" ? { explicitQueue: true as const } : {}),
       createdBy: input.createdBy,
       creationSource: input.creationSource,
     });
