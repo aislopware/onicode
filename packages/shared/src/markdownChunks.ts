@@ -32,7 +32,8 @@ const SPANNING_BLOCKS: ReadonlyArray<readonly [open: RegExp, close: RegExp]> = [
 
 // A tag name, not an autolink such as <https://example.com>.
 const HTML_BLOCK_START = /^ {0,3}<\/?[A-Za-z][A-Za-z0-9-]*(?=[\s/>]|$)/;
-const closesAtBlankLine = (next: string) => next.trim() === "";
+const BLANK_LINE = /^[ \t]*\r?$/;
+const closesAtBlankLine = (next: string) => BLANK_LINE.test(next);
 
 // A <details> or <table> wraps the Markdown between its tags, across the blank lines that end
 // each HTML block, so a cut waits until the ones an HTML block opened are closed.
@@ -94,12 +95,14 @@ function blockCloser(line: string): ((line: string) => boolean) | null {
   const fence = FENCE_OPEN.exec(line)?.[1];
   if (fence) {
     return (next) => {
-      const closer = FENCE_OPEN.exec(next)?.[1];
+      const match = FENCE_OPEN.exec(next);
+      const closer = match?.[1];
       return (
+        match !== null &&
         closer !== undefined &&
         closer[0] === fence[0] &&
         closer.length >= fence.length &&
-        !next.trim().slice(closer.length)
+        BLANK_LINE.test(next.slice(match[0].length))
       );
     };
   }
@@ -365,7 +368,7 @@ function scanMarkdown(
       }
       inCommentBlock = (inCommentBlock || opensComment) && closes !== null;
       // A comment left open runs to the end of its paragraph or HTML block.
-      if (line.trim() === "" && !inCommentBlock) commentIn = null;
+      if (BLANK_LINE.test(line) && !inCommentBlock) commentIn = null;
     }
     lines.push(line);
     chars += line.length + 1;
@@ -391,7 +394,7 @@ function scanMarkdown(
       held = null;
       continue;
     }
-    afterBlankLine = inFrontmatter || line.trim() === "";
+    afterBlankLine = inFrontmatter || BLANK_LINE.test(line);
     afterHeading =
       !inFrontmatter &&
       closes === null &&
