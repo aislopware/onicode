@@ -104,7 +104,10 @@ export function WorkflowRunsView({
   readonly onOpenReference: (runId: string, reference: WorkflowRunSubject) => void;
   readonly onOpenDefinitions: () => void;
 }) {
-  const live = useEnvironmentQuery(serverEnvironment.workflowsLive({ environmentId, input: {} }));
+  const live = useEnvironmentQuery(
+    serverEnvironment.workflowsLive({ environmentId, input: {} }),
+    useMessages(),
+  );
   const [pickedTab, setPickedTab] = useState<WorkflowListTab | null>(null);
   const [workflow, setWorkflow] = useState(EVERY_WORKFLOW);
   const [pickedKind, setPickedKind] = useLocalStorage(QUESTION_KIND_KEY, EVERY_KIND, Schema.String);

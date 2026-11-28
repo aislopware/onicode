@@ -8,7 +8,7 @@ import {
   squashAtomCommandFailure,
 } from "@onicode/client-runtime/state/runtime";
 import { useBlocker } from "@tanstack/react-router";
-import { T, useGT, Var } from "gt-react";
+import { T, useGT, useMessages, Var } from "gt-react";
 import { FileCode2Icon, PlusIcon } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
@@ -358,6 +358,7 @@ export default function WorkflowDefinitionEditor({
 }) {
   const query = useEnvironmentQuery(
     serverEnvironment.workflowDefinition({ environmentId, input: {} }),
+    useMessages(),
   );
   const canChange = useAtomValue(
     serverEnvironment.saveWorkflowDefinition.permissionAtom(environmentId),

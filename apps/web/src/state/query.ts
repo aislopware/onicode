@@ -3,7 +3,7 @@ import { RegistryContext, useAtomRefresh, useAtomValue } from "@effect/atom-reac
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";
-import { msg, useMessages } from "gt-react";
+import { msg } from "gt-react";
 import { useContext } from "react";
 
 import { m, type MessageResolver } from "../i18n/messages";
@@ -43,19 +43,15 @@ function queryUpdatedAt(result: AsyncResult.AsyncResult<unknown, unknown>): numb
 
 export function useEnvironmentQuery<A, E>(
   atom: Atom.Atom<AsyncResult.AsyncResult<A, E>> | null,
-  resolve?: MessageResolver,
+  resolve: MessageResolver = m,
 ): EnvironmentQueryView<A, E> {
   const selectedAtom = atom ?? EMPTY_ASYNC_RESULT_ATOM;
   const result = useAtomValue(selectedAtom);
   const refresh = useAtomRefresh(selectedAtom);
-  const messages = useMessages();
   return {
     data: AsyncResult.getOrElse(result, () => null),
     dataUpdatedAt: queryUpdatedAt(result),
-    error:
-      result._tag === "Failure"
-        ? formatEnvironmentQueryError(result.cause, resolve ?? messages)
-        : null,
+    error: result._tag === "Failure" ? formatEnvironmentQueryError(result.cause, resolve) : null,
     failure:
       result._tag === "Failure" ? Option.getOrNull(Cause.findErrorOption(result.cause)) : null,
     isPending: atom !== null && result.waiting,

@@ -57,6 +57,7 @@ export function IssueTrackerSettings({ environmentId }: { readonly environmentId
   const title = gt("Issue trackers");
   const query = useEnvironmentQuery(
     issueTrackerEnvironment.connections({ environmentId, input: {} }),
+    useMessages(),
   );
   const canAddAccounts =
     useServerConfigs().get(environmentId)?.environment.capabilities.issueTrackerAccounts === true;

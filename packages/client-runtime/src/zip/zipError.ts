@@ -2,7 +2,7 @@ import * as Schema from "effect/Schema";
 
 // No GT import: preview workers load this, and their errors cross `postMessage` as a code.
 // `zipErrorMessages.ts` holds the translatable text for each code.
-const CODES = [
+export const ZIP_ERROR_CODES = [
   "file-too-large",
   "archive-too-many-entries",
   "archive-path-too-long",
@@ -16,7 +16,7 @@ const CODES = [
   "zip-directory-damaged",
 ] as const;
 
-export type ZipErrorCode = (typeof CODES)[number];
+export type ZipErrorCode = (typeof ZIP_ERROR_CODES)[number];
 
 const ENGLISH: Record<ZipErrorCode, string> = {
   "file-too-large": "Preview limited to files under 50 MB.",
@@ -35,7 +35,7 @@ const ENGLISH: Record<ZipErrorCode, string> = {
 
 /** A ZIP the preview limits reject; `message` stays English for logs. */
 export class ZipError extends Schema.TaggedError<ZipError>()("ZipError", {
-  code: Schema.Literals(CODES),
+  code: Schema.Literals(ZIP_ERROR_CODES),
 }) {
   override get message(): string {
     return ENGLISH[this.code];

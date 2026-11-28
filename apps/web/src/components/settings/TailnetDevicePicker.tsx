@@ -1,4 +1,5 @@
 import { AuthAccessReadScope, type EnvironmentId, type TailnetDevice } from "@onicode/contracts";
+import { useMessages } from "gt-react";
 import { useState } from "react";
 
 import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
@@ -107,6 +108,7 @@ export function TailnetDevicePicker({
     null;
   const devices = useEnvironmentQuery(
     source ? tailnetEnvironment.devices({ environmentId: source.environmentId, input: {} }) : null,
+    useMessages(),
   );
   const [query, setQuery] = useState("");
 

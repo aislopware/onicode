@@ -109,6 +109,7 @@ function CheckoutWorktreeLayout({
   );
   const query = useEnvironmentQuery(
     filesystemEnvironment.layoutCommands({ environmentId, input: { projectId: member.id } }),
+    m,
   );
   const approve = useAtomCommand(filesystemEnvironment.approveLayoutCommands, {
     reportFailure: false,

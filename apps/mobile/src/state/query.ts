@@ -1,4 +1,5 @@
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
+import { errorDisplayMessage } from "@onicode/client-runtime/errors";
 import * as Cause from "effect/Cause";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { msg, useMessages } from "gt-react-native";
@@ -28,9 +29,10 @@ export function formatEnvironmentQueryError(
 ): string {
   if (Cause.hasInterruptsOnly(cause)) return resolve(ENVIRONMENT_REQUEST_INTERRUPTED);
   const error = Cause.squash(cause);
-  return error instanceof Error && error.message.trim().length > 0
-    ? error.message
-    : resolve(msg("The environment request failed."));
+  return (
+    (error instanceof Error ? errorDisplayMessage(error, resolve) : null) ??
+    resolve(msg("The environment request failed."))
+  );
 }
 
 export function useEnvironmentQuery<A, E>(

@@ -50,6 +50,8 @@ function EnvironmentErrors() {
 }
 
 it("resolves environment errors again when the catalog for the same locale arrives", async () => {
+  // A fresh GT cache, so a German catalog an earlier test loaded cannot answer before this one's.
+  initializeI18n(() => {});
   using _locale = {
     [Symbol.dispose]() {
       // GTProvider leaves its locale in a cookie; this sets it back to English.

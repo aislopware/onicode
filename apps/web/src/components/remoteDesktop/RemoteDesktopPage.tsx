@@ -5,6 +5,7 @@ import type {
   RemoteDesktopViewerStats,
 } from "@onicode/client-runtime/remote-desktop/viewer";
 import type { EnvironmentId } from "@onicode/contracts";
+import { useMessages } from "gt-react";
 import { KeyboardIcon, MaximizeIcon, MonitorIcon } from "lucide-react";
 import { useRef, useState } from "react";
 
@@ -48,6 +49,7 @@ export function RemoteDesktopPage({ environmentId }: { readonly environmentId: E
     environment.serverConfig?.remoteDesktop === true;
   const query = useEnvironmentQuery(
     subscribe ? remoteDesktopEnvironment.state({ environmentId, input: {} }) : null,
+    useMessages(),
   );
   const page = resolveRemoteDesktopPageState({
     environment,

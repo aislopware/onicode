@@ -147,7 +147,7 @@ function DeviceStreamDocumentView({
     html: deviceStreamDocument(
       configuration,
       deviceStreamScript,
-      gt("Device viewer stopped unexpectedly."),
+      msg("Device viewer stopped unexpectedly."),
     ),
     baseUrl,
   };

@@ -1880,7 +1880,8 @@ function FilePreviewPanelContent({
             />
           ) : relativePath && renderBrowserFile && absolutePath ? (
             <WorkspaceBrowserPreview
-              key={positionKey}
+              // A host page keeps its position key across checkouts, but its signed URL does not.
+              key={JSON.stringify([positionKey, cwd, draft])}
               environmentId={environmentId}
               threadRef={threadRef}
               draft={draft}

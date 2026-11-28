@@ -28,7 +28,7 @@ import {
   PinOffIcon,
   PlusIcon,
 } from "lucide-react";
-import { msg, T, useGT } from "gt-react";
+import { msg, T, useGT, useMessages } from "gt-react";
 import { memo, useState } from "react";
 
 import { m } from "~/i18n/messages";
@@ -90,6 +90,7 @@ const RepositorySection = memo(function RepositorySection(props: {
       environmentId: props.threadRef.environmentId,
       input: { cwd: props.cwd, includeRemote: false },
     }),
+    useMessages(),
   );
   const summary = repositorySectionSummary(status.data);
   const Chevron = props.expanded ? ChevronDownIcon : ChevronRightIcon;
@@ -185,6 +186,7 @@ function OtherRepositoryItems(props: {
       environmentId: props.environmentId,
       input: { projectId: props.projectId },
     }),
+    useMessages(),
   );
   const gt = useGT();
   if (folders.data === null) {

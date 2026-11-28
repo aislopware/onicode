@@ -309,7 +309,7 @@ function useHostedFilterOptions(
     })),
   );
   // Until the search catches up with the typing, the host's answers are for older text.
-  return sent === typed ? hosted : { labels: [], authors: [], error: null, isPending: true };
+  return sent === typed ? hosted : { labels: [], authors: [], failed: false, isPending: true };
 }
 
 function PullRequestAuthorChoices({
@@ -372,9 +372,7 @@ function PullRequestAuthorChoices({
         ))}
         {visible.length === 0 && !hosted.isPending ? (
           <MenuItem disabled>
-            {hosted.error === null
-              ? gt("No authors found")
-              : gt("Couldn't search authors on the host")}
+            {!hosted.failed ? gt("No authors found") : gt("Couldn't search authors on the host")}
           </MenuItem>
         ) : null}
       </MenuRadioGroup>
@@ -454,7 +452,7 @@ function PullRequestLabelChoices({
       />
       {visible.length === 0 && !hosted.isPending ? (
         <MenuItem disabled>
-          {hosted.error === null ? gt("No labels found") : gt("Couldn't search labels on the host")}
+          {!hosted.failed ? gt("No labels found") : gt("Couldn't search labels on the host")}
         </MenuItem>
       ) : null}
       {visible.map((option) => {

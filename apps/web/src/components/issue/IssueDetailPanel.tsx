@@ -152,6 +152,7 @@ function IssueLabelPicker({
   const draft = current.draft;
   const candidatesQuery = useEnvironmentQuery(
     open ? issueEnvironment.candidates({ environmentId, input: reference }) : null,
+    useMessages(),
   );
   const update = useAtomCommand(issueEnvironment.update, { reportFailure: false });
   const applied = new Set(detail.labels.map((label) => label.name));
@@ -269,6 +270,7 @@ function IssueAssigneePicker({
   const draft = current.draft;
   const candidatesQuery = useEnvironmentQuery(
     open ? issueEnvironment.candidates({ environmentId, input: reference }) : null,
+    useMessages(),
   );
   const debouncedQuery = useDebouncedValue(query.trim(), 250);
   const searchable = candidatesQuery.data?.assigneeSearch === true;
@@ -473,7 +475,7 @@ export function IssueDetailPanel({
   const openLink = useOpenLink(threadRef);
   const openPrLink = useOpenPrLink(threadRef ?? undefined);
   const detailAtom = issueEnvironment.detail({ environmentId, input: reference });
-  const detailQuery = useEnvironmentQuery(detailAtom);
+  const detailQuery = useEnvironmentQuery(detailAtom, messages);
   const registry = useContext(RegistryContext);
   const [pager] = useState(() => createIssueCommentPager(detailAtom));
   const { comments, nextCursor, loadingOlder, canLoadOlder } = useAtomValue(pager.view);

@@ -1,22 +1,21 @@
-import { thrownErrorMessage } from "@onicode/client-runtime/errors";
-import { msg, T, useGT } from "gt-react";
+import { thrownErrorMessage, translatableError } from "@onicode/client-runtime/errors";
+import { msg, T, useGT, useMessages } from "gt-react";
 import { useEffect, useState } from "react";
-
-import { m } from "~/i18n/messages";
 
 import { useTheme } from "~/hooks/useTheme";
 
 import { FileSurfaceLoading } from "./fileSurfaceChrome";
+import { previewError } from "./previewFailureMessages";
 
 const MAX_FONT_BYTES = 10 * 1024 * 1024;
 
 async function readFont(src: string, signal: AbortSignal) {
   const response = await fetch(src, { signal });
-  if (!response.ok) throw new Error(m(msg("The font could not be loaded.")));
+  if (!response.ok) throw translatableError(msg("The font could not be loaded."));
   if (Number(response.headers.get("content-length")) > MAX_FONT_BYTES)
-    throw new Error(m(msg("Font previews are limited to 10 MB.")));
+    throw translatableError(msg("Font previews are limited to 10 MB."));
   const reader = response.body?.getReader();
-  if (!reader) throw new Error(m(msg("The font is unavailable.")));
+  if (!reader) throw translatableError(msg("The font is unavailable."));
   const chunks: Uint8Array<ArrayBuffer>[] = [];
   let length = 0;
   try {
@@ -24,7 +23,8 @@ async function readFont(src: string, signal: AbortSignal) {
       const { done, value } = await reader.read();
       if (done) break;
       length += value.length;
-      if (length > MAX_FONT_BYTES) throw new Error(m(msg("Font previews are limited to 10 MB.")));
+      if (length > MAX_FONT_BYTES)
+        throw translatableError(msg("Font previews are limited to 10 MB."));
       chunks.push(value);
     }
   } finally {
@@ -37,7 +37,7 @@ async function readFont(src: string, signal: AbortSignal) {
     reader.addEventListener("load", () => resolve(String(reader.result)), { once: true });
     reader.addEventListener(
       "error",
-      () => reject(new Error(m(msg("The font could not be decoded.")))),
+      () => reject(translatableError(msg("The font could not be decoded."))),
       { once: true },
     );
     reader.readAsDataURL(blob);
@@ -58,12 +58,13 @@ export default function FontViewer(props: { readonly src: string; readonly name:
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Theme values invalidate the palette read from the host DOM.
   }, [theme, resolvedTheme, themeHalves]);
   const [data, setData] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const messages = useMessages();
+  const [error, setError] = useState<Error | null>(null);
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- Load the font from its URL and abort the request and timeout when the source changes or unmounts.
   useEffect(() => {
     const controller = new AbortController();
     const timeout = setTimeout(() => {
-      setError(m(msg("The font took too long to load.")));
+      setError(translatableError(msg("The font took too long to load.")));
       controller.abort();
     }, 30_000);
     void readFont(props.src, controller.signal)
@@ -72,7 +73,7 @@ export default function FontViewer(props: { readonly src: string; readonly name:
       })
       .catch((cause: unknown) => {
         if (!controller.signal.aborted)
-          setError(thrownErrorMessage(cause, m) ?? m(msg("The font is damaged or unsupported.")));
+          setError(previewError(cause, msg("The font is damaged or unsupported.")));
       })
       .finally(() => clearTimeout(timeout));
     return () => {
@@ -90,7 +91,9 @@ export default function FontViewer(props: { readonly src: string; readonly name:
           <T>No preview for this file</T>
         </p>
         <p className="max-w-sm text-ui leading-relaxed text-muted-foreground">
-          {gt("{error} Save it to open in another app.", { error })}
+          {gt("{error} Save it to open in another app.", {
+            error: thrownErrorMessage(error, messages) ?? error.message,
+          })}
         </p>
       </div>
     );

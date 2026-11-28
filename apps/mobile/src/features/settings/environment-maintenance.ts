@@ -5,12 +5,11 @@ import {
   type ExecutionEnvironmentCapabilities,
   type ServerProvider,
 } from "@onicode/contracts";
+import { translatableError } from "@onicode/client-runtime/errors";
 import { CLI_RELEASES_PAGE_URL, newestCliReleaseVersion } from "@onicode/shared/cliRelease";
 import { compareSemverVersions } from "@onicode/shared/semver";
 import { msg } from "gt-react-native";
 import * as Schema from "effect/Schema";
-
-import { m } from "../../i18n/messages";
 
 export function canMaintainEnvironment(session: AuthSessionState | null, connected: boolean) {
   return (
@@ -55,11 +54,11 @@ export async function findEnvironmentUpdate(currentVersion: string, signal: Abor
     headers: { Accept: "application/json" },
   });
   if (!response.ok) {
-    throw new Error(
-      m(msg("Could not check releases ({status}). Try again.", { status: response.status })),
+    throw translatableError(
+      msg("Could not check releases ({status}). Try again.", { status: response.status }),
     );
   }
   const version = newestCliReleaseVersion([decodeRelease(await response.json())]);
-  if (version === undefined) throw new Error(m(msg("No release was found.")));
+  if (version === undefined) throw translatableError(msg("No release was found."));
   return compareSemverVersions(version, currentVersion) > 0 ? version : null;
 }

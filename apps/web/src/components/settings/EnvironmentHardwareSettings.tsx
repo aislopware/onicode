@@ -69,6 +69,7 @@ function EnvironmentHardware({ environment }: { readonly environment: Environmen
     supported
       ? serverEnvironment.hostHardware({ environmentId: environment.environmentId, input: {} })
       : null,
+    messages,
   );
   const view = data === null ? null : describeHostHardware(data, messages, locale);
   return (

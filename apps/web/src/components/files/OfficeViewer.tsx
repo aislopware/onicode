@@ -1,12 +1,11 @@
 import { FilePasswordPrompt } from "./FilePasswordPrompt";
-import { thrownErrorMessage } from "@onicode/client-runtime/errors";
+import { thrownErrorMessage, translatableError } from "@onicode/client-runtime/errors";
 /* oxlint-disable react/no-array-index-key -- Spreadsheet rows and columns retain their source positions. */
 import { formatAttachmentSize } from "@onicode/client-runtime/state/attachments";
 import type { OfficePreviewKind } from "@onicode/shared/filePreview";
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import { msg, T, useGT, useMessages } from "gt-react";
 import { lazy, Suspense, useContext, useEffect, useRef, useState } from "react";
-import { m } from "~/i18n/messages";
 import { useStableCallback } from "~/hooks/useStableCallback";
 
 import VirtualTablePreview from "./VirtualTablePreview";
@@ -22,7 +21,7 @@ import {
 
 import { FileSurfaceAction, FileSurfaceLoading, FileSurfaceNotice } from "./fileSurfaceChrome";
 import { OFFICE_PREVIEW_MAX_BYTES, type OfficeWorkerResult } from "./officePreviewProtocol";
-import { previewFailureText } from "./previewFailureMessages";
+import { previewError, previewFailureError } from "./previewFailureMessages";
 
 const EpubViewer = lazy(() => import("./EpubViewer"));
 const DocumentPages = lazy(() => import("./DocumentPages"));
@@ -35,11 +34,11 @@ const OpenXmlOfficeViewer = lazy(() => import("./OpenXmlOfficeViewer"));
 async function readOfficeFile(src: string, signal: AbortSignal) {
   const response = await fetch(src, { signal });
   if (!response.ok)
-    throw new Error(m(msg("The file could not be loaded. Close it and try again.")));
+    throw translatableError(msg("The file could not be loaded. Close it and try again."));
   if (Number(response.headers.get("content-length")) > OFFICE_PREVIEW_MAX_BYTES)
-    throw new Error(m(msg("Preview limited to files under 50 MB.")));
+    throw translatableError(msg("Preview limited to files under 50 MB."));
   const reader = response.body?.getReader();
-  if (!reader) throw new Error(m(msg("The file is unavailable.")));
+  if (!reader) throw translatableError(msg("The file is unavailable."));
   const chunks: Uint8Array<ArrayBuffer>[] = [];
   let size = 0;
   try {
@@ -48,7 +47,7 @@ async function readOfficeFile(src: string, signal: AbortSignal) {
       if (done) break;
       size += value.length;
       if (size > OFFICE_PREVIEW_MAX_BYTES)
-        throw new Error(m(msg("Preview limited to files under 50 MB.")));
+        throw translatableError(msg("Preview limited to files under 50 MB."));
       chunks.push(value);
     }
   } finally {
@@ -86,7 +85,7 @@ function ExtendedOfficeViewer(props: {
     { type: "epub-page" }
   > | null>(null);
   const [incorrectPassword, setIncorrectPassword] = useState<boolean | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Error | null>(null);
   const [sheetPages, setSheetPages] = useState(new Map<string, string[][]>());
   const pendingPages = useRef(new Set<string>());
   const [previewDocument, setDocument] = useState<Extract<
@@ -110,22 +109,27 @@ function ExtendedOfficeViewer(props: {
     const controller = new AbortController();
     if ((props.sizeBytes ?? 0) > OFFICE_PREVIEW_MAX_BYTES) {
       // oxlint-disable-next-line react/set-state-in-effect -- The file metadata can reject the preview before loading bytes or engines.
-      setError(m(msg("Preview limited to files under 50 MB.")));
+      setError(translatableError(msg("Preview limited to files under 50 MB.")));
       return;
     }
     const worker = new Worker(new URL("./officePreview.worker.ts", import.meta.url), {
       type: "module",
     });
     workerRef.current = worker;
-    const fail = (message: string) => {
-      if (!controller.signal.aborted) setError(message);
+    const fail = (failure: Error) => {
+      if (!controller.signal.aborted) setError(failure);
       controller.abort();
       worker.terminate();
       if (timerRef.current) clearTimeout(timerRef.current);
     };
     const startTimeout = () =>
       setTimeout(
-        () => fail(m(msg("This document took too long to preview. Open it in another app."))),
+        () =>
+          fail(
+            translatableError(
+              msg("This document took too long to preview. Open it in another app."),
+            ),
+          ),
         30_000,
       );
     timerRef.current = startTimeout();
@@ -134,7 +138,9 @@ function ExtendedOfficeViewer(props: {
       worker.postMessage({ type: "unlock", password }, []);
     };
     worker.addEventListener("error", () =>
-      fail(m(msg("Could not load the Office viewer. Close the file and try again."))),
+      fail(
+        translatableError(msg("Could not load the Office viewer. Close the file and try again.")),
+      ),
     );
     worker.addEventListener("message", (event: MessageEvent<OfficeWorkerResult>) => {
       if (controller.signal.aborted) return;
@@ -142,7 +148,7 @@ function ExtendedOfficeViewer(props: {
       if (result.type === "password") {
         if (timerRef.current) clearTimeout(timerRef.current);
         setIncorrectPassword(result.incorrect);
-      } else if (result.type === "error") fail(previewFailureText(result));
+      } else if (result.type === "error") fail(previewFailureError(result));
       else if (result.type === "epub") {
         if (timerRef.current) clearTimeout(timerRef.current);
         setEpub(result);
@@ -177,9 +183,7 @@ function ExtendedOfficeViewer(props: {
           worker.postMessage({ type: "open", kind: props.kind, bytes }, [bytes]);
         }
       })
-      .catch((cause: unknown) =>
-        fail(thrownErrorMessage(cause, m) ?? m(msg("Could not read this file."))),
-      );
+      .catch((cause: unknown) => fail(previewError(cause, msg("Could not read this file."))));
     return () => {
       submitPassword.current = null;
       controller.abort();
@@ -202,7 +206,9 @@ function ExtendedOfficeViewer(props: {
           <T>No preview for this file</T>
         </p>
         <p className="max-w-sm text-ui leading-relaxed text-muted-foreground">
-          {gt("{error} Save it or open it in another app.", { error })}
+          {gt("{error} Save it or open it in another app.", {
+            error: thrownErrorMessage(error, messages) ?? error.message,
+          })}
         </p>
       </div>
     );
@@ -355,7 +361,7 @@ function ExtendedOfficeViewer(props: {
               : gt("Cell values only. Charts, images, and formatting are not shown.")}
           </FileSurfaceNotice>
           {sheet.rowCount === 0 ? (
-            <p className="flex flex-1 items-center justify-center p-6 text-xs text-muted-foreground">
+            <p className="flex flex-1 items-center justify-center p-6 text-center text-xs text-muted-foreground">
               <T>This sheet is empty.</T>
             </p>
           ) : (

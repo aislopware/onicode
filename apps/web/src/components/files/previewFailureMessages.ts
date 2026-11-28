@@ -1,4 +1,4 @@
-import { errorDisplayMessage } from "@onicode/client-runtime/errors";
+import { errorDisplayMessage, translatableError } from "@onicode/client-runtime/errors";
 import { isZipError } from "@onicode/client-runtime/zip/error";
 import { ZIP_ERROR_MESSAGES } from "@onicode/client-runtime/zip/error-messages";
 import { msg } from "gt-react";
@@ -140,7 +140,22 @@ export function previewFailureText(failure: PreviewFailure, resolve: MessageReso
   return failure.code ? resolve(PREVIEW_FAILURE_MESSAGES[failure.code]) : failure.message;
 }
 
-export function previewErrorText(cause: unknown, fallback: string): string {
-  if (isPreviewError(cause) || isZipError(cause)) return m(PREVIEW_FAILURE_MESSAGES[cause.code]);
-  return errorDisplayMessage(cause, m) ?? fallback;
+/** A worker's failure as an `Error` a viewer keeps and words where it renders. */
+export function previewFailureError(failure: PreviewFailure): Error {
+  return failure.code
+    ? translatableError(PREVIEW_FAILURE_MESSAGES[failure.code])
+    : new Error(failure.message);
+}
+
+/**
+ * A failure as an `Error` a viewer keeps in state and words with `thrownErrorMessage` at render,
+ * so it follows a language switch. `fallback` is a `msg()`.
+ */
+export function previewError(cause: unknown, fallback: string): Error {
+  if (isPreviewError(cause) || isZipError(cause)) {
+    return translatableError(PREVIEW_FAILURE_MESSAGES[cause.code]);
+  }
+  return cause instanceof Error && errorDisplayMessage(cause) !== null
+    ? cause
+    : translatableError(fallback);
 }

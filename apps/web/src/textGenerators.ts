@@ -14,9 +14,9 @@ import {
   type TextGeneratorKind,
   type TextGeneratorModel,
 } from "@onicode/contracts";
+import type * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import { msg, useMessages } from "gt-react";
-import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";
 
 import {
@@ -137,10 +137,7 @@ const textGeneratorModelsAtom = Atom.family((key: string) => {
     get(refreshCountAtom(`${environmentId}:${id}`));
     return serverEnvironment.listTextGeneratorModels
       .run(get.registry, { environmentId, input: { id } })
-      .pipe(
-        Effect.map((result) => result.models),
-        Effect.catchCause((cause) => Effect.fail(formatEnvironmentQueryError(cause))),
-      );
+      .pipe(Effect.map((result) => result.models));
   }).pipe(Atom.setIdleTTL(5 * 60_000), Atom.withLabel(`text-generator-models:${key}`));
 });
 
@@ -184,34 +181,36 @@ export async function checkTextGeneratorConfig(
   environmentId: EnvironmentId,
   id: ProviderInstanceId,
   config: TextGeneratorConfig,
-): Promise<{ readonly models: ReadonlyArray<TextGeneratorModel> } | { readonly error: string }> {
+): Promise<
+  | { readonly models: ReadonlyArray<TextGeneratorModel> }
+  | { readonly failure: Cause.Cause<unknown> }
+> {
   const result = await runAtomCommand(
     appAtomRegistry,
     serverEnvironment.listTextGeneratorModels,
     { environmentId, input: { id, config } },
     { reportFailure: false },
   );
-  return result._tag === "Success"
-    ? { models: result.value.models }
-    : { error: formatEnvironmentQueryError(result.cause) };
+  return result._tag === "Success" ? { models: result.value.models } : { failure: result.cause };
 }
 
 /**
  * Has a saved generator's model answer a tiny prompt. Some APIs list models without checking the
- * key, so only this proves the key, endpoint, and model together. Resolves to the error, if any.
+ * key, so only this proves the key, endpoint, and model together. Resolves to the failure, if
+ * any, for the caller to word with `formatEnvironmentQueryError` where it renders.
  */
 export async function testTextGeneratorModel(
   environmentId: EnvironmentId,
   id: ProviderInstanceId,
   model: string,
-): Promise<string | null> {
+): Promise<Cause.Cause<unknown> | null> {
   const result = await runAtomCommand(
     appAtomRegistry,
     serverEnvironment.listTextGeneratorModels,
     { environmentId, input: { id, test: true, model } },
     { reportFailure: false },
   );
-  return result._tag === "Success" ? null : formatEnvironmentQueryError(result.cause);
+  return result._tag === "Success" ? null : result.cause;
 }
 
 /** A saved text generator's model list, shared with the pickers. */
@@ -219,7 +218,7 @@ export function useTextGeneratorModels(
   environmentId: EnvironmentId,
   id: ProviderInstanceId,
   config: TextGeneratorConfig,
-): AsyncResult.AsyncResult<ReadonlyArray<TextGeneratorModel>, string> {
+): AsyncResult.AsyncResult<ReadonlyArray<TextGeneratorModel>, unknown> {
   return useAtomValue(
     textGeneratorModelsAtom(
       JSON.stringify([
@@ -241,7 +240,7 @@ function toProviderModel(model: TextGeneratorModel): ServerProviderModel {
 function textGeneratorSnapshot(
   id: ProviderInstanceId,
   config: TextGeneratorConfig,
-  result: AsyncResult.AsyncResult<ReadonlyArray<TextGeneratorModel>, string>,
+  result: AsyncResult.AsyncResult<ReadonlyArray<TextGeneratorModel>, unknown>,
   selectedModels: ReadonlyArray<string>,
   resolve: MessageResolver,
 ): ServerProvider {
@@ -254,7 +253,9 @@ function textGeneratorSnapshot(
       isCustom: false,
       capabilities: null,
     }));
-  const failure = Option.getOrUndefined(AsyncResult.error(result));
+  const failure = AsyncResult.isFailure(result)
+    ? formatEnvironmentQueryError(result.cause, resolve)
+    : undefined;
   return {
     instanceId: id,
     driver: textGeneratorBrand(config),

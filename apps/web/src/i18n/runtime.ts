@@ -98,6 +98,11 @@ export function getI18nSnapshot(): I18nSnapshot {
   return snapshot;
 }
 
+/** The active language's catalog; unlike the snapshot, a formatting-locale change keeps it. */
+export function getActiveCatalog(): LocaleTranslations[string] | undefined {
+  return snapshot.translations[snapshot.locale];
+}
+
 export function getFormattingLocale(): string | undefined {
   return snapshot.formattingLocale;
 }

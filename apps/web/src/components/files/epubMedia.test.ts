@@ -130,6 +130,7 @@ it.each([
   ["a begin past the frame rate", 'p:frameRate="25"', 'begin="00:00:01:25"'],
   ["a fractional clock in SMPTE time", `${smpte} p:frameRate="25"`, 'begin="00:01:00.5"'],
   ["a seconds offset in SMPTE time", `${smpte} p:frameRate="25"`, 'begin="10s"'],
+  ["a tick offset in SMPTE time", `${smpte} p:frameRate="25"`, 'begin="10t"'],
   ["an unknown begin", "", 'begin="soon"'],
   ["an unknown end", "", 'end="soon"'],
   ["an unknown dur", "", 'dur="soon"'],

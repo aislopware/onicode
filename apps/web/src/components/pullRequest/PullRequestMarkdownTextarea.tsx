@@ -92,7 +92,7 @@ function useCompletions(
   return {
     completions,
     isPending: hosted.isPending || sentKey !== key,
-    failed: hosted.error !== null,
+    failed: hosted.failed,
   };
 }
 

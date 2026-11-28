@@ -6,10 +6,9 @@ import * as Cause from "effect/Cause";
 import * as Schema from "effect/Schema";
 import { useLayoutEffect, useRef, useState } from "react";
 import { Atom } from "effect/reactivity";
-import { msg } from "gt-react-native";
+import { msg, useMessages } from "gt-react-native";
 
 import { environmentCatalog } from "../../connection/catalog";
-import { m } from "../../i18n/messages";
 import { appAtomRegistry } from "../../state/atom-registry";
 import { projectEnvironment } from "../../state/projects";
 import { useDebouncedValue } from "../../state/queries";
@@ -21,7 +20,7 @@ function createDirectories() {
   return {
     target: {},
     entries: new Map<string, ReadonlyArray<ProjectEntry>>(),
-    errors: new Map<string, string>(),
+    errors: new Map<string, unknown>(),
     completeDirectories: new Set<string>(),
     listingCompletedAt: new Map<string, number>(),
     discoveries: new Map<string, ProjectEntry>(),
@@ -111,6 +110,7 @@ export function useFileTreeEntries(input: {
   readonly searchQuery: string;
 }) {
   const { cwd, environmentId } = input;
+  const messages = useMessages();
   const searching = input.searchQuery.trim().length > 0;
   const query = input.searchQuery.trim().slice(0, 256);
   const debouncedQuery = useDebouncedValue(query, 200);
@@ -142,7 +142,7 @@ export function useFileTreeEntries(input: {
           ...savedDirectories,
           target: {},
           validatedDirectories: new Set<string>(),
-          errors: new Map<string, string>(),
+          errors: new Map<string, unknown>(),
           loading: new Set<string>(),
           isRefreshing: false,
         };
@@ -270,12 +270,8 @@ export function useFileTreeEntries(input: {
           ...current,
           loading,
           validatedDirectories,
-          errors: new Map(current.errors).set(
-            directoryPath,
-            error instanceof Error
-              ? (errorDisplayMessage(error, m) ?? error.message)
-              : m(msg("Files unavailable")),
-          ),
+          // Kept raw and worded on read, so it follows a language switch.
+          errors: new Map(current.errors).set(directoryPath, error),
         };
       });
     });
@@ -548,6 +544,9 @@ export function useFileTreeEntries(input: {
         : { ...current, expandedPaths: new Set(expandedPaths) };
     });
 
+  const directoryError = [...directories.errors].find(([path]) =>
+    snapshot.reachableDirectories.has(path),
+  )?.[1];
   return {
     revealSelection,
     expandedPaths: directories.expandedPaths,
@@ -561,8 +560,11 @@ export function useFileTreeEntries(input: {
     error:
       root.error ??
       (searching ? search.error : null) ??
-      [...directories.errors].find(([path]) => snapshot.reachableDirectories.has(path))?.[1] ??
-      null,
+      (directoryError === undefined
+        ? null
+        : directoryError instanceof Error
+          ? (errorDisplayMessage(directoryError, messages) ?? directoryError.message)
+          : messages(msg("Files unavailable"))),
     isPending:
       !missingRoot &&
       (root.isPending ||

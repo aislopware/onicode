@@ -6,7 +6,8 @@ import {
 } from "@onicode/contracts";
 import { parseKeybindingShortcut } from "@onicode/shared/keybindings";
 import { FileDiff } from "@pierre/diffs/react";
-import { T, useGT, Var } from "gt-react";
+import { msg, T, useGT, useMessages, Var } from "gt-react";
+import { thrownErrorMessage } from "@onicode/client-runtime/errors";
 import { parseDiffFromFile } from "@pierre/diffs";
 import { settlePromise } from "@onicode/client-runtime/state/runtime";
 import * as Cause from "effect/Cause";
@@ -42,10 +43,17 @@ export function CaptureShortcutConfig({
   const { copyToClipboard, isCopied } = useCopyToClipboard();
   const [preview, setPreview] = useState<DesktopCaptureConfigPreview | null>(null);
   const [result, setResult] = useState<DesktopCaptureConfigApplied | null>(null);
-  const [error, setError] = useState<{ message: string; detail?: string } | null>(null);
+  // `title` is a msg() and the cause is worded here too, so both follow a language switch.
+  const [error, setError] = useState<{ title: string | null; cause: unknown } | null>(null);
   const [working, setWorking] = useState<"reading" | "writing" | null>(null);
   const [keys, setKeys] = useState<string | null>(null);
   const [customFile, setCustomFile] = useState(false);
+  const messages = useMessages();
+  const causeText =
+    error?.cause instanceof Error
+      ? (thrownErrorMessage(error.cause, messages) ?? error.cause.message)
+      : null;
+  const errorDetail = error?.title ? causeText : null;
   const busy = disabled || working !== null;
   const changed = preview !== null && preview.before !== preview.after;
   const niri = state.linuxBackend === "niri";
@@ -58,7 +66,7 @@ export function CaptureShortcutConfig({
     disabled: busy,
     allowModifierPairs: false,
     onStart: () => setError(null),
-    onError: (message) => setError({ message }),
+    onError: (cause) => setError({ title: null, cause }),
     onRecord: (shortcut) => {
       if (isModifierPairShortcut(shortcut)) return;
       setKeys(
@@ -105,10 +113,9 @@ export function CaptureShortcutConfig({
     if (previewed._tag === "Success") {
       setPreview(previewed.value);
     } else {
-      const cause = Cause.squash(previewed.cause);
       setError({
-        message: gt("Couldn't prepare the changes. Check Advanced for help."),
-        ...(cause instanceof Error ? { detail: cause.message } : {}),
+        title: msg("Couldn't prepare the changes. Check Advanced for help."),
+        cause: Cause.squash(previewed.cause),
       });
     }
     end();
@@ -130,10 +137,9 @@ export function CaptureShortcutConfig({
       }
     });
     if (saved._tag === "Failure") {
-      const cause = Cause.squash(saved.cause);
       setError({
-        message: gt("Couldn't save your shortcut. Review the changes and try again."),
-        ...(cause instanceof Error ? { detail: cause.message } : {}),
+        title: msg("Couldn't save your shortcut. Review the changes and try again."),
+        cause: Cause.squash(saved.cause),
       });
       setPreview(null);
     }
@@ -240,7 +246,7 @@ export function CaptureShortcutConfig({
       )}
       {error ? (
         <p role="alert" className="text-destructive">
-          {error.message}
+          {error.title ? messages(error.title) : causeText}
         </p>
       ) : null}
       {state.shortcutActionRegistered === false && state.shortcutMessage ? (
@@ -255,12 +261,12 @@ export function CaptureShortcutConfig({
           <T>Advanced</T>
         </summary>
         <div className="mt-3 space-y-3">
-          {error?.detail || result?.warning ? (
+          {errorDetail || result?.warning ? (
             <div className="space-y-1">
               <p className="font-medium text-foreground">
                 <T>Troubleshooting</T>
               </p>
-              <p className="break-words">{error?.detail ?? result?.warning}</p>
+              <p className="break-words">{errorDetail ?? result?.warning}</p>
             </div>
           ) : null}
           <div className="space-y-1">

@@ -1,4 +1,5 @@
 import type { ChatFileAttachment } from "@onicode/contracts";
+import { translatableError } from "@onicode/client-runtime/errors";
 import { hostPreviewMimeTypeFromExtension } from "@onicode/shared/filePreview";
 import { GENERIC_MIME_TYPES } from "@onicode/shared/image";
 import type { Directory } from "expo-file-system";
@@ -238,11 +239,11 @@ export async function downloadAttachmentForPreview(input: {
     // Android may leave a partial file after a failed or interrupted request.
     cached.preview.dispose();
     if (input.signal.aborted) return null;
-    throw new Error(
-      m(msg("Could not download the attachment. Check the connection and try again.")),
-      {
-        cause,
-      },
+    throw Object.assign(
+      translatableError(
+        msg("Could not download the attachment. Check the connection and try again."),
+      ),
+      { cause },
     );
   }
 }

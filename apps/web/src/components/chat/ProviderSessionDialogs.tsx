@@ -18,6 +18,7 @@ import type {
   ScopedThreadRef,
   ThreadId,
 } from "@onicode/contracts";
+import { useMessages } from "gt-react";
 import { ChevronRightIcon } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
@@ -131,6 +132,7 @@ function useContextUsage(target: SessionTarget | null) {
           environmentId: target.environmentId,
           input: { threadId: target.threadId },
         }),
+    useMessages(),
   );
 }
 
@@ -566,6 +568,7 @@ function McpServersContent(props: SessionTarget) {
       environmentId: props.environmentId,
       input: { threadId: props.threadId },
     }),
+    useMessages(),
   );
   const servers = query.data?.servers;
   const anyPending = servers?.some((server) => server.status === "pending") ?? false;

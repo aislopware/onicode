@@ -11,6 +11,7 @@ import { issueLinkWorkspace } from "@onicode/client-runtime/issue-links";
 import { selectEnvironmentQueryData } from "@onicode/client-runtime/state/runtime";
 import type { EnvironmentId, IssueRef, IssueSummary, ThreadIssueLink } from "@onicode/contracts";
 import { Atom } from "effect/reactivity";
+import { useMessages } from "gt-react";
 
 import { connectionAtomRuntime } from "../connection/runtime";
 import { appAtomRegistry } from "../rpc/atomRegistry";
@@ -130,7 +131,8 @@ export function useSidebarLinkedIssue(
   return useAtomValue(aggregate);
 }
 
-const mergedIssueLists = createMergedIssueListAtoms(issueEnvironment, formatEnvironmentQueryError);
+// The atoms keep the failure; hooks word it at render so it follows a language switch.
+const mergedIssueLists = createMergedIssueListAtoms(issueEnvironment, (cause) => cause);
 
 /** The same listing read across every connected environment, as the pull-request page does. */
 export function useIssueList(targets: ReadonlyArray<IssueListTarget>): MergedIssueList & {
@@ -139,8 +141,10 @@ export function useIssueList(targets: ReadonlyArray<IssueListTarget>): MergedIss
   readonly retry: () => void;
 } {
   const view = useAtomValue(mergedIssueLists.atom(targets));
+  const messages = useMessages();
   return {
     ...view,
+    error: view.error === null ? null : formatEnvironmentQueryError(view.error, messages),
     refresh: () => mergedIssueLists.refresh(appAtomRegistry, targets, "manual"),
     reload: () => mergedIssueLists.refresh(appAtomRegistry, targets, "background"),
     retry: () => mergedIssueLists.retry(appAtomRegistry, targets),
@@ -154,10 +158,15 @@ export function refreshIssueLists(environmentId: EnvironmentId) {
 
 const mergedIssueCandidates = createMergedIssueCandidatesAtoms(
   issueEnvironment.candidates,
-  formatEnvironmentQueryError,
+  (cause) => cause,
 );
 
 /** The labels and people of every scope a list filter covers; no targets reads nothing. */
 export function useIssueFilterCandidates(targets: ReadonlyArray<IssueCandidatesTarget>) {
-  return useAtomValue(mergedIssueCandidates.atom(targets));
+  const view = useAtomValue(mergedIssueCandidates.atom(targets));
+  const messages = useMessages();
+  return {
+    ...view,
+    error: view.error === null ? null : formatEnvironmentQueryError(view.error, messages),
+  };
 }

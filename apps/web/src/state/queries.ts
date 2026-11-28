@@ -552,6 +552,7 @@ export function useTurnItemDetail(
     readonly revision: string;
   } | null,
   source?: TurnItemDetailSource,
+  resolve: MessageResolver = m,
 ) {
   const input =
     target === null
@@ -563,5 +564,6 @@ export function useTurnItemDetail(
       : source
         ? source(input)
         : orchestrationEnvironment.turnItem({ environmentId: target.environmentId, input }),
+    resolve,
   );
 }

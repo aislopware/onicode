@@ -497,6 +497,22 @@ describe("attachmentUploadQueue", () => {
     );
   });
 
+  it("keeps a failed transfer's reason marked so the composer shows it in the current language", async () => {
+    const image = makeImage("network-failure");
+    startAttachmentUpload({ environmentId: firstEnvironment, image });
+    await Promise.resolve();
+
+    const settled = awaitAttachmentUploads([image.id]);
+    TestXmlHttpRequest.requests[0]!.listeners.get("error")?.();
+    await settled;
+
+    expect(readAttachmentUpload(image.id)).toMatchObject({
+      status: "failed",
+      reason: "Upload failed",
+      reasonMessage: "Upload failed",
+    });
+  });
+
   it("uploads images immediately and sends attachment references", async () => {
     const image = {
       ...makeImage("image-1"),

@@ -1,5 +1,5 @@
 import { useAtomMount, useAtomSubscribe, useAtomValue } from "@effect/atom-react";
-import { errorDisplayMessage } from "@onicode/client-runtime/errors";
+import { MarkedText, messageFromError, translatableMessage } from "@onicode/client-runtime/errors";
 import type { ProjectFaviconTarget } from "@onicode/client-runtime/project-favicon-cache";
 import { resolveFilesystemReadAccess } from "@onicode/client-runtime/state/filesystem";
 import {
@@ -13,7 +13,6 @@ import {
 } from "@onicode/client-runtime/state/assets";
 import { executeAtomQuery, squashAtomCommandFailure } from "@onicode/client-runtime/state/runtime";
 import { msg, useMessages } from "gt-react-native";
-import { m } from "../i18n/messages";
 import type { AssetResource, EnvironmentId } from "@onicode/contracts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
@@ -171,6 +170,7 @@ class AssetUrlUnavailableError extends Schema.TaggedError<AssetUrlUnavailableErr
   "AssetUrlUnavailableError",
   {
     message: Schema.String,
+    i18nMessage: Schema.optionalKey(MarkedText),
     cause: Schema.optional(Schema.Defect()),
   },
 ) {}
@@ -185,7 +185,9 @@ const freshAssetUrlFamily = Atom.family((key: FreshAssetUrlKey) =>
           : await refreshAssetUrl(key.environmentId, key.resource, signal).catch(() => null),
       catch: (cause) =>
         new AssetUrlUnavailableError({
-          message: errorDisplayMessage(cause, m) ?? m(msg("The attachment is unavailable.")),
+          ...(cause instanceof Error && cause.message.trim().length > 0
+            ? messageFromError(cause)
+            : translatableMessage(msg("The attachment is unavailable."))),
           cause,
         }),
     }).pipe(
@@ -196,9 +198,9 @@ const freshAssetUrlFamily = Atom.family((key: FreshAssetUrlKey) =>
               authorizedAt,
             }))
           : Effect.fail(
-              new AssetUrlUnavailableError({
-                message: m(msg("Reconnect to this environment and try again.")),
-              }),
+              new AssetUrlUnavailableError(
+                translatableMessage(msg("Reconnect to this environment and try again.")),
+              ),
             ),
       ),
     ),

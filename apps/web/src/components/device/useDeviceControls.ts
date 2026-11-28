@@ -1,6 +1,7 @@
 import { useAtomMount, useAtomSet, useAtomValue } from "@effect/atom-react";
 import type { DeviceHubAccess } from "@onicode/client-runtime/state/deviceHubAccess";
 import type { DeviceActionInput, DeviceSummary, EnvironmentId } from "@onicode/contracts";
+import { useMessages } from "gt-react";
 import { useRef, useState } from "react";
 import { deviceDetailAtom, deviceDetailReadAtom, deviceEnvironment } from "~/state/device";
 import { formatEnvironmentQueryError } from "~/state/query";
@@ -24,7 +25,9 @@ export function useDeviceControls(options: {
   const runAction = useAtomCommand(deviceEnvironment.action, { reportFailure: false });
   const { hostId, id: deviceId } = device;
   const key = { environmentId, hostId, deviceId };
-  const { detail, error } = useAtomValue(deviceDetailAtom(key));
+  const { detail, failure } = useAtomValue(deviceDetailAtom(key));
+  const messages = useMessages();
+  const error = failure === null ? null : formatEnvironmentQueryError(failure, messages);
   const setView = useAtomSet(deviceDetailAtom(key));
   useAtomMount(visible ? deviceDetailReadAtom(key) : NOOP_ATOM);
   const foreground = useAtomValue(
@@ -42,7 +45,7 @@ export function useDeviceControls(options: {
     if (busy.current || !available) return false;
     busy.current = true;
     setPending(true);
-    setView((current) => ({ ...current, error: null }));
+    setView((current) => ({ ...current, failure: null }));
     return runAction({
       environmentId,
       input: { hostId, deviceId, ...body } as DeviceActionInput,
@@ -50,8 +53,8 @@ export function useDeviceControls(options: {
       .then((result) => {
         setView((current) =>
           result._tag === "Success"
-            ? { detail: result.value, error: null }
-            : { ...current, error: formatEnvironmentQueryError(result.cause) },
+            ? { detail: result.value, failure: null }
+            : { ...current, failure: result.cause },
         );
         return result._tag === "Success";
       })

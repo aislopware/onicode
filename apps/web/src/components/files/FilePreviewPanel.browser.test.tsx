@@ -1196,6 +1196,23 @@ describe("open file in preview browser", () => {
     await screen.rerender(page("second"));
     await vi.waitFor(() => expect(frame()).toBe("about:blank#second"));
   });
+
+  it("loads the page signed for the new checkout when a host page stays open", async () => {
+    await using _settings = setup();
+    const page = (cwd: string) => {
+      state.assetUrl = {
+        _tag: "Success",
+        url: `about:blank#${cwd}`,
+        expiresAt: Number.MAX_SAFE_INTEGER,
+      };
+      return filePreview("/tmp/page.html", null, threadRef, null, threadRef, cwd);
+    };
+    await using screen = await render(page("/workspace"));
+    const frame = () => screen.container.querySelector("iframe")?.getAttribute("src");
+    await vi.waitFor(() => expect(frame()).toBe("about:blank#/workspace"));
+    await screen.rerender(page("/worktree"));
+    await vi.waitFor(() => expect(frame()).toBe("about:blank#/worktree"));
+  });
 });
 
 describe("save file", () => {

@@ -87,6 +87,7 @@ function CheckoutRepositories({ member }: { member: SidebarProjectGroupMember })
     access.canReadFiles
       ? filesystemEnvironment.listFolders({ environmentId, input: { projectId: member.id } })
       : null,
+    useMessages(),
   );
   const folders: ReadonlyArray<ProjectTrackedFolder & { state?: WorkspaceFolderState }> =
     listQuery.data?.folders ?? tracked;
@@ -276,6 +277,7 @@ function AddTrackedFolderDialog(props: {
           input: { partialPath: browsePath.directoryPath, cwd: props.workspaceRoot },
         })
       : null,
+    useMessages(),
   );
   const { visibleEntries, exactEntry } = filterFilesystemBrowseEntries(
     browseQuery.data?.entries ?? [],

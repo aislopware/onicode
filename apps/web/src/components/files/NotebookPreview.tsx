@@ -132,7 +132,7 @@ export default function NotebookPreview(props: {
         <T>Saved outputs only. Code is never executed.</T>
       </FileSurfaceNotice>
       {props.notebook.cells.length === 0 ? (
-        <p className="flex flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
+        <p className="flex flex-1 items-center justify-center p-6 text-center text-sm text-muted-foreground">
           <T>This notebook is empty.</T>
         </p>
       ) : (
