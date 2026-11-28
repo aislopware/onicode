@@ -4759,3 +4759,4 @@ bf6c5dfd55	take	taken as is
 ce223f8414	skip	guest share only; Onicode removed guest links
 9b5a03bf8a	take	taken as is
 48ee15ee34	take	taken; scenario uses ControlOrMeta+k
+b89c25ffd9	take	taken; new test mocks Onicode's primary environment target instead of the auth gate; fails without the fix; Sidebar row re-render test green
