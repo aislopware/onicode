@@ -319,6 +319,20 @@ describe("thread links", () => {
     ]) {
       expect(threadLinkRefs(escaped, local)).toEqual([]);
     }
+    const indented = "    <oni-thread://v2/local/demo>\n\nSee <oni-thread://v2/local/prose>";
+    expect(threadLinkRefs(indented, local)).toEqual([ref("local", "prose")]);
+    expect(relabelThreadLinks(indented, local, () => "New")).toBe(
+      "    <oni-thread://v2/local/demo>\n\nSee [New](oni-thread://v2/local/prose)",
+    );
+    expect(relabelThreadLinks("\t<oni-thread://v2/local/demo>", local, () => "New")).toBe(
+      "\t<oni-thread://v2/local/demo>",
+    );
+    expect(relabelThreadLinks(">     <oni-thread://v2/local/demo>", local, () => "New")).toBe(
+      ">     <oni-thread://v2/local/demo>",
+    );
+    expect(relabelThreadLinks("Intro\n    <oni-thread://v2/local/prose>", local, () => "New")).toBe(
+      "Intro\n    [New](oni-thread://v2/local/prose)",
+    );
   });
 
   it("ends code where CommonMark does, so a link after it stays live", () => {
