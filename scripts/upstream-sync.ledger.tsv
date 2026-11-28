@@ -4880,3 +4880,4 @@ c4e93f21be	take	taken as is (Onicode had no Claude-specific blocking Stop-hook h
 0ee002394f	take	conflict: Onicode's hint also matches Jira; the explicit-port allowance applies to both hosts (test row for each)
 e5cce519a6	take	taken as is
 a5041e797e	take	taken as is
+e003d938f9	take	conflict: kept Onicode's precomputed BOOTSTRAP block, added upstream's hasViewportMeta above it
