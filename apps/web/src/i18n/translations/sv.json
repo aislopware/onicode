@@ -12392,5 +12392,7 @@
   "c0ca4e817099761e": "externa agenter chatgpt claude codex molnbaserad bot oauth server adress kopiera",
   "79e3840f1ef8741e": "Ge denna URL till en molnbaserad agent, till exempel ChatGPT: {url}",
   "1d5f687593c4e8ed": "Ge denna URL till en agent som körs på den här datorn: {url}",
-  "3db385bf17d8f48e": "Ge denna URL till en agent som kan nå den här miljön: {url}"
+  "3db385bf17d8f48e": "Ge denna URL till en agent som kan nå den här miljön: {url}",
+  "8363b914aade0bdc": "Maximera panelen ({shortcut})",
+  "6f9f7ac334779864": "Återställ panelens storlek ({shortcut})"
 }

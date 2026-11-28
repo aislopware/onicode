@@ -12390,5 +12390,7 @@
   "c0ca4e817099761e": "zewnętrzni agenci chatgpt claude codex hostowany bot oauth serwer adres kopiuj",
   "79e3840f1ef8741e": "Przekaż ten URL hostowanemu agentowi, np. ChatGPT: {url}",
   "1d5f687593c4e8ed": "Przekaż ten URL agentowi działającemu na tym komputerze: {url}",
-  "3db385bf17d8f48e": "Przekaż ten URL agentowi, który ma dostęp do tego środowiska: {url}"
+  "3db385bf17d8f48e": "Przekaż ten URL agentowi, który ma dostęp do tego środowiska: {url}",
+  "8363b914aade0bdc": "Zmaksymalizuj panel ({shortcut})",
+  "6f9f7ac334779864": "Przywróć rozmiar panelu ({shortcut})"
 }

@@ -12385,5 +12385,7 @@
   "c0ca4e817099761e": "agentes externos chatgpt claude codex hospedado bot oauth servidor endereço copiar",
   "79e3840f1ef8741e": "Forneça esta URL a um agente hospedado, como o ChatGPT: {url}",
   "1d5f687593c4e8ed": "Forneça esta URL a um agente em execução nesta máquina: {url}",
-  "3db385bf17d8f48e": "Forneça esta URL a um agente que possa acessar este ambiente: {url}"
+  "3db385bf17d8f48e": "Forneça esta URL a um agente que possa acessar este ambiente: {url}",
+  "8363b914aade0bdc": "Maximizar painel ({shortcut})",
+  "6f9f7ac334779864": "Restaurar tamanho do painel ({shortcut})"
 }
