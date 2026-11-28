@@ -1139,13 +1139,11 @@ function OpenCommandPaletteDialog(props: {
       };
     }
     setQuery(resolvedQuery);
-    // Clearing the starting path is how the folder search begins, so it keeps the view.
-    if (
-      nextQuery === "" &&
-      currentView?.initialQuery &&
-      !(searchesFoldersInView && folderSearchAvailable)
-    ) {
-      popView();
+    if (nextQuery === "" && currentView?.initialQuery) {
+      // Clearing the starting path is how the folder search begins, so it keeps the view, but
+      // it leaves the submitted path as surely as going back does.
+      if (searchesFoldersInView && folderSearchAvailable) viewGeneration.current += 1;
+      else popView();
     }
   }
 
