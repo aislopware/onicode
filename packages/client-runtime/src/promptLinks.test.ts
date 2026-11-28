@@ -215,6 +215,16 @@ describe("resolvePromptLinkModelSelection", () => {
         model: "small",
       })?.selection.instanceId,
     ).toBe("work");
+    const signedOut = {
+      ...provider("signed-out", "codex", "warning"),
+      auth: { status: "unauthenticated" as const },
+    };
+    expect(
+      resolvePromptLinkModelSelection([signedOut, ...providers], {
+        provider: "codex",
+        model: "small",
+      })?.selection.instanceId,
+    ).toBe("codex");
   });
 
   it("checks other usable instances in ready-before-warning order for the requested model", () => {
