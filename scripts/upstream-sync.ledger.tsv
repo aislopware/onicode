@@ -4747,3 +4747,4 @@ af70189a8f	take	adapted: Onicode's resolver kept (null when unreachable); hook f
 09418562d6	take	kept Onicode's boundedRedactedText (already surrogate-safe, plus redaction); only the test taken, expecting the ellipsis
 84f4fad02b	take	kept Onicode's inline/block text-box split; DocumentText VERSION 21 -> 22 so cached sidecars re-extract (also covers ce36269560)
 ce36269560	take	taken as is (VERSION bump in 84f4fad02b covers it)
+93955ac9bd	take	scenario ported to the desktop harness (fflate, ControlOrMeta+p)
