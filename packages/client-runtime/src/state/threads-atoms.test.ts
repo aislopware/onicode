@@ -142,6 +142,7 @@ const makeHarness = Effect.fn("TestThreadAtoms.makeHarness")(function* (options?
     remove: () => Effect.die("Unexpected environment removal"),
     removeRoute: () => Effect.die("Unexpected route removal"),
     reorderRoutes: () => Effect.die("Unexpected route reorder"),
+    setLabel: () => Effect.die("Unexpected label update"),
     retryNow: () => Effect.void,
     setEnabled: () => Effect.die("Unexpected environment toggle"),
     setCompatibility: () => Effect.die("Unexpected compatibility update"),
