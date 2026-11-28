@@ -4780,3 +4780,4 @@ aa63fa7d94	take	fix(client-runtime): scheduled task worktree base refs keep Unic
 8bc6a06a12	take	fix(mcp): orchestrator_capabilities marks favorite models; new field optional, wire compatible
 a2d5fd3a5d	take	fix(server): keep text box text in RTF attachments; test row merged beside Onicode's Shift_JIS rows
 3dbade5f1c	take	fix(shared): preserve log history when the active file is locked
+3b5c881d61	take	fix(projects): ghq clone layout works for absolute SCP remote paths; kept Onicode's matchScpLikeCloneUrl (already allows absolute SCP paths and also refuses URL schemes); Windows-path check moved into parseCloneUrl as upstream

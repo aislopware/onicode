@@ -22,6 +22,7 @@ function parseCloneUrl(url: string): {
   scp: boolean;
 } | null {
   const trimmed = url.trim();
+  if (isWindowsDrivePath(trimmed)) return null;
   const ssh = SSH_URL.exec(trimmed);
   if (ssh)
     return { protocol: "ssh", host: ssh[1]!, path: ssh[3]!, customPort: !!ssh[2], scp: false };
@@ -107,7 +108,6 @@ const WINDOWS_DEVICE_NAME =
  * anything with a folder that could leave the root.
  */
 export function cloneUrlRepositoryPath(url: string): string | null {
-  if (isWindowsDrivePath(url.trim())) return null;
   const parsed = parseCloneUrl(url);
   if (!parsed) return null;
   let repositoryPath = parsed.path.split(parsed.scp ? "?" : /[?#]/, 1)[0]!;
