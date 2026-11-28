@@ -262,15 +262,16 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
     TextGenerationError,
     S["DecodingServices"] | Scope.Scope
   > {
+    // One fixed folder: Claude Code keeps a ~/.claude/projects entry for every cwd it runs in.
+    const titleDirectory = path.join(serverConfig.providerStatusCacheDir, "claude-title");
     const workingDirectory =
       operation === "generateThreadTitle"
-        ? yield* fileSystem
-            .makeTempDirectoryScoped({ prefix: "onicode-claude-title-" })
-            .pipe(
-              Effect.mapError((cause) =>
-                normalizeCliError("claude", operation, cause, "Failed to create title directory"),
-              ),
-            )
+        ? yield* fileSystem.makeDirectory(titleDirectory, { recursive: true }).pipe(
+            Effect.as(titleDirectory),
+            Effect.mapError((cause) =>
+              normalizeCliError("claude", operation, cause, "Failed to create title directory"),
+            ),
+          )
         : cwd;
     // The investigated checkout holds the change under review, not the user's files.
     const settingsCwd = investigate?.projectCwd ?? workingDirectory;
