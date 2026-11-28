@@ -14,7 +14,7 @@ import * as HostProcess from "@onicode/shared/HostProcess";
 
 const extensions = new Set(["docx", "xlsx", "pptx", "odt", "ods", "odp", "rtf", "epub", "ipynb"]);
 // Bump when documentTextWorker.ts output changes, so text an older extractor wrote is extracted again.
-const VERSION = 31;
+const VERSION = 32;
 
 export const extractedTextPath = (path: string) => `${path}.v${VERSION}.txt`;
 
