@@ -1,6 +1,7 @@
 import type { EnvironmentServerConfig } from "@onicode/client-runtime/connection";
 import { scopeThreadRef, scopedThreadKey } from "@onicode/client-runtime/environment";
 import {
+  resolveThreadConnectionStatus,
   resolveThreadWorkingStartedAt,
   threadCanMarkUnread,
 } from "@onicode/client-runtime/state/models";
@@ -677,6 +678,7 @@ type ThreadStatusInput = Pick<
   | "interactionMode"
   | "latestRun"
   | "runtime"
+  | "connectionPhase"
 > & {
   lastVisitedAt?: string | null | undefined;
   pendingBackgroundTasks?: SidebarThreadSummary["pendingBackgroundTasks"] | undefined;
@@ -933,6 +935,9 @@ export function resolveAdjacentThreadId<T>(input: {
 }
 
 export type SidebarThreadStatus =
+  | "connecting"
+  | "reconnecting"
+  | "offline"
   | "approval"
   | "input"
   | "preparing"
@@ -968,7 +973,10 @@ type SidebarThreadStatusInput = Pick<
   | "pendingSubagentRequest"
   | "runtime"
   | "blockedOnThreadWait"
->;
+  | "connectionPhase"
+> & {
+  readonly pendingBackgroundTasks?: SidebarThreadSummary["pendingBackgroundTasks"];
+};
 
 export function resolveSidebarThreadStatus(thread: SidebarThreadStatusInput): SidebarThreadStatus {
   if (thread.hasPendingApprovals || thread.pendingSubagentRequest === "approval") {
@@ -977,6 +985,8 @@ export function resolveSidebarThreadStatus(thread: SidebarThreadStatusInput): Si
   if (thread.hasPendingUserInput || thread.pendingSubagentRequest === "user_input") {
     return "input";
   }
+  const connectionStatus = resolveThreadConnectionStatus(thread);
+  if (connectionStatus !== null) return connectionStatus;
   if (thread.runtime?.status === "running" && thread.blockedOnThreadWait === true) {
     return "waiting";
   }
@@ -1287,6 +1297,21 @@ export function resolveThreadStatusPill(input: {
       label: msg("Awaiting Input"),
       colorClass: "text-indigo-600 dark:text-indigo-300/90",
       dotClass: "bg-indigo-500 dark:bg-indigo-300/90",
+      pulse: false,
+    };
+  }
+
+  const connectionStatus = resolveThreadConnectionStatus(thread);
+  if (connectionStatus !== null) {
+    return {
+      label:
+        connectionStatus === "connecting"
+          ? msg("Connecting")
+          : connectionStatus === "reconnecting"
+            ? msg("Reconnecting")
+            : msg("Offline"),
+      colorClass: "text-sidebar-muted-foreground",
+      dotClass: "bg-sidebar-muted-foreground",
       pulse: false,
     };
   }
