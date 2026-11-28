@@ -885,7 +885,7 @@ Third}`;
       '<style:style style:name="Base" style:family="text"><style:text-properties text:display="true"/></style:style>' +
       "</office:styles></office:document-styles>";
     const result = await openDocument(
-      new JSZip().file("content.xml", xml).file("styles.xml", styles),
+      new Map(Object.entries({ "content.xml": xml, "styles.xml": styles })),
       "odt",
     );
     if (result.type !== "document") throw new Error("Expected document");
