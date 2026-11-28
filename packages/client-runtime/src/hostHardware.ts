@@ -1,5 +1,4 @@
 import type {
-  EnvironmentId,
   HostHardwareSnapshot,
   HostHardwareVolumeUse,
   HostResourcesSnapshot,
@@ -9,12 +8,7 @@ import type { MFunctionType } from "gt-i18n/types";
 
 import { formatConjunctionList } from "./listFormat.ts";
 
-export type HostHardwareLevel = "normal" | "high" | "critical";
-
-/** What a warning reports, without words, so a display can say it in its own language. */
-export type HostHardwareReading =
-  | { readonly kind: "cpu"; readonly load: string; readonly cpus: number }
-  | { readonly kind: "memory" | "storage"; readonly available: string; readonly total: string };
+type HostHardwareLevel = "normal" | "high" | "critical";
 
 export interface HostHardwareGauge {
   readonly kind: "cpu" | "memory" | "storage";
@@ -27,8 +21,6 @@ export interface HostHardwareGauge {
   /** The share in use, 0 to 1. */
   readonly fraction: number | null;
   readonly level: HostHardwareLevel;
-  /** What a warning says about this resource; null at the normal level. */
-  readonly warning: HostHardwareReading | null;
 }
 
 export interface HostHardwareView {
@@ -231,32 +223,6 @@ function describeVolumeUses(
   );
 }
 
-function describeReading(reading: HostHardwareReading, resolve: MFunctionType): string {
-  switch (reading.kind) {
-    case "cpu":
-      return resolve(
-        msg("{cpus, plural, one {Load {load} on {cpus} CPU} other {Load {load} on {cpus} CPUs}}", {
-          load: reading.load,
-          cpus: reading.cpus,
-        }),
-      );
-    case "memory":
-      return resolve(
-        msg("{available} available of {total} memory", {
-          available: reading.available,
-          total: reading.total,
-        }),
-      );
-    case "storage":
-      return resolve(
-        msg("{available} available of {total} storage", {
-          available: reading.available,
-          total: reading.total,
-        }),
-      );
-  }
-}
-
 /** One layout for desktop and mobile: the machine's name, a few facts, and a gauge per resource. */
 export function describeHostHardware(
   hardware: HostHardwareSnapshot,
@@ -310,10 +276,6 @@ export function describeHostHardware(
       // Busy is fine; agents and builds keep every core busy. Work queueing for them is not.
       fraction: usage.cpuUtilization,
       level: cpuLevel,
-      warning:
-        cpuLevel === "normal" || load === null
-          ? null
-          : { kind: "cpu", load: formatLoad(load), cpus: loadCpus },
     },
     {
       kind: "memory",
@@ -340,14 +302,6 @@ export function describeHostHardware(
             ),
       fraction: memoryFraction,
       level: memoryLevel,
-      warning:
-        memoryLevel === "normal"
-          ? null
-          : {
-              kind: "memory",
-              available: formatCapacity(usage.availableMemoryBytes),
-              total: formatCapacity(hardware.memoryBytes),
-            },
     },
     ...hardware.volumes.map((volume): HostHardwareGauge => {
       const fraction = usedFraction(volume.totalBytes, volume.availableBytes);
@@ -369,167 +323,9 @@ export function describeHostHardware(
         value: resolve(msg("{capacity} available", { capacity: available })),
         fraction,
         level,
-        warning: level === "normal" ? null : { kind: "storage", available, total },
       };
     }),
   ];
 
   return { name, facts, gauges };
-}
-
-export interface HostHardwareAlert {
-  /** Names what is strained and how badly; the same warning keeps the same key. */
-  readonly key: string;
-  readonly level: Exclude<HostHardwareLevel, "normal">;
-  /** The resource in the worst state, for the icon. */
-  readonly kind: HostHardwareGauge["kind"];
-  /** The machine in the worst state. */
-  readonly environmentId: EnvironmentId;
-  /** The strained machines and their warnings, worst first. */
-  readonly machines: ReadonlyArray<{
-    readonly environmentId: EnvironmentId;
-    readonly label: string;
-    readonly warnings: ReadonlyArray<{
-      readonly level: Exclude<HostHardwareLevel, "normal">;
-      readonly reading: HostHardwareReading;
-    }>;
-  }>;
-}
-
-// At the same level, running out of memory or storage breaks work; a queue only slows it.
-const KIND_ORDER = ["memory", "storage", "cpu"] as const;
-
-const KIND_PHRASES: Record<HostHardwareGauge["kind"], string> = {
-  memory: msg("low memory", { $context: "a hardware problem, listed at the start of a warning" }),
-  storage: msg("low storage", { $context: "a hardware problem, listed at the start of a warning" }),
-  cpu: msg("heavy processor load", {
-    $context: "a hardware problem, listed at the start of a warning",
-  }),
-};
-// Critical differs in words as well as colour.
-const CRITICAL_KIND_PHRASES: Record<HostHardwareGauge["kind"], string> = {
-  memory: msg("memory almost full", {
-    $context: "a hardware problem, listed at the start of a warning",
-  }),
-  storage: msg("storage almost full", {
-    $context: "a hardware problem, listed at the start of a warning",
-  }),
-  cpu: msg("processor overloaded", {
-    $context: "a hardware problem, listed at the start of a warning",
-  }),
-};
-
-function severity(gauge: HostHardwareGauge): number {
-  return (gauge.level === "critical" ? 0 : KIND_ORDER.length) + KIND_ORDER.indexOf(gauge.kind);
-}
-
-/**
- * What to warn about across the connected machines: memory or storage running out, or work
- * queueing for the processor.
- */
-export function findHostHardwareAlert(
-  machines: ReadonlyArray<{
-    readonly environmentId: EnvironmentId;
-    readonly label: string;
-    readonly hardware: HostHardwareSnapshot;
-  }>,
-): HostHardwareAlert | null {
-  const strained = machines
-    .map((machine) => ({
-      environmentId: machine.environmentId,
-      label: machine.label,
-      gauges: describeHostHardware(machine.hardware)
-        .gauges.filter(
-          (
-            gauge,
-          ): gauge is HostHardwareGauge & {
-            readonly level: HostHardwareAlert["level"];
-            readonly warning: HostHardwareReading;
-          } => gauge.warning !== null,
-        )
-        // `filter` returned a new array; Hermes has no `toSorted`.
-        .sort((a, b) => severity(a) - severity(b)),
-    }))
-    .filter((machine) => machine.gauges.length > 0)
-    .sort((a, b) => severity(a.gauges[0]!) - severity(b.gauges[0]!));
-  const worst = strained[0];
-  if (worst === undefined) return null;
-
-  return {
-    key: strained
-      .flatMap((machine) =>
-        machine.gauges.map((gauge) => `${machine.environmentId}:${gauge.key}:${gauge.level}`),
-      )
-      .join("|"),
-    level: worst.gauges[0]!.level,
-    kind: worst.gauges[0]!.kind,
-    environmentId: worst.environmentId,
-    machines: strained.map((machine) => ({
-      environmentId: machine.environmentId,
-      label: machine.label,
-      warnings: machine.gauges.map((gauge) => ({ level: gauge.level, reading: gauge.warning })),
-    })),
-  };
-}
-
-export function hostHardwareAlertTitle(
-  alert: HostHardwareAlert,
-  resolve: MFunctionType = mFallback,
-  locale = "en",
-): string {
-  const warnings = alert.machines.flatMap((machine) => machine.warnings);
-  const problems = capitalize(
-    formatConjunctionList(
-      KIND_ORDER.filter((kind) => warnings.some((warning) => warning.reading.kind === kind)).map(
-        (kind) =>
-          resolve(
-            warnings.some(
-              (warning) => warning.reading.kind === kind && warning.level === "critical",
-            )
-              ? CRITICAL_KIND_PHRASES[kind]
-              : KIND_PHRASES[kind],
-          ),
-      ),
-      locale,
-      resolve,
-    ),
-    locale,
-  );
-  return alert.machines.length === 1
-    ? resolve(
-        msg("{problems} on {machine}", {
-          problems,
-          machine: alert.machines[0]!.label,
-          $context: "hardware warning, such as: Low memory and low storage on Studio",
-        }),
-      )
-    : resolve(
-        msg(
-          "{count, plural, one {{problems} on {count} machine} other {{problems} on {count} machines}}",
-          { problems, count: alert.machines.length },
-        ),
-      );
-}
-
-/** One line per warning; with several machines, each line names its machine. */
-export function hostHardwareAlertDescription(
-  alert: HostHardwareAlert,
-  resolve: MFunctionType = mFallback,
-): string {
-  return alert.machines
-    .flatMap((machine) =>
-      machine.warnings.map((warning) => {
-        const reading = describeReading(warning.reading, resolve);
-        return alert.machines.length === 1
-          ? reading
-          : resolve(
-              msg("{machine}: {reading}", {
-                machine: machine.label,
-                reading,
-                $context: "a machine's name, then a hardware warning about it",
-              }),
-            );
-      }),
-    )
-    .join("\n");
 }

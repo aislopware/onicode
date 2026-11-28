@@ -384,10 +384,9 @@ export const McpToolUseCase = Schema.Struct({
     ),
     world: Schema.optional(McpToolUseWorld),
     /**
-     * Canned tool results by bare name, Onicode or native. `"default"` uses the runner's result. For a
-     * device tool, a Onicode `DeviceError` (`{"_tag": ..., "cause": null}`) fails it inside Onicode; for a
-     * preview tool, a `PreviewAutomationError` fails it with that error's message. A
-     * `{"$sequence": [...]}` mock answers its nth call with the nth result, then repeats the last.
+     * Canned tool results by bare name, Onicode or native; `"default"` uses the runner's result.
+     * An Onicode `DeviceError` or `PreviewAutomationError` fails the call. `$sequence` and
+     * `$byArgs`: see `nextMock`.
      */
     mocks: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
     /** Regexes on one part of a shell command. A match wins over the shell simulator. */
@@ -1139,8 +1138,16 @@ const worldPages = (pages: unknown): Readonly<Record<string, string>> | undefine
       )
     : undefined;
 
-/** A `{"$sequence": [...]}` mock answers its nth call with the nth result, then repeats the last. */
-const nextMock = (sample: Sample, name: string, mock: unknown) => {
+/**
+ * A `{"$sequence": [...]}` mock answers its nth call with the nth result, then repeats the last.
+ * A `{"$byArgs": [{"args": {...}, "result": ...}]}` mock answers with the first entry whose `args`
+ * match the call partially, as `expect` matches them; with none, the runner's default.
+ */
+const nextMock = (sample: Sample, name: string, mock: unknown, input: unknown) => {
+  if (isRecord(mock) && Array.isArray(mock.$byArgs)) {
+    const hit = mock.$byArgs.find((entry) => isRecord(entry) && matches(entry.args ?? {}, input));
+    return isRecord(hit) ? hit.result : undefined;
+  }
   if (!isRecord(mock) || !Array.isArray(mock.$sequence) || mock.$sequence.length === 0) return mock;
   const n = sample.mockCalls.get(name) ?? 0;
   sample.mockCalls.set(name, n + 1);
@@ -2360,7 +2367,7 @@ export const answerToolCall = Effect.fn("evaluateMcpToolUse.answerToolCall")(fun
   ) {
     return failed("Invalid request_secret input: check `label`, `reason` and `fields`.");
   }
-  const mock = nextMock(sample, name, testCase.setup.mocks?.[name]);
+  const mock = nextMock(sample, name, testCase.setup.mocks?.[name], input);
   const driver = testCase.setup.world?.browserDriver;
   if (driver !== undefined && isBrowserDriverTool(call.name)) {
     if (mock !== undefined && mock !== "default") return toolResult(call.id, mock);

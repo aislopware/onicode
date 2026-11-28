@@ -2451,6 +2451,7 @@ export const WsSubscribeServerConfigRpc = Rpc.make(WS_METHODS.subscribeServerCon
     /** Decodes theme CSS up to `THEME_CSS_MAX_LENGTH`; older clients reject CSS over 20,000 characters. */
     longThemeCss: Schema.optional(Schema.Boolean),
     usageLimitSources: Schema.optional(Schema.Boolean),
+    hostPressure: Schema.optional(Schema.Boolean),
     /** Advertise client handling before the server offers /usage-limits, or older clients send it as a prompt. */
     usageLimitsCommand: Schema.optional(Schema.Boolean),
     /** Omit per-cwd provider snapshots; the client fetches its cwd through `server.refreshProviders`. */

@@ -41,6 +41,7 @@ import { environmentSession, useEnvironmentScope, readEnvironmentScope } from ".
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useRemoteConnections } from "../../state/use-remote-environment-registry";
 import { ConnectionEnvironmentRow } from "../connection/ConnectionEnvironmentRow";
+import { HostPressureDetails } from "../home/HostPressureBanner";
 import { EnvironmentHardwareSection } from "./EnvironmentHardwareSection";
 import { EnvironmentRoutesSection } from "./EnvironmentRoutesSection";
 import { OutdatedServerUpdateSection } from "./OutdatedServerUpdateSection";
@@ -255,6 +256,7 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
           </Text>
         ) : (
           <>
+            <HostPressureDetails environmentId={environmentId} />
             <SettingsSection title={gt("Connection")}>
               <ConnectionEnvironmentRow
                 environment={environment}
