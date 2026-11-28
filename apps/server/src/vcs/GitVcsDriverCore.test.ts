@@ -307,7 +307,23 @@ const makeTmpDir = (
 ): Effect.Effect<string, PlatformError.PlatformError, FileSystem.FileSystem | Scope.Scope> =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
-    return yield* fileSystem.realPath(yield* fileSystem.makeTempDirectoryScoped({ prefix }));
+    if (HostProcess.Platform.defaultValue() !== "win32") {
+      return yield* fileSystem.realPath(yield* fileSystem.makeTempDirectoryScoped({ prefix }));
+    }
+    // Windows briefly keeps handles in a checkout after git exits (Defender, git's own children).
+    const directory = yield* Effect.acquireRelease(
+      fileSystem.makeTempDirectory({ prefix }),
+      (dir) =>
+        Effect.promise(() =>
+          NodeFS.promises.rm(dir, {
+            recursive: true,
+            force: true,
+            maxRetries: 10,
+            retryDelay: 100,
+          }),
+        ),
+    );
+    return yield* fileSystem.realPath(directory);
   });
 
 const writeTextFile = (
