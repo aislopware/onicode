@@ -3427,7 +3427,8 @@ const make = Effect.gen(function* () {
             run.status === "queued" &&
             (run.delegatedTaskId === input.taskId ||
               run.id === current.childRunId ||
-              parentMessageIds.has(run.userMessageId)),
+              // Another task's queued turn stays: only that task's cancel takes it.
+              (run.delegatedTaskId === undefined && parentMessageIds.has(run.userMessageId))),
         );
       };
       const stopChild = Effect.gen(function* () {
@@ -3541,14 +3542,24 @@ const make = Effect.gen(function* () {
       const child = yield* loadThreadRecords(childThreadId, ["runs", "messages"], {
         messageRoles: ["user"],
       });
+      const queuedRuns = queuedTaskRuns(child);
       if (
         current.workState !== "waiting_for_children" &&
         ThreadManagementService.latestActiveRun(child) === undefined &&
-        queuedTaskRuns(child).length === 0 &&
+        !queuedRuns.some(
+          (run) => run.delegatedTaskId === input.taskId || run.id === current.childRunId,
+        ) &&
         !(yield* threadManagement
           .delegatedTaskAwaitsCapture(childThreadId, input.taskId)
           .pipe(Effect.mapError(threadManagementFailure)))
       ) {
+        // No run of the task's own is left; the parent's queued follow-ups still go with it.
+        if (queuedRuns.length > 0) {
+          yield* stopWithinLimit;
+          const cancelled = yield* cancelOrphan;
+          yield* disposeCompletionDelivery;
+          return { taskId: input.taskId, status: cancelled ? "cancelled" : "cancel_requested" };
+        }
         if (yield* cancelOrphan) return { taskId: input.taskId, status: "cancelled" };
         return yield* failure(
           "task_not_cancellable",

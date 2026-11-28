@@ -57,6 +57,7 @@ class TestWebSocket {
 
   readyState = TestWebSocket.CONNECTING;
   readonly sent: string[] = [];
+  failingSends = 0;
   readonly url: string;
   readonly sentChanges: Queue.Queue<void>;
   private readonly listeners = new Map<SocketEventType, Set<SocketListener>>();
@@ -77,6 +78,10 @@ class TestWebSocket {
   }
 
   send(data: string) {
+    if (this.failingSends > 0) {
+      this.failingSends -= 1;
+      throw new Error("send failed");
+    }
     this.sent.push(data);
     Queue.offerUnsafe(this.sentChanges, undefined);
   }
@@ -476,6 +481,39 @@ describe("RpcSessionFactory", () => {
 
       yield* Effect.forkChild(session.probe);
       yield* awaitRequest(socket, 3);
+      yield* TestClock.adjust("1 second");
+      expect(unanswered.pollUnsafe()?._tag).toBe("Success");
+    }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("a request that failed to send leaves nothing unanswered for the next one", () =>
+    Effect.gen(function* () {
+      const { factory, sockets } = yield* makeFactory();
+      const session = yield* factory.connect(PREPARED);
+      const readyFiber = yield* Effect.forkChild(session.ready);
+      const socket = yield* awaitSocket(sockets);
+      socket.open();
+      yield* completeInitialConfig(socket);
+      yield* Fiber.join(readyFiber);
+      const unanswered = yield* Effect.forkChild(session.requestUnanswered("1 second"));
+      const failedSend = Effect.gen(function* () {
+        socket.failingSends = 1;
+        const exit = yield* Effect.exit(session.probe);
+        expect(exit._tag).toBe("Failure");
+      });
+
+      yield* failedSend;
+      yield* TestClock.adjust("2 seconds");
+      expect(unanswered.pollUnsafe()).toBeUndefined();
+
+      // The wait the failed send began must not count toward the next request.
+      yield* failedSend;
+      yield* TestClock.adjust("990 millis");
+      yield* Effect.forkChild(session.probe);
+      yield* awaitRequest(socket, 1);
+      yield* TestClock.adjust("10 millis");
+      expect(unanswered.pollUnsafe()).toBeUndefined();
+
       yield* TestClock.adjust("1 second");
       expect(unanswered.pollUnsafe()?._tag).toBe("Success");
     }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),

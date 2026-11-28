@@ -22,6 +22,7 @@ import {
   ProviderThreadId,
   ProviderTurnId,
   RunId,
+  RuntimeRequestId,
   ScheduledTaskId,
   ThreadId,
   TurnItemId,
@@ -56,6 +57,7 @@ import { AcpProviderCapabilitiesV2 } from "@onicode/provider-acp/server/adapter"
 import * as EventSink from "../EventSink.ts";
 import * as EventStore from "../EventStore.ts";
 import * as LegacyV1ThreadImporter from "../legacy/LegacyV1ThreadImporter.ts";
+import { delegatedTaskQuestionMessageId } from "../NotificationMailbox.ts";
 import * as Orchestrator from "../Orchestrator.ts";
 import * as EffectWorker from "../EffectWorker.ts";
 import { isTerminalRunStatus } from "../ThreadManagementService.ts";
@@ -641,11 +643,16 @@ const waitForIdle = Effect.fn("ProviderSwitchTest.waitForIdle")(function* (
   return idle;
 });
 
-/** Records a completed delegated task of a Claude `parentRunId`; `dispatchWake` sends its wake. */
+/**
+ * Records a completed delegated task of a Claude `parentRunId`; `dispatchWake` sends its wake.
+ * With `asking`, the task is still working on a child thread with a pending question, and
+ * `askQuestion` sends that question's notice.
+ */
 const completeDelegatedTask = Effect.fn("ProviderSwitchTest.completeDelegatedTask")(function* (
   targetThreadId: ThreadId,
   parentRunId: RunId,
   key: string,
+  asking = false,
 ) {
   const orchestrator = yield* Orchestrator.OrchestratorV2;
   const eventSink = yield* EventSink.EventSinkV2;
@@ -654,24 +661,65 @@ const completeDelegatedTask = Effect.fn("ProviderSwitchTest.completeDelegatedTas
   )!;
   const wakeMessageId = MessageId.make(`message:${key}:wake`);
   const taskId = NodeId.make(`task:${key}`);
+  const childThreadId = asking ? ThreadId.make(`thread:${key}:child`) : null;
+  const requestId = RuntimeRequestId.make(`request:${key}:question`);
   const now = yield* DateTime.now;
-  yield* eventSink.write({
-    events: [
-      {
-        id: EventId.make(`event:${key}:cohort`),
-        type: "run.updated",
-        threadId: targetThreadId,
-        runId: parentRun.id,
-        occurredAt: now,
-        payload: {
-          ...parentRun,
-          delegatedCompletion: {
-            disposition: "open",
-            nextGeneration: 2,
-            delivery: { generation: 1, messageId: wakeMessageId, taskIds: [taskId] },
+  if (childThreadId !== null) {
+    // A question whose task or request is gone is stale and dropped on dispatch.
+    yield* orchestrator.dispatch({
+      type: "thread.create",
+      createdBy: "user",
+      creationSource: "web",
+      commandId: CommandId.make(`command:${key}:create-child`),
+      threadId: childThreadId,
+      projectId: ProjectId.make(`project:${key}:child`),
+      title: "Asking child",
+      modelSelection: CLAUDE_MODEL_SELECTION,
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+    });
+    yield* eventSink.write({
+      events: [
+        {
+          id: EventId.make(`event:${key}:question`),
+          type: "runtime-request.updated",
+          threadId: childThreadId,
+          occurredAt: now,
+          payload: {
+            id: requestId,
+            nodeId: NodeId.make(`node:${key}:question`),
+            providerTurnId: null,
+            nativeRequestRef: null,
+            kind: "user_input",
+            status: "pending",
+            responseCapability: { type: "message" },
+            createdAt: now,
+            resolvedAt: null,
           },
         },
+      ],
+    });
+  }
+  const cohort: OrchestrationV2DomainEvent = {
+    id: EventId.make(`event:${key}:cohort`),
+    type: "run.updated",
+    threadId: targetThreadId,
+    runId: parentRun.id,
+    occurredAt: now,
+    payload: {
+      ...parentRun,
+      delegatedCompletion: {
+        disposition: "open",
+        nextGeneration: 2,
+        delivery: { generation: 1, messageId: wakeMessageId, taskIds: [taskId] },
       },
+    },
+  };
+  yield* eventSink.write({
+    events: [
+      ...(asking ? [] : [cohort]),
       {
         id: EventId.make(`event:${key}:task`),
         type: "subagent.updated",
@@ -689,25 +737,48 @@ const completeDelegatedTask = Effect.fn("ProviderSwitchTest.completeDelegatedTas
           driver: CLAUDE_DRIVER,
           providerInstanceId: CLAUDE_MODEL_SELECTION.instanceId,
           providerThreadId: null,
-          childThreadId: null,
+          childThreadId,
           nativeTaskRef: null,
           prompt: "Do background work",
           title: "Background work",
           model: null,
-          completionWake: "always",
+          completionWake: asking ? "settled_only" : "always",
           completionDelivery: { state: "claimed", observedByRunId: null },
-          status: "completed",
-          result: "done",
+          status: asking ? "running" : "completed",
+          result: asking ? null : "done",
           startedAt: now,
-          completedAt: now,
+          completedAt: asking ? null : now,
           updatedAt: now,
         },
       },
     ],
   });
+  const questionMessageId = delegatedTaskQuestionMessageId(targetThreadId, requestId);
   return {
     taskId,
     wakeMessageId,
+    questionMessageId,
+    // As DelegatedTaskQuestionReactor sends it; a question has no delegated completion.
+    askQuestion: orchestrator.dispatch({
+      type: "message.dispatch",
+      createdBy: "agent",
+      creationSource: "server",
+      commandId: CommandId.make(`command:${key}:question`),
+      threadId: targetThreadId,
+      messageId: questionMessageId,
+      text: `Delegated task ${taskId} asked a question and is still working.`,
+      notification: {
+        source: {
+          kind: "delegated_task",
+          taskIds: [taskId],
+          ...(childThreadId === null ? {} : { childThreadId }),
+        },
+        outcome: "updated",
+        summary: "Delegated task has a question",
+      },
+      attachments: [],
+      dispatchMode: { type: "queue_after_active" },
+    }),
     dispatchWake: orchestrator.dispatch({
       type: "message.dispatch",
       createdBy: "agent",
@@ -6600,7 +6671,7 @@ describe("orchestration v2 provider switching", () => {
             driver: CODEX_DRIVER,
             capabilities: CodexProviderCapabilitiesV2,
             modelSelection: CODEX_MODEL_SELECTION,
-            responseByRunOrdinal: {},
+            responseByRunOrdinal: { 4: "Side session wake report" },
             capturedTurns,
             nativeThreadGeneration: yield* Ref.make(0),
             ...(queued
@@ -6679,6 +6750,21 @@ describe("orchestration v2 provider switching", () => {
               ?.firstRunOrdinal,
             sideRun.ordinal,
           );
+
+          // A later task of the same run follows the session to Codex, so moving back to
+          // Claude hands the session's Codex turn over.
+          const later = yield* completeDelegatedTask(threadId, sideRun.id, `${key}:later`);
+          yield* send("user-third", CLAUDE_MODEL_SELECTION);
+          yield* settle;
+          yield* worker.drain();
+          yield* later.dispatchWake;
+          yield* settle;
+          const laterWake = (yield* Ref.get(capturedTurns)).find((turn) =>
+            turn.text.includes(`Delegated task ${later.taskId}`),
+          )!;
+          assert.equal(laterWake.providerThreadId, sideRun.providerThreadId);
+          assert.include(laterWake.text, "Side session wake report");
+          assert.notInclude(laterWake.text, "user-third");
         }).pipe(
           Effect.provide(
             ProviderReplayHarness.layerWithRegistry(
@@ -6701,13 +6787,146 @@ describe("orchestration v2 provider switching", () => {
       }),
   );
 
-  it.live("queues a delegated task's wake behind a scheduled fresh session's running turn", () =>
+  it.live.each(["completion", "question"] as const)(
+    "queues a delegated task's %s behind a scheduled fresh session's running turn",
+    (notice) =>
+      Effect.gen(function* () {
+        const key =
+          notice === "completion" ? "side-session-turn-wake" : "side-session-turn-question";
+        const cwd = yield* checkpointWorkspace(key);
+        const capturedTurns = yield* Ref.make<ReadonlyArray<CapturedTurn>>([]);
+        const started = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        const layerRegistry = ProviderAdapterRegistry.layerFromAdapters([
+          makeTestAdapter({
+            instanceId: CLAUDE_MODEL_SELECTION.instanceId,
+            driver: CLAUDE_DRIVER,
+            capabilities: ClaudeProviderCapabilitiesV2,
+            modelSelection: CLAUDE_MODEL_SELECTION,
+            responseByRunOrdinal: {},
+            capturedTurns,
+            nativeThreadGeneration: yield* Ref.make(0),
+            holdFirstTurn: started,
+            releaseFirstTurn: release,
+            holdRunOrdinal: 2,
+          }),
+        ]);
+        const threadId = ThreadId.make(`thread:${key}`);
+        yield* Effect.gen(function* () {
+          const orchestrator = yield* Orchestrator.OrchestratorV2;
+          const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+          const eventSink = yield* EventSink.EventSinkV2;
+          const send = (name: string, scheduled = false) =>
+            orchestrator.dispatch({
+              type: "message.dispatch",
+              createdBy: "user",
+              creationSource: "web",
+              commandId: CommandId.make(`command:${key}:${name}`),
+              threadId,
+              messageId: MessageId.make(`message:${key}:${name}`),
+              text: name,
+              attachments: [],
+              modelSelection: CLAUDE_MODEL_SELECTION,
+              dispatchMode: { type: "queue_after_active" },
+              ...(scheduled
+                ? { scheduledTaskId: ScheduledTaskId.make(key), freshContext: true }
+                : {}),
+            });
+          yield* orchestrator.dispatch({
+            type: "thread.create",
+            createdBy: "user",
+            creationSource: "web",
+            commandId: CommandId.make(`command:${key}:create`),
+            threadId,
+            projectId: ProjectId.make(`project:${key}`),
+            title: "Delegating thread whose schedule runs a fresh session",
+            modelSelection: CLAUDE_MODEL_SELECTION,
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: cwd,
+          });
+          yield* send("user-first");
+          yield* worker.drain();
+          const firstRun = (yield* waitForIdle(threadId)).runs[0]!;
+          const { taskId, wakeMessageId, questionMessageId, dispatchWake, askQuestion } =
+            yield* completeDelegatedTask(threadId, firstRun.id, key, notice === "question");
+          yield* send("side-run", true);
+          yield* Deferred.await(started);
+          yield* worker.drain();
+          const sideRun = (yield* orchestrator.getThreadProjection(threadId)).runs.at(-1)!;
+          const now = yield* DateTime.now;
+          yield* eventSink.write({
+            events: [
+              {
+                id: EventId.make(`event:${key}:side-turn-running`),
+                type: "provider-turn.updated",
+                threadId,
+                runId: sideRun.id,
+                nodeId: sideRun.rootNodeId!,
+                driver: CLAUDE_DRIVER,
+                providerInstanceId: CLAUDE_MODEL_SELECTION.instanceId,
+                occurredAt: now,
+                payload: {
+                  // The adapter's own turn id, so its completion ends this turn.
+                  id: ProviderTurnId.make(`provider-turn:${CLAUDE_DRIVER}:${threadId}:2`),
+                  providerThreadId: sideRun.providerThreadId!,
+                  nodeId: sideRun.rootNodeId!,
+                  runAttemptId: sideRun.activeAttemptId!,
+                  nativeTurnRef: null,
+                  ordinal: 2,
+                  status: "running",
+                  startedAt: now,
+                  completedAt: null,
+                },
+              },
+            ],
+          });
+          yield* notice === "completion" ? dispatchWake : askQuestion;
+          // Steering would hand the user's task to the side session's turn.
+          assert.equal(
+            (yield* orchestrator.getThreadProjection(threadId)).runs.find(
+              (run) =>
+                run.userMessageId === (notice === "completion" ? wakeMessageId : questionMessageId),
+            )?.status,
+            "queued",
+          );
+          yield* Deferred.succeed(release, undefined);
+          yield* worker.drain();
+          yield* waitForIdle(threadId);
+          const turns = yield* Ref.get(capturedTurns);
+          const wake = turns.find((turn) => turn.text.includes(`Delegated task ${taskId}`));
+          assert.equal(
+            wake?.nativeThreadId,
+            turns.find((turn) => turn.text.endsWith("user-first"))!.nativeThreadId,
+          );
+        }).pipe(
+          Effect.provide(
+            ProviderReplayHarness.layerWithRegistry(
+              {
+                name: key,
+                runtimePolicyOverride: {
+                  cwd,
+                  approvalPolicy: "never",
+                  sandboxPolicy: {
+                    type: "readOnly",
+                    access: { type: "fullAccess" },
+                    networkAccess: false,
+                  },
+                },
+              },
+              layerRegistry,
+            ),
+          ),
+        );
+      }),
+  );
+
+  it.live("wakes a scheduled fresh session for its task after the main conversation's /clear", () =>
     Effect.gen(function* () {
-      const key = "side-session-turn-wake";
+      const key = "side-session-wake-after-clear";
       const cwd = yield* checkpointWorkspace(key);
       const capturedTurns = yield* Ref.make<ReadonlyArray<CapturedTurn>>([]);
-      const started = yield* Deferred.make<void>();
-      const release = yield* Deferred.make<void>();
       const layerRegistry = ProviderAdapterRegistry.layerFromAdapters([
         makeTestAdapter({
           instanceId: CLAUDE_MODEL_SELECTION.instanceId,
@@ -6717,17 +6936,19 @@ describe("orchestration v2 provider switching", () => {
           responseByRunOrdinal: {},
           capturedTurns,
           nativeThreadGeneration: yield* Ref.make(0),
-          holdFirstTurn: started,
-          releaseFirstTurn: release,
-          holdRunOrdinal: 2,
         }),
       ]);
       const threadId = ThreadId.make(`thread:${key}`);
       yield* Effect.gen(function* () {
         const orchestrator = yield* Orchestrator.OrchestratorV2;
         const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
-        const eventSink = yield* EventSink.EventSinkV2;
-        const send = (name: string, scheduled = false) =>
+        const settle = Effect.gen(function* () {
+          yield* worker.drain();
+          yield* waitForIdle(threadId);
+          // A run awaiting its capture still holds the queue; the next message must start.
+          yield* worker.drain();
+        });
+        const send = (name: string, start: "message" | "scheduled" | "clear") =>
           orchestrator.dispatch({
             type: "message.dispatch",
             createdBy: "user",
@@ -6739,9 +6960,11 @@ describe("orchestration v2 provider switching", () => {
             attachments: [],
             modelSelection: CLAUDE_MODEL_SELECTION,
             dispatchMode: { type: "queue_after_active" },
-            ...(scheduled
+            ...(start === "scheduled"
               ? { scheduledTaskId: ScheduledTaskId.make(key), freshContext: true }
-              : {}),
+              : start === "clear"
+                ? { freshContext: true }
+                : {}),
           });
         yield* orchestrator.dispatch({
           type: "thread.create",
@@ -6750,69 +6973,27 @@ describe("orchestration v2 provider switching", () => {
           commandId: CommandId.make(`command:${key}:create`),
           threadId,
           projectId: ProjectId.make(`project:${key}`),
-          title: "Delegating thread whose schedule runs a fresh session",
+          title: "Fresh-session schedule whose task ends after a /clear",
           modelSelection: CLAUDE_MODEL_SELECTION,
           runtimeMode: "full-access",
           interactionMode: "default",
           branch: null,
           worktreePath: cwd,
         });
-        yield* send("user-first");
-        yield* worker.drain();
-        const firstRun = (yield* waitForIdle(threadId)).runs[0]!;
-        const { taskId, wakeMessageId, dispatchWake } = yield* completeDelegatedTask(
-          threadId,
-          firstRun.id,
-          key,
-        );
-        yield* send("side-run", true);
-        yield* Deferred.await(started);
-        yield* worker.drain();
+        yield* send("user-first", "message");
+        yield* settle;
+        yield* send("side-run", "scheduled");
+        yield* settle;
         const sideRun = (yield* orchestrator.getThreadProjection(threadId)).runs.at(-1)!;
-        const now = yield* DateTime.now;
-        yield* eventSink.write({
-          events: [
-            {
-              id: EventId.make(`event:${key}:side-turn-running`),
-              type: "provider-turn.updated",
-              threadId,
-              runId: sideRun.id,
-              nodeId: sideRun.rootNodeId!,
-              driver: CLAUDE_DRIVER,
-              providerInstanceId: CLAUDE_MODEL_SELECTION.instanceId,
-              occurredAt: now,
-              payload: {
-                // The adapter's own turn id, so its completion ends this turn.
-                id: ProviderTurnId.make(`provider-turn:${CLAUDE_DRIVER}:${threadId}:2`),
-                providerThreadId: sideRun.providerThreadId!,
-                nodeId: sideRun.rootNodeId!,
-                runAttemptId: sideRun.activeAttemptId!,
-                nativeTurnRef: null,
-                ordinal: 2,
-                status: "running",
-                startedAt: now,
-                completedAt: null,
-              },
-            },
-          ],
-        });
+        const { taskId, dispatchWake } = yield* completeDelegatedTask(threadId, sideRun.id, key);
+        yield* send("user-clear", "clear");
+        yield* settle;
         yield* dispatchWake;
-        // Steering would hand the user's task result to the side session's turn.
-        assert.equal(
-          (yield* orchestrator.getThreadProjection(threadId)).runs.find(
-            (run) => run.userMessageId === wakeMessageId,
-          )?.status,
-          "queued",
+        yield* settle;
+        const wake = (yield* Ref.get(capturedTurns)).find((turn) =>
+          turn.text.includes(`Delegated task ${taskId}`),
         );
-        yield* Deferred.succeed(release, undefined);
-        yield* worker.drain();
-        yield* waitForIdle(threadId);
-        const turns = yield* Ref.get(capturedTurns);
-        const wake = turns.find((turn) => turn.text.includes(`Delegated task ${taskId}`));
-        assert.equal(
-          wake?.nativeThreadId,
-          turns.find((turn) => turn.text.endsWith("user-first"))!.nativeThreadId,
-        );
+        assert.equal(wake?.providerThreadId, sideRun.providerThreadId);
       }).pipe(
         Effect.provide(
           ProviderReplayHarness.layerWithRegistry(

@@ -7384,29 +7384,50 @@ describe("AcpAdapterV2", () => {
     }).pipe(Effect.provide(layerTest)),
   );
 
-  it.live("keeps the launch step when a snapshot read fails on a relaunched agent", () =>
+  it.live.each([
+    { operation: "snapshot read", method: "session/load" },
+    { operation: "fork", method: "session/fork" },
+  ] as const)("keeps the launch step when a $operation fails on a relaunched agent", ({ method }) =>
     Effect.gen(function* () {
-      const opened = yield* openRelaunchSession("snapshot-relaunch", {
+      let session: { readonly providerSession: { readonly startupPhase?: string } } | undefined;
+      const phasesAtStart: Array<string | undefined> = [];
+      const failStart = () =>
+        Effect.suspend(() => {
+          phasesAtStart.push(session?.providerSession.startupPhase);
+          return Effect.fail(
+            new EffectAcpErrors.AcpRequestError({
+              code: -32603,
+              errorMessage: "Injected failure",
+              method,
+            }),
+          );
+        });
+      const opened = yield* openRelaunchSession(`${method.replace("/", "-")}-relaunch`, {
+        environment: method === "session/fork" ? { ONICODE_ACP_SESSION_LIFECYCLE: "1" } : {},
         wrapRuntime: (runtime, runtimeOrdinal) =>
-          runtimeOrdinal === 2
-            ? {
-                ...runtime,
-                loadSession: () =>
-                  Effect.fail(
-                    new EffectAcpErrors.AcpRequestError({
-                      code: -32603,
-                      errorMessage: "Injected load failure",
-                      method: "session/load",
-                    }),
-                  ),
-              }
-            : runtime,
+          runtimeOrdinal !== 2
+            ? runtime
+            : method === "session/load"
+              ? { ...runtime, loadSession: failStart }
+              : { ...runtime, forkSession: failStart },
       });
+      session = opened.runtime;
       yield* opened.terminate(1);
-      yield* opened.runtime
-        .readThreadSnapshot({ providerThread: opened.providerThread })
-        .pipe(Effect.flip);
-      // The relaunched agent opened no session, so the next send still launches one.
+      if (method === "session/load") {
+        yield* Effect.flip(
+          opened.runtime.readThreadSnapshot({ providerThread: opened.providerThread }),
+        );
+      } else {
+        yield* Effect.flip(
+          opened.runtime.forkThread({
+            sourceProviderThread: opened.providerThread,
+            targetThreadId: ThreadId.make("thread-acp-fork-relaunch-target"),
+          }),
+        );
+      }
+      // The lazy start runs inside this call, so the agent is still launching there.
+      assert.deepEqual(phasesAtStart, ["launch"]);
+      // It opened no session, so the next send still launches one.
       assert.equal(opened.runtime.providerSession.startupPhase, "launch");
     }).pipe(Effect.provide(layerTest)),
   );

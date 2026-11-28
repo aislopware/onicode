@@ -42,6 +42,7 @@ import {
   mergeRestartCancelledBackgroundWork,
   latestStartedRun,
   neverStarted,
+  rosterTaskForTurnItem,
 } from "./RestartBackgroundNote.ts";
 
 export class ProviderRuntimeRecoveryError extends Schema.TaggedError<ProviderRuntimeRecoveryError>()(
@@ -372,15 +373,12 @@ export const make = Effect.gen(function* () {
         );
         if (work === undefined) return;
         const nativeId = item.nativeItemRef?.nativeId;
-        // The roster lists this work too, by its own id or the item's: record it once, keeping its wait.
-        const rosterTask =
-          nativeId != null
-            ? projection.providerThreads
-                ?.find((candidate) => candidate.id === awaitingId)
-                ?.pendingBackgroundTasks?.find(
-                  (task) => task.taskId === nativeId || task.nativeItemId === nativeId,
-                )
-            : undefined;
+        // The roster lists this work too: record it once, keeping its wait.
+        const rosterTask = rosterTaskForTurnItem(
+          item,
+          projection.providerThreads?.find((candidate) => candidate.id === awaitingId)
+            ?.pendingBackgroundTasks ?? [],
+        );
         recordCancelledBackgroundWork(
           awaitingId,
           rosterTask?.awaited === true ? { ...work, awaited: true } : work,

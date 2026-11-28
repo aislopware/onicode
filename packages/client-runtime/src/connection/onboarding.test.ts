@@ -38,7 +38,7 @@ import {
 } from "./onboarding.ts";
 import * as EnvironmentRegistry from "./registry.ts";
 import * as ConnectionProfileStore from "./profileStore.ts";
-import { connectionRoutes, routeHttpBaseUrl } from "./routes.ts";
+import { connectionRoutes, isLearned, routeHttpBaseUrl } from "./routes.ts";
 import * as ConnectionWakeups from "./wakeups.ts";
 
 const layerClientPresentation = Layer.succeed(
@@ -176,7 +176,13 @@ function layerPairingOnboarding(
     Layer.mock(Persistence.EnvironmentCacheStore)({}),
     Layer.mock(ConnectionProfileStore.ConnectionProfileStore)({}),
     Layer.mock(ConnectionCredentialStore.ConnectionCredentialStore)({
-      get: () => Effect.succeed(Option.fromUndefinedOr(savedCredential)),
+      // Saved only for the paired route; learned routes borrow it.
+      get: (connectionId) =>
+        Effect.succeed(
+          connectionId === PAIRED_PROFILE.connectionId
+            ? Option.fromUndefinedOr(savedCredential)
+            : Option.none(),
+        ),
       put: () => Effect.void,
     }),
     Layer.mock(ClientCapabilities.SshEnvironmentGateway)(provision ? { provision } : {}),
@@ -408,6 +414,61 @@ describe("connection onboarding", () => {
       expect(entry === undefined ? [] : connectionRoutes(entry).map((r) => r.target.label)).toEqual(
         ["Studio"],
       );
+    }).pipe(
+      Effect.provide(
+        layerPairingOnboarding(
+          undefined,
+          [],
+          undefined,
+          new BearerConnectionCredential({ token: "old-token" }),
+        ),
+      ),
+    ),
+  );
+
+  it.effect("renames through a learned route that borrows the paired credential", () =>
+    Effect.gen(function* () {
+      const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+      const onboarding = yield* Onboarding.ConnectionOnboarding;
+      yield* registerSwitchedOffEnvironment;
+      const learnedOrigin = "http://100.100.1.2:3773";
+      const learnedId = `learned:${PAIRED_ENVIRONMENT_ID}:${learnedOrigin}@${PAIRED_PROFILE.connectionId}`;
+      const learnedProfile = new BearerConnectionProfile({
+        connectionId: learnedId,
+        environmentId: PAIRED_ENVIRONMENT_ID,
+        label: "Old label",
+        httpBaseUrl: `${learnedOrigin}/`,
+        wsBaseUrl: "ws://100.100.1.2:3773/",
+        learned: true,
+        network: "tailscale",
+      });
+      yield* registry.register(
+        new BearerConnectionRegistration({
+          target: new BearerConnectionTarget({
+            environmentId: PAIRED_ENVIRONMENT_ID,
+            connectionId: learnedId,
+            label: "Old label",
+          }),
+          profile: learnedProfile,
+          credential: new BearerConnectionCredential({ token: "old-token" }),
+        }),
+      );
+
+      // The tailnet route comes first, so it is the one the edit form shows.
+      yield* onboarding.updateBearer({
+        environmentId: PAIRED_ENVIRONMENT_ID,
+        label: "Studio",
+        httpBaseUrl: learnedProfile.httpBaseUrl,
+      });
+
+      const entry = (yield* SubscriptionRef.get(registry.entries)).get(PAIRED_ENVIRONMENT_ID);
+      const routes = entry === undefined ? [] : connectionRoutes(entry);
+      expect(routes.map((route) => [route.target.label, routeHttpBaseUrl(route)])).toEqual([
+        ["Studio", learnedProfile.httpBaseUrl],
+        ["Studio", PAIRED_PROFILE.httpBaseUrl],
+      ]);
+      expect(routes.map(isLearned)).toEqual([true, false]);
+      expect(Option.getOrUndefined(routes[0]!.profile)).toMatchObject({ network: "tailscale" });
     }).pipe(
       Effect.provide(
         layerPairingOnboarding(

@@ -127,6 +127,14 @@ describe("acpPermissionDisposition", () => {
       // Without a location there is no folder to check, so the user decides.
       assert.equal(acpPermissionDisposition(autoAcceptEdits, permissionRequest(kind)), "ask");
     }
+    // A relative cwd names no folder; it must not stand for the server's own.
+    assert.equal(
+      acpPermissionDisposition(
+        { runtimeMode: "auto-accept-edits", cwd: "." },
+        permissionRequest("edit", [{ path: NodePath.join(process.cwd(), "inside.ts") }]),
+      ),
+      "ask",
+    );
     // A multi-folder thread's other folders count as its own.
     assert.equal(
       acpPermissionDisposition(

@@ -16,6 +16,9 @@ describe("acpUnnamedTextEndsInsideCode", () => {
     ).toBe(true);
     expect(acpUnnamedTextEndsInsideCode("1. ```bash\n   echo a\n\n   echo b\n")).toBe(true);
     expect(acpUnnamedTextEndsInsideCode("> ~~~\n> ls\n")).toBe(true);
+    // Inside a fence, list and quote markers are code, not the end of the fence.
+    expect(acpUnnamedTextEndsInsideCode("- Run:\n\n  ```md\n  - ```\n  still code\n")).toBe(true);
+    expect(acpUnnamedTextEndsInsideCode("```md\n> ```\nstill code\n")).toBe(true);
   });
 
   it("treats closed code and plain text as safe to split", () => {
@@ -28,6 +31,10 @@ describe("acpUnnamedTextEndsInsideCode", () => {
       false,
     );
     expect(acpUnnamedTextEndsInsideCode("> ~~~\n> ls\n> ~~~\n")).toBe(false);
+    // Indented code outside a list is not a fence, and a fence ends with its quote or list item.
+    expect(acpUnnamedTextEndsInsideCode("Example:\n\n    ~~~\n    code\n\nDone.")).toBe(false);
+    expect(acpUnnamedTextEndsInsideCode("> ~~~\n> ls\n\nOutside the quote.")).toBe(false);
+    expect(acpUnnamedTextEndsInsideCode("- ~~~\n  ls\nOutside the list.")).toBe(false);
     expect(acpUnnamedTextEndsInsideCode("I'll search **/*.ts for usages.")).toBe(false);
     expect(acpUnnamedTextEndsInsideCode("Checking")).toBe(false);
     expect(acpUnnamedTextEndsInsideCode("")).toBe(false);

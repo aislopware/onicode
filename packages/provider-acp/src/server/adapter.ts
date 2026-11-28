@@ -1940,53 +1940,92 @@ function selectAutoApprovedPermissionOption(
 
 const ACP_FENCE_OPEN_RE = /^[ ]{0,3}(`{3,}|~{3,})(.*)$/;
 const ACP_FENCE_CLOSE_RE = /^[ ]{0,3}(`{3,}|~{3,})[ \t]*$/;
-// Blockquote and list markers, plus list continuation indent, so fences inside them are found.
-const ACP_CONTAINER_PREFIX_RE = /^(?:[ \t]*(?:>|[-*+](?=[ \t])|\d{1,9}[.)](?=[ \t])))*[ \t]*/;
+const ACP_QUOTE_MARKER_RE = /^[ ]{0,3}>[ ]?/;
+const ACP_LIST_MARKER_RE = /^[ ]{0,3}(?:[-*+]|\d{1,9}[.)])(?:[ ]+|$)/;
+
+function stripAcpQuoteMarkers(line: string, limit: number) {
+  let rest = line;
+  let depth = 0;
+  for (let marker = ACP_QUOTE_MARKER_RE.exec(rest); marker !== null && depth < limit;) {
+    rest = rest.slice(marker[0].length);
+    depth += 1;
+    marker = ACP_QUOTE_MARKER_RE.exec(rest);
+  }
+  return { depth, rest };
+}
+
+const leadingSpaceCount = (text: string) => text.length - text.trimStart().length;
 
 /**
  * Returns true when unnamed streaming ACP text ends inside an unclosed code fence or inline code
  * span, where splitting the message before a new tool call would break the Markdown.
  */
 export function acpUnnamedTextEndsInsideCode(text: string): boolean {
-  let fenceChar: "`" | "~" | null = null;
-  let fenceLength = 0;
-  let fenceInContainer = false;
+  // A fence in a quote or list item ends with it; `indent` is where that item's content starts.
+  let fence: {
+    readonly char: "`" | "~";
+    readonly length: number;
+    readonly quoteDepth: number;
+    readonly indent: number;
+  } | null = null;
+  let quoteDepth = 0;
+  // Content column of the list item the previous line belongs to.
+  let listIndent: number | null = null;
   let inlineCodeTicks = 0;
 
-  for (const line of text.split(/\r?\n/)) {
-    const prefix = ACP_CONTAINER_PREFIX_RE.exec(line)?.[0] ?? "";
-    const inContainer = prefix.length > 3 || /[^ ]/.test(prefix);
-    const content = inContainer ? line.slice(prefix.length) : line;
-    if (fenceChar !== null) {
-      const closeMatch = ACP_FENCE_CLOSE_RE.exec(fenceInContainer ? content : line);
-      if (
-        closeMatch !== null &&
-        closeMatch[1]![0] === fenceChar &&
-        closeMatch[1]!.length >= fenceLength
-      ) {
-        fenceChar = null;
-        fenceLength = 0;
-        inlineCodeTicks = 0;
+  const lines = text.split(/\r?\n/);
+  // A trailing newline starts a line that has not streamed yet, so it ends no container.
+  if (lines.at(-1) === "") lines.pop();
+  for (const line of lines) {
+    if (fence !== null) {
+      const quoted = stripAcpQuoteMarkers(line, fence.quoteDepth);
+      const indent = leadingSpaceCount(quoted.rest);
+      const blank = quoted.rest.trim().length === 0;
+      if (quoted.depth === fence.quoteDepth && (blank || indent >= fence.indent)) {
+        const closeMatch = ACP_FENCE_CLOSE_RE.exec(
+          quoted.rest.slice(Math.min(indent, fence.indent)),
+        );
+        if (
+          closeMatch !== null &&
+          closeMatch[1]![0] === fence.char &&
+          closeMatch[1]!.length >= fence.length
+        ) {
+          fence = null;
+          inlineCodeTicks = 0;
+        }
+        continue;
       }
-      continue;
+      fence = null;
     }
 
-    const openMatch = ACP_FENCE_OPEN_RE.exec(content);
+    const quoted = stripAcpQuoteMarkers(line, Number.POSITIVE_INFINITY);
+    if (quoted.depth !== quoteDepth) listIndent = null;
+    quoteDepth = quoted.depth;
+    const rest = quoted.rest;
+    if (rest.trim().length === 0) {
+      inlineCodeTicks = 0;
+      continue;
+    }
+    if (listIndent !== null && leadingSpaceCount(rest) < listIndent) listIndent = null;
+    let column: number = listIndent ?? 0;
+    for (
+      let marker = ACP_LIST_MARKER_RE.exec(rest.slice(column));
+      marker !== null;
+      marker = ACP_LIST_MARKER_RE.exec(rest.slice(column))
+    ) {
+      column += marker[0].length;
+      listIndent = column;
+    }
+
+    const openMatch = ACP_FENCE_OPEN_RE.exec(rest.slice(column));
     if (openMatch !== null) {
       const marker = openMatch[1]!;
       const info = openMatch[2] ?? "";
       if (marker[0] === "~" || !info.includes("`")) {
-        fenceChar = marker[0] as "`" | "~";
-        fenceLength = marker.length;
-        fenceInContainer = inContainer;
+        fence = { char: marker[0] as "`" | "~", length: marker.length, quoteDepth, indent: column };
         inlineCodeTicks = 0;
         continue;
       }
-    }
-
-    if (content.trim().length === 0) {
-      inlineCodeTicks = 0;
-      continue;
     }
 
     for (let index = 0; index < line.length;) {
@@ -2008,7 +2047,7 @@ export function acpUnnamedTextEndsInsideCode(text: string): boolean {
     }
   }
 
-  return fenceChar !== null || inlineCodeTicks > 0;
+  return fence !== null || inlineCodeTicks > 0;
 }
 
 interface ActiveTextSegment {
@@ -9762,10 +9801,9 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           const activated = yield* Effect.gen(function* () {
             // A runtime spawned for this session opens it at startup instead of an empty session/new.
             if (spawnedForSession) {
-              // Interrupted too: a retried lazy start would resume the session a second time.
-              return yield* runtime
-                .start()
-                .pipe(Effect.onError(() => Ref.set(runtimeRestartRequired, true)));
+              const started = yield* runtime.start();
+              yield* Ref.set(runtimeRestartRequired, false);
+              return started;
             }
             if (canLoadSession || canResumeSession) yield* reportStartupPhase("resume");
             return canLoadSession && !(flavor.preferSessionResume === true && canResumeSession)
@@ -10282,7 +10320,9 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           for (const tool of context.tools.values()) {
             const status = toolStatus(tool.status);
             if (status === "pending" || status === "running" || status === "waiting") {
-              yield* emitTool(context, tool, "interrupted");
+              // Stored as the stopped failure it reads as, so later updates keep it interrupted.
+              context.stoppedToolCallIds.add(tool.toolCallId);
+              yield* emitTool(context, { ...tool, status: "failed" }, "interrupted");
             }
           }
           if (!options.terminalizeSubagents) return;
@@ -10321,7 +10361,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               !tool.toolCallId.startsWith("acp-compaction:")
             )
               continue;
-            yield* emitTool(context, tool, status);
+            yield* emitTool(context, { ...tool, status }, status);
           }
         });
 
@@ -10413,20 +10453,30 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             : Fiber.interrupt(resumeFiber).pipe(Effect.forkDetach, Effect.asVoid);
         };
 
-        const finalizeTurn = Effect.fnUntraced(function* (
+        interface AcpFinalizeOptions {
+          readonly childTurnsContinue?: boolean;
+          readonly threadDisposition?: "reusable" | "broken";
+        }
+        // Synchronous, so a timer can claim the turn under the callback permit and finish it
+        // outside: updates landing in the finalization window take that permit too.
+        const claimTurnFinalization = (
           context: ActiveAcpTurn,
           status: "completed" | "interrupted" | "failed" | "cancelled",
-          failure?: OrchestrationV2ProviderFailure,
-          options?: {
-            readonly childTurnsContinue?: boolean;
-            readonly threadDisposition?: "reusable" | "broken";
-          },
-        ): Effect.fn.Return<void> {
-          if (context.finalized) return;
+        ) => {
+          if (context.finalized) return undefined;
           const settledStatus = context.interrupted ? "interrupted" : status;
-          const threadDisposition = options?.threadDisposition ?? "reusable";
           context.finalizedStatus = settledStatus;
           context.finalized = true;
+          return settledStatus;
+        };
+
+        const finishClaimedTurn = Effect.fnUntraced(function* (
+          context: ActiveAcpTurn,
+          settledStatus: "completed" | "interrupted" | "failed" | "cancelled",
+          failure?: OrchestrationV2ProviderFailure,
+          options?: AcpFinalizeOptions,
+        ): Effect.fn.Return<void> {
+          const threadDisposition = options?.threadDisposition ?? "reusable";
           const watchdog = context.inactivityWatchdog;
           context.inactivityWatchdog = undefined;
           if (watchdog !== undefined) {
@@ -10634,6 +10684,17 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           yield* Deferred.succeed(context.completed, undefined).pipe(Effect.ignore);
         });
 
+        const finalizeTurn = Effect.fnUntraced(function* (
+          context: ActiveAcpTurn,
+          status: "completed" | "interrupted" | "failed" | "cancelled",
+          failure?: OrchestrationV2ProviderFailure,
+          options?: AcpFinalizeOptions,
+        ): Effect.fn.Return<void> {
+          const settledStatus = claimTurnFinalization(context, status);
+          if (settledStatus === undefined) return;
+          yield* finishClaimedTurn(context, settledStatus, failure, options);
+        });
+
         scheduleDeferredFinalize = Effect.fn("scheduleDeferredFinalize")(function* (context) {
           if (!defersFinalizeForBackgroundWork) return;
           if (!context.promptSettled || context.finalized || context.interrupted) return;
@@ -10654,14 +10715,20 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               !replyOpen && flavor.hasPendingReply !== undefined
                 ? yield* flavor.hasPendingReply(context.nativeThreadId)
                 : false;
-            if (!stillCurrent()) return;
-            if (pendingReply) {
-              context.replyOpen = true;
-              yield* scheduleDeferredFinalize(context);
-              return;
-            }
-            const status = context.promptSettledStatus ?? "completed";
-            yield* finalizeTurn(context, status);
+            // Decided under the callback permit, so an update or agent exit in progress settles
+            // first; finished outside it, so updates in the finalization window still land.
+            const settledStatus = yield* runtimeCallbackPermit.withPermit(
+              Effect.gen(function* () {
+                if (!stillCurrent()) return undefined;
+                if (pendingReply) {
+                  context.replyOpen = true;
+                  yield* scheduleDeferredFinalize(context);
+                  return undefined;
+                }
+                return claimTurnFinalization(context, context.promptSettledStatus ?? "completed");
+              }),
+            );
+            if (settledStatus !== undefined) yield* finishClaimedTurn(context, settledStatus);
           }).pipe(Effect.forkIn(sessionScope), Effect.asVoid);
           yield* options.testHooks?.onDeferredFinalizeScheduled?.(debounce) ?? Effect.void;
         });
@@ -10685,22 +10752,35 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                   yield* Effect.sleep(Duration.millis(remaining));
                   continue;
                 }
-                // Under the callback permit, so an agent exit that fails this turn decides first.
-                const expired = yield* runtimeCallbackPermit.withPermit(
-                  Effect.suspend(() =>
-                    context.finalized
-                      ? Effect.succeed(true)
-                      : context.tools.values().some(isRunningCommand) &&
-                          !hasDeferredBackgroundWork(context, isRunningCommand)
-                        ? finalizeTurn(context, context.promptSettledStatus ?? "completed").pipe(
-                            Effect.as(true),
-                          )
-                        : Effect.succeed(false),
-                  ),
+                // Decided under the callback permit, so an agent exit that fails this turn goes
+                // first and progress noted while this waited restarts the quiet window; finished
+                // outside it, so updates in the finalization window still land.
+                const outcome = yield* runtimeCallbackPermit.withPermit(
+                  Effect.sync(() => {
+                    if (context.lastProgressAt > quietSince) return { _tag: "progressed" } as const;
+                    if (
+                      !context.finalized &&
+                      (!context.tools.values().some(isRunningCommand) ||
+                        hasDeferredBackgroundWork(context, isRunningCommand))
+                    )
+                      return { _tag: "held" } as const;
+                    return {
+                      _tag: "ended",
+                      claimed: claimTurnFinalization(
+                        context,
+                        context.promptSettledStatus ?? "completed",
+                      ),
+                    } as const;
+                  }),
                 );
-                if (expired) return;
+                if (outcome._tag === "ended") {
+                  if (outcome.claimed !== undefined) {
+                    yield* finishClaimedTurn(context, outcome.claimed);
+                  }
+                  return;
+                }
                 // Something else still holds the turn; count silence again once it clears.
-                quietSince = now;
+                if (outcome._tag === "held") quietSince = now;
               }
             }).pipe(Effect.forkIn(sessionScope), Effect.asVoid);
           },
@@ -11027,7 +11107,8 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           yield* restartAcpRuntime(threadId, resumeSessionId).pipe(
             Effect.onError(() => reportStartupPhase(undefined)),
           );
-          yield* Ref.set(runtimeRestartRequired, false);
+          // Still required until the new agent starts (`runtimeStartedAfterRestart`): start is
+          // lazy, so a failure or stop before then must relaunch again.
           yield* Ref.set(activeSessionId, null);
           yield* Ref.set(activeSessionSetup, null);
           yield* resetPublishedCatalogKey;
@@ -11041,6 +11122,10 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           yield* Ref.set(completedCompactionIds, new Set());
           yield* Ref.set(snapshot, emptySnapshotState());
           return true;
+        });
+        const runtimeStartedAfterRestart = Effect.gen(function* () {
+          yield* Ref.set(runtimeRestartRequired, false);
+          yield* reportStartupPhase(undefined);
         });
 
         const commitAcpAppContext = Effect.fnUntraced(function* (input: {
@@ -12885,14 +12970,13 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             ),
           readThreadSnapshot: Effect.fn("AcpAdapterV2.readThreadSnapshot")(
             function* (snapshotInput) {
-              let relaunched = false;
               return yield* runtimeTransitionPermit.withPermit(
                 Effect.gen(function* () {
                   yield* awaitRuntimeTeardown();
                   useProviderThreadIdentity(snapshotInput.providerThread);
-                  relaunched = yield* restartRuntimeAfterTeardownIfRequired(
+                  const relaunched = yield* restartRuntimeAfterTeardownIfRequired(
                     snapshotInput.providerThread.appThreadId,
-                  ).pipe(Effect.ensuring(Effect.suspend(() => reportStartupPhase(undefined))));
+                  );
                   const sessionId = yield* nativeThreadId(driver, snapshotInput.providerThread);
                   if ((yield* Ref.get(activeSessionId)) !== sessionId) {
                     if (!capabilities.threads.canReadThreadSnapshot) {
@@ -12910,6 +12994,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                     const activated = yield* runtime
                       .loadSession(sessionId, acpMcpActivation(mcpContext))
                       .pipe(Effect.onError(() => Ref.set(loadingSessionId, null)));
+                    if (relaunched) yield* runtimeStartedAfterRestart;
                     rememberTerminalEnvironment(
                       activated.sessionId,
                       yield* readMcpContext(snapshotInput.providerThread.appThreadId),
@@ -12942,7 +13027,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                     runtimeRequests: [],
                     providerPayload: { protocol: ACP_PROTOCOL, sessionId },
                   };
-                }).pipe(Effect.onError(() => (relaunched ? requireRuntimeRestart : Effect.void))),
+                }),
               );
             },
             (effect, snapshotInput) =>
@@ -13013,7 +13098,6 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               ),
           forkThread: Effect.fn("AcpAdapterV2.forkThread")(
             function* (forkInput) {
-              let relaunched = false;
               return yield* runtimeTransitionPermit.withPermit(
                 Effect.gen(function* () {
                   const currentTurn = yield* Ref.get(activeTurn);
@@ -13025,9 +13109,9 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                   }
                   yield* awaitRuntimeTeardown();
                   useProviderThreadIdentity(forkInput.sourceProviderThread);
-                  relaunched = yield* restartRuntimeAfterTeardownIfRequired(
+                  const relaunched = yield* restartRuntimeAfterTeardownIfRequired(
                     forkInput.sourceProviderThread.appThreadId,
-                  ).pipe(Effect.ensuring(Effect.suspend(() => reportStartupPhase(undefined))));
+                  );
                   if (!capabilities.threads.canForkThread) {
                     return yield* new ProviderAdapter.ProviderAdapterProtocolError({
                       driver,
@@ -13055,6 +13139,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                   const forked = yield* runtime
                     .forkSession(sourceSessionId, acpMcpActivation(mcpContext), forkMeta)
                     .pipe(retireUnlessAnswered);
+                  if (relaunched) yield* runtimeStartedAfterRestart;
                   rememberTerminalEnvironment(
                     forked.sessionId,
                     yield* readMcpContext(forkInput.targetThreadId),
@@ -13088,7 +13173,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                     new Map(current).set(forked.sessionId, providerThread),
                   );
                   return providerThread;
-                }).pipe(Effect.onError(() => (relaunched ? requireRuntimeRestart : Effect.void))),
+                }),
               );
             },
             (effect, forkInput) =>

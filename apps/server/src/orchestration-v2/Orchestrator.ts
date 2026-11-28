@@ -1667,50 +1667,81 @@ function handoffRuns(
   );
 }
 
+type WakeMessage = Pick<OrchestrationV2ConversationMessage, "notification" | "delegatedCompletion">;
+
+/** The run that dispatched the delegated task a completion or question notice is about. */
+function wakeParentRunId(
+  projection: Pick<OrchestrationV2ThreadProjection, "subagents">,
+  message: WakeMessage,
+): RunId | undefined {
+  if (message.delegatedCompletion !== undefined) return message.delegatedCompletion.parentRunId;
+  const source = message.notification?.source;
+  return source?.kind === "delegated_task"
+    ? (projection.subagents.find((task) => task.id === source.taskIds[0])?.runId ?? undefined)
+    : undefined;
+}
+
+/** The provider thread the scheduled fresh session at `sessionStart` last ran on. */
+function latestSessionProviderThread(
+  projection: Pick<OrchestrationV2ThreadProjection, "thread" | "providerThreads">,
+  sessionStart: number,
+): OrchestrationV2ProviderThread | undefined {
+  return projection.providerThreads
+    .filter(
+      (candidate) =>
+        candidate.appThreadId === projection.thread.id &&
+        candidate.ownerNodeId === null &&
+        candidate.firstRunOrdinal === sessionStart,
+    )
+    .toSorted((left, right) => (right.lastRunOrdinal ?? 0) - (left.lastRunOrdinal ?? 0))[0];
+}
+
 /**
  * Wakes and fresh starts act on the active session; a message continues the conversation. A
- * delegated task's completion goes back to the conversation its dispatching run belongs to.
+ * delegated task's completion or question goes back to the conversation its dispatching run
+ * belongs to.
  */
 function dispatchProviderThread(
   projection: Pick<
     OrchestrationV2ThreadProjection,
-    "thread" | "providerThreads" | "runs" | "turnItems"
+    "thread" | "providerThreads" | "runs" | "turnItems" | "subagents"
   >,
-  message: Pick<OrchestrationV2ConversationMessage, "notification" | "delegatedCompletion">,
+  message: WakeMessage,
   freshContext: boolean,
   contextBoundary: number,
 ): OrchestrationV2ProviderThread | undefined {
-  if (freshContext || message.notification !== undefined) {
+  const parentRunId = freshContext ? undefined : wakeParentRunId(projection, message);
+  if (freshContext || (message.notification !== undefined && parentRunId === undefined)) {
     return projection.providerThreads.find(
       (candidate) => candidate.id === projection.thread.activeProviderThreadId,
     );
   }
-  const parentRunId = message.delegatedCompletion?.parentRunId;
   const parentRun =
     parentRunId === undefined ? undefined : projection.runs.find((run) => run.id === parentRunId);
-  // A scheduled fresh session keeps its own thread; the main conversation goes where it is now.
-  const parentProviderThread =
-    parentRun === undefined || scheduledConversationStart(projection, parentRun) === undefined
+  const sessionStart =
+    parentRun === undefined ? undefined : scheduledConversationStart(projection, parentRun);
+  // A scheduled fresh session goes on where it last ran, past any /clear of the main conversation.
+  return (
+    (sessionStart === undefined
       ? undefined
-      : projection.providerThreads.find((candidate) => candidate.id === parentRun.providerThreadId);
-  return parentProviderThread !== undefined &&
-    !providerThreadPredatesBoundary(parentProviderThread, contextBoundary)
-    ? parentProviderThread
-    : conversationProviderThread(projection, contextBoundary);
+      : latestSessionProviderThread(projection, sessionStart)) ??
+    conversationProviderThread(projection, contextBoundary)
+  );
 }
 
-/** Whether `run` belongs to the conversation a delegated task's completion wakes. */
+/** Whether `run` belongs to the conversation a delegated task's completion or question wakes. */
 function runInWokenConversation(
   projection: Pick<
     OrchestrationV2ThreadProjection,
-    "thread" | "providerThreads" | "runs" | "turnItems"
+    "thread" | "providerThreads" | "runs" | "turnItems" | "subagents"
   >,
-  delegatedCompletion: OrchestrationV2ConversationMessage["delegatedCompletion"],
+  message: WakeMessage,
   run: Pick<OrchestrationV2Run, "providerThreadId">,
 ): boolean {
+  if (wakeParentRunId(projection, message) === undefined) return true;
   const woken = dispatchProviderThread(
     projection,
-    { delegatedCompletion },
+    message,
     false,
     contextBoundaryOrdinal(projection),
   );
@@ -1741,13 +1772,16 @@ function sessionProviderThreadForProvider(
       );
 }
 
-/** The scheduled fresh session a delegated task's completion continues on `providerThread`. */
+/** The scheduled fresh session a delegated task's completion or question continues. */
 function wokenSessionStart(
-  projection: Pick<OrchestrationV2ThreadProjection, "runs" | "turnItems" | "providerThreads">,
-  message: Pick<OrchestrationV2ConversationMessage, "delegatedCompletion">,
+  projection: Pick<
+    OrchestrationV2ThreadProjection,
+    "runs" | "turnItems" | "providerThreads" | "subagents"
+  >,
+  message: WakeMessage,
   providerThread: OrchestrationV2ProviderThread | undefined,
 ): number | undefined {
-  return message.delegatedCompletion === undefined || providerThread === undefined
+  return wakeParentRunId(projection, message) === undefined || providerThread === undefined
     ? undefined
     : scheduledConversationStart(projection, { providerThreadId: providerThread.id });
 }
@@ -8698,8 +8732,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         (!commandNotice || providerThread.goal?.status === "active") &&
         (activeMessage === undefined || !isNativeMaintenanceCommand(activeMessage)) &&
         // A scheduled fresh session and the main conversation never read each other's results.
-        (delegatedCompletion === undefined ||
-          runInWokenConversation(projection, delegatedCompletion, active))
+        runInWokenConversation(
+          projection,
+          { delegatedCompletion, notification: command.notification },
+          active,
+        )
       ) {
         const session = yield* providerSessions
           .get(providerThread.providerSessionId)
@@ -8881,7 +8918,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     // the main conversation.
     const resumedSessionStart =
       resumedRun === undefined
-        ? wokenSessionStart(projection, { delegatedCompletion }, activeProviderThread)
+        ? wokenSessionStart(projection, { delegatedCompletion, notification }, activeProviderThread)
         : scheduledConversationStart(projection, resumedRun);
     const activeRun = projection.runs.find(isActiveRun);
     // Messages after failed or stopped worktree setup must wait for a worktree,
