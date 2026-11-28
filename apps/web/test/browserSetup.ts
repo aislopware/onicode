@@ -16,6 +16,22 @@ declare module "vite-plus/test/browser" {
   }
 }
 
+// Test files run one after another in the same tab, so one file's persisted drafts, settings and
+// caches would seed the next file's stores. This runs before the file imports them.
+localStorage.clear();
+sessionStorage.clear();
+await Promise.all(
+  (await indexedDB.databases()).map(
+    ({ name }) =>
+      new Promise<void>((resolve) => {
+        if (name === undefined) return resolve();
+        const request = indexedDB.deleteDatabase(name);
+        // A connection the previous file left open blocks the delete; opens queue behind it.
+        request.onsuccess = request.onerror = request.onblocked = () => resolve();
+      }),
+  ),
+);
+
 // A size set with page.viewport outlives its test, so a later test would lay out at it.
 const { viewport } = server.config.browser;
 

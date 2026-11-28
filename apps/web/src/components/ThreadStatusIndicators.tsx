@@ -516,6 +516,10 @@ function PullRequestBadge({
 
 type ThreadLinkBadgeSide = "top" | "right";
 
+// Shift, not flip: a card that grows under the pointer (Show more) keeps covering it, so it
+// does not close under a hand that never moved.
+const GROWING_CARD_COLLISION = { side: "flip", align: "shift" } as const;
+
 export function ThreadLinkBadge({
   control,
   Icon,
@@ -537,6 +541,7 @@ export function ThreadLinkBadge({
       render={control}
       side={side}
       {...(side === "right" ? { align: "start" as const } : {})}
+      collisionAvoidance={GROWING_CARD_COLLISION}
       sideOffset={0}
       variant="glass"
       className="w-80 max-w-[calc(100vw-2rem)] text-left whitespace-normal"

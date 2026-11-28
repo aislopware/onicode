@@ -154,12 +154,14 @@ function TooltipPopup({
   side = "top",
   variant = "default",
   anchor,
+  collisionAvoidance,
   shortcut,
   description,
   children,
   ...props
 }: TooltipPrimitive.Popup.Props & {
   align?: TooltipPrimitive.Positioner.Props["align"];
+  collisionAvoidance?: TooltipPrimitive.Positioner.Props["collisionAvoidance"];
   side?: TooltipPrimitive.Positioner.Props["side"];
   sideOffset?: TooltipPrimitive.Positioner.Props["sideOffset"];
   variant?: "default" | "glass" | "code";
@@ -171,7 +173,13 @@ function TooltipPopup({
 }) {
   return (
     <TooltipPrimitive.Portal>
-      <TooltipPositioner align={align} anchor={anchor} side={side} sideOffset={sideOffset}>
+      <TooltipPositioner
+        align={align}
+        anchor={anchor}
+        side={side}
+        sideOffset={sideOffset}
+        {...(collisionAvoidance ? { collisionAvoidance } : {})}
+      >
         <TooltipPrimitive.Popup
           className={cn(
             "relative flex origin-(--transform-origin) rounded-md font-medium text-popover-foreground text-xs transition-[opacity,scale] duration-[125ms] ease-out-quint will-change-[scale] motion-safe:data-ending-style:scale-[0.97] data-ending-style:opacity-0 data-ending-style:duration-100 motion-safe:data-starting-style:scale-[0.97] data-starting-style:opacity-0 data-instant:duration-0",

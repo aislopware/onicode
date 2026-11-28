@@ -7,6 +7,7 @@ import {
   useId,
   useRef,
   useState,
+  type ComponentProps,
   type FocusEvent,
   type PointerEvent,
   type ReactElement,
@@ -36,6 +37,8 @@ interface SharedTooltipContent {
   readonly contentKey?: unknown;
   readonly side?: "top" | "bottom" | "left" | "right";
   readonly align?: "start" | "center" | "end";
+  /** Pass a module-level constant: an open tooltip refreshes when its identity changes. */
+  readonly collisionAvoidance?: ComponentProps<typeof TooltipPopup>["collisionAvoidance"];
   readonly sideOffset?: number;
   readonly variant?: "default" | "glass" | "code";
   readonly className?: string;
@@ -180,6 +183,7 @@ export function SharedTooltipProvider({ children }: { children: ReactNode }) {
           active.contentKey === content.contentKey &&
           active.side === content.side &&
           active.align === content.align &&
+          active.collisionAvoidance === content.collisionAvoidance &&
           active.sideOffset === content.sideOffset &&
           active.variant === content.variant &&
           active.className === content.className &&
@@ -233,6 +237,7 @@ export function SharedTooltipProvider({ children }: { children: ReactNode }) {
             anchor={state.anchor}
             side={state.side ?? "top"}
             align={state.align ?? "center"}
+            {...(state.collisionAvoidance ? { collisionAvoidance: state.collisionAvoidance } : {})}
             sideOffset={state.sideOffset ?? 4}
             variant={state.variant ?? "default"}
             className={cn("pointer-events-auto", state.className)}
@@ -353,6 +358,7 @@ export function SharedTooltipTrigger({
   label,
   side = "top",
   align,
+  collisionAvoidance,
   sideOffset,
   variant,
   className,
@@ -365,6 +371,7 @@ export function SharedTooltipTrigger({
   label: ReactNode;
   side?: SharedTooltipContent["side"];
   align?: SharedTooltipContent["align"];
+  collisionAvoidance?: SharedTooltipContent["collisionAvoidance"];
   sideOffset?: SharedTooltipContent["sideOffset"];
   variant?: SharedTooltipContent["variant"];
   className?: SharedTooltipContent["className"];
@@ -379,6 +386,7 @@ export function SharedTooltipTrigger({
       contentKey: label,
       side,
       ...(align ? { align } : {}),
+      ...(collisionAvoidance ? { collisionAvoidance } : {}),
       ...(sideOffset === undefined ? {} : { sideOffset }),
       ...(variant ? { variant } : {}),
       ...(className ? { className } : {}),
@@ -394,6 +402,7 @@ export function SharedTooltipTrigger({
       <TooltipPopup
         side={side}
         {...(align ? { align } : {})}
+        {...(collisionAvoidance ? { collisionAvoidance } : {})}
         {...(sideOffset === undefined ? {} : { sideOffset })}
         {...(variant ? { variant } : {})}
         {...(className ? { className } : {})}
