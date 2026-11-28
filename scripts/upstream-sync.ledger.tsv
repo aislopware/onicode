@@ -4888,3 +4888,4 @@ b334a34594	take	conflict: kept Onicode's validated changeRequestUrl (safe number
 00394b3ae3	take	taken as is
 ee961f64c8	take	adapted: kept Onicode's controlled ZoomableImage and bottom media toolbar; overlay prop added to it, Draw button sits in the media toolbar; test caption uses Onicode's counter
 9a9cfe2910	take	test conflict: kept Onicode's isRuntimeOutdated/promptCapabilities options beside upstream's finalizeGate
+658b56d345	take	conflict: kept Onicode's earlier Unicode-fallback branch, which already consumes the escaped line break
