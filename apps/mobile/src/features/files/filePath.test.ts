@@ -69,6 +69,14 @@ describe("needsWorkspaceFileContents", () => {
     expect(needsWorkspaceFileContents({ ...input, metadataKind: undefined })).toBe(true);
     expect(needsWorkspaceFileContents({ ...input, metadataKind: "directory" })).toBe(false);
   });
+
+  it("leaves a ZIP to the archive view, which downloads its bytes", () => {
+    for (const relativePath of ["dist/build.zip", "dist/BUILD.ZIP"]) {
+      expect(
+        needsWorkspaceFileContents({ relativePath, activeMode: "source", metadataKind: "file" }),
+      ).toBe(false);
+    }
+  });
 });
 
 describe("workspace preview classifiers", () => {

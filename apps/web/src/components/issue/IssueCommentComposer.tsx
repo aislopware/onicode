@@ -80,6 +80,8 @@ export function IssueCommentComposer({
       return;
     }
     setBody("");
+    // A customer reply is a choice per comment; the next one starts internal again.
+    changeAudience("internal");
   };
   const submitAfterDictation = () => speech.submitAfterDictation((text) => void submit(text));
   const submitDisabled =
@@ -89,7 +91,11 @@ export function IssueCommentComposer({
     <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 px-3">
       <ComposerSurface.Shell className="pointer-events-auto">
         <ComposerSurface.Host
-          className={audiences && audience === "internal" ? "bg-warning-surface" : undefined}
+          className={
+            audiences && blocked === null && audience === "internal"
+              ? "bg-warning-surface"
+              : undefined
+          }
         >
           <form
             className="relative z-10 flex flex-col"

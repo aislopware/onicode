@@ -26,6 +26,8 @@ export type MarkdownLinkPresentation =
       readonly path: string;
       readonly line?: number;
       readonly column?: number;
+      /** The path ends in a separator, so it names a folder. */
+      readonly folder?: true;
     }
   | {
       readonly kind: "link";
@@ -325,6 +327,7 @@ export function resolveMarkdownLinkPresentation(
       path: target.path,
       ...(target.line ? { line: target.line } : {}),
       ...(target.column ? { column: target.column } : {}),
+      ...(/[\\/]$/.test(target.path) ? { folder: true as const } : {}),
     };
   }
 

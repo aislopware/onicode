@@ -556,7 +556,7 @@ function PreviewStreamDocumentView({
                 />
                 <Button
                   label={gt("Accept", { $context: "accepts a page dialog" })}
-                  tone="secondary"
+                  tone="primary"
                   onPress={() =>
                     command({
                       type: "dialog",

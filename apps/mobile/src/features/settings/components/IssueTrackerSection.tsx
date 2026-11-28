@@ -32,7 +32,7 @@ import { useProjects } from "../../../state/entities";
 import { issueTrackerEnvironment } from "../../../state/issueTrackers";
 import { useEnvironmentQuery } from "../../../state/query";
 import { useAtomCommand } from "../../../state/use-atom-command";
-import { ConnectionFormField } from "../../connection/ConnectionFormField";
+import { ConnectionFormField, LabeledConnectionField } from "../../connection/ConnectionFormField";
 import type { SettingsTarget } from "../settings-environment-filter";
 import { SettingsProviderRow } from "./SettingsProviderRow";
 import { SettingsRow } from "./SettingsRow";
@@ -199,6 +199,20 @@ export function IssueTrackerCredentialForm(props: {
   const helpUrl = tracker.credential.helpUrl;
   const locked = props.disabled || busy;
   const replacing = tracker.connected && !props.addAccount;
+  const tokenInput = (
+    <SecretTextInput
+      accessibilityLabel={tracker.credential.label}
+      placeholder={
+        replacing ? gt("Saved. Enter a new value to replace it") : tracker.credential.label
+      }
+      value={draft}
+      onChangeText={setDraft}
+      onSubmitEditing={(value) => {
+        if (value.trim()) void submit(value.trim());
+      }}
+      editable={!locked}
+    />
+  );
   return (
     <View className="gap-3 p-4">
       {fields.map((field) => (
@@ -213,18 +227,13 @@ export function IssueTrackerCredentialForm(props: {
           onChangeText={(value) => setDrafts({ ...drafts, [field.key]: value })}
         />
       ))}
-      <SecretTextInput
-        accessibilityLabel={tracker.credential.label}
-        placeholder={
-          replacing ? gt("Saved. Enter a new value to replace it") : tracker.credential.label
-        }
-        value={draft}
-        onChangeText={setDraft}
-        onSubmitEditing={(value) => {
-          if (value.trim()) void submit(value.trim());
-        }}
-        editable={!locked}
-      />
+      {fields.length === 0 ? (
+        tokenInput
+      ) : (
+        <LabeledConnectionField label={tracker.credential.label}>
+          {tokenInput}
+        </LabeledConnectionField>
+      )}
       {failure ? (
         <Text selectable className="text-xs text-danger-foreground">
           {failure}

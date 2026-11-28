@@ -53,13 +53,27 @@ const detail = vi.hoisted(() => ({
   linkedPullRequests: [],
 })) as unknown as IssueDetail;
 
-const state = vi.hoisted(() => ({ openLink: vi.fn(async () => {}) }));
+const state = vi.hoisted(() => ({
+  openLink: vi.fn(async () => {}),
+  comment: vi.fn(async (_input: unknown) => ({ _tag: "Success" as const, value: undefined })),
+  commentCommand: null as unknown,
+}));
 
 vi.mock(import("~/browser/useOpenLink"), async (original) => ({
   ...(await original()),
   useOpenLink: () => state.openLink,
 }));
 vi.mock(import("./IssueThreadLinks"), () => ({ IssueThreadLinks: (() => null) as never }));
+vi.mock(import("~/state/use-atom-command"), async (original) => {
+  const actual = await original();
+  return {
+    ...actual,
+    useAtomCommand: ((command: unknown, options: never) =>
+      command === state.commentCommand
+        ? state.comment
+        : actual.useAtomCommand(command as never, options)) as never,
+  };
+});
 vi.mock(import("~/state/issues"), async (original) => {
   const { Atom } = await import("effect/reactivity");
   const actual = await original();
@@ -78,18 +92,21 @@ vi.mock(import("~/state/issues"), async (original) => {
     }),
   );
   const allowed = Atom.make(true);
+  const comment = { ...actual.issueEnvironment.comment, permissionAtom: () => allowed };
+  state.commentCommand = comment;
   return {
     ...actual,
     issueEnvironment: {
       ...actual.issueEnvironment,
       detail: (() => detailAtom) as never,
       candidates: (() => candidatesAtom) as never,
-      comment: { ...actual.issueEnvironment.comment, permissionAtom: () => allowed },
+      comment,
     },
   };
 });
 
 import { RightPanelSheet } from "../RightPanelSheet";
+import { IssueCommentComposer } from "./IssueCommentComposer";
 import { IssueDetailPanel } from "./IssueDetailPanel";
 
 const reference = {
@@ -199,5 +216,28 @@ describe("IssueDetailPanel", () => {
 
     await expect.element(page.getByRole("option", { name: "alice" })).toBeInTheDocument();
     await expect.element(page.getByRole("option", { name: "bob" })).not.toBeInTheDocument();
+  });
+  it("goes back to an internal note after a reply to the customer is sent", async () => {
+    state.comment.mockClear();
+    await using screen = await render(
+      <IssueCommentComposer
+        environmentId={"env-1" as never}
+        reference={reference}
+        blocked={null}
+        audiences
+      />,
+    );
+    await screen.getByRole("button", { name: "Internal note" }).click();
+    await page.getByRole("menuitemradio", { name: "Reply to customer" }).click();
+    await userEvent.fill(screen.getByRole("textbox", { name: "Add a comment" }), "Fixed, thanks");
+    await screen.getByRole("button", { name: "Comment" }).click();
+
+    await vi.waitFor(() =>
+      expect(state.comment).toHaveBeenCalledWith({
+        environmentId: "env-1",
+        input: { ...reference, body: "Fixed, thanks", audience: "public" },
+      }),
+    );
+    await expect.element(screen.getByRole("button", { name: "Internal note" })).toBeVisible();
   });
 });

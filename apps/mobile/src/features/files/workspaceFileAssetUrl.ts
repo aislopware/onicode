@@ -1,7 +1,11 @@
+import { useAtomValue } from "@effect/atom-react";
+import { scopeThreadRef } from "@onicode/client-runtime/environment";
 import type { AssetResource, EnvironmentId, ThreadId } from "@onicode/contracts";
 import { useMemo } from "react";
 
 import { useAssetUrlState, useRefreshAssetUrl } from "../../state/assets";
+import { environmentThreadDetails } from "../../state/threads";
+import { NO_WORKSPACE_MUTATION_ID_ATOM } from "../threads/workspaceMutationIdContext";
 import {
   isAbsolutePath,
   isAudioPreviewFile,
@@ -40,7 +44,15 @@ export function useWorkspaceFileAssetUrlState(props: {
     if (draftCwd === null) return null;
     return { _tag: "draft-workspace-file", cwd: draftCwd, path: relativePath };
   }, [absolutePath, relativePath, props.threadId, draftCwd]);
-  const state = useAssetUrlState(props.environmentId, resource);
+  // A media file outside the root is granted by its inode, so a replaced file needs a new grant.
+  const workspaceMutationId = useAtomValue(
+    resource?._tag === "media-file" && props.environmentId !== null && props.threadId !== null
+      ? environmentThreadDetails.workspaceMutationIdAtom(
+          scopeThreadRef(props.environmentId, props.threadId),
+        )
+      : NO_WORKSPACE_MUTATION_ID_ATOM,
+  );
+  const state = useAssetUrlState(props.environmentId, resource, workspaceMutationId);
   const refresh = useRefreshAssetUrl(props.environmentId, resource);
   return { ...state, resource, refresh };
 }

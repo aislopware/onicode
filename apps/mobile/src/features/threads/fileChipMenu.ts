@@ -48,7 +48,7 @@ export function resolveFileChipTarget(
   return {
     ...(fullPath ? { fullPath } : {}),
     ...(relativePath ? { relativePath } : {}),
-    ...(/[\\/]$/.test(presentation.path) ? { folder: true as const } : {}),
+    ...(presentation.folder ? { folder: true as const } : {}),
   };
 }
 

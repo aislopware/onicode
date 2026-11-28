@@ -206,12 +206,16 @@ function useZipArchive(input: {
   });
   const [revision, setRevision] = useState(0);
   const controller = useRef<AbortController | null>(null);
-  const { uri, isLocal, sizeBytes } = input;
+  const { isLocal, sizeBytes } = input;
   // The parent mints a new refresh callback on every render; it must not reload the archive.
   const refresh = useEffectEvent(input.refresh);
+  // Refreshing mints a new signed URL for the same file, so only a local path names a new archive.
+  const source = isLocal ? input.uri : input.uri === null ? null : "remote";
+  const currentUri = useEffectEvent(() => input.uri);
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- Load archive bytes and cancel the stream on cleanup.
   useEffect(() => {
-    if (!uri) return;
+    const uri = currentUri();
+    if (!source || !uri) return;
     const abort = new AbortController();
     controller.current = abort;
     const startedAt = Date.now();
@@ -253,7 +257,7 @@ function useZipArchive(input: {
       });
     return () => abort.abort();
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Retry must reload the archive.
-  }, [uri, isLocal, sizeBytes, revision]);
+  }, [source, isLocal, sizeBytes, revision]);
   return {
     state,
     unlock: (password: string) => {

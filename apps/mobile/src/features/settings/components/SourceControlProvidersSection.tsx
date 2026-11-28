@@ -29,7 +29,7 @@ import { useEnvironmentQuery } from "../../../state/query";
 import { serverEnvironment } from "../../../state/server";
 import { sourceControlEnvironment } from "../../../state/sourceControl";
 import { useAtomCommand } from "../../../state/use-atom-command";
-import { ConnectionFormField } from "../../connection/ConnectionFormField";
+import { ConnectionFormField, LabeledConnectionField } from "../../connection/ConnectionFormField";
 import { SourceControlIcon } from "../../projects/SourceControlIcon";
 import type { SettingsTarget } from "../settings-environment-filter";
 import { SettingsProviderRow } from "./SettingsProviderRow";
@@ -267,20 +267,22 @@ export function SourceControlTokenForm(props: {
         value={host}
         onChangeText={setHost}
       />
-      <SecretTextInput
-        accessibilityLabel={gt("{provider} token", { provider: definition.label })}
-        placeholder={
-          saved
-            ? gt("Saved. Enter a new token to replace it")
-            : gt("Token", { $context: "access token field" })
-        }
-        value={draft}
-        onChangeText={setDraft}
-        onSubmitEditing={(value) => {
-          if (value.trim()) void save(value.trim());
-        }}
-        editable={!locked}
-      />
+      <LabeledConnectionField label={gt("Token", { $context: "access token field" })}>
+        <SecretTextInput
+          accessibilityLabel={gt("{provider} token", { provider: definition.label })}
+          placeholder={
+            saved
+              ? gt("Saved. Enter a new token to replace it")
+              : gt("Token", { $context: "access token field" })
+          }
+          value={draft}
+          onChangeText={setDraft}
+          onSubmitEditing={(value) => {
+            if (value.trim()) void save(value.trim());
+          }}
+          editable={!locked}
+        />
+      </LabeledConnectionField>
       <Text className="text-xs text-foreground-muted">
         {savedHosts.length === 0
           ? gt("No token saved; the server uses {envVar} or the {cliName} login.", {
@@ -407,10 +409,7 @@ export function SourceControlHostFieldsForm(props: {
       {fields.map((field) => (
         <View key={field.key} className="gap-1.5">
           {field.secret ? (
-            <>
-              <Text className="text-2xs font-oni-bold tracking-[0.8px] uppercase text-foreground-muted">
-                {field.label}
-              </Text>
+            <LabeledConnectionField label={field.label}>
               <SecretTextInput
                 accessibilityLabel={field.label}
                 placeholder={
@@ -421,7 +420,7 @@ export function SourceControlHostFieldsForm(props: {
                 onSubmitEditing={submit}
                 editable={!locked}
               />
-            </>
+            </LabeledConnectionField>
           ) : (
             <ConnectionFormField
               label={field.label}

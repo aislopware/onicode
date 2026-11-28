@@ -340,3 +340,31 @@ it("keeps the archive and selected entry when the parent re-renders with a new r
   );
   expect(navigation.remove).not.toBeNull();
 });
+
+it("keeps a remote archive open when its signed URL is minted again", async () => {
+  const screen = setup();
+  const archive = files.get("file:///first.zip")!;
+  const { fetch } = await import("expo/fetch");
+  const fetchArchive = vi.mocked(fetch, { partial: true }).mockClear();
+  fetchArchive.mockImplementation(async () => ({
+    ok: true,
+    body: new Response(Uint8Array.from(archive)).body,
+  }));
+  // Refreshing mints a new signed URL, which the parent then passes back down.
+  const remote = {
+    ...screen.props,
+    isLocal: false,
+    uri: "https://host.test/a.zip?sig=1",
+    refresh: async () => "https://host.test/a.zip?sig=2",
+  };
+  await screen.render(remote);
+  await screen.settle(() =>
+    expect(screen.container.querySelector('[aria-label="first.txt"]')).not.toBeNull(),
+  );
+
+  await screen.render({ ...remote, uri: "https://host.test/a.zip?sig=2" });
+  await screen.settle(() =>
+    expect(screen.container.querySelector('[aria-label="first.txt"]')).not.toBeNull(),
+  );
+  expect(fetchArchive).toHaveBeenCalledTimes(1);
+});
