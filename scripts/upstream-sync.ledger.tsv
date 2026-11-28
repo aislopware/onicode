@@ -4906,7 +4906,7 @@ c9771b7717	take	taken as is
 0f181324a5	take	kept Onicode's userinfo parse: the same regex and first-colon split already landed in Onicode; upstream's test added and passes
 a6dc0b7e53	take	adapted onto Onicode's per-variable scrub function; test mount name rebranded
 b5c96a923e	take	fix(server): onboarding recognizes remotes containing Unicode line separators (#44727)
-755b73c2eb	take	fix(server): a provider update that leaves Codex unable to start says why (#35021) — i18n conflict: kept Onicode's cancel-update keys, added only the new Reinstall key (others already present)
+755b73c2eb	take	fix(server): a provider update that leaves Codex unable to start says why (#35021) — i18n conflict: kept Onicode's cancel-update keys, added the three new reinstall strings (Updating, Install {version} and Update now were already present)
 88c457d3fe	take	fix(web): All projects settings show the machine-wide Actions again (#44743) — kept Onicode's ImportThreadsRow beside it
 6b6846385a	take	fix(web): Diff panel keeps Unicode whitespace in a base branch name (#44746)
 1d4d1f7f0e	take	fix(server): keep markup literal after an over-indented fence in PR review examples (#44736)
