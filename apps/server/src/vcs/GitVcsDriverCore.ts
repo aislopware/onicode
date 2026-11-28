@@ -5220,12 +5220,13 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   });
 
   const readEmptyTreeHash = Effect.fn("readEmptyTreeHash")(function* (cwd: string) {
-    const stdout = yield* runGitStdout("GitVcsDriver.review.emptyTree", cwd, [
-      "hash-object",
-      "-t",
-      "tree",
-      (yield* HostProcess.Platform) === "win32" ? "NUL" : "/dev/null",
-    ]);
+    // Not a null-device path: Git prefixes file arguments with the subdirectory, so "NUL" breaks there.
+    const stdout = yield* runGitStdoutWithOptions(
+      "GitVcsDriver.review.emptyTree",
+      cwd,
+      ["hash-object", "-t", "tree", "--stdin"],
+      { stdin: "" },
+    );
     return stdout.trim();
   });
 
