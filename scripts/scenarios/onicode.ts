@@ -240,9 +240,11 @@ export function makeState(home: string, env: NodeJS.ProcessEnv = {}) {
       const { projects: live } = yield* client.projects
         .snapshot({ headers })
         .pipe(Effect.mapError((cause) => new ScenarioError({ message: `projects: ${cause}` })));
-      const workspaces = `${(yield* Path.Path).join(home, "workspaces")}/`;
+      const path = yield* Path.Path;
+      // Folders it added live under workspaces; projects it created live under projects.
+      const roots = ["workspaces", "projects"].map((root) => `${path.join(home, root)}/`);
       const added = live.flatMap((project) =>
-        project.deletedAt === null && project.workspaceRoot.startsWith(workspaces)
+        project.deletedAt === null && roots.some((root) => project.workspaceRoot.startsWith(root))
           ? [project.id]
           : [],
       );
