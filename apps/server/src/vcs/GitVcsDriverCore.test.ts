@@ -10118,6 +10118,55 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
       }),
     );
 
+    // chmod cannot make a file unreadable on Windows.
+    it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
+      "creates a worktree once Git can read the config it failed to open",
+      () =>
+        Effect.gen(function* () {
+          const cwd = yield* makeTmpDir();
+          const { initialBranch } = yield* initRepoWithCommit(cwd);
+          const fileSystem = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const configPath = path.join(cwd, ".git", "config");
+          const worktreePath = path.join(yield* makeTmpDir("git-worktrees-"), "feature");
+          // Git for Windows cannot open the config while a sibling renames config.lock over it.
+          let attempts = 0;
+          const delegate = yield* ChildProcessSpawner.ChildProcessSpawner;
+          const spawner = ChildProcessSpawner.make((command) =>
+            Effect.gen(function* () {
+              const args = ChildProcess.isStandardCommand(command) ? command.args.map(String) : [];
+              const addsWorktree =
+                args.includes("worktree") && args.includes("add") && !args.includes("-h");
+              if (!addsWorktree) return yield* delegate.spawn(command);
+              attempts += 1;
+              if (attempts > 1) return yield* delegate.spawn(command);
+              yield* fileSystem.chmod(configPath, 0o000);
+              const handle = yield* delegate.spawn(command);
+              return ChildProcessSpawner.makeHandle({
+                ...handle,
+                exitCode: handle.exitCode.pipe(
+                  Effect.ensuring(fileSystem.chmod(configPath, 0o644).pipe(Effect.orDie)),
+                ),
+              });
+            }),
+          );
+          const driver = yield* makeGitVcsDriverCore().pipe(
+            Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+            Effect.provide(layerServerConfig),
+          );
+
+          yield* driver.createWorktree({
+            cwd,
+            path: worktreePath,
+            refName: initialBranch,
+            newRefName: "feature/readable",
+          });
+
+          assert.equal(attempts, 2);
+          assert.equal(yield* git(worktreePath, ["branch", "--show-current"]), "feature/readable");
+        }),
+    );
+
     it.effect.each(["createWorktree", "switchRef"] as const)(
       "tracks a remote start point once another process releases the config lock: %s",
       (operation) =>
