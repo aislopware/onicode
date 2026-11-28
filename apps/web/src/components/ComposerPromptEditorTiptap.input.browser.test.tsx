@@ -23,7 +23,7 @@ import { redoDepth, undoDepth } from "@tiptap/pm/history";
 import { NodeSelection } from "@tiptap/pm/state";
 import { createElement, createRef, useEffect, useState } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { cdp, userEvent } from "vite-plus/test/browser";
+import { cdp, page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 import { act, fakeTimers, render } from "../../test/render";
@@ -679,6 +679,35 @@ it.each([
   expect(serializeEditorDoc(editor.state.doc).value).toBe(dropped);
   expect(editor.state.doc.textContent).toBe(shown);
   expect(editor.view.hasFocus()).toBe(true);
+});
+
+it("types into the code block right after a language is picked", async () => {
+  const editorRef = createRef<ComposerPromptEditorHandle>();
+  await using screen = await render(
+    <Composer value={"```text\nlet a\n```"} richTextEnabled skills={[]} editorRef={editorRef} />,
+  );
+  const editor = editorIn(screen.container);
+  await userEvent.click(screen.getByRole("combobox", { name: /^Code language/ }));
+  await userEvent.keyboard("python");
+  // A deferred focus waits a frame, and keys typed meanwhile are lost; hold frames to see the gap.
+  const held: FrameRequestCallback[] = [];
+  const frames = vi
+    .spyOn(window, "requestAnimationFrame")
+    .mockImplementation((callback) => held.push(callback));
+  await userEvent.click(page.getByRole("option", { name: "Python", exact: true }));
+  const focusedOnPick = document.activeElement;
+  frames.mockRestore();
+  for (const callback of held) callback(0);
+  expect(focusedOnPick).toBe(screen.getByTestId("composer-editor").element());
+  // The popup closes after its exit frames; its return focus must not take the caret back.
+  await expect
+    .element(page.getByRole("option", { name: "Python", exact: true }))
+    .not.toBeInTheDocument();
+  await expect.element(screen.getByTestId("composer-editor")).toHaveFocus();
+  await userEvent.keyboard("x");
+  await expect
+    .poll(() => serializeEditorDoc(editor.state.doc).value)
+    .toBe("```python\nlet ax\n```");
 });
 
 it("does not paste at the end of a disabled code block", async () => {

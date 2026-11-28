@@ -20,9 +20,13 @@ export function ComposerCodeBlockNodeView({
     updateAttributes({ language: withInfoStringLanguage(info, next) });
     const position = getPos();
     if (typeof position === "number") {
+      // Not the focus command: it defers DOM focus a frame, so keys typed meanwhile are lost.
+      // Focus comes first because the view scrolls only to a selection it owns.
+      editor.view.focus();
       editor
         .chain()
-        .focus(position + 1 + node.content.size)
+        .setTextSelection(position + 1 + node.content.size)
+        .scrollIntoView()
         .run();
     }
   };
