@@ -14,7 +14,6 @@ import {
   type SnoozePreset,
 } from "@onicode/client-runtime/state/thread-settled";
 import type { EnvironmentThreadShell } from "@onicode/client-runtime/state/shell";
-import { resolveThreadProviderStack } from "@onicode/client-runtime/state/models";
 import {
   threadSearchMatchKey,
   threadSearchSubject,
@@ -37,7 +36,6 @@ import { isListedThreadLineage, type EnvironmentId, type ProjectId } from "@onic
 import type { SnoozePresetSetting } from "@onicode/contracts/settings";
 import type { MenuAction } from "@react-native-menu/menu";
 
-import type { ThreadListProvider } from "../../state/thread-list-environments";
 import { hourCycleOption } from "./messageTimestamp";
 import type { ThreadMoveAvailability } from "./threadOrder";
 
@@ -52,22 +50,6 @@ import {
 } from "./threadOrder";
 
 export const threadListInboxReturns = createInboxReturnTracker();
-
-export function resolveThreadListV2ProviderDrivers(
-  thread: Pick<EnvironmentThreadShell, "providerInstanceHistory" | "modelSelection" | "runtime">,
-  providers: ReadonlyArray<ThreadListProvider> | undefined,
-): ReadonlyArray<string> {
-  if (providers === undefined) return [];
-  const stack = resolveThreadProviderStack(thread);
-  const drivers = stack.flatMap((instanceId) => {
-    const driver = providers.find((provider) => provider.instanceId === instanceId)?.driver;
-    return driver === undefined ? [] : [driver];
-  });
-  const currentDriver = providers.find(
-    (provider) => provider.instanceId === stack[stack.length - 1],
-  )?.driver;
-  return currentDriver === undefined ? [] : drivers;
-}
 
 export type ThreadListV2Status =
   | "approval"
