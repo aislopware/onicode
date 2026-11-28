@@ -12,6 +12,17 @@ index 87720de..fd7da2a 100644
      const isAtEnd = isContentLess || distanceFromEnd <= EDGE_POSITION_EPSILON;
      const deferEndExit = !isAtEnd && state.measuringContainersInLayout && (maintainingScrollAtEnd === "pending-instant" || maintainingScrollAtEnd === "pending-animated") && !state.endFollowInterrupted && peek$(ctx, "isAtEnd");
      if (!deferEndExit) set$(ctx, "isAtEnd", isAtEnd);
+@@ -1597,7 +1598,9 @@
+     }
+     (_c = state.triggerCalculateItemsInView) == null ? void 0 : _c.call(state);
+   };
+-  state.scheduledWork.timeout(widen, FULL_DRAW_DISTANCE_PREWARM_DELAY, "fullDrawDistancePrewarm");
++  // Onicode patch: widen on the next frame, as 3.9.0 did. A scroll jump during a 100 ms wait mounts
++  // the rows above it later, unmeasured, and the list then keeps neither the end nor the row in view.
++  state.scheduledWork.frame(widen, "fullDrawDistancePrewarm");
+ }
+ 
+ // src/utils/setInitialRenderState.ts
 @@ -8399,7 +8400,10 @@ function createImperativeHandle(ctx, scheduleImperativeScrollCommit) {
        contentLength: getContentSize(ctx),
        data: state.props.data,
@@ -38,6 +49,17 @@ index 90faccd..d33652e 100644
      const isAtEnd = isContentLess || distanceFromEnd <= EDGE_POSITION_EPSILON;
      const deferEndExit = !isAtEnd && state.measuringContainersInLayout && (maintainingScrollAtEnd === "pending-instant" || maintainingScrollAtEnd === "pending-animated") && !state.endFollowInterrupted && peek$(ctx, "isAtEnd");
      if (!deferEndExit) set$(ctx, "isAtEnd", isAtEnd);
+@@ -1576,7 +1577,9 @@
+     }
+     (_c = state.triggerCalculateItemsInView) == null ? void 0 : _c.call(state);
+   };
+-  state.scheduledWork.timeout(widen, FULL_DRAW_DISTANCE_PREWARM_DELAY, "fullDrawDistancePrewarm");
++  // Onicode patch: widen on the next frame, as 3.9.0 did. A scroll jump during a 100 ms wait mounts
++  // the rows above it later, unmeasured, and the list then keeps neither the end nor the row in view.
++  state.scheduledWork.frame(widen, "fullDrawDistancePrewarm");
+ }
+ 
+ // src/utils/setInitialRenderState.ts
 @@ -8378,7 +8379,10 @@ function createImperativeHandle(ctx, scheduleImperativeScrollCommit) {
        contentLength: getContentSize(ctx),
        data: state.props.data,
@@ -54,6 +76,17 @@ diff --git a/react-native.web.js b/react-native.web.js
 index 973e31b..160d07e 100644
 --- a/react-native.web.js
 +++ b/react-native.web.js
+@@ -1557,7 +1557,9 @@
+     }
+     (_c = state.triggerCalculateItemsInView) == null ? void 0 : _c.call(state);
+   };
+-  state.scheduledWork.timeout(widen, FULL_DRAW_DISTANCE_PREWARM_DELAY, "fullDrawDistancePrewarm");
++  // Onicode patch: widen on the next frame, as 3.9.0 did. A scroll jump during a 100 ms wait mounts
++  // the rows above it later, unmeasured, and the list then keeps neither the end nor the row in view.
++  state.scheduledWork.frame(widen, "fullDrawDistancePrewarm");
+ }
+ 
+ // src/utils/setInitialRenderState.ts
 @@ -9129,7 +9129,10 @@ function createImperativeHandle(ctx, scheduleImperativeScrollCommit) {
        contentLength: getContentSize(ctx),
        data: state.props.data,
@@ -70,6 +103,17 @@ diff --git a/react-native.web.mjs b/react-native.web.mjs
 index e323567..d5d7376 100644
 --- a/react-native.web.mjs
 +++ b/react-native.web.mjs
+@@ -1536,7 +1536,9 @@
+     }
+     (_c = state.triggerCalculateItemsInView) == null ? void 0 : _c.call(state);
+   };
+-  state.scheduledWork.timeout(widen, FULL_DRAW_DISTANCE_PREWARM_DELAY, "fullDrawDistancePrewarm");
++  // Onicode patch: widen on the next frame, as 3.9.0 did. A scroll jump during a 100 ms wait mounts
++  // the rows above it later, unmeasured, and the list then keeps neither the end nor the row in view.
++  state.scheduledWork.frame(widen, "fullDrawDistancePrewarm");
+ }
+ 
+ // src/utils/setInitialRenderState.ts
 @@ -9108,7 +9108,10 @@ function createImperativeHandle(ctx, scheduleImperativeScrollCommit) {
        contentLength: getContentSize(ctx),
        data: state.props.data,
@@ -86,6 +130,17 @@ diff --git a/react.js b/react.js
 index 973e31b..bda17a1 100644
 --- a/react.js
 +++ b/react.js
+@@ -1557,7 +1557,9 @@
+     }
+     (_c = state.triggerCalculateItemsInView) == null ? void 0 : _c.call(state);
+   };
+-  state.scheduledWork.timeout(widen, FULL_DRAW_DISTANCE_PREWARM_DELAY, "fullDrawDistancePrewarm");
++  // Onicode patch: widen on the next frame, as 3.9.0 did. A scroll jump during a 100 ms wait mounts
++  // the rows above it later, unmeasured, and the list then keeps neither the end nor the row in view.
++  state.scheduledWork.frame(widen, "fullDrawDistancePrewarm");
+ }
+ 
+ // src/utils/setInitialRenderState.ts
 @@ -6506,7 +6506,8 @@ function useOnLayoutSync({
    onLayoutProp,
    onLayoutChange,
@@ -215,6 +270,17 @@ diff --git a/react.mjs b/react.mjs
 index e323567..1ceab1a 100644
 --- a/react.mjs
 +++ b/react.mjs
+@@ -1536,7 +1536,9 @@
+     }
+     (_c = state.triggerCalculateItemsInView) == null ? void 0 : _c.call(state);
+   };
+-  state.scheduledWork.timeout(widen, FULL_DRAW_DISTANCE_PREWARM_DELAY, "fullDrawDistancePrewarm");
++  // Onicode patch: widen on the next frame, as 3.9.0 did. A scroll jump during a 100 ms wait mounts
++  // the rows above it later, unmeasured, and the list then keeps neither the end nor the row in view.
++  state.scheduledWork.frame(widen, "fullDrawDistancePrewarm");
+ }
+ 
+ // src/utils/setInitialRenderState.ts
 @@ -6485,7 +6485,8 @@ function useOnLayoutSync({
    onLayoutProp,
    onLayoutChange,
