@@ -1,4 +1,9 @@
-import { type EnvironmentId, type MessageId, type RuntimeRequestId } from "@onicode/contracts";
+import {
+  type EnvironmentId,
+  type MessageId,
+  type ProviderInstanceId,
+  type RuntimeRequestId,
+} from "@onicode/contracts";
 import { type RefObject, useState } from "react";
 import { type ComposerSubmissionIntent } from "../../composer-logic";
 import { type SessionPhase, type Thread } from "../../types";
@@ -46,6 +51,7 @@ export function useLocalDispatchState(input: {
   const beginLocalDispatch = (options?: {
     preparingWorktree?: boolean;
     submissionIntent?: ComposerSubmissionIntent;
+    providerInstanceId?: ProviderInstanceId;
   }) => {
     // A send that finishes after the user left its thread has no busy state on screen to show.
     if (input.currentRouteThreadKeyRef.current !== key) return;
@@ -55,10 +61,15 @@ export function useLocalDispatchState(input: {
         serverAcknowledgedLocalDispatch || current?.key !== key ? null : current.snapshot;
       if (active) {
         const submissionIntent = options?.submissionIntent ?? active.submissionIntent;
+        const providerInstanceId = options?.providerInstanceId ?? active.providerInstanceId;
         return active.preparingWorktree === preparingWorktree &&
-          active.submissionIntent === submissionIntent
+          active.submissionIntent === submissionIntent &&
+          active.providerInstanceId === providerInstanceId
           ? current
-          : { key, snapshot: { ...active, preparingWorktree, submissionIntent } };
+          : {
+              key,
+              snapshot: { ...active, preparingWorktree, submissionIntent, providerInstanceId },
+            };
       }
       return {
         key,
@@ -77,6 +88,7 @@ export function useLocalDispatchState(input: {
     localDispatchStartedAt: activeLocalDispatch?.startedAt ?? null,
     isPreparingWorktree: activeLocalDispatch?.preparingWorktree ?? false,
     isSendBusy: activeLocalDispatch !== null,
+    localDispatchProviderInstanceId: activeLocalDispatch?.providerInstanceId ?? null,
     backgroundSubmissionPending: activeLocalDispatch?.submissionIntent === "background",
   };
 }
