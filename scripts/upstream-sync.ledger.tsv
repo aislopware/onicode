@@ -4892,3 +4892,4 @@ ee961f64c8	take	adapted: kept Onicode's controlled ZoomableImage and bottom medi
 5530f8fa15	skip	Onicode's environment descriptor is a constant: agent activity publishing (relay/T3 Connect) was removed, so no secret read can stall it
 a7acbf5746	take	taken as is
 1c2770d735	take	taken as is
+68bb7b7dcd	take	lockfile regenerated with vp i (additions only)
