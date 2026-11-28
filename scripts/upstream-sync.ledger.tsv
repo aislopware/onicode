@@ -4878,3 +4878,4 @@ c4e93f21be	take	taken as is (Onicode had no Claude-specific blocking Stop-hook h
 4db4b820ed	take	taken as is
 36aaf084bc	take	translation conflicts: kept Onicode catalogs, added the 2 new keys; Polish translated
 0ee002394f	take	conflict: Onicode's hint also matches Jira; the explicit-port allowance applies to both hosts (test row for each)
+e5cce519a6	take	taken as is
