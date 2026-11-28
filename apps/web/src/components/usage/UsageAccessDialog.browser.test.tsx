@@ -43,7 +43,7 @@ it("says what each agent's access reads and saves only the agents left on", asyn
   state.mutateProviderInstance.mockReset().mockResolvedValue(AsyncResult.success(undefined));
   await using screen = await render(
     <RegistryContext.Provider value={appAtomRegistry}>
-      <UsageAccessQuestion prompts={[prompt("claudeAgent"), prompt("codex")]} />
+      <UsageAccessQuestion prompts={[prompt("grok"), prompt("codex")]} />
     </RegistryContext.Provider>,
   );
   await expect.element(screen.getByText("Session history and sign-in")).toBeVisible();
@@ -57,7 +57,7 @@ it("says what each agent's access reads and saves only the agents left on", asyn
     ([call]) => call.input.providerInstanceMutation.instance,
   );
   expect(saved).toEqual([
-    { driver: "claudeAgent", usageAccess: "allowed" },
+    { driver: "grok", usageAccess: "allowed" },
     { driver: "codex", usageAccess: "denied" },
   ]);
 });

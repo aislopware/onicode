@@ -815,9 +815,7 @@ function FindProjectsSection({
           />
         </RowIcon>
         <span className="text-muted-foreground">
-          <T>
-            Also show my usage stats from these agents, which can read their sign-in to check limits
-          </T>
+          <T>Also show my usage stats from these agents</T>
         </span>
       </label>
     </WelcomeSection>

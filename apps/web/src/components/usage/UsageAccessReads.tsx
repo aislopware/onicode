@@ -4,13 +4,6 @@ import { T } from "gt-react";
 /** What turning on usage access lets Onicode read for this agent. Keep in step with its usage reader. */
 export function UsageAccessReads({ driver }: { readonly driver: ProviderDriverKind }) {
   switch (driver) {
-    case "claudeAgent":
-      return (
-        <T>
-          Reads its session history, and its sign-in to match limits to your account and ask
-          Anthropic for your reset credits.
-        </T>
-      );
     case "grok":
       return <T>Reads its session history, and its sign-in to ask xAI for your credits.</T>;
     case "opencode":

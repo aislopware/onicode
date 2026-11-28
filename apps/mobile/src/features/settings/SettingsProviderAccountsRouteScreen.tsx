@@ -116,7 +116,7 @@ function EnvironmentProviders({
       ))}
       {accounts.length === 0 ? (
         <Text className="p-4 text-foreground-muted">
-          <T>Configure a provider with in-app sign-in in web or desktop Settings.</T>
+          <T>Configure a provider with in-app sign-in in desktop Settings.</T>
         </Text>
       ) : null}
       {claudeAccounts.map((provider) => (
