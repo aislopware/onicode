@@ -74,7 +74,7 @@ test(
       await screen.getByRole("option", "demo", { exact: true }).tap();
     }
     await screen.getByRole("textbox").fill("Plan the next change");
-    const draftPath = await browser.evaluate(() => location.pathname);
+    const draftPath = await browser.evaluate(() => location.hash.replace(/\?.*/u, ""));
     const branchPicker = browser
       .locator('[data-slot="combobox-trigger"][aria-label^="Branch:"]:visible')
       .first();
@@ -85,7 +85,7 @@ test(
     await projectPicker.tap();
     await screen.getByRole("option", "other-project", { exact: true }).tap();
     await projectPicker.filter({ hasText: "other-project" }).waitFor();
-    if ((await browser.evaluate(() => location.pathname)) !== draftPath) {
+    if ((await browser.evaluate(() => location.hash.replace(/\?.*/u, ""))) !== draftPath) {
       throw new Error("The project picker opened a different draft.");
     }
     await expect(branchPicker).toBeDisabled();

@@ -89,7 +89,7 @@ test(
     };
     if ((await projectPicker.textContent())?.trim() !== "demo") await moveDraft("demo");
     await screen.getByRole("textbox").fill("Plan the next change");
-    const draftPath = await browser.evaluate(() => location.pathname);
+    const draftPath = await browser.evaluate(() => location.hash.replace(/\?.*/u, ""));
 
     for (const { branch, roundTrip } of cases) {
       await branchPicker.click();
@@ -107,7 +107,7 @@ test(
         await screen.getByRole("option", "New worktree", { exact: true }).tap();
         await expect(workspace).toContainText("New worktree");
       }
-      if ((await browser.evaluate(() => location.pathname)) !== draftPath) {
+      if ((await browser.evaluate(() => location.hash.replace(/\?.*/u, ""))) !== draftPath) {
         throw new Error("The project picker opened a different draft.");
       }
       await expect(branchPicker).toBeDisabled();
