@@ -4743,3 +4743,4 @@ b8233e5ed7	take	taken as is
 c203d93314	take	taken as is (other forge)
 2929c2c2bc	take	taken as is
 30e7a1f848	take	taken as is
+af70189a8f	take	adapted: Onicode's resolver kept (null when unreachable); hook follows ThreadServersPanel (forward, else direct address, else in-app tab via useOpenLink); no web branch; tagged error; translated

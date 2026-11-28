@@ -1519,6 +1519,7 @@
   "67051e1797a303c8": "No se pudieron cargar los ajustes guardados del navegador.",
   "822f2a1b8c0a799e": "El navegador integrado no está disponible en este entorno de ejecución.",
   "19eb7450f158369f": "No se pueden abrir enlaces.",
+  "112173d046bfc910": "localhost:{port} se ejecuta en otra máquina y el reenvío de puertos no está disponible para ella ahora mismo.",
   "e4f274ef6c9c9a6c": "Elige una carpeta en la otra máquina.",
   "5aa50c97d1573919": "No se pudo iniciar la clonación.",
   "1a31b5a1f4fe467f": "Esta máquina",
@@ -1647,6 +1648,7 @@
   "09fc00e945452096": "No se encontró el archivo en {machine} en {path}.",
   "489ad5b6df027e0d": "Contenido multimedia no disponible",
   "a4d43351599654ca": "Esta conexión no puede mostrar archivos en este entorno.",
+  "086ecbb6f4c2e959": "No se puede abrir en el navegador",
   "a2ef393fa7b48ae8": "Desplazar ecuación en bloque",
   "e94685ea5642e088": "Desplazar ecuación en línea",
   "2b06a4b6f5369ae2": "El acceso a la vista previa no está disponible para este cliente.",
@@ -3120,9 +3122,9 @@
   "519dd506361059c9": "Comando",
   "b851b1f4c772dea4": "Esperando",
   "83915f0968cde2cc": "En ejecución",
+  "2188eee8f81b0f51": "Abrir subagente",
   "b90e87f4b7125237": "Detalles",
   "16dc67f5429d8bae": "Trabajo en segundo plano",
-  "2188eee8f81b0f51": "Abrir subagente",
   "28bb7ce40dfd349a": "La salida de la terminal no se puede añadir a la respuesta de una pregunta.",
   "801cb8edea94b8f6": "Responde o descarta primero la pregunta y luego añádelo al chat.",
   "aa5507f20d94d5a9": "Actualiza este servidor para enviar archivos con las respuestas a preguntas",
@@ -3987,7 +3989,6 @@
   "ac242b57dbfa5259": "Gestionar tareas programadas",
   "d93c0db04f4c8e46": "Editar automatización",
   "3fe420ed9b5bdb75": "Ejecutar ahora",
-  "fdf273ca647a967f": "Eliminar",
   "0c433351a8606e50": [
     "No se pudieron cargar las automatizaciones: ",
     {
@@ -4171,7 +4172,6 @@
   "e89974d6fdbe5552": "Quitar de este hilo",
   "562eeedc0de805fe": "No hay otros repositorios",
   "1d2025060ba3d1c3": "No se pudo reenviar el puerto {port}",
-  "086ecbb6f4c2e959": "No se puede abrir en el navegador",
   "51052c00ab1ac8cc": "No se puede abrir la vista previa",
   "0ccd37739f9cf2b6": "No se pudo detener el servidor",
   "a610a81c4061bb4c": "Servidores",
@@ -4891,9 +4891,9 @@
   "2d67b3fae24b20b2": "Buscando dispositivos…",
   "c928303400ccaf24": "No se pudo iniciar el device hub.",
   "4cb21672153c1f18": "No se encontraron simuladores ni emuladores en este entorno.",
-  "c82410197256eb53": "Simuladores de iOS",
-  "31a71fec6b5f2bf3": "Dispositivos Android",
   "1bd21d5284dc2d8e": "Dispositivos iOS",
+  "31a71fec6b5f2bf3": "Dispositivos Android",
+  "c82410197256eb53": "Simuladores de iOS",
   "ac18a5e35195a258": "Emuladores de Android",
   "f28d1d2b5f30a8cd": "Físico",
   "94215375ea2558b8": "En ejecución",
@@ -9407,6 +9407,7 @@
     }
   ],
   "f2a687289f3b3c81": "Entregas",
+  "fdf273ca647a967f": "Eliminar",
   "b07d394fdeed8b92": [
     "Entregas · ",
     {

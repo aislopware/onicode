@@ -1519,6 +1519,7 @@
   "67051e1797a303c8": "Gespeicherte Browsereinstellungen konnten nicht geladen werden.",
   "822f2a1b8c0a799e": "Der integrierte Browser ist in dieser Laufzeitumgebung nicht verfügbar.",
   "19eb7450f158369f": "Links können nicht geöffnet werden.",
+  "112173d046bfc910": "localhost:{port} läuft auf einem anderen Rechner, und eine Portweiterleitung ist dafür gerade nicht verfügbar.",
   "e4f274ef6c9c9a6c": "Wähle einen Ordner auf dem anderen Rechner.",
   "5aa50c97d1573919": "Das Klonen konnte nicht gestartet werden.",
   "1a31b5a1f4fe467f": "Dieser Rechner",
@@ -1646,6 +1647,7 @@
   "09fc00e945452096": "Die Datei wurde auf {machine} unter {path} nicht gefunden.",
   "489ad5b6df027e0d": "Medien nicht verfügbar",
   "a4d43351599654ca": "Diese Verbindung kann in dieser Umgebung keine Dateien anzeigen.",
+  "086ecbb6f4c2e959": "Kann nicht im Browser geöffnet werden",
   "a2ef393fa7b48ae8": "Anzeigeformel scrollen",
   "e94685ea5642e088": "Inline-Formel scrollen",
   "2b06a4b6f5369ae2": "Vorschauzugriff ist für diesen Client nicht verfügbar.",
@@ -3121,9 +3123,9 @@
   "519dd506361059c9": "Befehl",
   "b851b1f4c772dea4": "Wartet",
   "83915f0968cde2cc": "Läuft",
+  "2188eee8f81b0f51": "Subagent öffnen",
   "b90e87f4b7125237": "Details",
   "16dc67f5429d8bae": "Hintergrundarbeit",
-  "2188eee8f81b0f51": "Subagent öffnen",
   "28bb7ce40dfd349a": "Terminal-Ausgabe kann nicht zu einer Antwort auf eine Frage hinzugefügt werden.",
   "801cb8edea94b8f6": "Beantworte oder verwirf zuerst die Frage und füge sie dann zum Chat hinzu.",
   "aa5507f20d94d5a9": "Aktualisiere diesen Server, um Dateien mit Antworten auf Fragen zu senden",
@@ -3991,7 +3993,6 @@
   "ac242b57dbfa5259": "Geplante Aufgaben verwalten",
   "d93c0db04f4c8e46": "Automatisierung bearbeiten",
   "3fe420ed9b5bdb75": "Jetzt ausführen",
-  "fdf273ca647a967f": "Löschen",
   "0c433351a8606e50": [
     "Automatisierungen konnten nicht geladen werden: ",
     {
@@ -4174,7 +4175,6 @@
   "e89974d6fdbe5552": "Aus diesem Thread entfernen",
   "562eeedc0de805fe": "Keine weiteren Repositorys",
   "1d2025060ba3d1c3": "Port {port} konnte nicht weitergeleitet werden",
-  "086ecbb6f4c2e959": "Kann nicht im Browser geöffnet werden",
   "51052c00ab1ac8cc": "Vorschau kann nicht geöffnet werden",
   "0ccd37739f9cf2b6": "Server konnte nicht gestoppt werden",
   "a610a81c4061bb4c": "Server",
@@ -4894,9 +4894,9 @@
   "2d67b3fae24b20b2": "Geräte werden gesucht…",
   "c928303400ccaf24": "Der Geräte-Hub konnte nicht gestartet werden.",
   "4cb21672153c1f18": "In dieser Umgebung wurden keine Simulatoren oder Emulatoren gefunden.",
-  "c82410197256eb53": "iOS-Simulatoren",
-  "31a71fec6b5f2bf3": "Android-Geräte",
   "1bd21d5284dc2d8e": "iOS-Geräte",
+  "31a71fec6b5f2bf3": "Android-Geräte",
+  "c82410197256eb53": "iOS-Simulatoren",
   "ac18a5e35195a258": "Android-Emulatoren",
   "f28d1d2b5f30a8cd": "Physisch",
   "94215375ea2558b8": "Läuft",
@@ -9411,6 +9411,7 @@
     }
   ],
   "f2a687289f3b3c81": "Zustellungen",
+  "fdf273ca647a967f": "Löschen",
   "b07d394fdeed8b92": [
     "Zustellungen · ",
     {

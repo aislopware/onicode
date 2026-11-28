@@ -1519,6 +1519,7 @@
   "67051e1797a303c8": "Impossible de charger les paramètres du navigateur enregistrés.",
   "822f2a1b8c0a799e": "Le navigateur intégré n’est pas disponible dans cet environnement d’exécution.",
   "19eb7450f158369f": "L’ouverture de liens n’est pas disponible.",
+  "112173d046bfc910": "localhost:{port} s’exécute sur une autre machine, et le transfert de port n’est pas disponible pour elle pour le moment.",
   "e4f274ef6c9c9a6c": "Choisissez un dossier sur l’autre machine.",
   "5aa50c97d1573919": "Impossible de lancer le clonage.",
   "1a31b5a1f4fe467f": "Cette machine",
@@ -1647,6 +1648,7 @@
   "09fc00e945452096": "Le fichier est introuvable sur {machine} à l’emplacement {path}.",
   "489ad5b6df027e0d": "Média indisponible",
   "a4d43351599654ca": "Cette connexion ne peut pas afficher les fichiers de cet environnement.",
+  "086ecbb6f4c2e959": "Impossible d’ouvrir dans le navigateur",
   "a2ef393fa7b48ae8": "Faire défiler l’équation en bloc",
   "e94685ea5642e088": "Faire défiler l’équation en ligne",
   "2b06a4b6f5369ae2": "L’accès à l’aperçu n’est pas disponible pour ce client.",
@@ -3120,9 +3122,9 @@
   "519dd506361059c9": "Commande",
   "b851b1f4c772dea4": "En attente",
   "83915f0968cde2cc": "En cours",
+  "2188eee8f81b0f51": "Ouvrir le sous-agent",
   "b90e87f4b7125237": "Détails",
   "16dc67f5429d8bae": "Travail en arrière-plan",
-  "2188eee8f81b0f51": "Ouvrir le sous-agent",
   "28bb7ce40dfd349a": "La sortie du terminal ne peut pas être ajoutée à la réponse à une question.",
   "801cb8edea94b8f6": "Répondez à la question ou ignorez-la d’abord, puis ajoutez-la à la discussion.",
   "aa5507f20d94d5a9": "Mettez à jour ce serveur pour envoyer des fichiers avec les réponses aux questions",
@@ -3988,7 +3990,6 @@
   "ac242b57dbfa5259": "Gérer les tâches planifiées",
   "d93c0db04f4c8e46": "Modifier l’automatisation",
   "3fe420ed9b5bdb75": "Exécuter maintenant",
-  "fdf273ca647a967f": "Supprimer",
   "0c433351a8606e50": [
     "Impossible de charger les automatisations : ",
     {
@@ -4172,7 +4173,6 @@
   "e89974d6fdbe5552": "Retirer de ce fil",
   "562eeedc0de805fe": "Aucun autre dépôt",
   "1d2025060ba3d1c3": "Impossible de rediriger le port {port}",
-  "086ecbb6f4c2e959": "Impossible d’ouvrir dans le navigateur",
   "51052c00ab1ac8cc": "Impossible d’ouvrir l’aperçu",
   "0ccd37739f9cf2b6": "Impossible d’arrêter le serveur",
   "a610a81c4061bb4c": "Serveurs",
@@ -4892,9 +4892,9 @@
   "2d67b3fae24b20b2": "Recherche des appareils…",
   "c928303400ccaf24": "Le hub d’appareils n’a pas pu démarrer.",
   "4cb21672153c1f18": "Aucun simulateur ni émulateur trouvé dans cet environnement.",
-  "c82410197256eb53": "Simulateurs iOS",
-  "31a71fec6b5f2bf3": "Appareils Android",
   "1bd21d5284dc2d8e": "Appareils iOS",
+  "31a71fec6b5f2bf3": "Appareils Android",
+  "c82410197256eb53": "Simulateurs iOS",
   "ac18a5e35195a258": "Émulateurs Android",
   "f28d1d2b5f30a8cd": "Physique",
   "94215375ea2558b8": "En cours",
@@ -9409,6 +9409,7 @@
     }
   ],
   "f2a687289f3b3c81": "Livraisons",
+  "fdf273ca647a967f": "Supprimer",
   "b07d394fdeed8b92": [
     "Livraisons · ",
     {
