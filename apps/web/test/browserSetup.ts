@@ -13,6 +13,8 @@ declare module "vite-plus/test/browser" {
     pointerDown: () => Promise<void>;
     /** Defined in vite.config.ts. Releases the primary button. */
     pointerUp: () => Promise<void>;
+    /** Defined in vite.config.ts. Releases a held button, parks the mouse, clears emulated media. */
+    resetPage: () => Promise<void>;
   }
 }
 
@@ -26,11 +28,12 @@ await Promise.all(
       new Promise<void>((resolve) => {
         if (name === undefined) return resolve();
         const request = indexedDB.deleteDatabase(name);
-        // A connection the previous file left open blocks the delete; opens queue behind it.
+        // The previous file's iframe is gone, so nothing should block; never hang the file if it does.
         request.onsuccess = request.onerror = request.onblocked = () => resolve();
       }),
   ),
 );
+await Promise.all((await caches.keys()).map((name) => caches.delete(name)));
 
 // A size set with page.viewport outlives its test, so a later test would lay out at it.
 const { viewport } = server.config.browser;
@@ -40,7 +43,7 @@ const { viewport } = server.config.browser;
 // that mount without it are covered too. Before each test, not after: a timed-out test keeps
 // running and can move the mouse after its own afterEach.
 beforeEach(async () => {
-  await commands.resetPointer();
+  await commands.resetPage();
   if (window.innerWidth !== viewport.width || window.innerHeight !== viewport.height)
     await page.viewport(viewport.width, viewport.height);
 });

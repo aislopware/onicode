@@ -3,6 +3,8 @@ import { useState } from "react";
 import { expect, it, vi } from "vite-plus/test";
 import { cdp, page, userEvent } from "vite-plus/test/browser";
 
+import "~/index.css";
+
 import { render } from "../../test/render";
 import { AppAtomRegistryProvider } from "../rpc/atomRegistry";
 import { makeThreadFixture } from "../test-fixtures";
@@ -116,14 +118,26 @@ it("a badge card that grows under the pointer keeps the pointer inside it", asyn
   await userEvent.hover(screen.getByRole("button", { name: "12 linked issues" }));
   const showMore = page.getByRole("button", { name: "Show more" });
   await expect.element(showMore).toBeVisible();
+  // A popup mounts at the top left until Floating UI places it beside the badge.
+  await vi.waitFor(() =>
+    expect(showMore.element().getBoundingClientRect().top).toBeGreaterThan(400),
+  );
   const box = showMore.element().getBoundingClientRect();
-  const pointer = box.top + box.height / 2;
+  const pointer = { x: box.left + box.width / 2, y: box.top + box.height / 2 };
   await userEvent.click(showMore);
   await expect.element(page.getByText("Row 12")).toBeInTheDocument();
   // A card that moved off the pointer closes on the next pointer event, under the user's hand.
   await vi.waitFor(() => {
-    const card = document.querySelector("[data-slot='tooltip-popup']")!.getBoundingClientRect();
+    const popup = document.querySelector("[data-slot='tooltip-popup']");
+    expect(popup, "the card closed").not.toBeNull();
+    const card = popup!.getBoundingClientRect();
     expect(card.bottom).toBeLessThanOrEqual(window.innerHeight);
-    expect([card.top <= pointer, card.bottom >= pointer]).toEqual([true, true]);
+    expect([
+      card.left <= pointer.x,
+      card.right >= pointer.x,
+      card.top <= pointer.y,
+      card.bottom >= pointer.y,
+    ]).toEqual([true, true, true, true]);
   });
+  await userEvent.click(page.getByRole("button", { name: "Last action" }));
 });

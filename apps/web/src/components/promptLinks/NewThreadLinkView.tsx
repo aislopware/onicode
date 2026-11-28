@@ -209,6 +209,11 @@ export function NewThreadLinkView({ link }: { readonly link: NewThreadLink }) {
   };
 
   const cloneRepository = async (repository: PromptLinkRepository) => {
+    if (findPromptLinkProjects(recentProjects(), repository).length > 0) {
+      setStarted(false);
+      setState({ status: "opening" });
+      return;
+    }
     const environmentId = lastActiveEnvironmentId();
     const environment = environments.find((entry) => entry.environmentId === environmentId);
     const serverConfig = environment?.serverConfig ?? null;
@@ -329,11 +334,13 @@ export function NewThreadLinkView({ link }: { readonly link: NewThreadLink }) {
     }
   }
 
-  // A project's repository identity can arrive after startup, so a decided "missing" re-decides.
+  // A project's repository identity, or the PR's thread, can arrive after startup, so a decided
+  // "missing" re-decides.
   if (
     ready &&
     state.status === "missing-repository" &&
-    findPromptLinkProjects(recentProjects(), state.repository).length > 0
+    (localPullRequestThread !== undefined ||
+      findPromptLinkProjects(recentProjects(), state.repository).length > 0)
   ) {
     setStarted(false);
     setState({ status: "opening" });

@@ -14,6 +14,8 @@ import { thirdPartyLicensesPlugin } from "../../scripts/lib/third-party-licenses
 import { warmBundledDevPlugin } from "./vite/warmBundledDev";
 
 const repoEnv = loadRepoEnv();
+// Browser test pages whose primary button a test pressed and has not released.
+const heldPointers = new WeakSet<object>();
 Object.assign(process.env, repoEnv);
 
 const port = Number(process.env.PORT ?? 5733);
@@ -128,10 +130,20 @@ const browserTestProject = {
         },
         // A press held across a render: userEvent only offers whole clicks.
         pointerDown: async ({ page }) => {
+          heldPointers.add(page);
           await page.mouse.down();
         },
         pointerUp: async ({ page }) => {
+          heldPointers.delete(page);
           await page.mouse.up();
+        },
+        // What a timed-out test leaves on the page outlives it: a held button, emulated media.
+        resetPage: async ({ page }) => {
+          if (heldPointers.delete(page)) await page.mouse.up();
+          await page.mouse.move(-1, -1);
+          const session = await page.context().newCDPSession(page);
+          await session.send("Emulation.setEmulatedMedia", { features: [] });
+          await session.detach();
         },
       },
     },
