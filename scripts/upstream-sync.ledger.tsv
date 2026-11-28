@@ -4881,3 +4881,4 @@ c4e93f21be	take	taken as is (Onicode had no Claude-specific blocking Stop-hook h
 e5cce519a6	take	taken as is
 a5041e797e	take	taken as is
 e003d938f9	take	conflict: kept Onicode's precomputed BOOTSTRAP block, added upstream's hasViewportMeta above it
+b334a34594	take	conflict: kept Onicode's validated changeRequestUrl (safe number, project path, URL parse), web host mapped through upstream's webHost
