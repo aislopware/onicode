@@ -300,6 +300,8 @@ describe("mayContainStandaloneIssueLink", () => {
     ["[issue](https://linear.app/acme/issue/WEB-17)", true],
     ["[issue](https://LINEAR.APP/acme/issue/WEB-17)", true],
     ["[issue](https://acme.atlassian.net/browse/ENG-7)", true],
+    ["[issue](https://linear.app:443/acme/issue/WEB-17)", true],
+    ["[issue](https://acme.atlassian.net:443/browse/ENG-7)", true],
     ["[issue](https://github.com/acme/web/issues/7)", false],
   ])("classifies %s as %s", (text, expected) => {
     expect(mayContainStandaloneIssueLink(text)).toBe(expected);
