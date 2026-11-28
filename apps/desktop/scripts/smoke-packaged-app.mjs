@@ -3,12 +3,13 @@
 // or bundle cannot start there fails before it is published.
 //
 //   node apps/desktop/scripts/smoke-packaged-app.mjs --executable <app> [--artifacts-dir <dir>]
+import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeTimersPromises from "node:timers/promises";
 import * as NodeUtil from "node:util";
-import { _electron } from "playwright-core";
+import { chromium } from "playwright-core";
 
 // A snapshot from an older build on purpose: the packaged server must migrate it forward, as it
 // does for every upgrading user. It holds one project and two threads, nothing else.
@@ -37,26 +38,61 @@ const oniHome = NodePath.join(home, "onicode");
 NodeFS.mkdirSync(NodePath.join(oniHome, "userdata"), { recursive: true });
 NodeFS.copyFileSync(FIXTURE_DB, NodePath.join(oniHome, "userdata/statev2.sqlite"));
 
-let step = "launching the app";
-let app;
-try {
-  app = await _electron.launch({
-    executablePath: executable,
-    // Linux CI runners do not allow the Chromium sandbox's user namespaces.
-    args: ["--no-sandbox"],
-    env: {
-      ...process.env,
-      XDG_CONFIG_HOME: NodePath.join(home, ".config"),
-      XDG_DATA_HOME: NodePath.join(home, ".local/share"),
-      ONICODE_HOME: oniHome,
-      ONICODE_DISABLE_AUTO_UPDATE: "true",
-    },
-    timeout: STEP_TIMEOUT_MS,
+// Packaged builds turn off Electron's Node inspector fuse, so Playwright's `_electron.launch`
+// (which attaches through `--inspect`) never connects. Chromium's DevTools port still works.
+const waitForDevToolsEndpoint = (child) =>
+  new Promise((resolve, reject) => {
+    let output = "";
+    const onData = (chunk) => {
+      process.stderr.write(chunk);
+      output += chunk.toString();
+      const match = /DevTools listening on (ws:\/\/\S+)/.exec(output);
+      if (match?.[1]) {
+        clearTimeout(timer);
+        child.off("exit", onExit);
+        resolve(match[1]);
+      }
+    };
+    const onExit = (code, signal) => {
+      clearTimeout(timer);
+      reject(new Error(`The app exited (code ${code}, signal ${signal}) before DevTools opened.`));
+    };
+    const timer = setTimeout(() => {
+      child.off("exit", onExit);
+      reject(new Error(`DevTools did not open within ${STEP_TIMEOUT_MS}ms.`));
+    }, STEP_TIMEOUT_MS);
+    child.stderr?.on("data", onData);
+    child.once("exit", onExit);
   });
+
+let step = "launching the app";
+let child;
+let browser;
+try {
+  child = NodeChildProcess.spawn(
+    executable,
+    // Linux CI runners do not allow the Chromium sandbox's user namespaces.
+    ["--no-sandbox", "--remote-debugging-port=0"],
+    {
+      stdio: ["ignore", "inherit", "pipe"],
+      env: {
+        ...process.env,
+        XDG_CONFIG_HOME: NodePath.join(home, ".config"),
+        XDG_DATA_HOME: NodePath.join(home, ".local/share"),
+        ONICODE_HOME: oniHome,
+        ONICODE_DISABLE_AUTO_UPDATE: "true",
+      },
+    },
+  );
+  const endpoint = await waitForDevToolsEndpoint(child);
+  browser = await chromium.connectOverCDP(endpoint, { timeout: STEP_TIMEOUT_MS });
   // A backend that never starts leaves no window, or only the "could not start" window, so the
   // thread wait below fails either way and its screenshot shows the startup error.
   step = "waiting for the first window";
-  const page = await app.firstWindow({ timeout: STEP_TIMEOUT_MS });
+  const context = browser.contexts()[0];
+  if (!context) throw new Error("The app exposed no browser context over DevTools.");
+  const page =
+    context.pages()[0] ?? (await context.waitForEvent("page", { timeout: STEP_TIMEOUT_MS }));
   try {
     step = `finding "${THREAD_TITLE}" in the sidebar`;
     const thread = page.locator("li[data-thread-item]", { hasText: THREAD_TITLE });
@@ -87,12 +123,12 @@ try {
   }
   process.exitCode = 1;
 } finally {
-  if (app) {
-    // A hung app never finishes closing; kill it so the job does not wait for its timeout.
-    // Playwright drops the process handle once the app closes, so read it first.
-    const child = app.process();
-    const closed = app.close().catch(() => {});
-    await Promise.race([closed, NodeTimersPromises.setTimeout(10_000, undefined, { ref: false })]);
+  await browser?.close().catch(() => {});
+  if (child && child.exitCode === null && child.signalCode === null) {
+    // Let the app quit cleanly, but a hung app never does; kill it so the job does not wait.
+    const exited = new Promise((resolve) => child?.once("exit", resolve));
+    child.kill("SIGTERM");
+    await Promise.race([exited, NodeTimersPromises.setTimeout(10_000, undefined, { ref: false })]);
     child.kill("SIGKILL");
   }
   NodeFS.rmSync(home, { recursive: true, force: true, maxRetries: 5 });
