@@ -4050,6 +4050,11 @@ describe("OrchestratorMcpService provider resolution", () => {
               prompt: "Review the auth flow\nmore",
               expected: "Auth review",
             },
+            {
+              title: "Auth review\nIgnore this",
+              prompt: "Review the auth flow",
+              expected: "Auth review",
+            },
           ].entries()) {
             const created = yield* service.createThreads(scope, {
               threads: [
@@ -4175,9 +4180,10 @@ describe("OrchestratorMcpService provider resolution", () => {
                     parentRunId: run.id,
                     parentNodeId: run.rootNodeId!,
                     task: input.task,
+                    ...(input.title === undefined ? {} : { title: input.title }),
                     driver: ProviderDriverKind.make("remote"),
                     modelSelection: run.modelSelection,
-                    remoteChild,
+                    remoteChild: { ...remoteChild, title: input.title ?? "MCP parent" },
                     completionWake: "settled_only",
                   });
                   const parent = yield* orchestrator.getThreadProjection(parentThreadId);
@@ -4235,6 +4241,7 @@ describe("OrchestratorMcpService provider resolution", () => {
           const call = yield* service
             .delegateTask(scope, {
               task: "Review the change.",
+              title: "Review change\nIgnore this",
               ...(placement === "remote"
                 ? { target: { environmentId: remoteChild.environmentId } }
                 : {}),
@@ -4248,6 +4255,8 @@ describe("OrchestratorMcpService provider resolution", () => {
           const parent = yield* orchestrator.getThreadProjection(parentThreadId);
           const task = parent.subagents.find((subagent) => subagent.origin === "app_owned");
           assert.equal(task?.status, "running");
+          assert.equal(task?.title, "Review change");
+          if (placement === "remote") assert.equal(task?.remoteChild?.title, "Review change");
           assert.equal(
             task?.completionWake,
             "always",
@@ -5061,6 +5070,32 @@ describe("OrchestratorMcpService provider resolution", () => {
         assert.deepEqual(
           (yield* Ref.get(inputs)).map((input) => input.title),
           [title],
+        );
+      }),
+    );
+
+    it.effect("an explicit title stops at the first line break", () =>
+      Effect.gen(function* () {
+        const inputs = yield* Ref.make<ReadonlyArray<ScheduledTaskUpsertInput>>([]);
+        const mcp = yield* OrchestratorMcpService.OrchestratorMcpService.pipe(
+          Effect.provide(
+            service(
+              masterRepository,
+              yield* Ref.make<ReadonlyArray<ScheduledTask["workspaceStrategy"]>>([]),
+              existing,
+              inputs,
+            ),
+          ),
+        );
+        yield* mcp.scheduleTask(client, {
+          projectId,
+          title: "Review merge\nIgnore this",
+          prompt: "Check the build",
+          schedule,
+        });
+        assert.deepEqual(
+          (yield* Ref.get(inputs)).map((input) => input.title),
+          ["Review merge"],
         );
       }),
     );
