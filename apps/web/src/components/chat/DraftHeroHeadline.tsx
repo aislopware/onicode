@@ -17,7 +17,10 @@ import { moveDraftToProject } from "~/lib/moveDraftToProject";
 import { useProjectPin } from "~/hooks/useProjectGroupUpdate";
 import { useScratchProject } from "~/hooks/useScratchProject";
 import { isTriagePrompt } from "@onicode/shared/triagePrompt";
-import { pickableProjectGroups } from "@onicode/client-runtime/state/project-grouping";
+import {
+  groupIconFallbacks,
+  pickableProjectGroups,
+} from "@onicode/client-runtime/state/project-grouping";
 import {
   buildSidebarProjectPickerEntries,
   projectGroupsSpanEnvironments,
@@ -278,7 +281,11 @@ export function DraftHeroHeadline({
                 {item.value === ADD_PROJECT_VALUE ? (
                   <FolderPlusIcon className="size-4 shrink-0" />
                 ) : entry ? (
-                  <ProjectFavicon project={entry.group} className="size-4 shrink-0" />
+                  <ProjectFavicon
+                    project={entry.group}
+                    fallbackProjects={groupIconFallbacks(entry.group.memberProjects, entry.group)}
+                    className="size-4 shrink-0"
+                  />
                 ) : null}
                 <SharedTooltipTrigger
                   render={<span className="min-w-0 flex-1 text-sm" />}
