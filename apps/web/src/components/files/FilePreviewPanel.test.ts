@@ -929,7 +929,7 @@ Third}`;
       '<text:p><text:hidden-paragraph text:condition="ooow:0" text:is-hidden="true"/>Kept paragraph.</text:p>' +
       '<text:p>Outer <draw:frame><draw:text-box><text:p><text:hidden-paragraph text:condition="ooow:1"/>Boxed.</text:p></draw:text-box></draw:frame>stays.</text:p>' +
       "</office:text></office:body></office:document-content>";
-    const result = await openDocument(new JSZip().file("content.xml", xml), "odt");
+    const result = await openDocument(new Map([["content.xml", xml]]), "odt");
     if (result.type !== "document") throw new Error("Expected document");
     expect(result.pages[0]!.html).toBe(
       "<p>Gate code is posted.</p><p>Shown field visible note<span data-odf-whitespace> </span>end.</p><p>Kept paragraph.</p><p>Outer stays.</p>",
