@@ -13,7 +13,7 @@ const twMerge = extendTailwindMerge({
   extend: {
     theme: {
       text: ["2xs", "3xs", "4xs", "5xs", "ui"],
-      shadow: ["popup", "popup-dark", "plate", "card"],
+      shadow: ["popup", "popup-dark", "plate", "card", "raised", "composer", "composer-dark"],
     },
     classGroups: { "bg-image": [{ bg: ["composer-seam-below", "composer-seam-above"] }] },
   },

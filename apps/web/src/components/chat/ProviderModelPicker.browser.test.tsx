@@ -400,12 +400,12 @@ it("opens on favorites and recent picks, with every provider listed under them",
     { key: "ctrl+[", command: "modelPicker.previousProvider", when: "modelPickerOpen" },
   ]);
 
-  const picker = () => (
+  const picker = (lockedProvider: ProviderDriverKind | null = null) => (
     <ProviderModelPicker
       environmentId={null}
       activeInstanceId={claude!.instanceId}
       model="opus"
-      lockedProvider={null}
+      lockedProvider={lockedProvider}
       instanceEntries={entries}
       modelOptionsByInstance={new Map(entries.map((entry) => [entry.instanceId, entry.models]))}
       keybindings={keybindings}
@@ -452,19 +452,37 @@ it("opens on favorites and recent picks, with every provider listed under them",
     ]),
   );
 
-  // Provider navigation moves between providers; Recent only repeats their models.
+  // The provider shortcut steps through the provider tabs. Each lists only its provider's
+  // models, with the first one ready for Enter.
   await userEvent.keyboard("{Control>}[[{/Control}");
+  await vi.waitFor(() => expect(names()).toEqual(["Sol"]));
+  await expect
+    .element(page.getByRole("tab", { name: "Codex" }))
+    .toHaveAttribute("aria-selected", "true");
   await expect
     .element(page.getByRole("option", { name: /Sol/ }))
     .toHaveAttribute("data-highlighted");
   await userEvent.keyboard("{Control>}[[{/Control}");
+  await vi.waitFor(() => expect(names()).toEqual(["Opus", "Haiku", "Sonnet"]));
   await expect
-    .element(page.getByRole("option", { name: /Opus/ }).nth(1))
+    .element(page.getByRole("option", { name: /Opus/ }))
     .toHaveAttribute("data-highlighted");
+
+  // Search still covers every provider, and clearing it returns to the tab.
+  await userEvent.keyboard("sol");
+  await vi.waitFor(() => expect(names()).toContain("Sol"));
+  await userEvent.clear(page.getByPlaceholder("Search models"));
+  await vi.waitFor(() => expect(names()).toEqual(["Opus", "Haiku", "Sonnet"]));
+
+  await page.getByRole("tab", { name: "All models" }).click();
+  await vi.waitFor(() => expect(names()).toEqual(["Opus", "Opus", "Haiku", "Sonnet", "Sol"]));
+
+  // A thread that cannot leave Claude disables the other providers' tabs, and the shortcut
+  // passes them by.
+  await screen.rerender(picker(claude!.driverKind));
+  await expect.element(page.getByRole("tab", { name: "Codex" })).toBeDisabled();
   await userEvent.keyboard("{Control>}[[{/Control}");
-  await expect
-    .element(page.getByRole("option", { name: /Sol/ }))
-    .toHaveAttribute("data-highlighted");
+  await vi.waitFor(() => expect(names()).toEqual(["Opus", "Haiku", "Sonnet"]));
 });
 
 it("keeps the touch keyboard down when the picker opens", async () => {
@@ -597,7 +615,8 @@ it("keeps the selected model's options, favorites and every provider in the one 
   await expect.element(haiku.nth(0)).toHaveAttribute("aria-selected", "true");
   await expect.element(haiku.nth(1)).toHaveAttribute("aria-selected", "false");
 
-  // The provider shortcut moves the highlight with the view, so Enter picks from that provider.
+  // The provider shortcut opens the next provider's tab with its first model highlighted, so
+  // Enter picks from that provider.
   await expect.element(haiku.nth(0)).toHaveAttribute("data-highlighted");
   await userEvent.keyboard("{Control>}]{/Control}");
   await expect
@@ -606,6 +625,7 @@ it("keeps the selected model's options, favorites and every provider in the one 
   await userEvent.keyboard("{Enter}");
   const selected = screen.getByRole("status", { name: "Selected model" });
   await expect.element(selected).toHaveTextContent("opus");
+  await page.getByRole("tab", { name: "All models" }).click();
 
   // The star on a row is its own control: pressing it does not pick the model.
   await haiku.nth(1).getByRole("button", { name: "Remove from favorites" }).click();
