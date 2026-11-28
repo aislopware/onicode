@@ -1902,14 +1902,20 @@ async function* document(path: string, extension: string): AsyncGenerator<TextPa
       }
       // OCF names the package by its raw path; some writers percent-encode it anyway.
       if (!files.has(rootfile)) {
+        let decoded: string | undefined;
         try {
-          const decoded = decodeURIComponent(rootfile);
-          if (files.has(decoded)) rootfile = decoded;
-          else if (!has(rootfile)) {
-            const normalized = NodePath.posix.normalize(decoded);
-            if (files.has(normalized)) rootfile = normalized;
-          }
+          decoded = decodeURIComponent(rootfile);
         } catch {}
+        // Relative paths normalize, the raw name before its decoded twin.
+        const found =
+          decoded !== undefined && files.has(decoded)
+            ? decoded
+            : has(rootfile)
+              ? undefined
+              : [rootfile, decoded]
+                  .flatMap((name) => (name === undefined ? [] : [NodePath.posix.normalize(name)]))
+                  .find((name) => files.has(name));
+        if (found !== undefined) rootfile = found;
       }
       const packageXml = read(rootfile);
       const items = new Map(
