@@ -570,11 +570,19 @@ export function openRtf(bytes: ArrayBuffer): OfficeWorkerResult {
   let html = "";
   const pages: { title: undefined; html: string }[] = [];
   let completedLength = 0;
+  // Footnotes follow the page text, as in ODT previews; noteDepth marks the open footnote group.
+  let notes = "";
+  let noteCount = 0;
+  let noteDepth: number | undefined;
+  let noteParent = "";
   const finishPage = () => {
     if (pages.length >= 500) throw new PreviewError({ code: "rtf-too-many-pages" });
-    pages.push({ title: undefined, html: `<p data-rtf-whitespace>${html}</p>` });
+    pages.push({
+      title: undefined,
+      html: `<p data-rtf-whitespace>${html}</p>${notes && `<hr>${notes}`}`,
+    });
     completedLength += html.length;
-    html = "";
+    html = notes = "";
   };
   let run = "";
   let fallback = 0;
@@ -631,6 +639,12 @@ export function openRtf(bytes: ArrayBuffer): OfficeWorkerResult {
     } else if (char === "}") {
       flush();
       fallback = 0;
+      if (noteDepth === stack.length) {
+        notes += `<p data-rtf-whitespace>${html}</p>`;
+        completedLength += html.length;
+        html = noteParent;
+        noteDepth = undefined;
+      }
       const parent = stack.pop();
       if (!parent) throw new PreviewError({ code: "rtf-damaged" });
       state = parent;
@@ -653,11 +667,13 @@ export function openRtf(bytes: ArrayBuffer): OfficeWorkerResult {
       // words stays in one run.
       if (fallback === 0 && !/^uc?-?\d/.test(source.slice(i, i + 4))) flush();
       if (next === "*") {
-        // Shape instructions are an optional destination, but a text box keeps its text there.
-        const shapeInstructions = /^\*[\r\n]*\\shpinst(?![a-z])/i.test(source.slice(i, i + 16));
+        // Optional destinations are skipped, but a text box or footnote keeps its text there.
+        const keptDestination = /^\*[\r\n]*\\(?:shpinst|footnote)(?![a-z])/i.test(
+          source.slice(i, i + 16),
+        );
         i++;
         if (fallback > 0) fallback--;
-        else if (!shapeInstructions) state.skip = true;
+        else if (!keptDestination) state.skip = true;
         continue;
       }
       const match = /^([a-z]+)(-?\d+)? ?/i.exec(source.slice(i));
@@ -789,7 +805,12 @@ export function openRtf(bytes: ArrayBuffer): OfficeWorkerResult {
           html += lineBreak();
         }
         fallback = state.uc;
-      } else if (!hidden() && word === "page") finishPage();
+      } else if (word === "footnote") {
+        if (hidden() || noteDepth !== undefined) state.skip = true;
+        else [noteDepth, noteParent, html] = [stack.length, html, ""];
+      } else if (word === "chftn" && !hidden())
+        html += `<sup>${noteDepth === undefined ? ++noteCount : noteCount}</sup>`;
+      else if (!hidden() && word === "page") finishPage();
       else if (word === "cell" || word === "nestcell") emit("\t", state.skip);
       else if (!state.skip && word === "row") html += "<br>";
       else if (!hidden() && (word === "par" || word === "line")) html += lineBreak();

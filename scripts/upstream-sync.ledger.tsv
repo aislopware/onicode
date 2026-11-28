@@ -4981,3 +4981,4 @@ f5e72b63d4	take	taken as is
 bceeaa1693	take	taken as is
 40b0a98a20	take	taken as is
 ea48185068	take	taken as is
+8c423656a7	take	conflict; kept Onicode's Unicode-fallback handling of optional destinations, widened to footnote
