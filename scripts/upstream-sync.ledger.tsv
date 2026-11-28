@@ -4876,3 +4876,4 @@ eda8fe8380	take	taken as is (pl key translated with the Polish follow-up)
 f39cce1a0e	take	taken as is
 c4e93f21be	take	taken as is (Onicode had no Claude-specific blocking Stop-hook handling; passive summary hiding from a921dab213 untouched)
 4db4b820ed	take	taken as is
+36aaf084bc	take	translation conflicts: kept Onicode catalogs, added the 2 new keys; Polish translated

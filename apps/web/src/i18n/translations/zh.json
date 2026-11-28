@@ -12398,5 +12398,7 @@
   "c0ca4e817099761e": "外部 代理 chatgpt claude codex 托管 机器人 oauth 服务器 地址 复制",
   "79e3840f1ef8741e": "请将此 URL 提供给 ChatGPT 等托管代理：{url}",
   "1d5f687593c4e8ed": "请将此 URL 提供给在本机上运行的代理：{url}",
-  "3db385bf17d8f48e": "请将此 URL 提供给能够访问此环境的代理：{url}"
+  "3db385bf17d8f48e": "请将此 URL 提供给能够访问此环境的代理：{url}",
+  "8363b914aade0bdc": "最大化面板 ({shortcut})",
+  "6f9f7ac334779864": "恢复面板大小 ({shortcut})"
 }

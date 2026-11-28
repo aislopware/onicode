@@ -12384,5 +12384,7 @@
   "c0ca4e817099761e": "externe Agenten chatgpt claude codex gehostet Bot oauth Server Adresse kopieren",
   "79e3840f1ef8741e": "Gib diese URL einem gehosteten Agenten, z. B. ChatGPT: {url}",
   "1d5f687593c4e8ed": "Gib diese URL einem Agenten, der auf diesem Rechner läuft: {url}",
-  "3db385bf17d8f48e": "Gib diese URL einem Agenten, der diese Umgebung erreichen kann: {url}"
+  "3db385bf17d8f48e": "Gib diese URL einem Agenten, der diese Umgebung erreichen kann: {url}",
+  "8363b914aade0bdc": "Panel maximieren ({shortcut})",
+  "6f9f7ac334779864": "Panelgröße wiederherstellen ({shortcut})"
 }
