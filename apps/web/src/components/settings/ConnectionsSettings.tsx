@@ -1424,6 +1424,9 @@ function ConnectionsSettingsContent({
               <LocalEnvironmentMcpUrlRow
                 environmentId={accessEnvironmentId}
                 entry={accessEnvironment.entry}
+                publicAccess={
+                  accessServerConfig?.environment.capabilities.webhookSchedules === true
+                }
               />
             ) : null}
             {accessServerConfig?.environment.capabilities.previewTunnelSetting ? (

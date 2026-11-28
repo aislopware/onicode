@@ -45,7 +45,7 @@ import {
   supportsDesktopAppUpdate,
 } from "~/versionSkew";
 import { environmentCatalog } from "~/connection/catalog";
-import { isLoopbackHostname } from "~/environments/primary/target";
+import { isLocalLoopbackHost } from "@onicode/shared/hostClassification";
 import { type EnvironmentPresentation, usePrimaryEnvironmentId } from "~/state/environments";
 import { usePublicAccess } from "./publicAccess";
 import { SettingsRow } from "./settingsLayout";
@@ -457,18 +457,45 @@ export function SavedBackendListRow({
 export function LocalEnvironmentMcpUrlRow({
   environmentId,
   entry,
+  publicAccess,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly entry: ConnectionCatalogEntry;
+  /** Whether the server has public access; older servers have no status to subscribe to. */
+  readonly publicAccess: boolean;
+}) {
+  return publicAccess ? (
+    <PublicAccessMcpUrlRow environmentId={environmentId} entry={entry} />
+  ) : (
+    <McpUrlRow entry={entry} publicMcpUrl={null} />
+  );
+}
+
+function PublicAccessMcpUrlRow({
+  environmentId,
+  entry,
 }: {
   readonly environmentId: EnvironmentId;
   readonly entry: ConnectionCatalogEntry;
 }) {
+  // Public access through Funnel is the address hosted agents can reach.
+  const publicMcpUrl = usePublicAccess(environmentId).mcpUrl;
+  return <McpUrlRow entry={entry} publicMcpUrl={publicMcpUrl} />;
+}
+
+function McpUrlRow({
+  entry,
+  publicMcpUrl,
+}: {
+  readonly entry: ConnectionCatalogEntry;
+  readonly publicMcpUrl: string | null;
+}) {
   const setting = useSearchableSetting();
   const gt = useGT();
   const { copyToClipboard: copyMcpUrl } = useCopyMcpUrl();
-  // Public access through Funnel is the address hosted agents can reach.
-  const publicMcpUrl = usePublicAccess(environmentId).mcpUrl;
   const mcpUrl = publicMcpUrl ?? localEnvironmentMcpUrl({ entry });
   if (mcpUrl === null) return null;
-  const loopback = isLoopbackHostname(new URL(mcpUrl).hostname);
+  const loopback = isLocalLoopbackHost(new URL(mcpUrl).hostname);
   return (
     <SettingsRow
       {...setting("mcp-url")}
