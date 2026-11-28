@@ -471,6 +471,33 @@ describe("thread links", () => {
     }
   });
 
+  it("keeps Markdown reference link definitions intact when relabeling", () => {
+    // Onicode has no hosted links, so the destinations are the app's own thread links.
+    const link = "oni-thread://v2/local/demo";
+    for (const markdown of [
+      `[Review][thread]\n\n[thread]: ${link}`,
+      `[Review][thread]\n\n[thread]:${link}`,
+      `[Review][thread]\n\n[thread]: <${link}>`,
+      `[Review][thread]\n\n[thread]:\n  ${link}`,
+      `[Review][thread]\n\n  [thread]: ${link} "Demo"`,
+      `> [Review][thread]\n>\n> [thread]: ${link}`,
+    ]) {
+      for (const title of [() => "Demo", () => undefined]) {
+        expect(relabelThreadLinks(markdown, local, title)).toBe(markdown);
+      }
+    }
+
+    const withLiveAfter = `[Review][thread]\n\n[thread]: ${link}\n\nSee <${link}>`;
+    expect(relabelThreadLinks(withLiveAfter, local, () => "Demo")).toBe(
+      `[Review][thread]\n\n[thread]: ${link}\n\nSee [Demo](${link})`,
+    );
+
+    const paragraphContinuation = `Intro\n[thread]: <${link}>`;
+    expect(relabelThreadLinks(paragraphContinuation, local, () => "Demo")).toBe(
+      `Intro\n[thread]: [Demo](${link})`,
+    );
+  });
+
   it("keeps relabeled links navigable when the thread id contains a space", () => {
     const linkUrl = (markdown: string) => {
       const paragraph = unified().use(remarkParse).parse(markdown).children[0];

@@ -4854,3 +4854,4 @@ b72cb0385c	skip	relay client (cloudflared pruning) is removed in Onicode
 685b40de12	take	taken as is; test setup uses Onicode's await using
 ef0c28e2b9	take	taken as is
 9b0459269a	take	doc conflict: kept Onicode's sidebar guide, added the hover pin button to its Pin section; scenario ported with the desktop (WEB) target; Sidebar row-render test green
+369682aac6	take	test adapted: Onicode has no hosted links, so the definitions use oni-thread links (fails without the fix)
