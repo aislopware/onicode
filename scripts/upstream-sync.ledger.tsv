@@ -4906,3 +4906,4 @@ c9771b7717	take	taken as is
 0f181324a5	take	kept Onicode's userinfo parse: the same regex and first-colon split already landed in Onicode; upstream's test added and passes
 a6dc0b7e53	take	adapted onto Onicode's per-variable scrub function; test mount name rebranded
 b5c96a923e	take	fix(server): onboarding recognizes remotes containing Unicode line separators (#44727)
+755b73c2eb	take	fix(server): a provider update that leaves Codex unable to start says why (#35021) — i18n conflict: kept Onicode's cancel-update keys, added only the new Reinstall key (others already present)
