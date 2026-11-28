@@ -5017,3 +5017,4 @@ aedf477afa	take	DocumentText VERSION 32 so cached EPUB text is re-extracted
 342166cdb9	take	taken as is
 2809e464e8	take	kept Onicode's provider session-view check beside upstream's commandText; tests set the file's 1400x900 viewport
 a14a7cfb2b	take	taken as is
+7df779833d	take	taken as is, with its mobile-behavior case
