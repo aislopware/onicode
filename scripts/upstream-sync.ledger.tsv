@@ -4957,3 +4957,4 @@ b927b1fd93	take	CONFLICT in NotebookPreview (Onicode's empty-notebook branch); k
 9f887c5a39	take	kept Onicode's hostHardware query (settings gauges) beside upstream's liveHostResources; web only, mobile has no thread details card
 0dd3a0777d	take	taken as is
 9e9099e6b9	take	taken as is
+53a5508e49	take	test uses Onicode's TestArchive instead of JSZip
