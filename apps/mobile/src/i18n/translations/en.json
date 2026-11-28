@@ -5827,5 +5827,12 @@
   "ad208e3e32c85029": "Hide all",
   "3328503592789bed": "Zen",
   "856812e7e1fc445e": "Tool calls in chat",
-  "8d545d54c0a9e950": "Hide the commands, edits, and searches agents run. Hide successful keeps failures. Zen shows only final answers. Approvals, questions, and errors always show."
+  "8d545d54c0a9e950": "Hide the commands, edits, and searches agents run. Hide successful keeps failures. Zen shows only final answers. Approvals, questions, and errors always show.",
+  "872bf68b2e05f055": "{count, plural, one {{count} viewed file hidden} other {{count} viewed files hidden}}",
+  "f538b8016f5ca2f3": "Hide viewed files",
+  "be348514e8486295": "No unviewed files loaded yet",
+  "6b7765835778dc77": "All files are hidden",
+  "bd2cfcb7be24cd38": "Viewed files are hidden from this review.",
+  "6ae1484aa5bd2bc8": "Show viewed files",
+  "15db3431c35d4927": "{count, plural, one {{count} viewed hidden} other {{count} viewed hidden}}"
 }
