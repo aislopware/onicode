@@ -1933,9 +1933,10 @@ it("a new thread on a branch with changes opens them from thread details", async
 });
 
 async function renderRunningThread(name: string) {
+  await using stack = new AsyncDisposableStack();
   await page.viewport(1400, 900);
   const thread = threadWithHistory(name, 1);
-  const environment = installFakeEnvironment([thread], { acceptCommands: true });
+  stack.use(installFakeEnvironment([thread], { acceptCommands: true }));
   __setClientSettingsForTests({
     ...DEFAULT_CLIENT_SETTINGS,
     onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
@@ -1944,20 +1945,20 @@ async function renderRunningThread(name: string) {
     createMemoryHistory({ initialEntries: [`/${ENVIRONMENT_ID}/${thread.id}`] }),
   );
   await router.load();
-  const app = await render(<AppRoot router={router} />, {
-    // AppRoot brings its own router.
-    router: false,
-  });
+  stack.use(
+    await render(<AppRoot router={router} />, {
+      // AppRoot brings its own router.
+      router: false,
+    }),
+  );
   await expect.element(page.getByText(`Answer 0 for ${thread.id}.`)).toBeVisible();
   const running = { ...thread.runs[0]!, status: "running" as const, completedAt: null };
   await act(() => emitThreadEvent(thread.id, { type: "run.updated", payload: running }));
   await expect.element(page.getByRole("button", { name: "Stop generation" })).toBeVisible();
+  const owned = stack.move();
   return {
     editor: page.getByTestId("composer-editor"),
-    [Symbol.asyncDispose]: async () => {
-      await app[Symbol.asyncDispose]();
-      environment[Symbol.dispose]();
-    },
+    [Symbol.asyncDispose]: () => owned.disposeAsync(),
   };
 }
 
