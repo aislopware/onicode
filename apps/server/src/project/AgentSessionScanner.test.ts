@@ -1243,28 +1243,33 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
     it.effect("imports a checkout's sessions from the linked worktrees the scan counts", () =>
       Effect.gen(function* () {
         const path = yield* Path.Path;
-        const fileSystem = yield* FileSystem.FileSystem;
         const nowMs = Date.parse("2026-08-24T12:00:00.000Z");
         yield* TestClock.setTime(nowMs);
         const claudeHomePath = yield* makeTempDir("onicode-claude-home-");
         const codexHomePath = yield* makeTempDir("onicode-codex-home-");
         const configBaseDir = yield* makeTempDir("onicode-scanner-base-");
         const repo = yield* makeTempDir("onicode-workspace-repo-");
-        yield* fileSystem.makeDirectory(path.join(repo, ".git"));
-        yield* fileSystem.writeFileString(path.join(repo, ".git", "config"), "[core]\n");
-        const worktreeGitDir = path.join(repo, ".git", "worktrees", "feature");
-        yield* fileSystem.makeDirectory(worktreeGitDir, { recursive: true });
-        yield* fileSystem.writeFileString(path.join(worktreeGitDir, "commondir"), "../..\n");
-        yield* fileSystem.writeFileString(
-          path.join(worktreeGitDir, "HEAD"),
-          "ref: refs/heads/feature\n",
-        );
+        const fileSystem = yield* FileSystem.FileSystem;
+        const branch = "feat\u00a0";
         const worktree = path.join(repo, ".claude", "worktrees", "feature");
-        yield* fileSystem.makeDirectory(worktree, { recursive: true });
-        yield* fileSystem.writeFileString(
-          path.join(worktree, ".git"),
-          `gitdir: ${worktreeGitDir}\n`,
-        );
+        yield* Effect.sync(() => {
+          const git = (...args: string[]) =>
+            NodeChildProcess.execFileSync("git", ["-C", repo, ...args], { stdio: "ignore" });
+          git("init");
+          git(
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "--allow-empty",
+            "-m",
+            "Initial commit",
+          );
+          git("worktree", "add", "-b", branch, worktree);
+        });
         // An Onicode-managed worktree of the same checkout is never imported with it.
         const managedGitDir = path.join(repo, ".git", "worktrees", "managed");
         yield* fileSystem.makeDirectory(managedGitDir, { recursive: true });
@@ -1310,7 +1315,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
           { sessionId: "00000000-0000-4000-8000-000000000a01", worktree: null },
           {
             sessionId: "00000000-0000-4000-8000-000000000a02",
-            worktree: { path: worktree, branch: "feature" },
+            worktree: { path: worktree, branch },
           },
         ]);
       }),
