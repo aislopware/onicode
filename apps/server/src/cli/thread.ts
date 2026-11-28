@@ -434,8 +434,9 @@ export const resolveProject = Effect.fn("cli.thread.resolveProject")(function* (
         : canonical.project;
     }
   }
-  // A path leaving an existing root through a link resolves where it points, as an existing file does.
-  if (containing !== undefined && containingRootAbsent) return containing;
+  // A path leaving an existing root through a link resolves where it points, as an existing file
+  // does. One created since its real path was read never took that walk, so it keeps its match.
+  if (containing !== undefined && (containingRootAbsent || existing === target)) return containing;
   const listed = yield* listGitCheckouts(gitDirectory).pipe(
     Effect.flatMap((paths) => Effect.forEach(paths, realPath)),
     Effect.provide(ProcessRunner.layer),

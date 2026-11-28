@@ -3072,9 +3072,13 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, ProjectionStoreService
                 LIMIT 1
               `;
                 const threadRow = threadRows[0];
-                if (threadRow !== undefined) {
-                  const thread = yield* decodeThreadPayload(threadRow.payload_json);
-                  const activeProviderThreadId = providerThreadUpdateActivates(
+                const thread =
+                  threadRow === undefined
+                    ? undefined
+                    : yield* decodeThreadPayload(threadRow.payload_json);
+                if (
+                  thread !== undefined &&
+                  providerThreadUpdateActivates(
                     thread.activeProviderThreadId,
                     existing === undefined
                       ? undefined
@@ -3084,19 +3088,16 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, ProjectionStoreService
                         },
                     event.payload,
                   )
-                    ? event.payload.id
-                    : thread.activeProviderThreadId;
-                  const updatedThread = {
+                ) {
+                  // The thread's update time moves with every event, below.
+                  const updatedThreadPayloadJson = yield* encodeThreadPayload({
                     ...thread,
-                    activeProviderThreadId,
-                    updatedAt: event.payload.updatedAt,
-                  };
-                  const updatedThreadPayloadJson = yield* encodeThreadPayload(updatedThread);
+                    activeProviderThreadId: event.payload.id,
+                  });
                   yield* sql`
                   UPDATE orchestration_v2_projection_threads
                   SET
-                    active_provider_thread_id = ${activeProviderThreadId},
-                    updated_at = ${stringField(parseEncodedPayload(updatedThreadPayloadJson), "updatedAt")},
+                    active_provider_thread_id = ${event.payload.id},
                     payload_json = ${updatedThreadPayloadJson}
                   WHERE thread_id = ${event.payload.appThreadId}
                 `;

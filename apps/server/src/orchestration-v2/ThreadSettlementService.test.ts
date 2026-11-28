@@ -2981,24 +2981,30 @@ describe("ThreadSettlementServiceV2 terminals", () => {
       }),
   );
 
-  it.effect.each(["archived", "deleted"] as const)(
+  it.effect.each(["archived", "deleted", "moved elsewhere"] as const)(
     "runs a waiting settle script once the last thread sharing the worktree is %s",
     (removal) =>
       Effect.gen(function* () {
+        const covered = appThread("covered-earlier", "settled", "/worktrees/source");
         const settled = appThread("first-settled", "settled", "/worktrees/source");
         const sharer = appThread("still-active", "active", "/worktrees/source");
         const marker = appThread("marker-thread", "settled", "/worktrees/marker");
-        const currentThreads = [settled, sharer, marker];
+        const after = appThread("after-thread", "settled", "/worktrees/after");
+        const currentThreads = [covered, marker, after];
         const fixture = yield* makeHarness({
           snapshot: makeSnapshot([]),
           currentThreads,
-          existingWorktreePaths: ["/worktrees/source", "/worktrees/marker"],
+          existingWorktreePaths: ["/worktrees/source", "/worktrees/marker", "/worktrees/after"],
         });
 
         yield* Effect.gen(function* () {
           const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
           yield* startHarness(service, fixture.activation, fixture.snapshotReads);
-          // The sharer still works there, so the first settlement waits for it. Scripts run in
+          // A thread whose script already ran there is no longer waiting for anything.
+          yield* fixture.publishEvent(settledEvent(covered));
+          assert.strictEqual((yield* Queue.take(fixture.scriptRuns)).threadId, covered.id);
+          currentThreads.push(settled, sharer);
+          // The sharer still works there, so the next settlement waits for it. Scripts run in
           // order, so the marker's run means that settlement was already handled.
           yield* fixture.publishEvent(settledEvent(settled));
           yield* fixture.publishEvent(settledEvent(marker));
@@ -3006,18 +3012,72 @@ describe("ThreadSettlementServiceV2 terminals", () => {
           const removed =
             removal === "archived"
               ? { ...sharer, archivedAt: DateTime.makeUnsafe(NOW) }
-              : { ...sharer, deletedAt: DateTime.makeUnsafe(NOW) };
-          currentThreads[1] = removed;
+              : removal === "deleted"
+                ? { ...sharer, deletedAt: DateTime.makeUnsafe(NOW) }
+                : { ...sharer, worktreePath: null };
+          currentThreads[currentThreads.indexOf(sharer)] = removed;
           yield* fixture.publishEvent({
-            type: removal === "archived" ? "thread.archived" : "thread.deleted",
+            type:
+              removal === "archived"
+                ? "thread.archived"
+                : removal === "deleted"
+                  ? "thread.deleted"
+                  : "thread.metadata-updated",
             id: EventId.make(`event:${removal}:${sharer.id}`),
             threadId: sharer.id,
             occurredAt: DateTime.makeUnsafe(NOW),
             payload: removed,
           });
+          yield* fixture.publishEvent(settledEvent(after));
           assert.strictEqual((yield* Queue.take(fixture.scriptRuns)).threadId, settled.id);
         }).pipe(Effect.provide(fixture.layer));
       }),
+  );
+
+  it.effect("a settled thread deleted while its script is queued releases the one waiting", () =>
+    Effect.gen(function* () {
+      const waiting = appThread("waiting-thread", "settled", "/worktrees/source");
+      const deleted = appThread("deleted-thread", "active", "/worktrees/source");
+      const holder = appThread("holder-thread", "settled", "/worktrees/holder");
+      const after = appThread("after-thread", "settled", "/worktrees/after");
+      const currentThreads = [waiting, deleted, holder, after];
+      const releaseHolder = yield* Deferred.make<void>();
+      const fixture = yield* makeHarness({
+        snapshot: makeSnapshot([]),
+        currentThreads,
+        existingWorktreePaths: ["/worktrees/source", "/worktrees/holder", "/worktrees/after"],
+        onScriptRun: (input) =>
+          input.threadId === holder.id ? Deferred.await(releaseHolder) : Effect.void,
+      });
+
+      yield* Effect.gen(function* () {
+        const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+        yield* startHarness(service, fixture.activation, fixture.snapshotReads);
+        yield* fixture.publishEvent(settledEvent(waiting));
+        // The holder's script keeps the slot, so the next settlement there queues behind it.
+        yield* fixture.publishEvent(settledEvent(holder));
+        assert.strictEqual((yield* Queue.take(fixture.scriptRuns)).threadId, holder.id);
+        const settledThere = { ...deleted, settledOverride: "settled" as const };
+        currentThreads[1] = settledThere;
+        yield* fixture.publishEvent(settledEvent(settledThere));
+        // Each settlement closes its terminals just before it queues its script.
+        for (const thread of [waiting, holder, settledThere]) {
+          assert.deepStrictEqual(yield* Queue.take(fixture.closedIdle), { threadId: thread.id });
+        }
+        const gone = { ...settledThere, deletedAt: DateTime.makeUnsafe(NOW) };
+        currentThreads[1] = gone;
+        yield* fixture.publishEvent({
+          type: "thread.deleted",
+          id: EventId.make(`event:deleted:${deleted.id}`),
+          threadId: deleted.id,
+          occurredAt: DateTime.makeUnsafe(NOW),
+          payload: gone,
+        });
+        yield* fixture.publishEvent(settledEvent(after));
+        yield* Deferred.succeed(releaseHolder, undefined);
+        assert.strictEqual((yield* Queue.take(fixture.scriptRuns)).threadId, waiting.id);
+      }).pipe(Effect.provide(fixture.layer));
+    }),
   );
 
   it.effect("skips the settle script for a subagent in its parent's worktree", () =>

@@ -7432,6 +7432,55 @@ describe("AcpAdapterV2", () => {
     }).pipe(Effect.provide(layerTest)),
   );
 
+  it.live.each([
+    { operation: "turn", method: "start" },
+    { operation: "snapshot read", method: "loadSession" },
+    { operation: "fork", method: "forkSession" },
+  ] as const)(
+    "relaunches again when a relaunched agent exits once its $operation answers",
+    ({ operation, method }) =>
+      Effect.gen(function* () {
+        let exitRelaunched: Effect.Effect<void> = Effect.void;
+        const opened = yield* openRelaunchSession(`exit-after-${method}`, {
+          environment: method === "forkSession" ? { ONICODE_ACP_SESSION_LIFECYCLE: "1" } : {},
+          wrapRuntime: (runtime, runtimeOrdinal) => {
+            if (runtimeOrdinal !== 2) return runtime;
+            const exitAfter = <A, E, R>(answered: Effect.Effect<A, E, R>) =>
+              answered.pipe(Effect.tap(() => exitRelaunched));
+            return method === "start"
+              ? { ...runtime, start: () => exitAfter(runtime.start()) }
+              : method === "loadSession"
+                ? { ...runtime, loadSession: (...args) => exitAfter(runtime.loadSession(...args)) }
+                : { ...runtime, forkSession: (...args) => exitAfter(runtime.forkSession(...args)) };
+          },
+        });
+        exitRelaunched = Effect.suspend(() => opened.terminate(2));
+        const runTurn = (ordinal: number) =>
+          Effect.gen(function* () {
+            yield* opened.runtime.startTurn(yield* opened.turnInput(ordinal));
+            yield* opened.runtime.events.pipe(
+              Stream.takeUntil((event) => event.type === "turn.terminal"),
+              Stream.runDrain,
+            );
+          });
+        yield* opened.terminate(1);
+        if (operation === "turn") {
+          yield* runTurn(1);
+        } else if (operation === "snapshot read") {
+          yield* opened.runtime.readThreadSnapshot({ providerThread: opened.providerThread });
+        } else {
+          yield* opened.runtime.forkThread({
+            sourceProviderThread: opened.providerThread,
+            targetThreadId: ThreadId.make(`thread-acp-exit-after-${method}-target`),
+          });
+        }
+        assert.lengthOf(opened.runtimeInputs, 2);
+        // The relaunched agent is gone, so the next send launches a third one.
+        yield* runTurn(2);
+        assert.lengthOf(opened.runtimeInputs, 3);
+      }).pipe(Effect.provide(layerTest)),
+  );
+
   it.effect("fails a prompt its agent leaves silent past the inactivity timeout", () =>
     Effect.gen(function* () {
       const harness = yield* makePromptInactivityHarness({
@@ -11722,6 +11771,227 @@ describe("AcpAdapterV2", () => {
           assert.isFalse(
             yield* hasPendingBackgroundWork,
             "finalize-window terminal must clear the carryover pin",
+          );
+        }).pipe(Effect.provideService(Clock.Clock, blockingClock));
+      }).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect.each([
+    { ending: "the agent exits", carriedStatus: "failed" },
+    { ending: "a Stop quarantines the run", carriedStatus: "interrupted" },
+  ] as const)(
+    "settles carried-over work when $ending while a timer finishes its turn",
+    ({ ending, carriedStatus }) =>
+      Effect.gen(function* () {
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+        const selfInvocation = yield* resolveSelfInvocation();
+        const mockAgentPath = yield* bundledMockAgentPath;
+        const baseClock = yield* Clock.Clock;
+        const finalizationClockRead = yield* Deferred.make<void>();
+        const releaseFinalizationClockRead = yield* Deferred.make<void>();
+        let blockNextClockRead = false;
+        const blockingClock: Clock.Clock = {
+          ...baseClock,
+          currentTimeMillis: Effect.suspend(() => {
+            if (!blockNextClockRead) return baseClock.currentTimeMillis;
+            blockNextClockRead = false;
+            return Deferred.succeed(finalizationClockRead, undefined).pipe(
+              Effect.andThen(Deferred.await(releaseFinalizationClockRead)),
+              Effect.andThen(baseClock.currentTimeMillis),
+            );
+          }),
+        };
+        yield* Effect.gen(function* () {
+          const instanceId = ProviderInstanceId.make("acp-test");
+          const firstChildSessionId = "mock-child-session-finalize-window-first";
+          const secondChildSessionId = "mock-child-session-finalize-window-second";
+          let firstSubagentStatus: "running" | "completed" = "running";
+          type RuntimeService = AcpSessionRuntime.AcpSessionRuntime["Service"];
+          let terminateAgent: AcpAdapterV2RuntimeInput["onTermination"] | undefined;
+          let sessionUpdateHandler:
+            | Parameters<RuntimeService["handleSessionUpdate"]>[0]
+            | undefined;
+          const promptSettled = yield* Deferred.make<void>();
+          const stopHeld = yield* Deferred.make<void>();
+          const adapter = yield* makeAcpAdapterV2({
+            testHooks: {
+              afterPromptSettledWithBackgroundWork: () =>
+                Deferred.succeed(promptSettled, undefined).pipe(Effect.asVoid),
+              onCancelHeld: () => Deferred.succeed(stopHeld, undefined).pipe(Effect.asVoid),
+            },
+            instanceId,
+            flavor: {
+              driver: ACP_TEST_DRIVER,
+              capabilities: AcpProviderCapabilitiesV2,
+              deferFinalizeForBackgroundWork: true,
+              enablePostSettleContinuation: true,
+              // Holds the Stop after it quarantined the run, until the finish settles the turn.
+              cancelAfterPromptStarts: { isStart: () => false, bound: "1 hour" },
+              extractSubagentUpdate: (toolCall) => {
+                if (toolCall.toolCallId === "tool-call-generic-1") {
+                  return {
+                    nativeTaskId: "task-finalize-window-first",
+                    prompt: "first background subagent",
+                    title: "first background subagent",
+                    model: null,
+                    status: firstSubagentStatus,
+                    childSessionId: firstChildSessionId,
+                    result: firstSubagentStatus === "completed" ? "FIRST_DONE" : null,
+                    suppressNormalTool: true,
+                  };
+                }
+                if (toolCall.toolCallId === "tool-call-generic-2") {
+                  return {
+                    nativeTaskId: "task-finalize-window-second",
+                    prompt: "second background subagent",
+                    title: "second background subagent",
+                    model: null,
+                    status: "waiting" as "waiting" | "completed",
+                    childSessionId: secondChildSessionId,
+                    result: null,
+                    suppressNormalTool: true,
+                  } as AcpAdapterV2SubagentUpdate;
+                }
+                return undefined;
+              },
+              makeRuntime: (runtimeInput) => {
+                terminateAgent = runtimeInput.onTermination;
+                return makeMockRuntime({
+                  childProcessSpawner,
+                  mockAgentPath,
+                  environment: { ONICODE_ACP_EMIT_GENERIC_TOOL_PLACEHOLDERS: "1" },
+                  wrapRuntime: (runtime) => ({
+                    ...runtime,
+                    handleSessionUpdate: (handler) =>
+                      Effect.sync(() => {
+                        sessionUpdateHandler = handler;
+                      }).pipe(Effect.andThen(runtime.handleSessionUpdate(handler))),
+                  }),
+                })(runtimeInput);
+              },
+            },
+            selfInvocation,
+            continuationRequests: { offer: () => Effect.void },
+          });
+          const threadId = ThreadId.make("thread-acp-subagent-finalize-window-exit");
+          const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            cwd: process.cwd(),
+          });
+          const modelSelection = { instanceId, model: "default" } as const;
+          const runtime = yield* adapter.openSession({
+            threadId,
+            providerSessionId: ProviderSessionId.make(
+              "provider-session-acp-subagent-finalize-window-exit",
+            ),
+            modelSelection,
+            runtimePolicy,
+          });
+          if (runtime.hasPendingBackgroundWork === undefined) {
+            return yield* Effect.die(
+              "ACP runtime must expose hasPendingBackgroundWork when post-settle continuation is enabled.",
+            );
+          }
+          const hasPendingBackgroundWork = runtime.hasPendingBackgroundWork;
+          const events = yield* Queue.unbounded<ProviderAdapter.ProviderAdapterV2Event>();
+          yield* runtime.events.pipe(
+            Stream.runForEach((event) => Queue.offer(events, event)),
+            Effect.forkScoped,
+          );
+          const providerThread = yield* runtime.ensureThread({
+            threadId,
+            modelSelection,
+            runtimePolicy,
+          });
+          const now = yield* DateTime.now;
+          yield* runtime.startTurn(
+            makeTurnInput({ threadId, providerThread, instanceId, runtimePolicy, now }),
+          );
+          yield* Deferred.await(promptSettled);
+          yield* TestClock.adjust("1 second");
+          assert.isDefined(sessionUpdateHandler, "session update handler must be wired");
+
+          firstSubagentStatus = "completed";
+          yield* sessionUpdateHandler!({
+            sessionId: "mock-session-1",
+            update: {
+              sessionUpdate: "tool_call_update",
+              toolCallId: "tool-call-generic-1",
+              title: "first background subagent",
+              kind: "other",
+              status: "completed",
+              rawOutput: { content: "FIRST_DONE" },
+            },
+          }).pipe(Effect.provideService(Clock.Clock, blockingClock));
+          for (let attempt = 0; attempt < 10; attempt += 1) {
+            yield* Effect.yieldNow;
+          }
+
+          yield* sessionUpdateHandler!({
+            sessionId: "mock-session-1",
+            update: {
+              sessionUpdate: "tool_call_update",
+              toolCallId: "tool-call-generic-2",
+              title: "second background subagent",
+              kind: "other",
+              status: "in_progress",
+              rawOutput: {},
+            },
+          });
+          assert.isTrue(yield* hasPendingBackgroundWork);
+
+          while (Option.isSome(yield* Queue.poll(events))) {}
+
+          blockNextClockRead = true;
+          const adjustFiber = yield* TestClock.adjust("3 seconds").pipe(Effect.forkScoped);
+          yield* Deferred.await(finalizationClockRead);
+          // The turn is claimed but not yet handed off, so the exit or Stop finds nothing to clear.
+          const stop =
+            ending === "the agent exits"
+              ? undefined
+              : yield* runtime
+                  .interruptTurn({
+                    providerThread,
+                    providerTurnId: idAllocator.derive.providerTurn({
+                      driver: ACP_TEST_DRIVER,
+                      nativeTurnId: acpScopedNativeId(instanceId, "mock-session-1:turn:1"),
+                    }),
+                    requestRuntimeRestart: true,
+                  })
+                  .pipe(Effect.forkScoped);
+          if (stop === undefined) {
+            yield* terminateAgent!(
+              new EffectAcpErrors.AcpTransportError({ detail: "agent exited", cause: "test" }),
+            );
+          } else {
+            yield* Deferred.await(stopHeld);
+          }
+          yield* Deferred.succeed(releaseFinalizationClockRead, undefined);
+          yield* Fiber.join(adjustFiber);
+          if (stop !== undefined) yield* Fiber.join(stop);
+
+          let rootTerminalStatus: string | null = null;
+          let secondSubagentStatusAfterExit: string | null = null;
+          let polled = yield* Queue.poll(events);
+          while (Option.isSome(polled)) {
+            const event = polled.value;
+            if (
+              event.type === "turn_item.updated" &&
+              event.turnItem.type === "subagent" &&
+              event.turnItem.nativeItemRef?.nativeId === "task-finalize-window-second"
+            ) {
+              secondSubagentStatusAfterExit = event.turnItem.status;
+            }
+            if (event.type === "turn.terminal") rootTerminalStatus = event.status;
+            polled = yield* Queue.poll(events);
+          }
+          assert.equal(rootTerminalStatus, "completed");
+          assert.equal(secondSubagentStatusAfterExit, carriedStatus);
+          assert.isFalse(
+            yield* hasPendingBackgroundWork,
+            "work handed off after it ended must not pin the thread",
           );
         }).pipe(Effect.provideService(Clock.Clock, blockingClock));
       }).pipe(Effect.provide(layerTest)),

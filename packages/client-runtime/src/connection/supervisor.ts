@@ -708,8 +708,10 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       // unanswered, so even a nearby socket must stay silent as long as a remote
       // one. The latest signal decides, as it names why the socket is suspect.
       let quickSilence = false;
+      let checkWaitsOutSilence = false;
       const startSilentSocketCheck = Effect.gen(function* () {
         silentSocket = yield* Effect.forkChild(awaitSilentSocket(lease, quickSilence, longResume));
+        checkWaitsOutSilence = !quickSilence && !longResume;
         recheck = false;
       });
       // The web and desktop foreground probe allows a busy host 15 seconds,
@@ -717,11 +719,14 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       const armSilentSocketCheck = Effect.fnUntraced(function* (signal: ConnectedLeaseSignal) {
         if (isForegroundProbe(signal)) return;
         quickSilence = answersQuickly(routeKind) && signal._tag !== "RequestUnanswered";
-        if (silentSocket !== undefined) {
-          recheck = true;
-          return;
+        if (silentSocket === undefined) return yield* startSilentSocketCheck;
+        // A dead socket sends no frame to end the running check, so one waiting
+        // out the long silence starts over when the signal allows a short one.
+        if (checkWaitsOutSilence && (quickSilence || longResume)) {
+          yield* Fiber.interrupt(silentSocket);
+          return yield* startSilentSocketCheck;
         }
-        yield* startSilentSocketCheck;
+        recheck = true;
       });
       yield* armSilentSocketCheck(next);
       const stopProbe = Effect.suspend(() =>
