@@ -13,6 +13,7 @@ import {
   ProviderThreadId,
   ProviderUploadFeedbackError,
   RunId,
+  SourceControlProviderKind,
   ThreadId,
   WS_METHODS,
   type IssueDetail,
@@ -64,6 +65,7 @@ import {
   assistantItem,
   dispatchedCommands,
   dropConnection,
+  emitProjectRepositoryIdentity,
   emitShellThread,
   emitThreadEvent,
   hasPendingAssetUrl,
@@ -653,6 +655,37 @@ it("a question that opens while a stashed file is checked keeps a machine stash"
   );
   expect(usePromptStashStore.getState().entries).toHaveLength(1);
   usePromptStashStore.getState().takeEntry("stash-late-question");
+});
+
+it("a pull request link waits for the repository identity a project learns after startup", async () => {
+  await page.viewport(1400, 900);
+  using _environment = installFakeEnvironment([]);
+  using _linked = answerRpc(WS_METHODS.pullRequestsLinkedThreads, () => ({ threads: [] }));
+  __setClientSettingsForTests({
+    ...DEFAULT_CLIENT_SETTINGS,
+    onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
+  });
+  const router = getRouter(createMemoryHistory({ initialEntries: ["/new?pr=example/demo/42"] }));
+  await router.load();
+  await using _app = await render(<AppRoot router={router} />, {
+    // AppRoot brings its own router.
+    router: false,
+  });
+  // The remote was added after the project, so the first snapshot knows no repository.
+  await expect.element(page.getByText("You don't have example/demo")).toBeVisible();
+  await using _identity = await emitProjectRepositoryIdentity({
+    canonicalKey: "github.com/example/demo",
+    locator: {
+      source: "git-remote",
+      remoteName: "origin",
+      remoteUrl: "https://github.com/example/demo.git",
+    },
+    provider: SourceControlProviderKind.make("github"),
+    displayName: "example/demo",
+    owner: "example",
+    name: "demo",
+  });
+  await expect.element(page.getByText("Check out example/demo#42?")).toBeVisible();
 });
 
 it("a new draft does not load its reserved thread before the server lists it", async () => {

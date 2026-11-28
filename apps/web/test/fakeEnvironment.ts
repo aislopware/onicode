@@ -807,6 +807,39 @@ export async function emitShellThread(threadId: ThreadId): Promise<void> {
   );
 }
 
+async function offerProjectRepositoryIdentity(
+  repositoryIdentity: OrchestrationProjectShell["repositoryIdentity"],
+): Promise<void> {
+  projects = projects.map((entry) =>
+    entry.id === PROJECT_ID ? { ...entry, repositoryIdentity } : entry,
+  );
+  if (shellSubscriber === null) throw new Error("No live shell subscription");
+  await Effect.runPromise(
+    Queue.offer(shellSubscriber, {
+      kind: "snapshot",
+      snapshot: {
+        schemaVersion: 1,
+        snapshotSequence: sequence,
+        projects,
+        threads: [],
+        archivedThreads: [],
+      },
+      resolvedRepositoryIdentityRoots: [project.workspaceRoot],
+    }),
+  );
+}
+
+/**
+ * Sends the project's repository identity as the server's enrichment refresh does, after the
+ * snapshot. Disposing clears it again: the client keeps a learned identity across snapshots.
+ */
+export async function emitProjectRepositoryIdentity(
+  repositoryIdentity: NonNullable<OrchestrationProjectShell["repositoryIdentity"]>,
+): Promise<AsyncDisposable> {
+  await offerProjectRepositoryIdentity(repositoryIdentity);
+  return { [Symbol.asyncDispose]: () => offerProjectRepositoryIdentity(null) };
+}
+
 /** Delivers one domain event, such as a run or turn-item update, to the thread's subscription. */
 export async function emitThreadEvent(
   threadId: ThreadId,

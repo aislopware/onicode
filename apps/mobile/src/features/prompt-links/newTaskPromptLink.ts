@@ -401,22 +401,25 @@ function resolveLink(linkSearch: string) {
   }
   const activityOf = (project: EnvironmentProject) =>
     lastActivity.get(`${project.environmentId}:${project.id}`) ?? "";
-  const projects = findPromptLinkProjects(
-    [...appAtomRegistry.get(environmentProjects.projectsAtom)].sort((left, right) =>
-      activityOf(right).localeCompare(activityOf(left)),
-    ),
-    repository,
-  );
-  const project = projects[0];
-  if (project) {
+  // Read again on Clone: a project's repository identity can arrive after the shells settle.
+  const openMatchingProject = () => {
+    const projects = findPromptLinkProjects(
+      [...appAtomRegistry.get(environmentProjects.projectsAtom)].sort((left, right) =>
+        activityOf(right).localeCompare(activityOf(left)),
+      ),
+      repository,
+    );
+    const project = projects[0];
+    if (!project) return false;
     const { pullRequest } = request;
     void (async () => {
       const thread = pullRequest && (await findServerPullRequestThread(projects, pullRequest));
       if (thread) openThread(thread, request.prompt);
       else await openProjectDraft(project, request);
     })();
-    return;
-  }
+    return true;
+  };
+  if (openMatchingProject()) return;
   Dialog.alert(
     m(msg("You don't have {repository}", { repository: promptLinkRepositoryName(repository) })),
     undefined,
@@ -427,7 +430,9 @@ function resolveLink(linkSearch: string) {
         : []),
       {
         text: m(msg("Clone", { $context: "verb, clones the repository" })),
-        onPress: () => cloneRepository(repository, request),
+        onPress: () => {
+          if (!openMatchingProject()) cloneRepository(repository, request);
+        },
       },
     ],
   );

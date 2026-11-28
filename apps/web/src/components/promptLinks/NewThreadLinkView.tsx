@@ -329,6 +329,16 @@ export function NewThreadLinkView({ link }: { readonly link: NewThreadLink }) {
     }
   }
 
+  // A project's repository identity can arrive after startup, so a decided "missing" re-decides.
+  if (
+    ready &&
+    state.status === "missing-repository" &&
+    findPromptLinkProjects(recentProjects(), state.repository).length > 0
+  ) {
+    setStarted(false);
+    setState({ status: "opening" });
+  }
+
   const runLaunch = useEffectEvent((next: LinkLaunch) => {
     openedLinkKeys.add(locationKey);
     switch (next.kind) {
