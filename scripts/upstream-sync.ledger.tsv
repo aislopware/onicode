@@ -4951,3 +4951,4 @@ a505181812	take	taken as is; fixes Claude restart continuation for awaited shell
 a5eb0ec0e8	take	taken as is
 01cb3020b5	take	taken as is
 7f694ec917	take	taken as is
+b927b1fd93	take	CONFLICT in NotebookPreview (Onicode's empty-notebook branch); kept Onicode's layout, took upstream's notebookCellFileName
