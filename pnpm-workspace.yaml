@@ -115,6 +115,7 @@ overrides:
   app-builder-lib: 26.18.1
   electron-updater: 6.8.12
   expo-modules-core: 58.2.0
+  expo-file-system: 58.0.15
   # Keep jsdom's optional peer consistent so Vite+ has one test-runner instance.
   "@exodus/bytes>@noble/hashes": "catalog:"
   # Earlier React Navigation declarations create a circular type alias in TypeScript 7.
@@ -238,6 +239,8 @@ patchedDependencies:
   # Android: a Compose host that requests layout in a mount (a new screen's app bar) is laid out
   # before that frame is drawn, instead of a frame later.
   expo-modules-core@58.2.0: patches/expo-modules-core@58.2.0.patch
+  # iOS: an upload creates the background session off the main actor and trips Swift's isolation check (expo/expo#54360).
+  expo-file-system@58.0.15: patches/expo-file-system@58.0.15.patch
   app-builder-lib@26.18.1: patches/app-builder-lib@26.18.1.patch
   # The spawner takes an injected spawn function (and uses it for taskkill) so Windows launches
   # can run on worker threads: apps/server/src/process/SpawnWorker.ts.

@@ -163,7 +163,8 @@
         "expo-audio",
         "expo-video",
         "expo-network",
-        "expo-sharing"
+        "expo-sharing",
+        "expo-file-system"
       ],
       "ios": {
         "exclude": [
