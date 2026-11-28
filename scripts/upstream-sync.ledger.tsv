@@ -4960,3 +4960,4 @@ b927b1fd93	take	CONFLICT in NotebookPreview (Onicode's empty-notebook branch); k
 53a5508e49	take	test uses Onicode's TestArchive instead of JSZip
 fd967044a8	take	taken as is
 2e023e157f	take	kept Onicode's rejectedImageNames naming; scenario ported to the desktop harness
+39d0e0f6f9	take	taken as is
