@@ -613,8 +613,11 @@ describe("source file scroll", () => {
         document.querySelector<HTMLElement>(
           path.endsWith(".csv") ? "[class*='overflow-anchor:none']" : ".file-preview-virtualizer",
         );
+      // A table's rows come from its indexing worker, which outlasts waitFor's 1 s default on a
+      // loaded machine.
+      const layout = { timeout: 10_000 };
       const scrollTo = async (top: number) => {
-        await vi.waitFor(() => expect(scroller()?.scrollHeight).toBeGreaterThan(5000));
+        await vi.waitFor(() => expect(scroller()?.scrollHeight).toBeGreaterThan(5000), layout);
         // The viewer saves its position from the scroll event, not from the assignment.
         const saved = new Promise((resolve) =>
           scroller()!.addEventListener("scroll", resolve, { once: true }),
@@ -631,9 +634,9 @@ describe("source file scroll", () => {
       // Within a row: a table lines its saved row up under the header.
       const near = (top: number) => expect(Math.abs(scroller()!.scrollTop - top)).toBeLessThan(29);
       await screen.rerender(panel("/workspace"));
-      await vi.waitFor(() => near(first));
+      await vi.waitFor(() => near(first), layout);
       await screen.rerender(panel("/worktrees/handoff"));
-      await vi.waitFor(() => near(second));
+      await vi.waitFor(() => near(second), layout);
     },
   );
 
