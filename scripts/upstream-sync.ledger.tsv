@@ -4994,3 +4994,4 @@ eeac156179	take	taken as is
 7341c1a516	take	taken as is
 dda2f57f75	take	taken as is
 f2a0609236	take	taken as is
+5206263c63	take	conflicts with Onicode's queue resume/move-first commands kept beside cancel; upstream's stash test helper reuses Onicode's stashInput
