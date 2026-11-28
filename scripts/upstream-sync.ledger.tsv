@@ -4815,3 +4815,4 @@ ed26e0d9a7	take	taken as is
 73f6223fd6	take	CONFLICT only on the MCP server key: took upstream's ONICODE_MCP_SERVER constant (renamed from T3's); tier-2 provider, otherwise as is
 b1f3fbfcf7	take	taken as is (other forge)
 4f431b96d8	take	risky (Claude, ACP/Antigravity, client-runtime). CONFLICTs: Claude kept Onicode's three turn watches and installed-build read inside openQueryRuntime, adding upstream's reportCliGone and the launch report before it; ACP kept Onicode's childTurnsContinue condition, resumeSessionId restart and outcome-resume watchdog block, using requireRuntimeRestart there; Onicode-only retireUnlessAnswered also uses requireRuntimeRestart so a retired agent reports launch; Cursor getter merged with Onicode's runsAsNativeCommand; useLocalDispatchState keeps Onicode's per-thread keyed snapshot
+78e5be2ab0	take	taken as is
