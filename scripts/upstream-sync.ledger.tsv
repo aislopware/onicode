@@ -4990,8 +4990,9 @@ d5b30c6b3a	take	scenario ported to the desktop target (onicode fixture)
 9d1f3629b7	take	import conflict; Onicode-only OpenCode stdio-MCP test now provides FileSystem the adapter needs
 a9b301f927	take	taken as is
 eeac156179	take	taken as is
-75a1fcd5b1	take	taken as is
+75a1fcd5b1	take	test builds its workbook with zipFixture instead of JSZip (follow-up c9e6df5dde)
 7341c1a516	take	taken as is
 dda2f57f75	take	taken as is
 f2a0609236	take	taken as is
 5206263c63	take	conflicts with Onicode's queue resume/move-first commands kept beside cancel; upstream's stash test helper reuses Onicode's stashInput
+5fc438883c	take	scenario adapted to the desktop target (ControlOrMeta+k, Vite metadata React URL, hash route)
