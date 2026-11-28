@@ -63,6 +63,10 @@ function withCanonicalKey<Identity extends { readonly canonicalKey: string }>(
   return canonicalKey === null ? identity : { ...identity, canonicalKey };
 }
 
+function webHost(host: string): string {
+  return host === "altssh.gitlab.com" ? "gitlab.com" : host;
+}
+
 export const definition = defineSourceControl({
   kind: KIND,
   label: "GitLab",
@@ -87,7 +91,7 @@ export const definition = defineSourceControl({
     try {
       return new URL(
         `/${repository}/-/merge_requests/${number}`,
-        remoteWebOrigin(host, remoteUrl),
+        remoteWebOrigin(webHost(host), remoteUrl),
       ).toString();
     } catch {
       return null;
@@ -95,7 +99,7 @@ export const definition = defineSourceControl({
   },
   parseChangeRequestUrl: (url) => parseChangeRequestPath(url, CHANGE_REQUEST_PATH),
   parseIssueUrl: (url) => parseIssuePath(url, ISSUE_PATH),
-  commitUrl: (input) => buildCommitUrl(input, "-/commit"),
+  commitUrl: (input) => buildCommitUrl({ ...input, host: webHost(input.host) }, "-/commit"),
   parseCommitUrl: (url) => parseCommitPath(url, COMMIT_PATH),
   repositoryUrlFromPage: (url) => repositoryUrlFromPagePath(url, REPOSITORY_PAGE_PATH),
   // `!12` already links the merge request itself; `#12` is always an issue.
