@@ -4883,3 +4883,4 @@ a5041e797e	take	taken as is
 e003d938f9	take	conflict: kept Onicode's precomputed BOOTSTRAP block, added upstream's hasViewportMeta above it
 b334a34594	take	conflict: kept Onicode's validated changeRequestUrl (safe number, project path, URL parse), web host mapped through upstream's webHost
 809d6dd137	take	adopted upstream's Polish maximize tooltip wording over Onicode's earlier translation; restore key already present
+6bc099829a	take	taken as is
