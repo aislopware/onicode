@@ -28,6 +28,7 @@ import {
 } from "@onicode/contracts";
 import {
   effectiveSnoozed,
+  isIndefiniteSnooze,
   snoozeWakeLabel,
   threadWokeAt,
 } from "@onicode/client-runtime/state/thread-settled";
@@ -656,7 +657,9 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
   // Same rounding as the sidebar's snoozed shelf, so both read the same hour.
   const snoozeNow = `${nowMinute}:00.000Z`;
   const snoozeWake =
-    snoozedUntil && Date.parse(snoozedUntil) > Date.parse(snoozeNow)
+    snoozedUntil &&
+    !isIndefiniteSnooze(snoozedUntil) &&
+    Date.parse(snoozedUntil) > Date.parse(snoozeNow)
       ? snoozeWakeLabel(snoozedUntil, { now: snoozeNow }, messages)
       : null;
   const threadStatusLine = activeThreadSnoozed ? (
