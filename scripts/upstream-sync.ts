@@ -41,10 +41,11 @@ const RULES: ReadonlyArray<readonly [RegExp, string]> = [
   [/\bT3(?=[A-Z])/g, "ONI"],
   [/\bt3(?=[A-Z])/g, "oni"],
   [/(?<=\\[nrt])t3(?=[A-Z])/g, "oni"],
-  [/\bt3(?=[a-z])/g, "oni"],
-  [/\bt3_/g, "oni_"],
-  [/\bt3-/g, "oni-"],
-  [/\bt3\b/g, "onicode"],
+  [/(?<!\\)\bt3(?=[a-z])/g, "oni"],
+  [/(?<!\\)\bt3_/g, "oni_"],
+  [/(?<!\\)\bt3-/g, "oni-"],
+  // A backslash before it makes the t an escape, as in `\t3`.
+  [/(?<!\\)\bt3\b/g, "onicode"],
   [/\bT3\b/g, "Onicode"],
 ];
 const REPO_RULES: ReadonlyArray<readonly [RegExp, string]> = [
