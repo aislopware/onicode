@@ -4779,3 +4779,4 @@ f5974546f0	take	fix(web): ODT preview continues list numbers across a break; tes
 aa63fa7d94	take	fix(client-runtime): scheduled task worktree base refs keep Unicode whitespace in branch names
 8bc6a06a12	take	fix(mcp): orchestrator_capabilities marks favorite models; new field optional, wire compatible
 a2d5fd3a5d	take	fix(server): keep text box text in RTF attachments; test row merged beside Onicode's Shift_JIS rows
+3dbade5f1c	take	fix(shared): preserve log history when the active file is locked
