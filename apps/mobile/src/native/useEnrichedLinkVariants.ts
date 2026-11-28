@@ -7,6 +7,7 @@ import {
 import { Image } from "react-native";
 import type { LinkPillContent, MarkdownStyle } from "react-native-enriched-markdown";
 import type { ComposerContextRecord } from "@onicode/contracts";
+import type { MessageResolver } from "../i18n/messages";
 import { contextChipAccent, contextChipPresentation } from "../lib/composerChipPresentation";
 import { CONTEXT_CHIP_ICON_SOURCES } from "../lib/contextChipIcons.generated";
 import { useAppearancePreferences } from "../features/settings/appearance/AppearancePreferencesProvider";
@@ -46,8 +47,9 @@ function chipCustomization(
 export function enrichedContextLinkCustomization(
   href: string,
   records?: ReadonlyArray<ComposerContextRecord>,
+  resolve?: MessageResolver,
 ) {
-  return chipCustomization(enrichedContextLinkPresentation(href, records));
+  return chipCustomization(enrichedContextLinkPresentation(href, records, resolve));
 }
 
 export function enrichedThreadLinkCustomization(href: string) {
