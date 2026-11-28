@@ -49,6 +49,25 @@ export function HostPressureDetails(props: { readonly environmentId: Environment
   );
 }
 
+/**
+ * Every strained machine, at the top of the Environments list, where the header's warning pill
+ * leads when more than one is strained. Each machine opens its own page.
+ */
+export function HostPressureMachines(props: {
+  readonly onOpenEnvironment: (environmentId: EnvironmentId) => void;
+}) {
+  const alert = useAtomValue(hostPressureAlertAtom);
+  if (alert === null || alert.strained.length < 2) return null;
+  return (
+    <View
+      accessibilityRole="summary"
+      className="mb-6 gap-2 rounded-2xl border border-border bg-card px-3.5 py-3"
+    >
+      <MachinesDetails strained={alert.strained} onOpenEnvironment={props.onOpenEnvironment} />
+    </View>
+  );
+}
+
 /** One title however many machines are strained, for the header's warning pill. */
 export function hostPressureAlertTitle(gt: GT, alert: HostPressureAlert): string {
   const only = alert.strained.length === 1 ? alert.strained[0]! : null;
@@ -112,14 +131,15 @@ function kindTitle(gt: GT, kind: HostPressureKind, name: string | null): string 
   }
 }
 
-function kindExplanation(gt: GT, kind: HostPressureKind, pressure: HostPressure): string {
+/** Without a single machine's reading, the disk explanation leaves out the free space. */
+function kindExplanation(gt: GT, kind: HostPressureKind, pressure: HostPressure | null): string {
   switch (kind) {
     case "memory":
       return gt(
         "Agents keep waiting while the system frees up memory, so they may stop responding. Stopping the largest agent helps the rest.",
       );
     case "disk":
-      return pressure.diskFreeBytes === null
+      return pressure === null || pressure.diskFreeBytes === null
         ? gt("Agents fail once the disk is full. Remove worktrees you no longer need.")
         : gt(
             "{free} left where Onicode keeps its data and worktrees. Agents fail once it is full. Remove worktrees you no longer need.",
@@ -146,6 +166,68 @@ function SingleMachineDetails(props: { readonly entry: StrainedHost }) {
         </View>
       ))}
       <AgentRows entry={props.entry} />
+    </>
+  );
+}
+
+/** Each problem is explained once; each machine then lists its own problems and agents. */
+function MachinesDetails(props: {
+  readonly strained: ReadonlyArray<StrainedHost>;
+  readonly onOpenEnvironment: (environmentId: EnvironmentId) => void;
+}) {
+  const gt = useGT();
+  const kinds = (["memory", "disk", "cpu", "io"] as const).filter((kind) =>
+    props.strained.some((entry) => entry.pressure[kind] === "severe"),
+  );
+  return (
+    <>
+      <WarningTitle title={machinesTitle(gt, props.strained)} />
+      {kinds.map((kind) => (
+        <View key={kind} className="gap-1">
+          {kinds.length > 1 ? (
+            <AppText textRole="footnote" className="text-foreground">
+              {kindTitle(gt, kind, null)}
+            </AppText>
+          ) : null}
+          <AppText textRole="caption" className="text-muted-foreground">
+            {kindExplanation(gt, kind, null)}
+          </AppText>
+        </View>
+      ))}
+      {props.strained.map((entry) => (
+        <View key={entry.environmentId} className="gap-2 border-t border-border pt-2">
+          <Pressable
+            accessibilityRole="link"
+            accessibilityLabel={entry.label}
+            onPress={() => props.onOpenEnvironment(entry.environmentId)}
+            className="flex-row items-center gap-2 active:opacity-70"
+          >
+            <View className="min-w-0 flex-1 gap-0.5">
+              <AppText
+                textRole="footnote"
+                numberOfLines={1}
+                className="font-oni-medium text-foreground"
+              >
+                {entry.label}
+              </AppText>
+              {kinds.length > 1 ? (
+                <AppText textRole="caption" className="text-muted-foreground">
+                  {severeHostPressureKinds(entry.pressure)
+                    .map((kind) => kindTitle(gt, kind, null))
+                    .join(" · ")}
+                </AppText>
+              ) : null}
+            </View>
+            <SymbolView
+              name="chevron.right"
+              size={14}
+              tintColorClassName="accent-chevron"
+              type="monochrome"
+            />
+          </Pressable>
+          <AgentRows entry={entry} />
+        </View>
+      ))}
     </>
   );
 }

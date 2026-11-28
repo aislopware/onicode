@@ -111,7 +111,7 @@ function StatusFadeIn(props: {
 
 export function WorkspaceConnectionTitle(props: {
   readonly brand: ReactNode;
-  /** Called with the machine a host warning is about, and with nothing for a connection status. */
+  /** Called with the machine a host warning is about when only one is, else with nothing. */
   readonly onPress?: (environmentId?: EnvironmentId) => void;
   readonly grow?: boolean;
   readonly size?: "navbar" | "pageTitle";
@@ -141,7 +141,13 @@ export function WorkspaceConnectionTitle(props: {
             accessibilityRole="button"
             disabled={props.onPress === undefined}
             hitSlop={10}
-            onPress={() => props.onPress?.(hostPressureAlert.strained[0]!.environmentId)}
+            onPress={() =>
+              props.onPress?.(
+                hostPressureAlert.strained.length === 1
+                  ? hostPressureAlert.strained[0]!.environmentId
+                  : undefined,
+              )
+            }
             className="items-center justify-center rounded-full bg-warning"
             style={{ height: 26 * scale, width: 26 * scale }}
           >

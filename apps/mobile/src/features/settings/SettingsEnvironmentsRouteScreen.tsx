@@ -5,6 +5,7 @@ import type { EnvironmentId } from "@onicode/contracts";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { SettingsScreen } from "./components/SettingsScreen";
+import { HostPressureMachines } from "../home/HostPressureBanner";
 import { LocalEnvironmentList } from "../connection/LocalEnvironmentList";
 import { PullRequestRoutingSettings } from "../connection/PullRequestRoutingSettings";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
@@ -81,6 +82,7 @@ export function SettingsEnvironmentsRouteScreen() {
           paddingBottom: Math.max(insets.bottom, 18) + 18,
         }}
       >
+        <HostPressureMachines onOpenEnvironment={openEnvironment} />
         <LocalEnvironmentList
           environments={localEnvironments}
           expandedId={null}

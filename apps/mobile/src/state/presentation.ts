@@ -44,7 +44,7 @@ const sameStrainedHost = (left: StrainedHost, right: StrainedHost) =>
 
 /** Connected machines under severe pressure; a machine that is merely busy is fine. */
 export const hostPressureAlertAtom = Atom.make((get): HostPressureAlert | null => {
-  const configs = get(environmentServerConfigsAtom);
+  const configs = get(environmentPresentations.serverConfigsAtom);
   const presentations = get(environmentPresentations.presentationsAtom);
   const strained = [...configs].flatMap(([environmentId, config]): ReadonlyArray<StrainedHost> => {
     const pressure = config.hostPressure;

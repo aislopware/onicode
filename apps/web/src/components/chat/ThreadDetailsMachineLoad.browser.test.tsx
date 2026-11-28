@@ -64,10 +64,14 @@ const sample = (cpuUtilization: number) =>
     availableMemoryBytes: 8 * GiB,
   }) as HostResourcesSnapshot;
 
+function setup(options: { readonly phase: string; readonly sample: HostResourcesSnapshot | null }) {
+  state.phase = options.phase;
+  state.sample = options.sample;
+}
+
 describe("ThreadDetailsMachineLoad", () => {
   it("hides the sample held across a reconnect until a fresh one arrives", async () => {
-    state.phase = "connected";
-    state.sample = sample(0.42);
+    setup({ phase: "connected", sample: sample(0.42) });
     await using screen = await render(<ThreadDetailsMachineLoad environmentId={environmentId} />);
     expect(screen.container.textContent).toContain("42%");
 
