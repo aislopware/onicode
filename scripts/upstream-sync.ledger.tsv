@@ -5007,3 +5007,4 @@ cc009e63dd	take	taken as is
 17b845a5d8	take	taken as is
 27a558724b	take	test archive kept as Onicode's Map fixture
 db25e20bf3	take	adopted upstream over Onicode's onKeyDown prop: ChunkedMarkdown owns Select All, so LargeFilePreview gets it too; test uses Onicode's async setup()
+ab9d039ae8	take	kept Onicode's German 'Agent-Aufgaben' (already translated; scenario adapted to it); took the task-step Pending context with upstream's locale strings
