@@ -4997,3 +4997,4 @@ f2a0609236	take	taken as is
 5206263c63	take	conflicts with Onicode's queue resume/move-first commands kept beside cancel; upstream's stash test helper reuses Onicode's stashInput
 5fc438883c	take	scenario adapted to the desktop target (ControlOrMeta+k, Vite metadata React URL, hash route)
 b00170689e	take	taken as is
+83bdae15dc	take	kept Onicode's workflowStep filter beside upstream's delegatedFrom filter

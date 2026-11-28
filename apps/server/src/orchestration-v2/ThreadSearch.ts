@@ -490,6 +490,7 @@ export const make = Effect.gen(function* () {
           IS NOT 'subagent'
         AND json_extract(threads.payload_json, '$.lineage.sideChat') IS NOT 1
         AND json_extract(threads.payload_json, '$.lineage.workflowStep') IS NOT 1
+        AND json_type(threads.payload_json, '$.delegatedFrom') IS NOT 'object'
         AND json_extract(threads.payload_json, '$.settledOverride') = 'settled'
         AND json_extract(threads.payload_json, '$.settledAt') < ${before}
         AND (${projectIds} IS NULL
@@ -514,6 +515,7 @@ export const make = Effect.gen(function* () {
           IS NOT 'subagent'
         AND json_extract(threads.payload_json, '$.lineage.sideChat') IS NOT 1
         AND json_extract(threads.payload_json, '$.lineage.workflowStep') IS NOT 1
+        AND json_type(threads.payload_json, '$.delegatedFrom') IS NOT 'object'
         AND json_extract(threads.payload_json, '$.settledOverride') = 'settled'
         AND json_extract(threads.payload_json, '$.settledAt') < ${before}
         AND (${projectIds} IS NULL

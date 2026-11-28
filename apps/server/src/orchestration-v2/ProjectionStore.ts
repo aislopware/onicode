@@ -524,6 +524,7 @@ export interface ActiveShellIndexEntry extends Pick<
   | "id"
   | "projectId"
   | "lineage"
+  | "delegatedFrom"
   | "settledOverride"
   | "settledAt"
   | "pinnedAt"
@@ -10017,6 +10018,9 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, ProjectionStoreService
         readonly root_thread_id: string;
         readonly side_chat: number | null;
         readonly workflow_step: number | null;
+        readonly delegated_from_environment_id: string | null;
+        readonly delegated_from_thread_id: string | null;
+        readonly delegated_from_title: string | null;
         readonly settled_override: string | null;
         readonly settled_at: string | null;
         readonly pinned_at: string | null;
@@ -10033,6 +10037,9 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, ProjectionStoreService
           ${indexedField("$.lineage.rootThreadId")} AS root_thread_id,
           ${indexedField("$.lineage.sideChat")} AS side_chat,
           ${indexedField("$.lineage.workflowStep")} AS workflow_step,
+          ${indexedField("$.delegatedFrom.environmentId")} AS delegated_from_environment_id,
+          ${indexedField("$.delegatedFrom.threadId")} AS delegated_from_thread_id,
+          ${indexedField("$.delegatedFrom.title")} AS delegated_from_title,
           ${indexedField("$.settledOverride")} AS settled_override,
           ${indexedField("$.settledAt")} AS settled_at,
           ${indexedField("$.pinnedAt")} AS pinned_at,
@@ -10094,6 +10101,15 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, ProjectionStoreService
         id: ThreadId.make(row.thread_id),
         projectId: ProjectId.make(row.project_id),
         lineage: shellIndexLineage(row),
+        ...(row.delegated_from_environment_id === null || row.delegated_from_thread_id === null
+          ? {}
+          : {
+              delegatedFrom: {
+                environmentId: EnvironmentId.make(row.delegated_from_environment_id),
+                threadId: ThreadId.make(row.delegated_from_thread_id),
+                title: row.delegated_from_title ?? "",
+              },
+            }),
         settledOverride:
           row.settled_override === "settled" || row.settled_override === "active"
             ? row.settled_override
@@ -10260,6 +10276,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, ProjectionStoreService
           AND json_extract(t.payload_json, '$.lineage.relationshipToParent') IS NOT 'subagent'
           AND json_extract(t.payload_json, '$.lineage.sideChat') IS NOT 1
           AND json_extract(t.payload_json, '$.lineage.workflowStep') IS NOT 1
+          AND json_type(t.payload_json, '$.delegatedFrom') IS NOT 'object'
           AND json_extract(t.payload_json, '$.settledOverride') = 'settled'
           AND json_extract(t.payload_json, '$.settledAt') IS NOT NULL${
             projectIds === undefined ? sql`` : sql` AND t.project_id IN ${sql.in(projectIds)}`
