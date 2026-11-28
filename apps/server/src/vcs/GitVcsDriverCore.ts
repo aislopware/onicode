@@ -62,6 +62,7 @@ import {
 import { makeIsServerInternalPath } from "../auth/serverInternalPaths.ts";
 import * as ServerConfig from "../config.ts";
 import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
+import { networkPathReachedBy } from "../workspace/networkLinks.ts";
 import { publishPrivateObjects } from "./gitObjectPublication.ts";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -6047,15 +6048,23 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       );
     }
 
-    const [realRepositoryRoot, realTarget] = yield* Effect.all([
-      fileSystem.realPath(repositoryRoot),
-      fileSystem.realPath(requestedPath),
-    ]).pipe(
-      Effect.mapError((cause) =>
-        fileError("fs.realPath", `Could not resolve diff file '${input.newPath}'.`, cause),
-      ),
+    const resolveError = (cause: PlatformError.PlatformError) =>
+      fileError("fs.realPath", `Could not resolve diff file '${input.newPath}'.`, cause);
+    const realRepositoryRoot = yield* fileSystem
+      .realPath(repositoryRoot)
+      .pipe(Effect.mapError(resolveError));
+    // realpath through a link onto a share would sign in to it first.
+    const reached = yield* Effect.promise(() =>
+      networkPathReachedBy(path, path.relative(repositoryRoot, requestedPath), {
+        from: realRepositoryRoot,
+        allowedRoot: realRepositoryRoot,
+      }),
     );
-    if (!isPathWithinRoot(realRepositoryRoot, realTarget)) {
+    const realTarget =
+      reached === null
+        ? yield* fileSystem.realPath(requestedPath).pipe(Effect.mapError(resolveError))
+        : null;
+    if (realTarget === null || !isPathWithinRoot(realRepositoryRoot, realTarget)) {
       return yield* fileError(
         "fs.realPath",
         `Diff file '${input.newPath}' resolves outside the review workspace.`,

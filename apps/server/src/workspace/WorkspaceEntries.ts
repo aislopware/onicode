@@ -267,13 +267,14 @@ export const make = Effect.gen(function* () {
         }
       }
       if (symlinkCandidates.length > 0) {
+        // Browsing a share the user typed allows links to elsewhere on that share.
+        const root = isNetworkPath(parentPath) ? path.parse(parentPath).root : parentPath;
         const resolvedSymlinks = yield* Effect.forEach(
           symlinkCandidates,
           (candidate) =>
-            resolveLinkTarget(candidate.fullPath, {
-              link: true,
-              within: { path, root: parentPath },
-            }).pipe(Effect.map((target) => (target?.kind === "directory" ? candidate : null))),
+            resolveLinkTarget(candidate.fullPath, { link: true, within: { path, root } }).pipe(
+              Effect.map((target) => (target?.kind === "directory" ? candidate : null)),
+            ),
           { concurrency: MAX_PENDING_LINK_TARGET_PROBES },
         );
         for (const candidate of resolvedSymlinks) {

@@ -328,8 +328,10 @@ function xml(
       attrs: Object.fromEntries(
         Object.entries(tag.attributes).flatMap(([key, value]) => {
           const local = key.split(":").at(-1)!;
-          // A foreign attribute must not shadow a namespace declaration or an XHTML table span.
+          // Namespace declarations keep only their full key, so `xmlns:val` cannot shadow w:val;
+          // a foreign attribute must not shadow a declaration or an XHTML table span either.
           return local === "xmlns" ||
+            key.startsWith("xmlns:") ||
             (extension === ".epub" && (local === "colspan" || local === "rowspan"))
             ? [[key, String(value)]]
             : [

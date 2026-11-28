@@ -102,6 +102,7 @@ import * as ServerSettings from "../serverSettings.ts";
 import type { GitManagerServiceError } from "@onicode/contracts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import { isNonRepositoryGitStderr } from "../vcs/GitVcsDriverCore.ts";
+import { networkPathReachedBy } from "../workspace/networkLinks.ts";
 import * as SourceControlProvider from "@onicode/source-control-core/server/SourceControlProvider";
 import * as SourceControlRateLimit from "@onicode/source-control-core/server/SourceControlRateLimit";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
@@ -1112,6 +1113,11 @@ export const make = Effect.gen(function* () {
   const readRepositoryInstructions = Effect.fn("GitManager.readRepositoryInstructions")(
     function* (cwd: string, fileName: string) {
       const root = yield* fileSystem.realPath(cwd);
+      // realpath through a link onto a share would sign in to it first.
+      const reached = yield* Effect.promise(() =>
+        networkPathReachedBy(path, fileName, { from: root, allowedRoot: root }),
+      );
+      if (reached !== null) return "";
       const instructionPath = yield* fileSystem.realPath(path.join(root, fileName));
       const relative = path.relative(root, instructionPath);
       if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) {

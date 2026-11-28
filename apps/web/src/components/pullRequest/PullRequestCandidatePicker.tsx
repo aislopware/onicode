@@ -29,6 +29,7 @@ export function PullRequestCandidatePicker<T>({
   emptyLabel,
   noMatchLabel,
   errorLabel,
+  errorAction,
   truncated,
   truncatedLabel,
   truncatedAction,
@@ -51,6 +52,7 @@ export function PullRequestCandidatePicker<T>({
   emptyLabel: string;
   noMatchLabel: string;
   errorLabel: string;
+  errorAction?: ReactNode;
   truncated: boolean;
   truncatedLabel: string;
   truncatedAction?: ReactNode;
@@ -113,9 +115,12 @@ export function PullRequestCandidatePicker<T>({
           {isPending ? (
             <PullRequestPeopleGhost rows={4} />
           ) : error !== null ? (
-            <p className="p-2 text-xs text-muted-foreground">
-              {errorLabel} {error}
-            </p>
+            <div className="flex items-center gap-2 p-2">
+              <p className="min-w-0 flex-1 text-xs text-muted-foreground">
+                {errorLabel} {error}
+              </p>
+              {errorAction}
+            </div>
           ) : candidates.length === 0 ? (
             <p className="p-2 text-xs text-muted-foreground">
               {query.length > 0 ? noMatchLabel : emptyLabel}

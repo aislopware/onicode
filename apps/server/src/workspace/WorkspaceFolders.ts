@@ -27,6 +27,7 @@ import * as Schema from "effect/Schema";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import { isWithinRoot } from "./KnownWorkspaces.ts";
 import { MAX_PENDING_LINK_TARGET_PROBES, probeFolder, resolveLinkTarget } from "./linkTargets.ts";
+import { networkPathReachedBy } from "./networkLinks.ts";
 import * as TaskFolderStore from "./TaskFolderStore.ts";
 
 /** A tracked folder a thread works in, besides its own cwd. */
@@ -158,6 +159,16 @@ export const parseGitmodulesPaths = (text: string): ReadonlyArray<string> => {
   return [...paths.values()].filter((path) => path !== "");
 };
 
+// A repository can link `.git`, `.gitmodules` or a folder onto a share, and Windows signs in to
+// one as soon as stat or open reaches it. Anything leading to a share outside `root` is missing.
+const reachesShare = (path: Path.Path, target: string, root: string) =>
+  Effect.promise(() =>
+    networkPathReachedBy(path, target, { allowedRoot: root }).then(
+      (reached) => reached !== null,
+      () => true,
+    ),
+  );
+
 // Built once per operation: the probes share the caller's file system and path services.
 const folderProbes = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
@@ -165,6 +176,20 @@ const folderProbes = Effect.gen(function* () {
 
   const exists = (target: string) =>
     fileSystem.exists(target).pipe(Effect.orElseSucceed(() => false));
+
+  const existsWithin = (target: string, root: string) =>
+    reachesShare(path, target, root).pipe(
+      Effect.flatMap((reached) => (reached ? Effect.succeed(false) : exists(target))),
+    );
+
+  const readWithin = (file: string, root: string) =>
+    reachesShare(path, file, root).pipe(
+      Effect.flatMap((reached) =>
+        reached
+          ? Effect.succeed("")
+          : fileSystem.readFileString(file).pipe(Effect.orElseSucceed(() => "")),
+      ),
+    );
 
   // Sandboxes and containment checks work on what a path resolves to, not on a symlink's name.
   const realPath = (target: string) =>
@@ -174,26 +199,37 @@ const folderProbes = Effect.gen(function* () {
   // Untraced: it runs once per folder inside the calling operation's span.
   const classify = Effect.fnUntraced(function* (
     folder: ProjectTrackedFolder,
+    root: string,
   ): Effect.fn.Return<WorkspaceFolder> {
-    if (yield* exists(path.join(folder.path, ".git"))) return { ...folder, state: "git" };
-    return { ...folder, state: (yield* exists(folder.path)) ? "plain" : "missing" };
+    if (yield* existsWithin(path.join(folder.path, ".git"), root)) {
+      return { ...folder, state: "git" };
+    }
+    return { ...folder, state: (yield* existsWithin(folder.path, root)) ? "plain" : "missing" };
   });
 
   // A linked worktree and a submodule keep `.git` as a file; both follow another repository.
-  const ownsHistory = (folder: string) =>
-    fileSystem.stat(path.join(folder, ".git")).pipe(
-      Effect.map((info) => info.type === "Directory"),
-      Effect.orElseSucceed(() => false),
+  const ownsHistory = (folder: string, root: string) => {
+    const git = path.join(folder, ".git");
+    return reachesShare(path, git, root).pipe(
+      Effect.flatMap((reached) =>
+        reached
+          ? Effect.succeed(false)
+          : fileSystem.stat(git).pipe(
+              Effect.map((info) => info.type === "Directory"),
+              Effect.orElseSucceed(() => false),
+            ),
+      ),
     );
+  };
 
   // A link to a stalled network mount would hang every probe below it and hold libuv's workers.
   // One that does not answer in time is left out of this scan; a later scan finds it again.
-  const linksToFolder = (target: string) =>
-    resolveLinkTarget(target, { link: true, within: { path, root: path.dirname(target) } }).pipe(
+  const linksToFolder = (target: string, root: string) =>
+    resolveLinkTarget(target, { link: true, within: { path, root } }).pipe(
       Effect.map((linked) => linked?.kind === "directory"),
     );
 
-  const childFolders = (folder: string) =>
+  const childFolders = (folder: string, root: string) =>
     fileSystem.readDirectoryEntries(folder).pipe(
       Effect.orElseSucceed((): ReadonlyArray<FileSystem.DirectoryEntry> => []),
       Effect.flatMap((entries) =>
@@ -204,14 +240,25 @@ const folderProbes = Effect.gen(function* () {
               left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
             ),
           ({ name, type }) =>
-            type === "SymbolicLink" ? linksToFolder(path.join(folder, name)) : Effect.succeed(true),
+            type === "SymbolicLink"
+              ? linksToFolder(path.join(folder, name), root)
+              : Effect.succeed(true),
           { concurrency: MAX_PENDING_LINK_TARGET_PROBES },
         ),
       ),
       Effect.map((children) => children.map(({ name }) => path.join(folder, name))),
     );
 
-  return { exists, realPath, classify, ownsHistory, linksToFolder, childFolders };
+  return {
+    exists,
+    existsWithin,
+    readWithin,
+    realPath,
+    classify,
+    ownsHistory,
+    linksToFolder,
+    childFolders,
+  };
 });
 
 const readCodeWorkspaceFolders = Effect.fn("WorkspaceFolders.readCodeWorkspaceFolders")(function* (
@@ -220,8 +267,10 @@ const readCodeWorkspaceFolders = Effect.fn("WorkspaceFolders.readCodeWorkspaceFo
 ) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const file = path.join(root, fileName);
+  if (yield* reachesShare(path, file, root)) return null;
   const document = yield* fileSystem
-    .readFileString(path.join(root, fileName))
+    .readFileString(file)
     .pipe(Effect.flatMap(decodeCodeWorkspace), Effect.option);
   if (Option.isNone(document)) return null;
   return (document.value.folders ?? []).flatMap((folder) => {
@@ -251,7 +300,7 @@ const scanFolders = Effect.fn("WorkspaceFolders.scan")(function* (
 > {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const { exists, realPath, classify, ownsHistory, linksToFolder, childFolders } =
+  const { existsWithin, readWithin, realPath, classify, ownsHistory, linksToFolder, childFolders } =
     yield* folderProbes;
   const root = path.resolve(
     expandHomePath(input.workspaceRoot.trim(), yield* HostProcess.HomeDirectory),
@@ -278,12 +327,16 @@ const scanFolders = Effect.fn("WorkspaceFolders.scan")(function* (
     (name) => {
       const folderPath = path.join(root, name);
       return Effect.gen(function* () {
-        if (links.has(name) && !(yield* linksToFolder(folderPath))) return [];
-        if (yield* ownsHistory(folderPath)) return [{ path: folderPath, name: boundedName(name) }];
-        if (yield* exists(path.join(folderPath, ".git"))) return [];
-        const nested = yield* Effect.filter(yield* childFolders(folderPath), ownsHistory, {
-          concurrency: DETECTION_CONCURRENCY,
-        });
+        if (links.has(name) && !(yield* linksToFolder(folderPath, root))) return [];
+        if (yield* ownsHistory(folderPath, root)) {
+          return [{ path: folderPath, name: boundedName(name) }];
+        }
+        if (yield* existsWithin(path.join(folderPath, ".git"), root)) return [];
+        const nested = yield* Effect.filter(
+          yield* childFolders(folderPath, root),
+          (nestedPath) => ownsHistory(nestedPath, root),
+          { concurrency: DETECTION_CONCURRENCY },
+        );
         return nested.map((nestedPath) => ({
           path: nestedPath,
           name: boundedName(path.basename(nestedPath)),
@@ -293,11 +346,7 @@ const scanFolders = Effect.fn("WorkspaceFolders.scan")(function* (
     { concurrency: DETECTION_CONCURRENCY },
   );
   const submodules = new Set(
-    parseGitmodulesPaths(
-      yield* fileSystem
-        .readFileString(path.join(root, ".gitmodules"))
-        .pipe(Effect.orElseSucceed(() => "")),
-    ),
+    parseGitmodulesPaths(yield* readWithin(path.join(root, ".gitmodules"), root)),
   );
   const realRoot = yield* realPath(root);
   const resolved = yield* Effect.forEach(
@@ -311,7 +360,7 @@ const scanFolders = Effect.fn("WorkspaceFolders.scan")(function* (
           return [{ folder, real: yield* realPath(folder.path), state: undefined }];
         // A workspace file can list a folder on a stalled mount; like a link, one that does not
         // answer in time is left out of this scan.
-        const probed = yield* probeFolder(folder.path);
+        const probed = yield* probeFolder(folder.path, { path, root });
         return probed === undefined ? [] : [{ folder, real: probed.realPath, state: probed.state }];
       }),
     { concurrency: DETECTION_CONCURRENCY },
@@ -331,7 +380,7 @@ const scanFolders = Effect.fn("WorkspaceFolders.scan")(function* (
     candidates,
     ({ folder, state }) =>
       (state === undefined
-        ? classify(folder).pipe(Effect.map((classified) => classified.state))
+        ? classify(folder, root).pipe(Effect.map((classified) => classified.state))
         : Effect.succeed(state)
       ).pipe(
         Effect.map((found) =>
@@ -342,7 +391,7 @@ const scanFolders = Effect.fn("WorkspaceFolders.scan")(function* (
   );
   return {
     workspaceRoot: root,
-    isGitRepository: yield* exists(path.join(root, ".git")),
+    isGitRepository: yield* existsWithin(path.join(root, ".git"), root),
     codeWorkspaceFile:
       listed === null || codeWorkspaceFile === null ? null : path.join(root, codeWorkspaceFile),
     folders: folders.flat().slice(0, limit),
@@ -362,16 +411,12 @@ export const discoverFolders = Effect.fn("WorkspaceFolders.discover")(function* 
   never,
   FileSystem.FileSystem | Path.Path
 > {
-  const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const { realPath, ownsHistory } = yield* folderProbes;
+  const { readWithin, realPath, ownsHistory } = yield* folderProbes;
   const root = path.resolve(expandHomePath(workspaceRoot.trim(), yield* HostProcess.HomeDirectory));
   const ignored = (
-    parseOniProjectFile(
-      yield* fileSystem
-        .readFileString(path.join(root, ONICODE_PROJECT_FILE_NAME))
-        .pipe(Effect.orElseSucceed(() => "")),
-    )?.ignoreRepositories ?? []
+    parseOniProjectFile(yield* readWithin(path.join(root, ONICODE_PROJECT_FILE_NAME), root))
+      ?.ignoreRepositories ?? []
   ).map((entry) => path.resolve(root, entry));
   // Everything the scan could find would be dropped, so skip the walk.
   if (ignored.some((entry) => isWithinRoot(path, root, entry))) return [];
@@ -388,7 +433,7 @@ export const discoverFolders = Effect.fn("WorkspaceFolders.discover")(function* 
     // A link to a repository elsewhere is not inside the project, whatever its name says, and a
     // worktree a workspace file lists follows another repository.
     (folder) =>
-      Effect.all([realPath(folder.path), ownsHistory(folder.path)]).pipe(
+      Effect.all([realPath(folder.path), ownsHistory(folder.path, root)]).pipe(
         Effect.map(
           ([real, owns]) => owns && real !== realRoot && isWithinRoot(path, real, realRoot),
         ),
@@ -454,7 +499,7 @@ const make = Effect.gen(function* () {
   const projects = yield* ProjectStore.ProjectStoreV2;
   const taskFolders = yield* TaskFolderStore.TaskFolderStore;
 
-  const { exists, realPath } = yield* folderProbes;
+  const { exists, existsWithin, readWithin, realPath } = yield* folderProbes;
 
   const readProject = Effect.fn("WorkspaceFolders.readProject")(function* (projectId: ProjectId) {
     const row = yield* projects
@@ -503,8 +548,7 @@ const make = Effect.gen(function* () {
     root: { readonly path: string; readonly identity: string },
     budget: { left: number; readonly visited: Set<string> },
   ): Effect.Effect<ReadonlyArray<ThreadFolder>> =>
-    fileSystem.readFileString(path.join(root.path, ".gitmodules")).pipe(
-      Effect.orElseSucceed(() => ""),
+    readWithin(path.join(root.path, ".gitmodules"), root.path).pipe(
       Effect.flatMap((text) =>
         Effect.forEach(
           [...new Set(parseGitmodulesPaths(text))],
@@ -513,7 +557,9 @@ const make = Effect.gen(function* () {
             const identity = path.resolve(root.identity, relative);
             if (folder === root.path || !isWithinRoot(path, folder, root.path)) return [];
             // One that was never initialized is an empty folder.
-            if (budget.left <= 0 || !(yield* exists(path.join(folder, ".git")))) return [];
+            if (budget.left <= 0 || !(yield* existsWithin(path.join(folder, ".git"), root.path))) {
+              return [];
+            }
             const real = yield* realPath(folder);
             // A committed symlink on the way must not lead the thread out of its repository.
             if (!isWithinRoot(path, real, yield* realPath(root.path))) return [];

@@ -6,10 +6,17 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import { TestClock } from "effect/testing";
+import { vi } from "vite-plus/test";
 
+import * as NetworkLinks from "../workspace/networkLinks.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as ProjectFaviconResolver from "./ProjectFaviconResolver.ts";
 import * as OniProjectFileLoader from "./OniProjectFileLoader.ts";
+
+vi.mock("../workspace/networkLinks.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof NetworkLinks>();
+  return { ...actual, networkPathReachedBy: vi.fn(actual.networkPathReachedBy) };
+});
 
 const layerTest = Layer.empty.pipe(
   Layer.provideMerge(
@@ -80,6 +87,42 @@ it.layer(layerTest)("ProjectFaviconResolverLive", (it) => {
 
         expect(yield* resolver.resolvePath(cwd)).toBeNull();
       }).pipe(Effect.provide(TestClock.layer())),
+    );
+
+    it.effect("never stats or opens a project path that a link carries onto a share", () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        const touched: Array<string> = [];
+        const resolver = yield* makeResolverWithFileSystem(
+          FileSystem.FileSystem.of({
+            ...fileSystem,
+            stat: (filePath) => {
+              touched.push(filePath);
+              return fileSystem.stat(filePath);
+            },
+            open: (filePath, options) => {
+              touched.push(filePath);
+              return fileSystem.open(filePath, options);
+            },
+          }),
+        );
+        yield* writeTextFile(cwd, "favicon.svg", "<svg>favicon</svg>");
+        expect(yield* resolver.resolvePath(cwd)).toBe(path.join(cwd, "favicon.svg"));
+        // Its folders can become links onto a share after the favicon was cached.
+        yield* writeTextFile(cwd, "index.html", '<link rel="icon" href="/declared.svg">');
+        yield* writeTextFile(cwd, "declared.svg", "<svg>declared</svg>");
+        using _share = vi
+          .mocked(NetworkLinks.networkPathReachedBy)
+          .mockImplementation(async (_path, filePath) =>
+            filePath.startsWith(`${cwd}${path.sep}`) ? "\\\\nas\\share\\project" : null,
+          );
+        touched.length = 0;
+
+        expect(yield* resolver.resolvePath(cwd)).toBeNull();
+        expect(touched.filter((filePath) => filePath.startsWith(`${cwd}${path.sep}`))).toEqual([]);
+      }),
     );
 
     it.effect("looks up a missing workspace root once within the negative cache window", () =>

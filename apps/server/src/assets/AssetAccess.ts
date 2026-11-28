@@ -157,6 +157,8 @@ const AssetClaimsSchema = Schema.Union([
     download: Schema.optionalKey(Schema.Boolean),
     device: Schema.String,
     inode: Schema.String,
+    /** The project's canonical root, for a file on a share: the one share its lookup may reach. */
+    allowedRoot: Schema.optionalKey(Schema.String),
     expiresAt: Schema.Number,
   }),
   Schema.Struct({
@@ -180,6 +182,8 @@ const AssetClaimsSchema = Schema.Union([
     version: Schema.Literal(1),
     kind: Schema.Literal("project-favicon-external"),
     filePath: Schema.String,
+    /** The project's canonical root, for a file on a share: the one share its lookup may reach. */
+    allowedRoot: Schema.optionalKey(Schema.String),
     expiresAt: Schema.Number,
   }),
   Schema.Struct({
@@ -266,19 +270,24 @@ export const readMcpAppHtml = Effect.fn("AssetAccess.readMcpAppHtml")(function* 
   // Allow space for stored CSP tags, but bound reads if the attachment grows after minting.
   const limit = MCP_APP_MAX_HTML_BYTES + 128 * 1024;
   if (file !== undefined) {
-    const buffer = new Uint8Array(limit + 1);
     // An unreadable page is served as is, like one too large to buffer.
-    const size = yield* Effect.promise(async () => {
+    return yield* Effect.promise(async () => {
+      let buffer = new Uint8Array(Math.min(Number(file.info.size), limit) + 1);
       let read = 0;
-      while (read < buffer.byteLength) {
+      for (;;) {
         // Positional reads leave the handle's offset where the response stream expects it.
         const { bytesRead } = await file.handle.read(buffer, read, buffer.byteLength - read, read);
         if (bytesRead === 0) break;
         read += bytesRead;
+        if (read < buffer.byteLength) continue;
+        if (read > limit) return null;
+        // The page grew since it was opened.
+        const grown = new Uint8Array(limit + 1);
+        grown.set(buffer);
+        buffer = grown;
       }
-      return read;
-    }).pipe(Effect.catchDefect(() => Effect.succeed(limit + 1)));
-    return size > limit ? null : buffer.subarray(0, size);
+      return buffer.subarray(0, read);
+    }).pipe(Effect.catchDefect(() => Effect.succeed(null)));
   }
   const chunks = yield* Stream.runCollect(fileSystem.stream(filePath, { bytesToRead: limit + 1 }));
   const size = chunks.reduce((total, chunk) => total + chunk.byteLength, 0);
@@ -359,6 +368,33 @@ const resolveCanonicalFile = Effect.fn("AssetAccess.resolveCanonicalFile")(funct
   if (Option.isNone(info) || info.value.type !== "File") return null;
   const isServerInternalPath = yield* makeIsServerInternalPath;
   return (yield* isServerInternalPath(canonicalFile)) ? null : canonicalFile;
+});
+
+const resolveCanonicalOutsideFile = Effect.fn("AssetAccess.resolveCanonicalOutsideFile")(function* (
+  filePath: string,
+  workspaceRoot: string | undefined,
+) {
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  // Resolving a network path makes Windows sign in to its host with the
+  // user's NTLM credentials, so only the thread's own project may be on a share.
+  const reached = yield* Effect.promise(() =>
+    networkPathReachedBy(path, filePath, { allowedRoot: workspaceRoot }),
+  );
+  if (reached !== null) return null;
+  // Windows reads a `\\?\` path as written, `..` included, so the lookup gets
+  // the resolved path this check approved.
+  const canonicalFile = yield* resolveCanonicalFile(path.resolve(filePath));
+  if (canonicalFile === null) return null;
+  if (!isNetworkPath(canonicalFile)) return { canonicalFile, allowedRoot: undefined };
+  // The URL carries the root, so resolving it again may reach this share and no other.
+  const allowedRoot =
+    workspaceRoot === undefined
+      ? null
+      : yield* fileSystem.realPath(workspaceRoot).pipe(Effect.orElseSucceed(() => null));
+  return allowedRoot !== null && isWithinRoot(path, canonicalFile, allowedRoot)
+    ? { canonicalFile, allowedRoot }
+    : null;
 });
 
 const resolveCanonicalWorkspaceFile = Effect.fn("AssetAccess.resolveCanonicalWorkspaceFile")(
@@ -473,25 +509,10 @@ const finalizeAbsoluteMediaFileAsset = Effect.fn("AssetAccess.finalizeAbsoluteMe
     readonly expiresAt: number;
   }) {
     const path = yield* Path.Path;
-    // Resolving a network path makes Windows sign in to its host with the
-    // user's NTLM credentials, so only the thread's own project may be on a share.
-    // Windows reads a `\\?\` path as written, `..` included, so the lookup gets
-    // the resolved path this check approved.
-    const requestedPath = path.resolve(input.requestedPath);
-    if (
-      (isNetworkPath(input.requestedPath) &&
-        (input.workspaceRoot === undefined ||
-          !isWithinRoot(path, requestedPath, path.resolve(input.workspaceRoot)))) ||
-      (yield* Effect.promise(() =>
-        networkPathReachedBy(path, requestedPath, { allowedRoot: input.workspaceRoot }),
-      )) !== null
-    ) {
-      return yield* new AssetWorkspaceAssetNotFoundError({
-        resource: input.resource,
-        checkedPath: input.requestedPath,
-      });
-    }
-    const canonicalFile = yield* resolveCanonicalFile(requestedPath).pipe(
+    const resolved = yield* resolveCanonicalOutsideFile(
+      input.requestedPath,
+      input.workspaceRoot,
+    ).pipe(
       Effect.mapError(
         (cause) => new AssetWorkspaceAssetInspectionError({ resource: input.resource, cause }),
       ),
@@ -499,14 +520,16 @@ const finalizeAbsoluteMediaFileAsset = Effect.fn("AssetAccess.finalizeAbsoluteMe
     // The workspace caller pins its containment-checked path; never follow a
     // replacement symlink to a different file during this second resolution.
     if (
-      !canonicalFile ||
-      (input.expectedCanonicalPath !== undefined && canonicalFile !== input.expectedCanonicalPath)
+      !resolved ||
+      (input.expectedCanonicalPath !== undefined &&
+        resolved.canonicalFile !== input.expectedCanonicalPath)
     ) {
       return yield* new AssetWorkspaceAssetNotFoundError({
         resource: input.resource,
         checkedPath: input.requestedPath,
       });
     }
+    const { canonicalFile, allowedRoot } = resolved;
     const download =
       (input.resource._tag === "media-file" || input.resource._tag === "draft-workspace-file") &&
       input.resource.disposition === "attachment";
@@ -547,6 +570,7 @@ const finalizeAbsoluteMediaFileAsset = Effect.fn("AssetAccess.finalizeAbsoluteMe
         filePath: canonicalFile,
         ...(download ? { download: true } : {}),
         ...opened.identity,
+        ...(allowedRoot === undefined ? {} : { allowedRoot }),
         expiresAt: input.expiresAt,
       },
       fileName: path.basename(canonicalFile),
@@ -898,11 +922,18 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
         return yield* new AssetPreviewTypeValidationError({ resource: input.resource });
       }
       sourcePath = sourceFaviconPath ?? undefined;
-      const canonicalFaviconPath = sourceFaviconPath
+      const canonicalFavicon = sourceFaviconPath
         ? yield* (
             isExternalOverride
-              ? resolveCanonicalFile(sourceFaviconPath)
-              : resolveCanonicalWorkspaceFile({ workspaceRoot, relativePath: sourceFaviconPath })
+              ? resolveCanonicalOutsideFile(sourceFaviconPath, workspaceRoot)
+              : resolveCanonicalWorkspaceFile({
+                  workspaceRoot,
+                  relativePath: sourceFaviconPath,
+                }).pipe(
+                  Effect.map((canonicalFile) =>
+                    canonicalFile === null ? null : { canonicalFile, allowedRoot: undefined },
+                  ),
+                )
           ).pipe(
             Effect.mapError(
               (cause) =>
@@ -913,6 +944,7 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
             ),
           )
         : null;
+      const canonicalFaviconPath = canonicalFavicon?.canonicalFile ?? null;
       if (sourceFaviconPath && !canonicalFaviconPath) {
         return yield* new AssetProjectFaviconNotFoundError({
           resource: input.resource,
@@ -923,11 +955,14 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
         return yield* new AssetPreviewTypeValidationError({ resource: input.resource });
       }
       claims =
-        isExternalOverride && canonicalFaviconPath
+        isExternalOverride && canonicalFavicon
           ? {
               version: 1,
               kind: "project-favicon-external",
-              filePath: canonicalFaviconPath,
+              filePath: canonicalFavicon.canonicalFile,
+              ...(canonicalFavicon.allowedRoot === undefined
+                ? {}
+                : { allowedRoot: canonicalFavicon.allowedRoot }),
               expiresAt,
             }
           : {
@@ -1078,6 +1113,7 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
 
   const claims = decodeClaims(encodedPayload);
   if (!claims || claims.expiresAt <= (yield* Clock.currentTimeMillis)) return null;
+  const path = yield* Path.Path;
 
   if (claims.kind === "attachment") {
     const config = yield* ServerConfig.ServerConfig;
@@ -1125,6 +1161,10 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
   }
 
   if (claims.kind === "project-favicon-external") {
+    const reached = yield* Effect.promise(() =>
+      networkPathReachedBy(path, claims.filePath, { allowedRoot: claims.allowedRoot }),
+    );
+    if (reached !== null) return null;
     const faviconPath = yield* resolveCanonicalFile(claims.filePath).pipe(
       Effect.tapError((cause) =>
         Effect.logError("Failed to resolve canonical asset path.", {
@@ -1182,13 +1222,13 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
 
   const decodedPath = decodeRelativePath(relativePath);
   if (decodedPath === null) return null;
-  const path = yield* Path.Path;
   if (claims.kind === "media-file-exact") {
     if (decodedPath !== path.basename(claims.filePath)) return null;
     // A folder on the path can become a link onto a share after the URL was issued.
-    if ((yield* Effect.promise(() => networkPathReachedBy(path, claims.filePath))) !== null) {
-      return null;
-    }
+    const reached = yield* Effect.promise(() =>
+      networkPathReachedBy(path, claims.filePath, { allowedRoot: claims.allowedRoot }),
+    );
+    if (reached !== null) return null;
     const canonicalFile = yield* resolveCanonicalFile(claims.filePath).pipe(
       Effect.tapError((cause) =>
         Effect.logError("Failed to resolve canonical media path.", {
@@ -1261,7 +1301,7 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
       : { previewCanonicalBaseRelativePath: claims.canonicalBaseRelativePath }),
     previewEntry: decodedPath === claims.entryFileName,
   });
-  return workspaceFile
-    ? ({ kind: "file", path: workspaceFile, renderIntent: "file-preview" } satisfies ResolvedAsset)
-    : null;
+  if (workspaceFile === null) return null;
+  const opened = yield* openCheckedFileAsset(workspaceFile);
+  return opened && ({ ...opened, renderIntent: "file-preview" } satisfies ResolvedAsset);
 });

@@ -58,6 +58,12 @@ import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as GitVcsDriver from "./GitVcsDriver.ts";
 import { VcsAutomaticFetchInterval } from "./VcsAutomaticFetchInterval.ts";
 import { gitConfigEnv } from "./VcsProcess.ts";
+import * as NetworkLinks from "../workspace/networkLinks.ts";
+
+vi.mock("../workspace/networkLinks.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof NetworkLinks>();
+  return { ...actual, networkPathReachedBy: vi.fn(actual.networkPathReachedBy) };
+});
 
 const encodeGitCommandError = Schema.encodeEffect(Schema.fromJsonString(GitCommandError));
 const decodeVcsRef = Schema.decodeUnknownSync(VcsRef);
@@ -5197,6 +5203,17 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
 
         assert.strictEqual(contents.oldContents, "# test\n");
         assert.strictEqual(contents.newContents, "# changed\nunchanged context\n");
+
+        // A link carrying the file onto a share is refused before anything resolves it.
+        using _share = vi
+          .mocked(NetworkLinks.networkPathReachedBy)
+          .mockImplementation(async (_path, filePath) =>
+            filePath === "README.md" ? "\\\\nas\\share\\README.md" : null,
+          );
+        const error = yield* driver
+          .getReviewDiffFileContents(makeReviewDiffFileContentsInput(cwd))
+          .pipe(Effect.flip);
+        assert.include(error.detail, "resolves outside the review workspace");
       }),
     );
 

@@ -915,6 +915,42 @@ describe("IssueService with a standalone tracker", () => {
       const missed = yield* Effect.flip(missing.resolveUrl(otherLink, "notes" as ProjectId));
       expect(missed).toMatchObject({ reason: "not-found" });
       expect(reads).toEqual(["second", "first"]);
+      // A signed-out account does not hide that a connected one lacks the issue.
+      const signedOut = yield* exactTeam((account) =>
+        fail(account === "first" ? "unauthenticated" : "not-found"),
+      );
+      expect(
+        yield* Effect.flip(signedOut.resolveUrl(otherLink, "notes" as ProjectId)),
+      ).toMatchObject({ _tag: "IssueOperationError", reason: "not-found" });
+      // With every account tried, why they failed stands: a reconnect prompt, or a rate limit.
+      const bothTeams = (failure: (account: string) => IssueTrackerError) =>
+        makeService({
+          projects: [project({ id: "notes" }), project({ id: "work" }), project({ id: "home" })],
+          trackers: [
+            fakeStandaloneTracker({
+              getIssue: () => Effect.flatMap(asWhom, (account) => Effect.fail(failure(account))),
+            }),
+          ],
+          bindings: {
+            work: { tracker: LINEAR, scope: "ENG" },
+            home: {
+              tracker: LINEAR,
+              accountId: IssueTrackerAccountId.make("second"),
+              scope: "ENG",
+            },
+          },
+          accounts: [{ tracker: LINEAR, accountId: IssueTrackerAccountId.make("second") }],
+        });
+      const allSignedOut = yield* bothTeams(() => fail("unauthenticated"));
+      expect(
+        yield* Effect.flip(allSignedOut.resolveUrl(otherLink, "notes" as ProjectId)),
+      ).toMatchObject({ _tag: "IssueUnavailableError", reason: "unauthenticated" });
+      const limitedAfterSignOut = yield* bothTeams((account) =>
+        account === "first" ? fail("unauthenticated") : fail("rate-limited", 60),
+      );
+      expect(
+        yield* Effect.flip(limitedAfterSignOut.resolveUrl(otherLink, "notes" as ProjectId)),
+      ).toMatchObject({ reason: "rate-limited", retryAt: 60 });
 
       // One refused key leaves the group usable, even on a continuation that skips the other.
       const refusing = (refused: ReadonlyArray<string>) =>

@@ -1,5 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFSP from "node:fs/promises";
+import * as NodePath from "@effect/platform-node/NodePath";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { ProjectId, type ProjectTrackedFolder } from "@onicode/contracts";
@@ -17,12 +18,18 @@ import { vi } from "vite-plus/test";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import { resolveLinkTarget } from "./linkTargets.ts";
+import { ATTACKER_SHARE, fakeWindowsTree } from "./networkLinks.testkit.ts";
 import * as TaskFolderStore from "./TaskFolderStore.ts";
 import * as WorkspaceFolders from "./WorkspaceFolders.ts";
 
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
-  return { ...actual, stat: vi.fn(actual.stat) };
+  return {
+    ...actual,
+    readlink: vi.fn(actual.readlink),
+    realpath: vi.fn(actual.realpath),
+    stat: vi.fn(actual.stat),
+  };
 });
 
 const projectId = ProjectId.make("project:workspace-folders");
@@ -416,6 +423,100 @@ it.layer(NodeServices.layer)("WorkspaceFolders", (it) => {
         { path: path.join(workspaceRoot, "src", "web"), name: "web", discovered: true },
       ]);
     }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  // A win32 path service over an in-memory Windows tree, so this runs on any host.
+  it.effect("never follows a repository's links onto a network share", () =>
+    Effect.gen(function* () {
+      const share = ATTACKER_SHARE;
+      const root = "C:\\ws";
+      const fake = fakeWindowsTree({
+        links: {
+          "C:\\ws\\repo\\.git": `${share}\\repo.git`,
+          "C:\\ws\\src\\lib\\.git": `${share}\\lib.git`,
+          "C:\\ws\\sub\\.git": `${share}\\sub.git`,
+          "C:\\ws\\mod": `${share}\\mod`,
+          "C:\\ws\\vendor\\.gitmodules": `${share}\\gitmodules`,
+          "C:\\out\\nas": `${share}\\out`,
+        },
+        files: {
+          // A literal share, and a link to one outside the project folder.
+          "C:\\ws\\team.code-workspace": JSON.stringify({
+            folders: [{ path: `${share}\\listed` }, { path: "..\\out\\nas" }, { path: "api" }],
+          }),
+          "C:\\ws\\.gitmodules": ["sub", "mod", "vendor"]
+            .map((name) => `[submodule "${name}"]\n\tpath = ${name}\n`)
+            .join(""),
+        },
+        directories: [
+          "C:\\ws\\api\\.git",
+          "C:\\ws\\vendor\\.git",
+          "C:\\ws\\src\\lib",
+          "C:\\ws\\repo",
+          "C:\\ws\\sub",
+        ],
+      });
+      const missing = FileSystem.makeNoop({});
+      const windowsFileSystem = FileSystem.makeNoop({
+        exists: (target) => Effect.sync(() => fake.kind(target) !== undefined),
+        stat: (target) => {
+          const found = fake.kind(target);
+          return found === undefined
+            ? missing.stat(target)
+            : Effect.succeed({
+                type: found === "file" ? "File" : "Directory",
+              } as FileSystem.File.Info);
+        },
+        realPath: (target) => {
+          const real = fake.real(target);
+          return real === undefined ? missing.realPath(target) : Effect.succeed(real);
+        },
+        readFileString: (target) => {
+          const text = fake.contents(target);
+          return text === undefined ? missing.readFileString(target) : Effect.succeed(text);
+        },
+        readDirectoryEntries: (target) =>
+          fake.kind(target) === "directory"
+            ? Effect.succeed(fake.children(target))
+            : missing.readDirectoryEntries(target),
+      });
+      const readlink = vi.mocked(NodeFSP.readlink);
+      const realpath = vi.mocked(NodeFSP.realpath);
+      const stat = vi.mocked(NodeFSP.stat);
+      const [realReadlink, realRealpath, realStat] = [
+        readlink.getMockImplementation()!,
+        realpath.getMockImplementation()!,
+        stat.getMockImplementation()!,
+      ];
+      readlink.mockImplementation(fake.readlink);
+      realpath.mockImplementation(fake.realpath);
+      stat.mockImplementation(fake.stat);
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          readlink.mockImplementation(realReadlink);
+          realpath.mockImplementation(realRealpath);
+          stat.mockImplementation(realStat);
+        }),
+      );
+      const path = yield* Effect.service(Path.Path).pipe(Effect.provide(NodePath.layerWin32));
+      const onWindows = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+        effect.pipe(
+          Effect.provideService(FileSystem.FileSystem, windowsFileSystem),
+          Effect.provideService(Path.Path, path),
+        );
+
+      assert.deepEqual(yield* onWindows(WorkspaceFolders.discoverFolders(root)), [
+        { path: "C:\\ws\\api", name: "api", discovered: true },
+      ]);
+      const submodules = yield* Effect.gen(function* () {
+        const workspaceFolders = yield* WorkspaceFolders.WorkspaceFolders;
+        return yield* workspaceFolders.submodules({ projectId, worktreePath: null, folders: [] });
+      }).pipe(Effect.provide(layerFor({ workspaceRoot: root, trackedFolders: [] })), onWindows);
+      assert.deepEqual(submodules, [
+        { name: "vendor", path: "C:\\ws\\vendor", isGitRepository: true },
+      ]);
+      assert.deepEqual(fake.reachedShare(), []);
+    }),
   );
 
   it.effect("keeps the folders someone added when a project holds more than fit", () =>

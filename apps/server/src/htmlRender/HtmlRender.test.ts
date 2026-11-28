@@ -17,6 +17,7 @@ import * as Path from "effect/Path";
 import * as NodeDgram from "node:dgram";
 import * as NodeHttp from "node:http";
 import * as NodeURL from "node:url";
+import { vi } from "vite-plus/test";
 
 import { resolveAttachmentPathById } from "../attachmentStore.ts";
 import * as ServerConfig from "../config.ts";
@@ -24,6 +25,12 @@ import * as HtmlRender from "./HtmlRender.ts";
 import { HtmlRenderBrowserError } from "./headlessChrome.ts";
 import * as PreviewBrowser from "../preview/PreviewBrowser.ts";
 import * as PreviewBrowserHost from "../preview/PreviewBrowserHost.ts";
+import * as NetworkLinks from "../workspace/networkLinks.ts";
+
+vi.mock("../workspace/networkLinks.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof NetworkLinks>();
+  return { ...actual, networkPathReachedBy: vi.fn(actual.networkPathReachedBy) };
+});
 
 const TEST_BROWSER_ENV = "ONICODE_TEST_HEADLESS_SHELL";
 
@@ -194,10 +201,19 @@ describe("HtmlRender", () => {
       yield* fileSystem.writeFileString(upper, "<SVG/>API_KEY=abc123");
       const longer = path.join(directory, "longer.svg");
       yield* fileSystem.writeFileString(longer, "<svg\u00e9/>API_KEY=abc123");
+      // A readable image whose path a link carries onto a share.
+      const shared = path.join(directory, "nas", "pic.png");
+      yield* fileSystem.makeDirectory(path.dirname(shared));
+      yield* fileSystem.writeFile(shared, PNG_BYTES);
+      using _share = vi
+        .mocked(NetworkLinks.networkPathReachedBy)
+        .mockImplementation(async (_path, filePath) =>
+          filePath === shared ? "\\\\nas\\share\\pic.png" : null,
+        );
 
       const error = yield* htmlRender
         .prepare(
-          `<img title="<!--" src="${missing}"><img src='${folder}'><img src="C:\\nope\\shot.webp"><img src="${secret}"><img src="${report}"><img src="${config}"><img src="${stalling}"><img src="${unclosed}"><img src="${upper}"><img src="${longer}">`,
+          `<img title="<!--" src="${missing}"><img src='${folder}'><img src="C:\\nope\\shot.webp"><img src="${secret}"><img src="${report}"><img src="${config}"><img src="${stalling}"><img src="${unclosed}"><img src="${upper}"><img src="${longer}"><img src="${shared}">`,
         )
         .pipe(Effect.flip);
 
@@ -213,6 +229,7 @@ describe("HtmlRender", () => {
         unclosed,
         upper,
         longer,
+        shared,
       ]);
     }).pipe(Effect.provide(layerTest)),
   );

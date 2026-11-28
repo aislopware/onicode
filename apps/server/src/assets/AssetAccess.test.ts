@@ -804,7 +804,49 @@ describe("AssetAccess", () => {
         );
         expect(error._tag).toBe("AssetWorkspaceAssetNotFoundError");
       }
-      expect(resolved).toEqual([path.resolve(`${share}/a.png`)]);
+      expect(resolved.splice(0)).toEqual([path.resolve(`${share}/a.png`)]);
+
+      // A URL resolves again only on the share of the project root it was minted under.
+      const signer = yield* AssetSigner.AssetSigner;
+      for (const [claims, reachesShare] of [
+        [{ kind: "media-file-exact", filePath: `${share}/a.png`, device: "1", inode: "1" }, false],
+        [
+          {
+            kind: "media-file-exact",
+            filePath: `${share}/a.png`,
+            device: "1",
+            inode: "1",
+            allowedRoot: share,
+          },
+          true,
+        ],
+        [
+          {
+            kind: "media-file-exact",
+            filePath: "//attacker.test/s/a.png",
+            device: "1",
+            inode: "1",
+            allowedRoot: share,
+          },
+          false,
+        ],
+        [{ kind: "project-favicon-external", filePath: "//attacker.test/s/icon.png" }, false],
+        [
+          { kind: "project-favicon-external", filePath: `${share}/icon.png`, allowedRoot: share },
+          true,
+        ],
+      ] as const) {
+        const payload = Buffer.from(
+          JSON.stringify({ version: 1, ...claims, expiresAt: Number.MAX_SAFE_INTEGER }),
+        ).toString("base64url");
+        const token = `${payload}.${yield* signer.sign(payload)}`;
+        expect(
+          yield* resolveAsset(token, path.basename(claims.filePath)).pipe(
+            Effect.provideService(FileSystem.FileSystem, recordingFileSystem),
+          ),
+        ).toBeNull();
+        expect(resolved.splice(0), claims.filePath).toEqual(reachesShare ? [claims.filePath] : []);
+      }
     }).pipe(Effect.provide(layerTest)),
   );
 
@@ -1314,7 +1356,7 @@ describe("AssetAccess", () => {
         for (const { name, target, allowed } of dependencies) {
           const resolved = yield* resolveAsset(token, name);
           if (allowed) {
-            expect(resolved).toEqual({
+            expect(resolved).toMatchObject({
               kind: "file",
               path: yield* fs.realPath(target),
               renderIntent: "file-preview",
@@ -1415,12 +1457,21 @@ describe("AssetAccess", () => {
       const separatorIndex = suffix.indexOf("/");
       const token = suffix.slice(0, separatorIndex);
 
-      expect(yield* resolveAsset(token, "report.html")).toEqual({
+      const page = yield* resolveAsset(token, "report.html");
+      expect(page).toMatchObject({
         kind: "file",
         path: canonicalHtmlPath,
         renderIntent: "file-preview",
       });
-      expect(yield* resolveAsset(token, "report.css")).toEqual({
+      if (page?.kind !== "file") throw new Error("Expected the preview page");
+      // The response reads the file the checks approved, not one swapped in at its path since.
+      yield* fileSystem.writeFileString(`${htmlPath}.next`, "<p>swapped</p>");
+      yield* fileSystem.rename(`${htmlPath}.next`, htmlPath);
+      const pageResponse = HttpServerResponse.toWeb(yield* assetFileResponse(page));
+      expect(yield* Effect.promise(() => pageResponse.text())).toContain(
+        '<link rel="stylesheet" href="report.css">',
+      );
+      expect(yield* resolveAsset(token, "report.css")).toMatchObject({
         kind: "file",
         path: canonicalCssPath,
         renderIntent: "file-preview",
@@ -1445,11 +1496,13 @@ describe("AssetAccess", () => {
         ]) {
           const url = yield* issueAssetUrl({ resource, workspaceRoot: root });
           const suffix = url.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);
-          expect(yield* resolveAsset(suffix.slice(0, suffix.indexOf("/")), fontName)).toEqual({
-            kind: "file",
-            path: canonicalFontPath,
-            renderIntent: "file-preview",
-          });
+          expect(yield* resolveAsset(suffix.slice(0, suffix.indexOf("/")), fontName)).toMatchObject(
+            {
+              kind: "file",
+              path: canonicalFontPath,
+              renderIntent: "file-preview",
+            },
+          );
         }
       }
       expect(yield* resolveAsset(token, "../secret.txt")).toBeNull();
@@ -1473,12 +1526,12 @@ describe("AssetAccess", () => {
       });
       const dotSuffix = dotUrl.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);
       const dotToken = dotSuffix.slice(0, dotSuffix.indexOf("/"));
-      expect(yield* resolveAsset(dotToken, "report.html")).toEqual({
+      expect(yield* resolveAsset(dotToken, "report.html")).toMatchObject({
         kind: "file",
         path: yield* fileSystem.realPath(dotHtmlPath),
         renderIntent: "file-preview",
       });
-      expect(yield* resolveAsset(dotToken, "report.css")).toEqual({
+      expect(yield* resolveAsset(dotToken, "report.css")).toMatchObject({
         kind: "file",
         path: yield* fileSystem.realPath(dotCssPath),
         renderIntent: "file-preview",

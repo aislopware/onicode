@@ -328,9 +328,25 @@ function tokenizeShellCommand(command: string, windows = false): string[] | null
         continue;
       }
     }
+    // A program at a UNC path (\\server\share\tool.exe) keeps its backslashes.
+    if (
+      character === "\\" &&
+      quote === null &&
+      !tokenStarted &&
+      tokens.length === 0 &&
+      /^\\\\[^\\\s"'`$]+\\[^\\\s]/u.test(input.slice(index))
+    ) {
+      current += "\\\\";
+      index += 1;
+      tokenStarted = true;
+      continue;
+    }
     if (character === "\\" && quote !== "'") {
       const nextCharacter = input[index + 1];
-      const isWindowsPath = quote === null && /^(?:[A-Za-z]:|\.{1,2})(?:\\[^\s]*)?$/u.test(current);
+      const isWindowsPath =
+        quote === null &&
+        (/^(?:[A-Za-z]:|\.{1,2})(?:\\[^\s]*)?$/u.test(current) ||
+          (tokens.length === 0 && /^\\\\[^\\\s]+(?:\\[^\s]*)?$/u.test(current)));
       if (
         (quote === '"' || isWindowsPath) &&
         nextCharacter !== undefined &&
@@ -1214,6 +1230,18 @@ function wrappedShellCommandProgramName(
   return null;
 }
 
+// Windows shells and Start-Process read their own arguments, so backslashes stay literal.
+function windowsArgumentTokens(
+  command: string,
+  tokens: ReadonlyArray<string>,
+  index: number,
+  program: string,
+): ReadonlyArray<string> {
+  const windowsTokens = tokenizeShellCommand(command, true);
+  const sameProgram = windowsTokens?.[index]?.split(/[\\/]/u).at(-1)?.toLowerCase() === program;
+  return windowsTokens && sameProgram ? windowsTokens : tokens;
+}
+
 function parseCommandProgramName(
   command: string,
   depth: number,
@@ -1390,13 +1418,9 @@ function parseCommandProgramName(
     }
     const lowerTokenProgram = tokenProgram?.toLowerCase();
     if (lowerTokenProgram && WINDOWS_SHELL_PROGRAMS.has(lowerTokenProgram)) {
-      // Windows shells read their own arguments, so backslashes stay literal.
-      const windowsTokens = tokenizeShellCommand(commandSplit.firstCommand, true);
-      const sameShell =
-        windowsTokens?.[index]?.split(/[\\/]/u).at(-1)?.toLowerCase() === lowerTokenProgram;
       const payload = windowsShellPayloadProgramName(
         lowerTokenProgram,
-        windowsTokens && sameShell ? windowsTokens : tokens,
+        windowsArgumentTokens(commandSplit.firstCommand, tokens, index, lowerTokenProgram),
         index + 1,
         depth,
         commandSplit.remainingCommand,
@@ -1406,7 +1430,10 @@ function parseCommandProgramName(
       if (payload.matched) return payload.program;
     }
     if (lowerTokenProgram === "start-process") {
-      const startedProgram = startProcessProgramName(tokens, index + 1);
+      const startedProgram = startProcessProgramName(
+        windowsArgumentTokens(commandSplit.firstCommand, tokens, index, lowerTokenProgram),
+        index + 1,
+      );
       if (startedProgram !== null) return startedProgram;
     }
     if (

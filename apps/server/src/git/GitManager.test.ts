@@ -24,7 +24,7 @@ import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import * as HostProcess from "@onicode/shared/HostProcess";
 import { ChildProcessSpawner } from "effect/process";
-import { expect } from "vite-plus/test";
+import { expect, vi } from "vite-plus/test";
 import type {
   ChangeRequest,
   GitActionProgressEvent,
@@ -76,7 +76,13 @@ import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as NetworkLinks from "../workspace/networkLinks.ts";
 import * as GitManager from "./GitManager.ts";
+
+vi.mock("../workspace/networkLinks.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof NetworkLinks>();
+  return { ...actual, networkPathReachedBy: vi.fn(actual.networkPathReachedBy) };
+});
 
 /** A change request the fake host reports. Omitted fields read as an open, undated request. */
 type FakeChangeRequest = Omit<ChangeRequest, "provider" | "state" | "updatedAt"> & {
@@ -3995,6 +4001,17 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       expect(commitInstructions[0]).toContain("Local AGENTS.md:\nUse imperative subjects.");
       expect(commitInstructions[0]).not.toContain("Local CLAUDE.md:");
       expect(commitInstructions[1]).toContain("Local CLAUDE.md:\nMention the Claude provider.");
+
+      // An instruction file a link carries onto a share is never resolved or read.
+      using _share = vi
+        .mocked(NetworkLinks.networkPathReachedBy)
+        .mockImplementation(async (_path, filePath) =>
+          filePath === "CLAUDE.md" ? "\\\\nas\\share\\CLAUDE.md" : null,
+        );
+      NodeFS.writeFileSync(NodePath.join(repoDir, "README.md"), "hello once more\n");
+      yield* runStackedAction(manager, { cwd: repoDir, action: "commit" });
+      expect(commitInstructions[2]).toContain("Local AGENTS.md:\nUse imperative subjects.");
+      expect(commitInstructions[2]).not.toContain("Local CLAUDE.md:");
     }),
   );
 

@@ -117,8 +117,8 @@ export function IssueAssigneesScreen({ route }: StaticScreenProps<IssueParams>) 
           : null)
       }
       pending={(result.isPending && !result.data) || view.pending}
-      // Under the access notice a failed search with matches shown offers no Retry.
-      loadError={!result.data ? result.error : blocked !== null && searchFailed ? null : view.error}
+      // Under the access notice a failed search offers no Retry: nothing found could be picked.
+      loadError={!result.data ? result.error : blocked !== null ? null : view.error}
       onRetry={hostQuery === null ? result.refresh : search.refresh}
       truncated={view.truncated}
       onToggle={(id) => {
