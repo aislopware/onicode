@@ -31,6 +31,10 @@ class DesktopNetworkAccessUnavailableError extends Schema.TaggedError<DesktopNet
   override get message(): string {
     return m(msg("Desktop network access is unavailable."));
   }
+
+  get i18nMessage(): ReadonlyArray<string> {
+    return [msg("Desktop network access is unavailable.")];
+  }
 }
 
 class DesktopServerExposureStateLoadError extends Schema.TaggedError<DesktopServerExposureStateLoadError>()(
@@ -40,6 +44,10 @@ class DesktopServerExposureStateLoadError extends Schema.TaggedError<DesktopServ
   override get message(): string {
     return m(msg("Failed to load desktop server exposure state."));
   }
+
+  get i18nMessage(): ReadonlyArray<string> {
+    return [msg("Failed to load desktop server exposure state.")];
+  }
 }
 
 class DesktopAdvertisedEndpointsLoadError extends Schema.TaggedError<DesktopAdvertisedEndpointsLoadError>()(
@@ -48,6 +56,10 @@ class DesktopAdvertisedEndpointsLoadError extends Schema.TaggedError<DesktopAdve
 ) {
   override get message(): string {
     return m(msg("Failed to load advertised desktop endpoints."));
+  }
+
+  get i18nMessage(): ReadonlyArray<string> {
+    return [msg("Failed to load advertised desktop endpoints.")];
   }
 }
 

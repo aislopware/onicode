@@ -49,6 +49,10 @@ export class BrowserSettingsReadError extends Schema.TaggedError<BrowserSettings
   override get message(): string {
     return m(msg("Saved browser settings could not be loaded."));
   }
+
+  get i18nMessage(): ReadonlyArray<string> {
+    return [msg("Saved browser settings could not be loaded.")];
+  }
 }
 
 export const isBrowserSettingsReadError = Schema.is(BrowserSettingsReadError);

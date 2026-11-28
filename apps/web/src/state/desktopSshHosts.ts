@@ -39,6 +39,10 @@ class DesktopSshDiscoveryUnavailableError extends Schema.TaggedError<DesktopSshD
   override get message(): string {
     return m(msg("Desktop SSH host discovery is unavailable."));
   }
+
+  get i18nMessage(): ReadonlyArray<string> {
+    return [msg("Desktop SSH host discovery is unavailable.")];
+  }
 }
 
 class DesktopSshDiscoveryError extends Schema.TaggedError<DesktopSshDiscoveryError>()(
@@ -47,6 +51,10 @@ class DesktopSshDiscoveryError extends Schema.TaggedError<DesktopSshDiscoveryErr
 ) {
   override get message(): string {
     return m(msg("Failed to discover SSH hosts."));
+  }
+
+  get i18nMessage(): ReadonlyArray<string> {
+    return [msg("Failed to discover SSH hosts.")];
   }
 }
 

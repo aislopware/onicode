@@ -17,6 +17,10 @@ class DesktopCliCommandUnavailableError extends Schema.TaggedError<DesktopCliCom
   override get message(): string {
     return m(msg("The onicode command is unavailable."));
   }
+
+  get i18nMessage(): ReadonlyArray<string> {
+    return [msg("The onicode command is unavailable.")];
+  }
 }
 
 class DesktopCliCommandLoadError extends Schema.TaggedError<DesktopCliCommandLoadError>()(
@@ -25,6 +29,10 @@ class DesktopCliCommandLoadError extends Schema.TaggedError<DesktopCliCommandLoa
 ) {
   override get message(): string {
     return m(msg("Failed to load the onicode command state."));
+  }
+
+  get i18nMessage(): ReadonlyArray<string> {
+    return [msg("Failed to load the onicode command state.")];
   }
 }
 

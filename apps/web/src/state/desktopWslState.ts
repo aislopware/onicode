@@ -19,6 +19,10 @@ class DesktopWslStateUnavailableError extends Schema.TaggedError<DesktopWslState
   override get message(): string {
     return m(msg("Desktop WSL state is unavailable."));
   }
+
+  get i18nMessage(): ReadonlyArray<string> {
+    return [msg("Desktop WSL state is unavailable.")];
+  }
 }
 
 class DesktopWslStateLoadError extends Schema.TaggedError<DesktopWslStateLoadError>()(
@@ -27,6 +31,10 @@ class DesktopWslStateLoadError extends Schema.TaggedError<DesktopWslStateLoadErr
 ) {
   override get message(): string {
     return m(msg("Failed to load WSL state."));
+  }
+
+  get i18nMessage(): ReadonlyArray<string> {
+    return [msg("Failed to load WSL state.")];
   }
 }
 
