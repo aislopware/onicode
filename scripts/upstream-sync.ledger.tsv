@@ -4956,3 +4956,4 @@ b927b1fd93	take	CONFLICT in NotebookPreview (Onicode's empty-notebook branch); k
 70709c4d4d	take	adopted upstream over Onicode's hardware alert (memory/storage/load thresholds, client polling): server grades real stalls with hysteresis and pushes changes; kept Onicode's loadAverage field (shipped mobile reads it) and its sidebar icon / mobile round pill surfaces (maintainer rejected footer pill and banner) with upstream's popover content; adopted thread row icons, MCP machine load
 9f887c5a39	take	kept Onicode's hostHardware query (settings gauges) beside upstream's liveHostResources; web only, mobile has no thread details card
 0dd3a0777d	take	taken as is
+9e9099e6b9	take	taken as is
