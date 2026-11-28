@@ -37,8 +37,10 @@ vi.mock("../features/settings/appearance/AppearancePreferencesProvider", () => (
 vi.mock("../state/assets", async () => {
   const { Atom } = await import("effect/reactivity");
   const defaultUrl = Atom.make<string | null>("https://example.test/favicon.png");
+  const missing = Atom.make<string | null>(null);
   return {
-    projectFaviconUrlAtom: () => harness.faviconUrlAtom ?? defaultUrl,
+    projectFaviconUrlAtom: (target: { readonly cwd: string }) =>
+      target.cwd === "/repo-without-icon" ? missing : (harness.faviconUrlAtom ?? defaultUrl),
     refreshProjectFaviconUrl: (target: unknown) => harness.refreshProjectFaviconUrl(target),
   };
 });
@@ -132,5 +134,36 @@ it("refreshes an expired remote favicon URL once on load error and recovers afte
     harness.faviconUrlAtom = null;
     harness.refreshProjectFaviconUrl = vi.fn();
     harness.imageProps = null;
+  }
+});
+
+it("shows the next project's icon when a group's own project has none", async () => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  const environmentId = EnvironmentId.make("env-1");
+  try {
+    await act(async () =>
+      root.render(
+        <ProjectFavicon
+          environmentId={environmentId}
+          projectTitle="Project"
+          workspaceRoot="/repo-without-icon"
+          fallbackProjects={[
+            {
+              environmentId,
+              workspaceRoot: "/repo/apps/web",
+              faviconPath: null,
+              projectIcon: null,
+            },
+          ]}
+        />,
+      ),
+    );
+    expect(container.querySelector("img")?.getAttribute("src")).toBe(
+      "https://example.test/favicon.png",
+    );
+  } finally {
+    await act(async () => root.unmount());
   }
 });

@@ -14,6 +14,7 @@ import {
 } from "@react-navigation/native";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import {
+  groupIconFallbacks,
   isPickableProjectMember,
   pickableProjectGroups,
 } from "@onicode/client-runtime/state/project-grouping";
@@ -590,6 +591,10 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                           size={24}
                           projectTitle={scope.representative.title}
                           workspaceRoot={scope.representative.workspaceRoot}
+                          fallbackProjects={groupIconFallbacks(
+                            scope.projects,
+                            scope.representative,
+                          )}
                         />
                       }
                     />
@@ -615,6 +620,10 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                           size={20}
                           projectTitle={scope.representative.title}
                           workspaceRoot={scope.representative.workspaceRoot}
+                          fallbackProjects={groupIconFallbacks(
+                            scope.projects,
+                            scope.representative,
+                          )}
                         />
                       </View>
                       <View className="min-w-0 flex-1">

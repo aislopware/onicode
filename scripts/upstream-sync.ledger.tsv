@@ -4848,3 +4848,4 @@ f875d2ab53	take	doc conflict: kept Onicode's sidebar guide, added the Indefinite
 ddcd0486de	take	translation conflicts: kept Onicode catalogs, added the 7 new keys; kept Onicode's fold reveal when keeping the visible file, shared by both filter toggles
 1b12bcd498	take	taken as is (Onicode's compactTrailing carries the same 2pt trailing offset)
 cce3f8bccb	take	conflict: kept Onicode's Stop-hook reopen handler beside upstream's autoApprovalReview handler
+4ef322d6dc	take	conflicts: kept Onicode's selectRepositoryCounterpart beside groupIconFallbacks, folder header text colour, isPickableProjectMember import and favicon refresh test harness; Sidebar hook order untouched (row-render test green)
