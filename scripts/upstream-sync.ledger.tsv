@@ -4928,3 +4928,4 @@ c5d7fddabc	take	kept Onicode's RangeError fallback parser beside upstream's simp
 0ac1453a39	take	taken as is
 b68de0fb09	take	taken as is
 13cda455bd	take	adapted: test builds the archive as a Map, as Onicode's openDocument reads it (no JSZip)
+494d328909	take	taken as is; reaches Antigravity through the shared ACP adapter
