@@ -472,12 +472,15 @@ export function openNotebook(bytes: ArrayBuffer): OfficeWorkerResult {
   if (notebook.nbformat !== 4 || !Array.isArray(notebook.cells) || notebook.cells.length > 500)
     throw new PreviewError({ code: "notebook-unsupported" });
   const metadata = record(notebook.metadata);
+  const kernelspec = record(metadata.kernelspec);
   const languageName = (value: unknown) =>
     typeof value === "string" ? value.replaceAll(/[^a-z\d+#-]/gi, "").slice(0, 40) : "";
   const language =
     languageName(record(metadata.language_info).name) ||
-    languageName(record(metadata.kernelspec).language) ||
-    "text";
+    languageName(kernelspec.language) ||
+    (typeof kernelspec.name === "string" && kernelspec.name.toLowerCase() === "python3"
+      ? "python"
+      : "text");
   const cells: NotebookCell[] = notebook.cells.map((value) => {
     const cell = record(value);
     const outputs = Array.isArray(cell.outputs) ? cell.outputs : [];
