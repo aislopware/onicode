@@ -6,6 +6,7 @@ import { binaryFileFailure } from "./binaryFileFailure";
 
 const offline = new Error("offline");
 const notText = new FilePreviewDecodeError({ message: "Not text", i18nMessage: ["Not text"] });
+const readFailure = new Error("Not text", { cause: notText });
 
 it.each([
   ["a pending download", AsyncResult.initial(true), AsyncResult.initial(), null],
@@ -27,6 +28,12 @@ it.each([
     AsyncResult.success("url"),
     AsyncResult.fail(notText),
     { cause: notText, canOpenInViewer: true, canRetry: false },
+  ],
+  [
+    "bytes that are not text, wrapped by the reader",
+    AsyncResult.success("url"),
+    AsyncResult.fail(readFailure),
+    { cause: readFailure, canOpenInViewer: true, canRetry: false },
   ],
 ])("offers what still works after %s", (_, url, download, expected) => {
   expect(binaryFileFailure(url, download)).toEqual(expected);

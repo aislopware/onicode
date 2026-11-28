@@ -5,6 +5,11 @@ import { AsyncResult } from "effect/reactivity";
 
 const isFilePreviewDecodeError = Schema.is(FilePreviewDecodeError);
 
+// Readers wrap the decode failure and keep it as their cause.
+const isNotText = (error: unknown): boolean =>
+  isFilePreviewDecodeError(error) ||
+  (typeof error === "object" && error !== null && "cause" in error && isNotText(error.cause));
+
 /**
  * Why a file the server would not read as text has no preview. The viewer needs the same URL,
  * so a failed mint hides it; bytes that are not text stay that way, so they get no retry.
@@ -25,6 +30,6 @@ export function binaryFileFailure(
   return {
     cause,
     canOpenInViewer: true,
-    canRetry: !isFilePreviewDecodeError(cause),
+    canRetry: !isNotText(cause),
   };
 }
