@@ -1354,7 +1354,8 @@ describe("AssetAccess", () => {
         const suffix = result.relativeUrl.slice(ASSET_ROUTE_PREFIX.length + 1);
         const token = suffix.slice(0, suffix.indexOf("/"));
         for (const { name, target, allowed } of dependencies) {
-          const resolved = yield* resolveAsset(token, name);
+          // Scoped, so the pinned file closes before the folder is renamed (Windows refuses that).
+          const resolved = yield* Effect.scoped(resolveAsset(token, name));
           if (allowed) {
             expect(resolved).toMatchObject({
               kind: "file",
@@ -1465,8 +1466,11 @@ describe("AssetAccess", () => {
       });
       if (page?.kind !== "file") throw new Error("Expected the preview page");
       // The response reads the file the checks approved, not one swapped in at its path since.
-      yield* fileSystem.writeFileString(`${htmlPath}.next`, "<p>swapped</p>");
-      yield* fileSystem.rename(`${htmlPath}.next`, htmlPath);
+      // Windows refuses to replace a file that is open, which pins it there too.
+      if (HostProcess.Platform.defaultValue() !== "win32") {
+        yield* fileSystem.writeFileString(`${htmlPath}.next`, "<p>swapped</p>");
+        yield* fileSystem.rename(`${htmlPath}.next`, htmlPath);
+      }
       const pageResponse = HttpServerResponse.toWeb(yield* assetFileResponse(page));
       expect(yield* Effect.promise(() => pageResponse.text())).toContain(
         '<link rel="stylesheet" href="report.css">',
