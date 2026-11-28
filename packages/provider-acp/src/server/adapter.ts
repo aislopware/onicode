@@ -3506,6 +3506,13 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             Effect.gen(function* () {
               yield* requireRuntimeRestart;
               if (!followsAgentWorkState) {
+                // Releasing the request hold below would let a sleeping deferred finalize
+                // complete a held turn before it is failed, so stale that timer first.
+                const heldAtExit = yield* Ref.get(activeTurn);
+                if (heldAtExit !== null && !heldAtExit.finalized) {
+                  heldAtExit.backgroundFinalizeGeneration += 1;
+                }
+                agentRequests.clear();
                 // The dead process cannot answer its pending approvals and questions.
                 yield* cancelPendingRuntimeRequests();
                 // An open prompt fails with its transport. A turn held open after its prompt
