@@ -1,9 +1,15 @@
-import type { IssueAssigneeCandidate, IssueDetail, IssueLabelCandidate } from "@onicode/contracts";
+import type {
+  IssueAssigneeCandidate,
+  IssueCandidates,
+  IssueDetail,
+  IssueLabelCandidate,
+} from "@onicode/contracts";
 
 import { selectionChanges, type SelectionDraft } from "./pullRequestSelection.ts";
 
 type Labelled = Pick<IssueDetail, "labels">;
 type Assigned = Pick<IssueDetail, "assignees">;
+type AssigneeList = Pick<IssueCandidates, "assignees" | "truncated">;
 
 /**
  * The loaded people a query matches by name or by the tracker's own search, which also reads
@@ -27,29 +33,34 @@ function mergeIssueAssigneeCandidates(
   ];
 }
 
-/** An assignee picker's list while the tracker searches past what it loaded; a stale answer never shows. */
+/**
+ * An assignee picker's list while the tracker searches past what it loaded; a stale answer never
+ * shows. A failed search reports its error even when loaded people match.
+ */
 export function issueAssigneeSearchView(input: {
-  readonly loaded: ReadonlyArray<IssueAssigneeCandidate>;
+  readonly loaded: AssigneeList | null;
   readonly searchable: boolean;
   readonly query: string;
   readonly debouncedQuery: string;
   readonly search: {
-    readonly data: { readonly assignees: ReadonlyArray<IssueAssigneeCandidate> } | null;
+    readonly data: AssigneeList | null;
     readonly isPending: boolean;
     readonly error: string | null;
   };
 }) {
   const searching = input.searchable && input.query.trim().length > 0;
   const current = searching && input.query.trim() === input.debouncedQuery;
+  const answer = current ? input.search.data : null;
   const candidates = mergeIssueAssigneeCandidates(
-    input.loaded,
-    current ? (input.search.data?.assignees ?? []) : [],
+    input.loaded?.assignees ?? [],
+    answer?.assignees ?? [],
     input.query,
   );
   return {
     candidates,
     pending: searching && (!current || input.search.isPending) && candidates.length === 0,
-    error: current && candidates.length === 0 ? input.search.error : null,
+    error: current ? input.search.error : null,
+    truncated: searching ? answer?.truncated === true : input.loaded?.truncated === true,
   };
 }
 

@@ -566,6 +566,47 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
         }),
     );
 
+    it.effect.skipIf(!symlinksSupported || HostProcess.Platform.defaultValue() === "win32")(
+      "refuses a link onto a network path before resolving through it",
+      () =>
+        Effect.gen(function* () {
+          const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+          const fileSystem = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const cwd = yield* makeTempDir;
+          const outsideDir = yield* makeTempDir;
+          yield* writeTextFile(outsideDir, "a.md", "outside\n");
+          // Names a share, though POSIX resolves the leading `//` as `/`.
+          yield* fileSystem.symlink(
+            `/${yield* fileSystem.realPath(outsideDir)}`,
+            path.join(cwd, "nas"),
+          );
+          const realpath = vi.mocked(NodeFSP.realpath).mockClear();
+
+          expect(
+            yield* workspaceFileSystem
+              .readFile({ cwd, relativePath: "nas/a.md" })
+              .pipe(Effect.flip),
+          ).toBeInstanceOf(WorkspaceFileSystem.WorkspaceFilePathEscapeError);
+          expect(
+            yield* workspaceFileSystem
+              .readFile({ cwd, relativePath: path.join(cwd, "nas", "a.md") })
+              .pipe(Effect.flip),
+          ).toBeInstanceOf(WorkspacePaths.WorkspacePathOutsideRootError);
+          expect(
+            yield* workspaceFileSystem
+              .writeFile({ cwd, relativePath: "nas/b.md", contents: "# nope\n" })
+              .pipe(Effect.flip),
+          ).toBeInstanceOf(WorkspaceFileSystem.WorkspaceFilePathEscapeError);
+          expect(
+            (yield* workspaceFileSystem.getMetadata({ paths: [path.join(cwd, "nas", "a.md")] }))
+              .entries,
+          ).toEqual([null]);
+          const resolved = realpath.mock.calls.map(([target]) => String(target));
+          expect(resolved.filter((target) => target.split(path.sep).includes("nas"))).toEqual([]);
+        }),
+    );
+
     it.effect("drops a multibyte character split by the read limit", () =>
       Effect.gen(function* () {
         const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;

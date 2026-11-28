@@ -30,6 +30,7 @@ import { normalizeSearchQuery } from "@onicode/shared/searchRanking";
 import { expandHomePath } from "@onicode/provider-core/server/pathExpansion";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import { MAX_PENDING_LINK_TARGET_PROBES, resolveLinkTarget } from "./linkTargets.ts";
+import { networkPathReachedBy } from "./networkLinks.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
 import * as WorkspaceSearchIndex from "./WorkspaceSearchIndex.ts";
 
@@ -434,12 +435,16 @@ export const make = Effect.gen(function* () {
             : !isNetworkPath(resolved) && !resolved.split(path.sep).includes(".git");
         const { root, directory, children, throughSymlink } = yield* Effect.tryPromise({
           try: async () => {
+            const refusal = new Error("Directory must not be a network share or inside .git.");
             const root = await NodeFSP.realpath(normalizedCwd);
+            const reached = await networkPathReachedBy(path, target.relativePath, {
+              from: root,
+              allowedRoot: root,
+            });
+            if (reached !== null || target.relativePath.split("/").includes(".git")) throw refusal;
             const directory = await NodeFSP.realpath(target.absolutePath);
             const relative = path.relative(root, directory);
-            if (!isListable(root, directory) || target.relativePath.split("/").includes(".git")) {
-              throw new Error("Directory must not be a network share or inside .git.");
-            }
+            if (!isListable(root, directory)) throw refusal;
             return {
               root,
               directory,
@@ -467,6 +472,10 @@ export const make = Effect.gen(function* () {
             children.filter((child) => child.name !== ".git" && child.isSymbolicLink()),
             (child) =>
               Effect.gen(function* () {
+                const reached = yield* Effect.promise(() =>
+                  networkPathReachedBy(path, child.name, { from: directory, allowedRoot: root }),
+                );
+                if (reached !== null) return undefined;
                 const linkTarget = yield* resolveLinkTarget(path.join(directory, child.name), {
                   link: true,
                 });

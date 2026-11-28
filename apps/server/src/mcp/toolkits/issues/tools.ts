@@ -199,6 +199,8 @@ export const ReadIssueResult = Schema.Struct({
   ),
   /** Older comments exist beyond the page returned. */
   commentsTruncated: Schema.Boolean,
+  /** A new comment here is an internal note unless its audience is public. */
+  commentAudiences: Schema.optional(Schema.Boolean),
   linkedPullRequests: Schema.Array(
     Schema.Struct({
       url: Schema.String,
@@ -318,14 +320,14 @@ const CreateIssueTool = Tool.make("create_issue", {
 
 const CommentOnIssueTool = Tool.make("comment_on_issue", {
   description:
-    "Post a comment on an issue. On a Jira Service Management issue it is an internal note the customer never sees unless audience is public. Never resend a refused internal note as public.",
+    "Post a comment on an issue. Where read_issue shows commentAudiences (Jira Service Management), it is an internal note the customer never sees unless audience is public; never resend a refused internal note there as public.",
   parameters: Schema.Struct({
     ...IssueTargetInput.fields,
     body: Schema.String.check(Schema.isNonEmpty()).check(Schema.isMaxLength(65_536)),
     audience: Schema.optional(
       IssueCommentAudience.annotate({
         description:
-          "Defaults to internal. public replies to the customer; set it only when the user asked to reply to them.",
+          "Only where read_issue shows commentAudiences, defaulting to internal; leave it out elsewhere. public replies to the customer; set it only when the user asked to reply to them.",
       }),
     ),
   }),

@@ -158,6 +158,15 @@ function collapseOdfWhitespace(paragraph: XmlNode) {
   if (tail && afterSpace) tail.node.children[tail.index] = tail.value.slice(0, -1);
 }
 
+// Text between ODF paragraphs is element content, so pretty-printing whitespace there is not text.
+function dropOdfBlockWhitespace(node: XmlNode) {
+  node.children = node.children.filter(
+    (child) => typeof child !== "string" || /[^\t\n\r ]/u.test(child),
+  );
+  for (const child of children(node))
+    if (child.name !== "p" && child.name !== "h") dropOdfBlockWhitespace(child);
+}
+
 function separateRubyReadings(ruby: XmlNode) {
   const parts = ruby.children.filter((part) =>
     typeof part === "string"
@@ -322,7 +331,7 @@ function xml(
           // A foreign attribute must not shadow an XHTML table span or a namespace declaration.
           return (extension === ".epub" &&
             (local === "colspan" || local === "rowspan" || local === "xmlns")) ||
-            ((extension === ".odt" || wordStyles !== undefined) && local === "xmlns")
+            ((odf || wordStyles !== undefined) && local === "xmlns")
             ? [[key, String(value)]]
             : [
                 [key, String(value)],
@@ -501,6 +510,7 @@ function xml(
       node.markupCompatibility &&
       parent.name === "AlternateContent" &&
       parent.markupCompatibility;
+    if (node.odfInlineParagraphs) dropOdfBlockWhitespace(node);
     if (odf && (node.name === "p" || node.name === "h")) collapseOdfWhitespace(node);
     // Hidden spans may contain a nested style that explicitly makes its text visible.
     if (
@@ -554,9 +564,12 @@ function xml(
       const parts = children(node);
       const citation = parts.find((child) => child.name === "note-citation");
       const body = parts.find((child) => child.name === "note-body");
-      if (citation?.hasText && body?.hasText) {
+      if (body?.hasText) {
         body.odfInlineParagraphs = true;
-        node.children = ["[", citation, ": ", body, "]"];
+        dropOdfBlockWhitespace(body);
+        node.children = citation?.hasText
+          ? ["[", citation, ": ", body, "]"]
+          : ["[Note: ", body, "]"];
       }
     }
     if (isOdfHiddenText && !node.odfSpanHidden) {
@@ -682,8 +695,16 @@ interface Line {
   boxes: number;
   afterBox: boolean;
 }
-function* text(node: XmlNode, line?: Line): Generator<TextPart, void> {
+function* text(
+  node: XmlNode,
+  line?: Line,
+  inline?: { seenParagraph: boolean },
+): Generator<TextPart, void> {
   if (HIDDEN.has(node.name)) return;
+  if (inline && (node.name === "p" || node.name === "h")) {
+    if (inline.seenParagraph) yield "\n";
+    inline.seenParagraph = true;
+  }
   if (node.imageDescription !== undefined) {
     yield { imageDescription: node.imageDescription };
     return;
@@ -713,18 +734,12 @@ function* text(node: XmlNode, line?: Line): Generator<TextPart, void> {
       }
     }
   } else if (node.odfInlineParagraphs) {
-    // A box anchored as a character, or a note, sits in the line, so only its own paragraphs break.
-    let seenParagraph = false;
+    // A box anchored as a character, or a note, sits in the line, so only its own paragraphs
+    // break, including those inside its lists and sections.
+    const own = { seenParagraph: false };
     for (const child of node.children) {
-      if (typeof child === "string") {
-        yield child;
-        continue;
-      }
-      if (child.name === "p" || child.name === "h") {
-        if (seenParagraph) yield "\n";
-        seenParagraph = true;
-      }
-      yield* text(child, line);
+      if (typeof child === "string") yield child;
+      else yield* text(child, line, own);
     }
   } else if (["tab", "ptab", "cell"].includes(node.name)) yield "\t";
   else if (["br", "line-break", "cr"].includes(node.name)) yield "\n";
@@ -735,7 +750,7 @@ function* text(node: XmlNode, line?: Line): Generator<TextPart, void> {
   } else
     for (const child of node.children) {
       if (typeof child === "string") yield child;
-      else yield* text(child, line);
+      else yield* text(child, line, inline);
     }
 }
 // SpreadsheetML sheet names and cell strings are ST_Xstring: `_xHHHH_` is one UTF-16 code unit, and an

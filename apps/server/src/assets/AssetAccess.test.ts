@@ -531,10 +531,71 @@ describe("AssetAccess", () => {
           expect(yield* resolveAsset(token, fileName)).toMatchObject({
             kind: "file",
             path: yield* fs.realPath(path.join(outside, "specs", fileName)),
+            ...(fileName === "page.html" ? { renderIntent: "file-preview" } : {}),
           });
           // The grant covers the one file, never its neighbours.
           expect(yield* resolveAsset(token, "style.css")).toBeNull();
         }
+      }).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect.skipIf(!symlinksSupported || HostProcess.Platform.defaultValue() === "win32")(
+    "never resolves through a workspace link onto a network path",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const directory = yield* fs.makeTempDirectoryScoped({ prefix: "oni-network-link-" });
+        const root = path.join(directory, "workspace");
+        const outside = path.join(directory, "files");
+        yield* fs.makeDirectory(root);
+        yield* fs.makeDirectory(outside);
+        yield* fs.writeFileString(path.join(outside, "diagram.png"), "png bytes");
+        yield* fs.writeFileString(path.join(root, "page.html"), '<img src="nas/diagram.png">');
+        // Names a share, though POSIX resolves the leading `//` as `/`.
+        yield* fs.symlink(`/${yield* fs.realPath(outside)}`, path.join(root, "nas"));
+        const resolved: Array<string> = [];
+        const recordingFileSystem = FileSystem.FileSystem.of({
+          ...fs,
+          realPath: (requestedPath) => {
+            resolved.push(requestedPath);
+            return fs.realPath(requestedPath);
+          },
+        });
+
+        for (const resource of [
+          { _tag: "workspace-file", threadId: ThreadId.make("thread-1"), path: "nas/diagram.png" },
+          { _tag: "draft-workspace-file", cwd: root, path: "nas/diagram.png" },
+          {
+            _tag: "media-file",
+            threadId: ThreadId.make("thread-1"),
+            path: path.join(root, "nas", "diagram.png"),
+          },
+        ] as const) {
+          const error = yield* issueAssetUrl({ resource, workspaceRoot: root }).pipe(
+            Effect.provideService(FileSystem.FileSystem, recordingFileSystem),
+            Effect.flip,
+          );
+          expect(error._tag).toBe("AssetWorkspaceAssetNotFoundError");
+        }
+        const page = yield* issueAssetUrl({
+          resource: {
+            _tag: "workspace-file",
+            threadId: ThreadId.make("thread-1"),
+            path: "page.html",
+          },
+          workspaceRoot: root,
+        });
+        const suffix = page.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);
+        const stat = vi.mocked(NodeFSP.stat).mockClear();
+        expect(
+          yield* resolveAsset(suffix.slice(0, suffix.indexOf("/")), "nas/diagram.png").pipe(
+            Effect.provideService(FileSystem.FileSystem, recordingFileSystem),
+          ),
+        ).toBeNull();
+        const throughLink = (target: unknown) => String(target).split(path.sep).includes("nas");
+        expect(resolved.filter(throughLink)).toEqual([]);
+        expect(stat.mock.calls.map(([target]) => target).filter(throughLink)).toEqual([]);
       }).pipe(Effect.provide(layerTest)),
   );
 

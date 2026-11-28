@@ -1207,18 +1207,28 @@ it.effect.each([
   "identifies every worktree behind an unavailable refined Forgejo authority",
   ({ provider, host, remoteUrl }) =>
     Effect.gen(function* () {
+      const projects = ["ssh", "ssh-worktree"].map((id) =>
+        project({
+          id,
+          title: id,
+          workspaceRoot: `/${id}`,
+          repository: "team/repo",
+          provider,
+          host,
+          remoteUrl,
+        }),
+      );
       const service = yield* makeService({
-        projects: ["ssh", "ssh-worktree"].map((id) =>
-          project({
-            id,
-            title: id,
-            workspaceRoot: `/${id}`,
-            repository: "team/repo",
-            provider,
-            host,
-            remoteUrl,
-          }),
-        ),
+        // A repository the project also tracks behind the same authority names it once.
+        projects: [
+          {
+            ...projects[0]!,
+            trackedFolders: [{ name: "app", path: "/ssh/app", discovered: true }],
+          },
+          projects[1]!,
+        ],
+        resolveRepositoryIdentity: (cwd) =>
+          Effect.succeed(cwd === "/ssh/app" ? projects[0]!.repositoryIdentity! : null),
         providers: [
           fakePullRequestProvider(SourceControlProviderKind.make("forgejo"), {
             getViewer: ({ host }) => {

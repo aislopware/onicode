@@ -281,7 +281,9 @@ type ShellQuote = '"' | "'" | "$'";
 
 const REDIRECTION_TOKEN_PREFIX = /^(?:(?:\d+|\*|\{[A-Za-z_][A-Za-z0-9_]*\})?[<>]*|&>?)$/u;
 
-function tokenizeShellCommand(command: string): string[] | null {
+// `windows` follows Windows argument rules: backslashes are literal unless a run of them
+// ends at a double quote.
+function tokenizeShellCommand(command: string, windows = false): string[] | null {
   const input = command.trim();
   const tokens: string[] = [];
   let current = "";
@@ -316,6 +318,15 @@ function tokenizeShellCommand(command: string): string[] | null {
       current += ANSI_C_ESCAPES[nextCharacter] ?? `\\${nextCharacter}`;
       index += 1;
       continue;
+    }
+    if (windows && character === "\\" && quote !== "'") {
+      const run = /^\\+/u.exec(input.slice(index))![0];
+      if (input[index + run.length] !== '"') {
+        current += run;
+        index += run.length - 1;
+        tokenStarted = true;
+        continue;
+      }
     }
     if (character === "\\" && quote !== "'") {
       const nextCharacter = input[index + 1];
@@ -1528,8 +1539,8 @@ function withoutShellWrapper(command: string): string {
   const executable = tokens?.[0]?.split(/[\\/]/u).at(-1)?.toLowerCase();
   const program = executable?.replace(/\.exe$/u, "");
   if (!tokens || !executable || !program) return trimmed;
-  if (joined !== trimmed && WINDOWS_SHELL_PROGRAMS.has(executable)) {
-    tokens = tokenizeShellCommand(trimmed);
+  if (WINDOWS_SHELL_PROGRAMS.has(executable)) {
+    tokens = tokenizeShellCommand(trimmed, true);
     if (!tokens || tokens[0]?.split(/[\\/]/u).at(-1)?.toLowerCase() !== executable) return trimmed;
   }
   const scriptIndex = SHELL_PROGRAMS.has(program)

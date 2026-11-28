@@ -218,6 +218,8 @@ describe("commandDisplayText with Windows shell wrappers", () => {
       'rg -n -F "new Date()" .',
     ],
     ['cmd.exe /c "npm test"', "npm test"],
+    ['cmd.exe /c "dir \\\\server\\share"', "dir \\\\server\\share"],
+    ['pwsh -Command "Get-ChildItem C:\\$name"', "Get-ChildItem C:\\$name"],
     ['Bash.exe -lc "git status"', "git status"],
     ['"C:\\Program Files\\Git\\bin\\Bash.exe" -lc "rg foo"', "rg foo"],
     [
@@ -258,9 +260,7 @@ describe("commandDisplayText with line continuations", () => {
   });
 
   it("keeps Windows shell scripts on separate lines", () => {
-    expect(commandDisplayText('cmd.exe /c "dir C:\\\necho done"')).toMatch(
-      /^dir C:\\?\necho done$/u,
-    );
+    expect(commandDisplayText('cmd.exe /c "dir C:\\\necho done"')).toBe("dir C:\\\necho done");
   });
 });
 

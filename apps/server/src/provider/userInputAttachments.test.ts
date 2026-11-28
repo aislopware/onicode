@@ -1448,6 +1448,29 @@ describe("question answer paths", () => {
           expected: [],
           exact: "次は東京(とうきょう)から京都まで。",
         },
+        ...[
+          {
+            ext: "ods",
+            open: '<office:spreadsheet><table:table table:name="Stations"><table:table-row><table:table-cell>',
+            close: "</table:table-cell></table:table-row></table:table></office:spreadsheet>",
+          },
+          {
+            ext: "odp",
+            open: "<office:presentation><draw:page>",
+            close: "</draw:page></office:presentation>",
+          },
+        ].map(({ ext, open, close }) => ({
+          ext,
+          parts: {
+            "content.xml":
+              '<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:meta="urn:example:metadata"><office:body>' +
+              open +
+              '<text:p>次は<ruby xmlns="urn:oasis:names:tc:opendocument:xmlns:text:1.0" meta:xmlns="urn:example:metadata"><ruby-base>東京</ruby-base><ruby-text>とうきょう</ruby-text></ruby>まで。</text:p>' +
+              close +
+              "</office:body></office:document-content>",
+          },
+          expected: ["次は東京(とうきょう)まで。"],
+        })),
         {
           ext: "odt",
           bounded: true,
@@ -1968,10 +1991,14 @@ describe("question answer paths", () => {
               '<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:t="urn:oasis:names:tc:opendocument:xmlns:text:1.0"><office:body><office:text>' +
               '<t:p>The shipment left.<t:note t:id="ftn0" t:note-class="footnote"><t:note-citation>1</t:note-citation><t:note-body><t:p>Inspect the seals before departure.</t:p></t:note-body></t:note> Finance booked revenue.</t:p>' +
               '<t:p>The ledger lists Tokyo<t:note t:id="ftn1" t:note-class="footnote"><t:note-citation>2</t:note-citation><t:note-body><t:p>Includes freight.</t:p><t:p>Duties excluded.</t:p></t:note-body></t:note> and Osaka.</t:p>' +
+              '<t:p>Rates rose<t:note t:id="ftn2" t:note-class="endnote"><t:note-body><t:p>See the annex.</t:p></t:note-body></t:note> in May.</t:p>' +
+              '<t:p>Prices fell<t:note t:id="ftn3" t:note-class="footnote"><t:note-citation/><t:note-body><t:p>Estimated.</t:p></t:note-body></t:note> in June.</t:p>' +
+              '<t:p>Two checks<t:note t:id="ftn4" t:note-class="footnote"><t:note-citation>3</t:note-citation><t:note-body><t:list><t:list-item><t:p>Seals.</t:p></t:list-item><t:list-item><t:p>Weight.</t:p></t:list-item></t:list></t:note-body></t:note> passed.</t:p>' +
+              '<t:p>Totals<t:note t:id="ftn5" t:note-class="footnote">\n  <t:note-citation>4</t:note-citation>\n  <t:note-body>\n    <t:p>Gross.</t:p>\n    <t:list>\n      <t:list-item>\n        <t:p>Net.</t:p>\n      </t:list-item>\n    </t:list>\n  </t:note-body>\n</t:note> follow.</t:p>' +
               "</office:text></office:body></office:document-content>",
           },
           expected: [
-            "The shipment left.[1: Inspect the seals before departure.] Finance booked revenue.\nThe ledger lists Tokyo[2: Includes freight.\nDuties excluded.] and Osaka.",
+            "The shipment left.[1: Inspect the seals before departure.] Finance booked revenue.\nThe ledger lists Tokyo[2: Includes freight.\nDuties excluded.] and Osaka.\nRates rose[Note: See the annex.] in May.\nPrices fell[Note: Estimated.] in June.\nTwo checks[3: Seals.\nWeight.] passed.\nTotals[4: Gross.\nNet.] follow.",
           ],
         },
         {
@@ -2322,11 +2349,12 @@ describe("question answer paths", () => {
               "<office:body><office:text><text:p>Inspection route</text:p>" +
               '<text:p><draw:frame text:anchor-type="as-char"><draw:text-box><text:p>North loading dock</text:p><text:p>South loading dock</text:p></draw:text-box></draw:frame></text:p>' +
               '<text:p>Meeting point: <draw:frame text:anchor-type="as-char"><draw:text-box><text:p>Gate 4</text:p></draw:text-box></draw:frame> at noon</text:p>' +
+              '<text:p>Escort: <draw:frame text:anchor-type="as-char"><draw:text-box>\n  <text:p>Ana</text:p>\n  <text:p>Ben</text:p>\n</draw:text-box></draw:frame> on duty</text:p>' +
               "<text:p>End <other:text-box>of <text:span>route</text:span>.</other:text-box></text:p>" +
               "</office:text></office:body></office:document-content>",
           },
           expected: [
-            "Inspection route\nNorth loading dock\nSouth loading dock\nMeeting point: Gate 4 at noon\nEnd of route.",
+            "Inspection route\nNorth loading dock\nSouth loading dock\nMeeting point: Gate 4 at noon\nEscort: Ana\nBen on duty\nEnd of route.",
           ],
         },
         {

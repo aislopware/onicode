@@ -17,7 +17,7 @@ import {
   type IssueSurface,
   useRightPanelStore,
 } from "../rightPanelStore";
-import { useProjects, useServerConfigs } from "../state/entities";
+import { readThreadShell, useProjects, useServerConfigs } from "../state/entities";
 
 /** What an issue tab reads, keeping the workspace its link named. */
 export function issueSurfaceRef(surface: IssueSurface): IssueRef {
@@ -63,6 +63,7 @@ export function useOpenIssueLink(
     const target = resolveIssueLinkTarget({
       url: targetUrl,
       projects: allProjects.filter((project) => project.environmentId === environmentId),
+      preferredProjectId: threadRef ? readThreadShell(threadRef)?.projectId : undefined,
       trackers,
     });
     if (target === null || target.namesPlace) return false;

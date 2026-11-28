@@ -123,8 +123,8 @@ export function mayContainStandaloneIssueLink(text: string): boolean {
 }
 
 /**
- * A standalone tracker link resolves through the project bound to its scope, else any bound to
- * the tracker, and only through an account whose credential reaches the workspace it names: team
+ * A standalone tracker link resolves through the project bound to its scope, else the preferred
+ * project when it binds none of the tracker's teams, else any bound to the tracker, and only through an account whose credential reaches the workspace it names: team
  * keys repeat across workspaces, so a link elsewhere stays an ordinary link.
  */
 function resolveStandaloneIssueLink<Project extends LinkProject>(
@@ -160,6 +160,24 @@ function resolveStandaloneIssueLink<Project extends LinkProject>(
   const boundScope = (candidate: (typeof onTracker)[number]) =>
     issueTrackerBindingScopes(candidate.binding).find((key) => key.toLowerCase() === scope);
   const own = preferFirst(onTracker.filter((candidate) => boundScope(candidate) !== undefined));
+  // A project bound to none of the tracker's teams, the No project included, serves the link itself.
+  const caller =
+    own === undefined && !onTracker.some((candidate) => candidate.project.id === preferredProjectId)
+      ? projects.find((project) => project.id === preferredProjectId)
+      : undefined;
+  if (caller !== undefined) {
+    return {
+      project: caller,
+      ref: {
+        projectId: caller.id,
+        tracker,
+        host: link.host,
+        scope: link.scope,
+        key: link.key,
+        workspace: link.workspace.toLowerCase(),
+      },
+    };
+  }
   const lender = own ?? preferFirst(onTracker);
   if (lender === undefined) return null;
   return {

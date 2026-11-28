@@ -526,6 +526,26 @@ describe("shown PR diff stats", () => {
     ]);
     expect(filled[1]).toBe(rows[1]);
   });
+
+  it("fills a repository's mirror on another host with that host's counts", () => {
+    const mirrors = [
+      { ...entry(1), environmentId: cups },
+      { ...entry(1, { host: "gitlab.com" }), environmentId: cups },
+    ];
+    const filled = withShownPullRequestStats(mirrors, [
+      {
+        environmentId: cups,
+        stats: [
+          { ...stat(1, 3, 2), host: "github.com" },
+          { ...stat(1, 9, 9), host: "gitlab.com" },
+        ],
+      },
+    ]);
+    expect(filled.map(({ additions, deletions }) => [additions, deletions])).toEqual([
+      [3, 2],
+      [9, 9],
+    ]);
+  });
 });
 
 describe("cached PR diff stats", () => {
@@ -559,5 +579,24 @@ describe("cached PR diff stats", () => {
     ]);
     expect([...pushed.cache.stats.values()]).toEqual([stat(2, 7)]);
     expect(pushed.refresh).toEqual([query]);
+  });
+
+  it("keeps the stats of a repository's mirror on another host apart", () => {
+    const mirrors = [entry(1), entry(1, { host: "gitlab.com", updatedAt: "2026-10-20T00:00:00Z" })];
+    const query = {
+      refs: mirrors.map(({ projectId, host, repository, number }) => ({
+        projectId,
+        host,
+        repository,
+        number,
+      })),
+    };
+    const listed = withListedPullRequests(EMPTY_PULL_REQUEST_STATS_CACHE, mirrors);
+    const answered = withAnsweredPullRequestStats(listed.cache, query, [
+      { ...stat(1, 5), host: "github.com" },
+      { ...stat(1, 7), host: "gitlab.com" },
+    ]);
+    expect(answered.stats.size).toBe(2);
+    expect(withListedPullRequests(answered, mirrors)).toEqual({ cache: answered, refresh: [] });
   });
 });

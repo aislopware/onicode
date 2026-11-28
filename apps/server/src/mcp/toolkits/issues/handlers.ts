@@ -227,6 +227,7 @@ const make = Effect.gen(function* () {
             ...(comment.internal === true ? { internal: true } : {}),
           })),
           commentsTruncated: detail.commentsCursor !== null,
+          ...(detail.commentAudiences === true ? { commentAudiences: true } : {}),
           linkedPullRequests: detail.linkedPullRequests.map((pullRequest) => ({
             url: pullRequest.url,
             title: pullRequest.title,

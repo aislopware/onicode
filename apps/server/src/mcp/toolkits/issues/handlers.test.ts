@@ -279,6 +279,27 @@ describe("issue toolkit handlers", () => {
     }),
   );
 
+  it.effect("says whether a new comment on the issue can be an internal note", () =>
+    Effect.gen(function* () {
+      const issueLayer = Layer.mock(IssueService.IssueService)({
+        detail: () => Effect.succeed({ ...detail, commentAudiences: true }),
+        projectScope: (projectId) =>
+          Effect.succeed({
+            projectId,
+            tracker: GITHUB,
+            host: "github.com",
+            scope: "onicode/onicode",
+          }),
+      });
+      const withAudiences = yield* makeHarness([], issueLayer);
+      expect(yield* withAudiences.call("read_issue", { key: "7" })).toMatchObject({
+        commentAudiences: true,
+      });
+      const plain = yield* makeHarness();
+      expect(yield* plain.call("read_issue", { key: "7" })).not.toHaveProperty("commentAudiences");
+    }),
+  );
+
   it.effect("files an issue in the bound Linear team an agent names", () =>
     Effect.gen(function* () {
       const tracker = IssueTrackerKind.make("linear");

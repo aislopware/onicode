@@ -173,6 +173,9 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceEntries", (it) => {
         yield* fileSystem.symlink("real.txt", path.join(cwd, "link.txt"));
         yield* fileSystem.symlink("realdir", path.join(cwd, "linkdir"));
         yield* fileSystem.symlink(outside, path.join(cwd, "outside-link"));
+        // Names a share, though POSIX resolves the leading `//` as `/`.
+        const share = `/${yield* fileSystem.realPath(outside)}`;
+        yield* fileSystem.symlink(share, path.join(cwd, "nas"));
         yield* fileSystem.symlink(".git", path.join(cwd, "git-link"));
         yield* fileSystem.symlink("missing", path.join(cwd, "dangling"));
 
@@ -425,6 +428,8 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceEntries", (it) => {
         const platform = yield* HostProcess.Platform;
         if (platform !== "win32") {
           yield* fileSystem.symlink(path.join(outside, "repo/.git"), path.join(cwd, "external"));
+          const share = `/${yield* fileSystem.realPath(outside)}`;
+          yield* fileSystem.symlink(share, path.join(cwd, "nas"));
         }
         const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
         for (const directoryPath of [
@@ -432,7 +437,7 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceEntries", (it) => {
           outside,
           ".git",
           "missing",
-          ...(platform !== "win32" ? ["external"] : []),
+          ...(platform !== "win32" ? ["external", "nas"] : []),
         ]) {
           const error = yield* workspaceEntries.list({ cwd, directoryPath }).pipe(Effect.flip);
           expect(error._tag).toBe("WorkspaceEntriesReadDirectoryError");
