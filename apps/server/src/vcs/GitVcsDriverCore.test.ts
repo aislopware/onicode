@@ -2075,10 +2075,10 @@ describe("pullCurrentBranch", () => {
               return span;
             },
           });
+          const blockerStatuses = yield* Effect.forEach(blockers, (blocker) =>
+            driver.statusDetailsRemote(blocker).pipe(Effect.forkChild),
+          );
           yield* Effect.gen(function* () {
-            for (const blocker of blockers) {
-              yield* driver.statusDetailsRemote(blocker).pipe(Effect.forkChild);
-            }
             yield* Deferred.await(blockersStarted);
             const status = yield* driver
               .statusDetailsRemote(cwd)
@@ -2110,11 +2110,12 @@ describe("pullCurrentBranch", () => {
               assert.equal(yield* git(cwd, ["rev-parse", "refs/remotes/origin/other"]), remoteHead);
             }
           }).pipe(
+            // Windows cannot remove a folder a fetch still runs in, so the held fetches finish.
             Effect.ensuring(
               Effect.all([
                 Deferred.succeed(release, undefined),
                 Deferred.succeed(releasePull, undefined),
-              ]),
+              ]).pipe(Effect.andThen(Fiber.awaitAll(blockerStatuses))),
             ),
           );
         }),
@@ -8276,6 +8277,8 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           const server = yield* Effect.acquireRelease(
             Effect.sync(() =>
               NodeNet.createServer((socket) => {
+                // Cancelling kills the hook with git's process tree, which resets the socket on Windows.
+                socket.on("error", () => {});
                 sockets.add(socket);
                 connected.resolve();
               }),
