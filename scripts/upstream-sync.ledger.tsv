@@ -4911,3 +4911,4 @@ b5c96a923e	take	fix(server): onboarding recognizes remotes containing Unicode li
 6b6846385a	take	fix(web): Diff panel keeps Unicode whitespace in a base branch name (#44746)
 1d4d1f7f0e	take	fix(server): keep markup literal after an over-indented fence in PR review examples (#44736)
 347d6a668f	take	fix(web): SSH rows show IPv6 hosts with a port in brackets (#44747) — test conflict: dropped the adjacent resolveCurrentOriginPairingUrl cases (browser-served pairing removed)
+b4ce58b0d2	take	fix(server): allow generated CSS text to mention viewport units in HTML renders (#44744)
