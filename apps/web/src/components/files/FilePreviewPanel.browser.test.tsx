@@ -1233,7 +1233,7 @@ describe("save file", () => {
 
 describe("workspace image previews", () => {
   it("omits the word-wrap toggle on SVG image previews", async () => {
-    using _settings = setup();
+    await using _settings = setup();
     const contents = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"></svg>';
     state.file = {
       relativePath: "icon.svg",
