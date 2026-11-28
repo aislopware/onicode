@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { findProjectByPath, isScratchProject, listedBrowseDirectoryPath } from "./projects.ts";
+import {
+  findProjectByPath,
+  isScratchProject,
+  listedBrowseDirectoryPath,
+  resolveProjectPathForDispatch,
+} from "./projects.ts";
 
 describe("isScratchProject", () => {
   it.each([null, undefined])(
@@ -25,5 +30,25 @@ describe("findProjectByPath", () => {
 describe("listedBrowseDirectoryPath", () => {
   it("browses into a listed folder whose name ends in a space, not its neighbour", () => {
     expect(listedBrowseDirectoryPath("/code/foo ")).toBe("/code/foo /");
+  });
+});
+
+describe("resolveProjectPathForDispatch", () => {
+  it("keeps literal backslashes in relative POSIX project paths", () => {
+    expect(resolveProjectPathForDispatch("./docs\\archive", "/workspace/app")).toBe(
+      "/workspace/app/docs\\archive",
+    );
+    expect(resolveProjectPathForDispatch("./docs\\archive/../other", "/workspace/app")).toBe(
+      "/workspace/app/other",
+    );
+  });
+
+  it("splits relative paths on both slashes and backslashes for Windows bases", () => {
+    expect(resolveProjectPathForDispatch("..\\sibling\\sub", "C:\\workspace\\app")).toBe(
+      "C:\\workspace\\sibling\\sub",
+    );
+    expect(resolveProjectPathForDispatch("./docs/archive", "\\\\server\\share\\app")).toBe(
+      "\\\\server\\share\\app\\docs\\archive",
+    );
   });
 });
