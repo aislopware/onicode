@@ -107,7 +107,10 @@ export function IssueCommentComposer(props: {
     const submitted = latestDraft.current;
     if (submitted.trim().length === 0) return;
     const sent = await props.onSubmit(submitted, props.audiences ? audience : undefined);
-    if (sent && latestDraft.current === submitted) changeDraft("");
+    if (!sent) return;
+    // A customer reply is a choice per comment; the next one starts internal again.
+    setAudience("internal");
+    if (latestDraft.current === submitted) changeDraft("");
   };
   const send = () => {
     if (!canSend || sending.current) return Promise.resolve();
@@ -221,7 +224,11 @@ export function IssueCommentComposer(props: {
       <View className="w-full self-center" style={{ maxWidth: props.contentMaxWidth }}>
         <ComposerSurface
           animateLayout={false}
-          tone={props.audiences && audience === "internal" ? "warning" : undefined}
+          tone={
+            props.audiences && props.blocked === null && audience === "internal"
+              ? "warning"
+              : undefined
+          }
           style={{
             borderRadius: chrome.borderRadius,
             borderCurve: "circular",
@@ -249,7 +256,20 @@ export function IssueCommentComposer(props: {
               />
               {props.audiences ? (
                 <ComposerDictationDraftContent compact hidden={dictating}>
-                  <View className="px-3.5 pt-3 pb-1">{editor}</View>
+                  <View className="px-3.5 pt-3 pb-1">
+                    {/* iOS destroys a view under display: none; the editor would lose its focus and caret. */}
+                    <View
+                      style={
+                        Platform.OS === "android" && dictating ? { display: "none" } : undefined
+                      }
+                    >
+                      {editor}
+                    </View>
+                    {/* Holds the editor's height, so the toolbar over it does not jump. */}
+                    {Platform.OS === "android" && dictating ? (
+                      <View style={{ height: twoLineEditorHeight }} />
+                    ) : null}
+                  </View>
                   {/* Send stays where the one-row composer and the dictation toolbar put it. */}
                   <View
                     className="flex-row items-center"

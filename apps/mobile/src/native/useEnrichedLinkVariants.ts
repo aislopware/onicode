@@ -108,7 +108,10 @@ function presentation(
   if (link.kind === "file")
     return {
       label: link.label,
-      icon: markdownFileIconSource(link.icon),
+      // Desktop draws a muted folder for a folder link, as for any folder entry.
+      ...(link.folder
+        ? { icon: CONTEXT_CHIP_ICON_SOURCES.folder, iconTintColor: props.textStyle.mutedColor }
+        : { icon: markdownFileIconSource(link.icon) }),
       chip: { accent: contextChipPresentation("mention").accent, tintsIcon: false },
     };
   const icon = link.kind === "external" ? markdownLinkIcon(link.host) : null;

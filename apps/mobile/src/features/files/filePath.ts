@@ -122,6 +122,10 @@ export function isMarkdownPreviewFile(path: string): boolean {
   return /\.(?:md|mdx|markdown|mdown|mkd)$/i.test(path);
 }
 
+export function isZipPreviewFile(path: string): boolean {
+  return /\.zip$/i.test(path);
+}
+
 export function needsWorkspaceFileContents(input: {
   readonly relativePath: string | null;
   readonly metadataKind: FilesystemEntryMetadata["kind"] | undefined;
@@ -133,6 +137,7 @@ export function needsWorkspaceFileContents(input: {
     path !== null &&
     !isVideoPreviewFile(path) &&
     !isAudioPreviewFile(path) &&
+    !isZipPreviewFile(path) &&
     (input.activeMode === "source" ||
       isMarkdownPreviewFile(path) ||
       filePreviewDelimiter({ name: path }) !== null)

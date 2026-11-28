@@ -7,11 +7,14 @@ describe("resolveMarkdownLinkPresentation", () => {
     expect(resolveMarkdownLinkPresentation("src/")).toMatchObject({
       kind: "file",
       path: "src/",
+      folder: true,
     });
     expect(resolveMarkdownLinkPresentation("docs/My Folder/")).toMatchObject({
       kind: "file",
       path: "docs/My Folder/",
+      folder: true,
     });
+    expect(resolveMarkdownLinkPresentation("src/index.ts")).not.toHaveProperty("folder");
   });
 
   it("treats protocol-relative media as an external URL, not a filesystem path", () => {

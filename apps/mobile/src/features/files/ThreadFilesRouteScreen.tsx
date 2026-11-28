@@ -20,10 +20,13 @@ import {
   type ProjectReadFileResult,
   ThreadId,
 } from "@onicode/contracts";
+import { clampFileAttachmentUploadBytes } from "@onicode/client-runtime/state/attachments";
+import * as Option from "effect/Option";
 import { AsyncResult } from "effect/reactivity";
 import * as Schema from "effect/Schema";
 import { videoMimeType } from "@onicode/shared/video";
 import {
+  hostPreviewMimeTypeFromExtension,
   isWorkspaceBrowserPreviewPath,
   isWorkspaceImagePreviewPath,
   mediaMimeTypeFromExtension,
@@ -34,12 +37,14 @@ import { ScreenContent } from "../../components/ui/ScreenContent";
 import { filePreviewDelimiter, parseDelimitedPreview } from "@onicode/shared/delimitedPreview";
 import { DelimitedFilePreview } from "./DelimitedFilePreview";
 import { AudioFilePreview } from "./AudioFilePreview";
+import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { FilePreviewModal, type FilePreviewSource } from "../../components/ui/FilePreviewModal";
 import { LoadingScreen } from "../../components/LoadingScreen";
 import { attachmentTextAtom, noAttachmentText } from "../../lib/attachmentDocument";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { isPdfFile } from "../../lib/filePreview";
+import { scopedThreadKey } from "../../lib/scopedEntities";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import type { MediaVideoPreviewSource } from "../../lib/videoPreviewSource";
@@ -48,6 +53,7 @@ import { type MediaActionsSource } from "../../lib/mediaActionsSource";
 import { useThreadSelection } from "../../state/use-thread-selection";
 import { useSelectedThreadWorktree } from "../../state/use-selected-thread-worktree";
 import { useFreshAssetUrl } from "../../state/assets";
+import { useEnvironmentServerConfig } from "../../state/entities";
 import { useEnvironmentQuery } from "../../state/query";
 import { useEnvironmentPresentation } from "../../state/presentation";
 import { projectEnvironment } from "../../state/projects";
@@ -83,10 +89,12 @@ import {
   isMarkdownPreviewFile,
   isSvgImagePreviewFile,
   isVideoPreviewFile,
+  isZipPreviewFile,
   needsWorkspaceFileContents,
 } from "./filePath";
 import { useWorkspaceFileAssetUrlState } from "./workspaceFileAssetUrl";
 import { MOBILE_FULL_FILE_MAX_BYTES, useFullFileText } from "./useFullFileText";
+import { ZipArchiveView } from "./ZipArchiveView";
 
 function FilesBrowserHeader(props: {
   readonly projectName: string;
@@ -264,6 +272,10 @@ function FileContent(props: {
   readonly resolveVideoUri: () => Promise<string | null>;
   readonly fileContents: string | null;
   readonly fileError: string | null;
+  /** Why a file the server would not read as text could not be decoded here either. */
+  readonly binaryError: string | null;
+  readonly onSave: () => void;
+  readonly onOpenInViewer: () => void;
   readonly relativePath: string;
   readonly threadId: ThreadId | null;
   readonly initialLine: number | null;
@@ -286,6 +298,7 @@ function FileContent(props: {
   const needsAssetUrl =
     isVideoFile ||
     isAudioFile ||
+    isZipPreviewFile(props.relativePath) ||
     (props.activeMode === "preview" && (isImageFile || isBrowserFile));
 
   if (needsAssetUrl && props.previewFailure !== null) {
@@ -333,6 +346,24 @@ function FileContent(props: {
 
   if (props.activeMode === "preview" && isBrowserFile) {
     return <WorkspaceFileWebPreview uri={props.previewUri} />;
+  }
+
+  if (props.binaryError !== null) {
+    return (
+      <View className="flex-1 items-center justify-center bg-sheet px-6">
+        <EmptyState
+          variant="plain"
+          title={gt("No preview for this file")}
+          detail={props.binaryError}
+          action={
+            <View className="flex-row gap-3">
+              <Button tone="primary" label={gt("Save or share")} onPress={props.onSave} />
+              <Button label={gt("Open in file viewer")} onPress={props.onOpenInViewer} />
+            </View>
+          }
+        />
+      </View>
+    );
   }
 
   if (props.fileError && props.fileContents === null) {
@@ -703,6 +734,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
     relativePath !== null && !isVideoFile && isWorkspaceBrowserPreviewPath(relativePath);
   const isImageFile =
     relativePath !== null && !isVideoFile && isWorkspaceImagePreviewPath(relativePath);
+  const isZipArchive = relativePath !== null && isZipPreviewFile(relativePath);
   const canPreview =
     relativePath !== null &&
     (isMarkdownPreviewFile(relativePath) ||
@@ -752,7 +784,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
   const assetPreviewPath =
     !metadataPending &&
     directoryPath === null &&
-    (isBrowserFile || isImageFile || isVideoFile || isAudioFile)
+    (isBrowserFile || isImageFile || isVideoFile || isAudioFile || isZipArchive)
       ? relativePath
       : null;
   const assetPreview = useWorkspaceFileAssetUrlState({
@@ -767,15 +799,16 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
   // which covers GBK/GB18030; mobile never saves, so the decoded text cannot rewrite the file.
   const needsDecodedText =
     isProjectReadFileError(fileQuery.failure) && fileQuery.failure.failure === "binary_file";
-  const decodedTextResource = useMemo<AssetResource | null>(() => {
-    if (!needsDecodedText || targetPath === null || relativePath === null) return null;
+  const downloadResource = useMemo<AssetResource | null>(() => {
+    if (targetPath === null || relativePath === null) return null;
     if (threadId !== null) {
       return { _tag: "media-file", threadId, path: targetPath, disposition: "attachment" };
     }
     return cwd === null
       ? null
       : { _tag: "draft-workspace-file", cwd, path: relativePath, disposition: "attachment" };
-  }, [needsDecodedText, targetPath, relativePath, threadId, cwd]);
+  }, [targetPath, relativePath, threadId, cwd]);
+  const decodedTextResource = needsDecodedText ? downloadResource : null;
   const decodedTextUrlResult = useFreshAssetUrl(environmentId, decodedTextResource, 0);
   const decodedTextUrl =
     AsyncResult.isSuccess(decodedTextUrlResult) && !decodedTextUrlResult.waiting
@@ -799,6 +832,11 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
     decodedText === null &&
     !AsyncResult.isFailure(decodedTextResult) &&
     !AsyncResult.isFailure(decodedTextUrlResult);
+  const binaryError =
+    needsDecodedText && AsyncResult.isFailure(decodedTextResult)
+      ? (Option.getOrNull(AsyncResult.error(decodedTextResult))?.message ??
+        gt("Could not read this file."))
+      : null;
   // Until the full text arrives, the 1 MB preview shows with its partial-file notice.
   const fileContents = fullText ?? fileData?.contents ?? decodedText?.text ?? null;
   const fileTruncated =
@@ -821,7 +859,36 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
           resource: assetPreview.resource,
         }
       : undefined;
-  const mediaActions = useMediaActions(mediaSource);
+  const fileName = relativePath === null ? null : basename(relativePath);
+  const fileMimeType =
+    fileName === null || fileName.lastIndexOf(".") < 0
+      ? "application/octet-stream"
+      : (hostPreviewMimeTypeFromExtension(fileName.slice(fileName.lastIndexOf("."))) ??
+        "application/octet-stream");
+  // Any file saves as a download, whatever its type; media keeps its own actions.
+  const downloadSource: MediaActionsSource | undefined =
+    environmentId !== null && fileName !== null && downloadResource !== null
+      ? {
+          name: fileName,
+          mimeType: fileMimeType,
+          environmentId,
+          ...(threadId === null ? {} : { threadId }),
+          resource: downloadResource,
+        }
+      : undefined;
+  const mediaActions = useMediaActions(mediaSource ?? downloadSource);
+  const saveAction = mediaActions.actions.find(({ id }) => id === "save");
+  const openInFileViewer = () => {
+    if (environmentId === null || fileName === null || downloadResource === null) return;
+    setFullScreenPreview({
+      kind: "document",
+      name: fileName,
+      mimeType: fileMimeType,
+      environmentId,
+      resource: downloadResource,
+    });
+  };
+  const capabilities = useEnvironmentServerConfig(environmentId)?.environment.capabilities;
   const videoSource: MediaVideoPreviewSource | null =
     environmentId !== null &&
     relativePath !== null &&
@@ -976,6 +1043,17 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
                   ),
                 ),
             } as const,
+            ...(saveAction
+              ? [
+                  {
+                    id: "save",
+                    title: saveAction.title,
+                    icon: "square.and.arrow.up",
+                    inline: false,
+                    onPress: saveAction.run,
+                  } as const,
+                ]
+              : []),
           ]),
       fileContents !== null
         ? ({
@@ -1131,6 +1209,30 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
 
   const headerSubtitle = fileHeaderSubtitle(projectName, relativePath);
 
+  // A ZIP lists its entries as attachments do; a failed asset URL falls through to its error.
+  if (isZipArchive && assetPreview._tag !== "Failure") {
+    return withInspector(
+      <ZipArchiveView
+        key={previewKey}
+        name={basename(relativePath)}
+        subtitle={headerSubtitle}
+        sizeBytes={metadata.data?.byteLength ?? 0}
+        uri={assetPreviewUri}
+        isLocal={false}
+        refresh={assetPreview.refresh}
+        environmentId={environmentId}
+        draftKey={threadId === null ? null : scopedThreadKey(environmentId, threadId)}
+        maxAttachmentBytes={
+          capabilities?.attachmentUploads && capabilities.fileAttachments
+            ? clampFileAttachmentUploadBytes(capabilities.fileAttachments.maxUploadBytes)
+            : undefined
+        }
+        onSave={mediaActions.share}
+        onRemove={null}
+      />,
+    );
+  }
+
   return withInspector(
     <View className="flex-1 bg-sheet">
       <FileHeader
@@ -1156,6 +1258,9 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
           resolveVideoUri={assetPreview.refresh}
           fileContents={fileContents}
           fileError={decodedTextPending ? null : fileQuery.error}
+          binaryError={binaryError}
+          onSave={mediaActions.share}
+          onOpenInViewer={openInFileViewer}
           initialLine={targetLine}
           relativePath={relativePath}
           threadId={threadId}
