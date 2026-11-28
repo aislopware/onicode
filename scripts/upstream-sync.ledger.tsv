@@ -4929,3 +4929,4 @@ c5d7fddabc	take	kept Onicode's RangeError fallback parser beside upstream's simp
 b68de0fb09	take	taken as is
 13cda455bd	take	adapted: test builds the archive as a Map, as Onicode's openDocument reads it (no JSZip)
 494d328909	take	taken as is; reaches Antigravity through the shared ACP adapter
+0c8e46b0bf	take	taken; relay lease parameter and cloud linkEnvironment test dropped (removed surfaces); Onicode's recordProbeTrigger widened to the new signal type
