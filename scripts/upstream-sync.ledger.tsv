@@ -5006,3 +5006,16 @@ c7dd6ad0a3	take	taken as is
 cc009e63dd	take	taken as is
 17b845a5d8	take	taken as is
 27a558724b	take	test archive kept as Onicode's Map fixture
+db25e20bf3	take	adopted upstream over Onicode's onKeyDown prop: ChunkedMarkdown owns Select All, so LargeFilePreview gets it too; test uses Onicode's async setup()
+ab9d039ae8	take	kept Onicode's German 'Agent-Aufgaben' (already translated; scenario adapted to it); took the task-step Pending context with upstream's locale strings
+ca19540325	take	taken as is (other forge, follows upstream)
+2bebf9ebe9	take	taken as is (ACP Registry, tier-2)
+526e10fb65	take	taken as is
+58ce36a03d	take	DocumentText VERSION 31 so cached EPUB text is re-extracted
+aedf477afa	take	DocumentText VERSION 32 so cached EPUB text is re-extracted
+7c961b1e9e	take	taken as is
+342166cdb9	take	taken as is
+2809e464e8	take	kept Onicode's provider session-view check beside upstream's commandText; tests set the file's 1400x900 viewport
+a14a7cfb2b	take	test archive built as a Map (Onicode dropped JSZip from fixtures), in follow-up c37b26e74a
+7df779833d	take	taken as is, with its mobile-behavior case
+c6bc226997	take	kept Onicode's per-candidate sanitize fallback (a name that sanitizes to nothing falls through), added upstream's python3 kernelspec name fallback; both test tables kept

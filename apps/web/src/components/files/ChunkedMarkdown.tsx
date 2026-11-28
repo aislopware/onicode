@@ -1,7 +1,7 @@
 import type { ScopedThreadRef } from "@onicode/contracts";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
 import {
-  type KeyboardEventHandler,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   useEffect,
   useRef,
@@ -10,6 +10,7 @@ import {
 
 import { markdownFragmentSlug } from "~/components/chat/markdownFragments";
 import { Spinner } from "~/components/ui/spinner";
+import { isMacPlatform } from "~/lib/utils";
 import type { MarkdownExtensions } from "~/markdown/wordsHast";
 import { FileMarkdownPreview } from "./FileMarkdownPreview";
 import { LineCappedText, useMoreCharactersLabel } from "./shownText";
@@ -68,6 +69,25 @@ function pieceHeading(piece: Element, target: HeadingTarget): HTMLElement | null
   return null;
 }
 
+function selectRenderedContentOnSelectAll(event: ReactKeyboardEvent<HTMLElement>) {
+  const mac = isMacPlatform(navigator.platform);
+  const selectAll =
+    event.key.toLowerCase() === "a" &&
+    (mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey) &&
+    !event.shiftKey &&
+    !event.altKey;
+  // React bubbles keys from portaled children (the image dialog) through this surface.
+  if (
+    !selectAll ||
+    !(event.target instanceof Node) ||
+    !event.currentTarget.contains(event.target)
+  ) {
+    return;
+  }
+  event.preventDefault();
+  window.getSelection()?.selectAllChildren(event.currentTarget);
+}
+
 /** Renders Markdown pieces in a virtualized list; task offsets are file offsets. */
 export function ChunkedMarkdown(props: {
   readonly chunks: readonly MarkdownChunk[];
@@ -81,7 +101,6 @@ export function ChunkedMarkdown(props: {
   readonly relativePath: string;
   readonly threadRef: ScopedThreadRef;
   readonly workspaceMutationId: string | null;
-  readonly onKeyDown?: KeyboardEventHandler<HTMLDivElement>;
   readonly onTaskListChange?:
     | ((input: { readonly markerOffset: number; readonly checked: boolean }) => void)
     | undefined;
@@ -185,7 +204,7 @@ export function ChunkedMarkdown(props: {
       // Clicking the text focuses the preview, so Select All stays inside it.
       tabIndex={-1}
       className="flex min-h-0 flex-1 flex-col outline-none"
-      onKeyDown={props.onKeyDown}
+      onKeyDown={selectRenderedContentOnSelectAll}
       onClickCapture={revealLinkedHeading}
       // Scrolling or other input drops a heading still waiting for its piece.
       onWheelCapture={dropPendingHeading}
