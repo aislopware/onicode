@@ -4798,3 +4798,4 @@ c30c775536	take	taken as is
 0d771957a0	take	CONFLICT with Onicode's odfBlockTextBox (328635c489 era): adopted upstream's anchor detection (any draw element, odfAttribute, renamed flag odfFloating) over Onicode's text-box-under-frame check, so floating custom shapes keep their lines; kept Onicode's box output (empty box adds no line, break only when the line is open) and its paragraph default for a frame without anchor-type, read by local name as before; DocumentText VERSION 22 -> 23
 abd37ea364	take	taken as is
 e38bba1ddd	skip	relay/cloudflared client only; Onicode removed relay (packages/shared/src/relayClient.ts does not exist)
+7fc0e93ac1	take	taken as is
