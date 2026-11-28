@@ -1,6 +1,7 @@
 import type { ThreadId } from "@onicode/contracts";
 import * as McpProviderSessions from "@onicode/provider-core/server/McpProviderSessions";
 import * as HostProcess from "@onicode/shared/HostProcess";
+import { safeDecodeURIComponent } from "@onicode/shared/markdownLinks";
 import { isNetworkPath } from "@onicode/shared/path";
 import {
   clampHtmlRenderHeight,
@@ -264,6 +265,15 @@ const findLocalImages = (html: string) =>
 const filePathFor = (reference: string) =>
   /^[a-z]:/i.test(reference) ? reference.replaceAll("\\\\", "\\") : reference;
 
+// Try the literal path first so raw filesystem strings keep working, then percent-decode URL paths.
+const filePathCandidatesFor = (reference: string) => {
+  const literal = filePathFor(reference);
+  const decoded = safeDecodeURIComponent(literal);
+  return decoded !== literal && !decoded.includes("\0") && !isNetworkPath(decoded)
+    ? [literal, decoded]
+    : [literal];
+};
+
 const dataUriPrefix = (path: string) =>
   `data:${IMAGE_MIME_TYPES[path.slice(path.lastIndexOf(".") + 1).toLowerCase()] ?? "application/octet-stream"};base64,`;
 
@@ -331,19 +341,16 @@ const inlineLocalImages = Effect.fn("HtmlRender.inlineLocalImages")(function* (h
     [...new Set(references.map((reference) => reference.path))],
     (path) =>
       Effect.gen(function* () {
-        // stat through a link onto a share would sign in to it first.
-        const reached = yield* Effect.promise(() =>
-          networkPathReachedBy(pathService, filePathFor(path)),
-        );
-        const info =
-          reached === null
-            ? yield* fileSystem.stat(filePathFor(path)).pipe(Effect.option)
-            : Option.none();
-        return {
-          path,
-          size:
-            Option.isSome(info) && info.value.type === "File" ? Number(info.value.size) : undefined,
-        };
+        for (const candidate of filePathCandidatesFor(path)) {
+          // stat through a link onto a share would sign in to it first.
+          const reached = yield* Effect.promise(() => networkPathReachedBy(pathService, candidate));
+          if (reached !== null) continue;
+          const info = yield* fileSystem.stat(candidate).pipe(Effect.option);
+          if (Option.isSome(info) && info.value.type === "File") {
+            return { path, filePath: candidate, size: Number(info.value.size) };
+          }
+        }
+        return { path, filePath: undefined, size: undefined };
       }),
     { concurrency: 8 },
   );
@@ -373,8 +380,9 @@ const inlineLocalImages = Effect.fn("HtmlRender.inlineLocalImages")(function* (h
     files.filter((file) => file.size !== undefined),
     (file) =>
       Effect.gen(function* () {
+        if (file.filePath === undefined) return [];
         const read = yield* fileSystem
-          .stream(filePathFor(file.path), { bytesToRead: MAX_IMAGE_BYTES + 1 })
+          .stream(file.filePath, { bytesToRead: MAX_IMAGE_BYTES + 1 })
           .pipe(Stream.mkUint8Array, Effect.option);
         if (Option.isNone(read) || !isImageBytes(read.value)) return [];
         const bytes = read.value;
