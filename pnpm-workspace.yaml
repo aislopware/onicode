@@ -97,7 +97,7 @@ overrides:
   expo-audio: 58.0.12
   expo-network: 58.0.6
   expo-paste-input: 0.2.2
-  "@cursor/sdk": 1.5.0
+  "@cursor/sdk": 1.5.2
   expo-sharing: 58.0.24
   expo-widgets: 58.0.30
   "@ff-labs/fff-node": 0.11.0
@@ -258,7 +258,7 @@ patchedDependencies:
   react-native-pdf-jsi@6.2.1: patches/react-native-pdf-jsi@6.2.1.patch
   # Local agents expose agent.resume() (the protocol's ResumeAction), report startup progress,
   # offer background shells to the host, and refresh a cached model list on a miss.
-  "@cursor/sdk@1.5.0": patches/@cursor__sdk@1.5.0.patch
+  "@cursor/sdk@1.5.2": patches/@cursor__sdk@1.5.2.patch
   # A scenario screenshot no longer waits forever on the frame an Electron <webview> leaves in
   # its embedder: Playwright gets no script context for it, so its mask locator never resolves.
   "@e2e-dev/web@0.17.0": patches/@e2e-dev__web@0.17.0.patch
