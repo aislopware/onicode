@@ -4749,3 +4749,4 @@ af70189a8f	take	adapted: Onicode's resolver kept (null when unreachable); hook f
 ce36269560	take	taken as is (VERSION bump in 84f4fad02b covers it)
 93955ac9bd	take	scenario ported to the desktop harness (fflate, ControlOrMeta+p)
 1356a26eba	take	merged into Onicode's ScaledRows (kept restoredTop, pendingTailPixels, scrollByContent, short-tail End check); added end position, indexing, expectedTop restores; scenario ported (ControlOrMeta+p)
+bf6c5dfd55	take	taken as is
