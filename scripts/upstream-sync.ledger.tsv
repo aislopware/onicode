@@ -4739,3 +4739,4 @@ b8233e5ed7	take	taken as is
 2e2af395f6	take	adapted: test builds the EPUB with Onicode's TestArchive (no JSZip)
 7d77f07fef	take	taken as is
 9f5740c93d	take	test adapted to Onicode's TestArchive
+531af2d027	take	adapted: Onicode's sweep reads active threads only, so one sweep set evicts; Digest provided in Onicode-only tests; GuestShare/relay tests absent (removed surfaces)
