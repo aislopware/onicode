@@ -223,7 +223,9 @@ export const layer: Layer.Layer<
       yield* threadCommands.withLock(
         input.threadId,
         Effect.gen(function* () {
-          const current = yield* projections.getCheckpointCaptureContext(input.threadId, input);
+          const current = yield* projections.getCheckpointCaptureContext(input.threadId, input, {
+            preservedCheckpoints: "baselines",
+          });
           const currentRun = current.run;
           const currentRootNode = current.rootNode;
           // A steering restart's new attempt captures its own work once it ends; until then this
