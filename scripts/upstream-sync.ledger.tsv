@@ -4908,3 +4908,4 @@ a6dc0b7e53	take	adapted onto Onicode's per-variable scrub function; test mount n
 b5c96a923e	take	fix(server): onboarding recognizes remotes containing Unicode line separators (#44727)
 755b73c2eb	take	fix(server): a provider update that leaves Codex unable to start says why (#35021) — i18n conflict: kept Onicode's cancel-update keys, added only the new Reinstall key (others already present)
 88c457d3fe	take	fix(web): All projects settings show the machine-wide Actions again (#44743) — kept Onicode's ImportThreadsRow beside it
+6b6846385a	take	fix(web): Diff panel keeps Unicode whitespace in a base branch name (#44746)
