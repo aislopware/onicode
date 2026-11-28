@@ -5819,5 +5819,12 @@
   "ad208e3e32c85029": "Ocultar todo",
   "3328503592789bed": "Zen",
   "856812e7e1fc445e": "Llamadas a herramientas en el chat",
-  "8d545d54c0a9e950": "Oculta los comandos, ediciones y búsquedas que ejecutan los agentes. Ocultar las correctas mantiene los fallos. Zen solo muestra las respuestas finales. Las aprobaciones, preguntas y errores siempre se muestran."
+  "8d545d54c0a9e950": "Oculta los comandos, ediciones y búsquedas que ejecutan los agentes. Ocultar las correctas mantiene los fallos. Zen solo muestra las respuestas finales. Las aprobaciones, preguntas y errores siempre se muestran.",
+  "872bf68b2e05f055": "{count, plural, one {{count} archivo visto oculto} other {{count} archivos vistos ocultos}}",
+  "f538b8016f5ca2f3": "Ocultar archivos vistos",
+  "be348514e8486295": "Aún no se han cargado archivos sin ver",
+  "6b7765835778dc77": "Todos los archivos están ocultos",
+  "bd2cfcb7be24cd38": "Los archivos vistos están ocultos en esta revisión.",
+  "6ae1484aa5bd2bc8": "Mostrar archivos vistos",
+  "15db3431c35d4927": "{count, plural, one {{count} visto oculto} other {{count} vistos ocultos}}"
 }

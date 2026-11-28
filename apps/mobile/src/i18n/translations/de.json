@@ -5824,5 +5824,12 @@
   "ad208e3e32c85029": "Alle ausblenden",
   "3328503592789bed": "Zen",
   "856812e7e1fc445e": "Tool-Aufrufe im Chat",
-  "8d545d54c0a9e950": "Die Befehle, Bearbeitungen und Suchen ausblenden, die Agenten ausführen. „Erfolgreiche ausblenden“ behält Fehler. „Zen“ zeigt nur endgültige Antworten. Genehmigungen, Fragen und Fehler werden immer angezeigt."
+  "8d545d54c0a9e950": "Die Befehle, Bearbeitungen und Suchen ausblenden, die Agenten ausführen. „Erfolgreiche ausblenden“ behält Fehler. „Zen“ zeigt nur endgültige Antworten. Genehmigungen, Fragen und Fehler werden immer angezeigt.",
+  "872bf68b2e05f055": "{count, plural, one {{count} angesehene Datei ausgeblendet} other {{count} angesehene Dateien ausgeblendet}}",
+  "f538b8016f5ca2f3": "Angesehene Dateien ausblenden",
+  "be348514e8486295": "Noch keine nicht angesehenen Dateien geladen",
+  "6b7765835778dc77": "Alle Dateien sind ausgeblendet",
+  "bd2cfcb7be24cd38": "Angesehene Dateien sind in diesem Review ausgeblendet.",
+  "6ae1484aa5bd2bc8": "Angesehene Dateien anzeigen",
+  "15db3431c35d4927": "{count, plural, one {{count} angesehene ausgeblendet} other {{count} angesehene ausgeblendet}}"
 }

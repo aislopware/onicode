@@ -5819,5 +5819,12 @@
   "ad208e3e32c85029": "Ocultar todas",
   "3328503592789bed": "Zen",
   "856812e7e1fc445e": "Chamadas de ferramentas no chat",
-  "8d545d54c0a9e950": "Oculta os comandos, edições e pesquisas que os agentes executam. \"Ocultar bem-sucedidas\" mantém as falhas. Zen mostra só as respostas finais. Aprovações, perguntas e erros sempre aparecem."
+  "8d545d54c0a9e950": "Oculta os comandos, edições e pesquisas que os agentes executam. \"Ocultar bem-sucedidas\" mantém as falhas. Zen mostra só as respostas finais. Aprovações, perguntas e erros sempre aparecem.",
+  "872bf68b2e05f055": "{count, plural, one {{count} arquivo visto oculto} other {{count} arquivos vistos ocultos}}",
+  "f538b8016f5ca2f3": "Ocultar arquivos vistos",
+  "be348514e8486295": "Nenhum arquivo não visto carregado ainda",
+  "6b7765835778dc77": "Todos os arquivos estão ocultos",
+  "bd2cfcb7be24cd38": "Os arquivos vistos estão ocultos nesta revisão.",
+  "6ae1484aa5bd2bc8": "Mostrar arquivos vistos",
+  "15db3431c35d4927": "{count, plural, one {{count} visto oculto} other {{count} vistos ocultos}}"
 }

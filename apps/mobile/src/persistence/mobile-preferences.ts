@@ -150,6 +150,7 @@ export interface Preferences {
   /** Whether pull requests or issues last held the tab bar slot they share. */
   readonly sharedSlotTab?: "pullRequests" | "issues";
   readonly pullRequestHideTestFiles?: boolean;
+  readonly pullRequestHideViewedFiles?: boolean;
   /** Which hidden-by-default PR activity is shown: bot comments and resolved or dismissed ones. */
   readonly pullRequestActivityVisibility?: PullRequestActivityVisibility;
   readonly pullRequestMergeMethod?: PullRequestMergeMethod;
@@ -249,6 +250,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     hiddenNavigationTabs?: readonly string[];
     sharedSlotTab?: "pullRequests" | "issues";
     pullRequestHideTestFiles?: boolean;
+    pullRequestHideViewedFiles?: boolean;
     pullRequestActivityVisibility?: PullRequestActivityVisibility;
     pullRequestMergeMethod?: PullRequestMergeMethod;
     themeId?: MobileThemeId;
@@ -309,6 +311,10 @@ function sanitizePreferences(parsed: Preferences): Preferences {
 
   if (typeof parsed.pullRequestHideTestFiles === "boolean") {
     preferences.pullRequestHideTestFiles = parsed.pullRequestHideTestFiles;
+  }
+
+  if (typeof parsed.pullRequestHideViewedFiles === "boolean") {
+    preferences.pullRequestHideViewedFiles = parsed.pullRequestHideViewedFiles;
   }
 
   if (isPullRequestActivityVisibility(parsed.pullRequestActivityVisibility)) {
