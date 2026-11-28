@@ -10,7 +10,8 @@ vi.mock("./session", () => ({
   },
 }));
 
-const { forwardLocalitiesAtom } = await import("./portForwards");
+const { forwardLocalitiesAtom, forwardPort, forwardedUrl, isSameMachineForwardError } =
+  await import("./portForwards");
 
 afterEach(() => {
   vi.useRealTimers();
@@ -37,5 +38,29 @@ describe("forward locality", () => {
     expect(sharesLoopback).toHaveBeenCalledTimes(2);
     expect(registry.get(atom)).toEqual(["remote"]);
     unmount();
+  });
+});
+
+describe("forwardedUrl", () => {
+  it.each([
+    ["http://127.0.0.1:3000/docs?x=1#top", "http://localhost:4100/docs?x=1#top"],
+    ["http://admin.localhost:3000/", "http://admin.localhost:4100/"],
+  ])("moves %s to the forward's local port", (url, expected) => {
+    const forward = { environmentId: EnvironmentId.make("env"), remotePort: 3000, localPort: 4100 };
+    expect(forwardedUrl(forward, url)).toBe(expected);
+  });
+});
+
+describe("forwardPort", () => {
+  it.each([
+    ["LoopbackTunnelSameMachineError: same machine", true],
+    ["LoopbackTunnelUnavailableError: offline", false],
+  ])("tells a same-machine refusal apart (%s)", async (detail, sameMachine) => {
+    const forwardPortBridge = vi
+      .fn()
+      .mockRejectedValue(new Error(`Error invoking remote method 'preview:forward': ${detail}`));
+    vi.stubGlobal("window", { desktopBridge: { preview: { forwardPort: forwardPortBridge } } });
+    const error = await forwardPort(EnvironmentId.make("env"), 3000).catch((cause) => cause);
+    expect(isSameMachineForwardError(error)).toBe(sameMachine);
   });
 });
