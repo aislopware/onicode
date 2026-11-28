@@ -346,12 +346,7 @@ function AgentActivity(
       <HStack
         spacing={3}
         alignment="center"
-        modifiers={[
-          padding({ trailing: 2 }),
-          accessibilityElement("ignore"),
-          accessibilityLabel(spoken),
-          ...linkModifiers,
-        ]}
+        modifiers={[accessibilityElement("ignore"), accessibilityLabel(spoken), ...linkModifiers]}
       >
         {heroCount > 1 ? (
           <Text
