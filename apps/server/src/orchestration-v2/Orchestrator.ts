@@ -1663,7 +1663,10 @@ function handoffRuns(
   return projection.runs.filter((run) => isHandoffSourceRun(run) && !sideRunIds.has(run.id));
 }
 
-/** Wakes and fresh starts act on the active session; a message continues the conversation. */
+/**
+ * Wakes and fresh starts act on the active session; a message continues the conversation. A
+ * delegated task's completion goes back to the session its dispatching run ran on.
+ */
 function dispatchProviderThread(
   projection: Pick<
     OrchestrationV2ThreadProjection,
@@ -1673,12 +1676,22 @@ function dispatchProviderThread(
   freshContext: boolean,
   contextBoundary: number,
 ): OrchestrationV2ProviderThread | undefined {
-  return freshContext ||
-    message.notification !== undefined ||
-    message.delegatedCompletion !== undefined
-    ? projection.providerThreads.find(
-        (candidate) => candidate.id === projection.thread.activeProviderThreadId,
-      )
+  if (freshContext || message.notification !== undefined) {
+    return projection.providerThreads.find(
+      (candidate) => candidate.id === projection.thread.activeProviderThreadId,
+    );
+  }
+  const parentRunId = message.delegatedCompletion?.parentRunId;
+  const parentProviderThreadId =
+    parentRunId === undefined
+      ? undefined
+      : projection.runs.find((run) => run.id === parentRunId)?.providerThreadId;
+  const parentProviderThread = projection.providerThreads.find(
+    (candidate) => candidate.id === parentProviderThreadId,
+  );
+  return parentProviderThread !== undefined &&
+    !providerThreadPredatesBoundary(parentProviderThread, contextBoundary)
+    ? parentProviderThread
     : conversationProviderThread(projection, contextBoundary);
 }
 
