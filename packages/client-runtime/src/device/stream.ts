@@ -81,6 +81,8 @@ const decodeLeaseEnd = Schema.decodeUnknownOption(
 );
 const leaseEnded = (reason: string, resolve: MFunctionType) =>
   resolve(msg("Device lease ended: {reason}", { reason }));
+/** Socket and decoder text is not a catalog message; marking it keeps braces out of ICU. */
+const verbatim = (text: string, resolve: MFunctionType) => resolve(msg("{text}", { text }));
 const decodeTransportLocked = Schema.decodeUnknownOption(
   Schema.Struct({
     error: Schema.Literal("stream_transport_locked"),
@@ -856,7 +858,7 @@ export function createDeviceStreamClient(
       if (!isCurrent()) return;
       retryDetail ??= videoController.signal.aborted
         ? resolve(msg("Video decoder fell behind. Reconnecting…"))
-        : (cause as Error).message;
+        : verbatim((cause as Error).message, resolve);
     }
     if (isCurrent()) {
       if (leaseEnd !== undefined) return fail(leaseEnded(leaseEnd, resolve));
@@ -1084,7 +1086,7 @@ export function createDeviceStreamClient(
         return retry(resolve(msg("Device stream returned an invalid answer. Retrying…")));
       await connection.setRemoteDescription(answer.value);
     } catch (cause) {
-      retry((cause as Error).message);
+      retry(verbatim((cause as Error).message, resolve));
     }
   };
 
@@ -1261,7 +1263,10 @@ export function createDeviceStreamClient(
         );
       events.onInputConnected(
         false,
-        event.reason || (event.code === 1006 ? "input socket refused" : `closed ${event.code}`),
+        verbatim(
+          event.reason || (event.code === 1006 ? "input socket refused" : `closed ${event.code}`),
+          resolve,
+        ),
       );
       // A rejected HTTP upgrade surfaces as 1006, including an expired stream ticket.
       if (
@@ -1341,7 +1346,7 @@ export function createDeviceStreamClient(
       socket = null;
       closeDecoder();
       if (stopped) return;
-      events.onInputConnected(false, event.reason || `closed ${event.code}`);
+      events.onInputConnected(false, verbatim(event.reason || `closed ${event.code}`, resolve));
       if (
         event.code === 1008 ||
         event.code === 4401 ||
@@ -1350,7 +1355,7 @@ export function createDeviceStreamClient(
         return handleUnauthorized();
       if (!inputOnly) {
         configuring = false;
-        connecting(event.reason || undefined);
+        connecting(event.reason ? verbatim(event.reason, resolve) : undefined);
       }
       // A full socket re-probes, so one failed /api read does not pin SEMU on a WebRTC host.
       scheduleRetry("input", () => (inputOnly ? connectAndroid(true) : void startAndroid()));

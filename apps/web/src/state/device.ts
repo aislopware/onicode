@@ -11,6 +11,7 @@ import {
   type EnvironmentId,
   WS_METHODS,
 } from "@onicode/contracts";
+import type * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import { useMessages } from "gt-react";
 import * as Option from "effect/Option";
@@ -19,7 +20,7 @@ import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import { connectionAtomRuntime } from "../connection/runtime";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentSession } from "./session";
-import { formatEnvironmentQueryError, useEnvironmentQuery } from "./query";
+import { useEnvironmentQuery } from "./query";
 
 export const deviceEnvironment = createDeviceEnvironmentAtoms(connectionAtomRuntime);
 
@@ -111,11 +112,12 @@ export interface DeviceDetailKey {
 export interface DeviceDetailView {
   /** Settings the host last confirmed, by a read or by an action's answer. */
   readonly detail: DeviceDetail | null;
-  readonly error: string | null;
+  /** Worded where it renders, so it follows a language switch. */
+  readonly failure: Cause.Cause<unknown> | null;
 }
 
 export const deviceDetailAtom = Atom.family((key: DeviceDetailKey) =>
-  Atom.make<DeviceDetailView>({ detail: null, error: null }).pipe(
+  Atom.make<DeviceDetailView>({ detail: null, failure: null }).pipe(
     Atom.withLabel(`device-detail:${key.hostId}:${key.deviceId}`),
   ),
 );
@@ -134,12 +136,8 @@ export const deviceDetailReadAtom = Atom.family((key: DeviceDetailKey) =>
       })
       .pipe(
         Effect.matchCause({
-          onSuccess: (detail) => get.set(deviceDetailAtom(key), { detail, error: null }),
-          onFailure: (cause) =>
-            get.set(deviceDetailAtom(key), {
-              detail: null,
-              error: formatEnvironmentQueryError(cause),
-            }),
+          onSuccess: (detail) => get.set(deviceDetailAtom(key), { detail, failure: null }),
+          onFailure: (cause) => get.set(deviceDetailAtom(key), { detail: null, failure: cause }),
         }),
       ),
   ).pipe(Atom.withLabel(`device-detail-read:${key.hostId}:${key.deviceId}`)),

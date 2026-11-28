@@ -1,4 +1,4 @@
-import { errorDisplayMessage } from "@onicode/client-runtime/errors";
+import { errorDisplayMessage, translatableError } from "@onicode/client-runtime/errors";
 import {
   editHeldPullRequestListEntries,
   pullRequestHostAnswer,
@@ -17,7 +17,6 @@ import { AsyncResult, Atom, type AtomRegistry } from "effect/reactivity";
 import { msg, useMessages } from "gt-react-native";
 import { use, useMemo, useState } from "react";
 import { environmentCatalog } from "../../connection/catalog";
-import { m } from "../../i18n/messages";
 import {
   composerPullRequests,
   pullRequestListPagesFamily,
@@ -121,7 +120,7 @@ async function loadNextPages(
         JSON.stringify(Object.entries(input.cursors).sort()) ===
           JSON.stringify(Object.entries(next.nextCursors).sort())
       )
-        throw new Error(m(msg("Couldn't advance the list. Try again.")));
+        throw translatableError(msg("Couldn't advance the list. Try again."));
     }),
   );
   return requestErrors(responses);
@@ -185,7 +184,7 @@ const sessionsFamily = Atom.family((scopeKey: string) =>
   ),
 );
 
-const settledError = (result: AsyncResult.AsyncResult<string | null, never>) =>
+const settledError = (result: AsyncResult.AsyncResult<ReadonlyArray<unknown> | null, never>) =>
   AsyncResult.isSuccess(result) && !result.waiting ? result.value : null;
 
 export function usePullRequestList(targets: readonly ListTarget[]) {
@@ -368,27 +367,26 @@ export function usePullRequestList(targets: readonly ListTarget[]) {
     updateEntry,
     refreshing: refresh.waiting,
     loadingMore: page.waiting,
-    loadMoreError: loadError,
+    loadMoreError:
+      loadError
+        ?.map((reason) =>
+          reason instanceof Error
+            ? (errorDisplayMessage(reason, messages) ?? reason.message)
+            : messages(msg("Couldn't load pull requests.")),
+        )
+        .join("\n") || null,
     hasMore: sources.some(
       ({ pages, target }) => pages && nextPullRequestListInput(pages, target.input),
     ),
   };
 }
 
+/** The failures, kept raw so the list words them in the current language. */
 function requestErrors(results: readonly PromiseSettledResult<unknown>[]) {
-  return (
-    results
-      .flatMap((result) =>
-        result.status === "rejected"
-          ? [
-              result.reason instanceof Error
-                ? (errorDisplayMessage(result.reason, m) ?? result.reason.message)
-                : m(msg("Couldn't load pull requests.")),
-            ]
-          : [],
-      )
-      .join("\n") || null
+  const reasons = results.flatMap((result): unknown[] =>
+    result.status === "rejected" ? [result.reason] : [],
   );
+  return reasons.length > 0 ? reasons : null;
 }
 
 type StatsAnswer = {

@@ -261,6 +261,7 @@ export function WorkflowRunFeed({
   const [openedAtMs] = useState(() => Date.now());
   const detail = useEnvironmentQuery(
     serverEnvironment.workflowRun({ environmentId, input: { runId: run.runId } }),
+    m,
   );
   const canResume = useAtomValue(serverEnvironment.resumeWorkflowRun.permissionAtom(environmentId));
   const canCancel = useAtomValue(serverEnvironment.cancelWorkflowRun.permissionAtom(environmentId));

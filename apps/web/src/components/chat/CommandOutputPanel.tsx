@@ -1,7 +1,7 @@
 import type { CommandOutputView } from "@onicode/client-runtime/state/command-output";
 import type { EnvironmentId, ThreadId, TurnItemId } from "@onicode/contracts";
 import { TERMINAL_PALETTES, terminalOutputSpans } from "@onicode/shared/terminalOutput";
-import { T, Var } from "gt-react";
+import { T, useMessages, Var } from "gt-react";
 import { useLayoutEffect, useRef } from "react";
 
 import { useTheme } from "../../hooks/useTheme";
@@ -36,6 +36,7 @@ export function CommandOutputPanel(props: {
     props.source
       ? props.source(input)
       : orchestrationEnvironment.v2.commandOutput({ environmentId: props.environmentId, input }),
+    useMessages(),
   );
   useInitialOutputReady(data === null && !error, props.onInitialOutputReady);
   const scrollRef = useRef<HTMLDivElement>(null);

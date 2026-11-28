@@ -6,7 +6,7 @@ import {
   ARCHIVE_MAX_BYTES,
   boundedZip,
 } from "@onicode/client-runtime/zip/bounded-zip";
-import { isZipError } from "@onicode/client-runtime/zip/error";
+import { isZipError, ZIP_ERROR_CODES } from "@onicode/client-runtime/zip/error";
 import { zipErrorText } from "@onicode/client-runtime/zip/error-messages";
 import type { EnvironmentId } from "@onicode/contracts";
 import { filePreviewDelimiter, parseDelimitedPreview } from "@onicode/shared/delimitedPreview";
@@ -72,10 +72,12 @@ interface ZipArchive {
   readonly fileCount: number;
 }
 
-// title and detail hold msg() strings; they resolve where they render.
+// title and detail hold msg() strings; they resolve where they render. A nested zip error text
+// can't be told from raw text, so its code rides along and is worded at render too.
 const ZipFailure = Schema.Struct({
   title: Schema.String,
   detail: Schema.String,
+  zipCode: Schema.optionalKey(Schema.Literals(ZIP_ERROR_CODES)),
   retry: Schema.Boolean,
 });
 type ZipFailure = typeof ZipFailure.Type;
@@ -87,6 +89,9 @@ const TOO_LARGE: ZipFailure = {
   }),
   retry: false,
 };
+const unreadableDetail = (error: string) =>
+  msg("{error} Save the ZIP to open it in another app.", { error });
+
 const CANCELLED: ZipFailure = {
   title: msg("Download cancelled"),
   detail: msg("The ZIP wasn't downloaded. Try again to list its files."),
@@ -155,10 +160,9 @@ async function openArchive(bytes: ArrayBuffer, signal: AbortSignal, password?: s
         title: msg("Couldn't browse this ZIP"),
         detail:
           cause instanceof Error
-            ? msg("{error} Save the ZIP to open it in another app.", {
-                error: isZipError(cause) ? zipErrorText(cause.code, m) : cause.message,
-              })
+            ? unreadableDetail(cause.message)
             : msg("It may be incomplete or damaged. Save the ZIP to open it in another app."),
+        ...(isZipError(cause) ? { zipCode: cause.code } : {}),
         retry: false,
       },
     });
@@ -418,7 +422,11 @@ function ZipArchiveFailure(props: {
       <EmptyState
         variant="plain"
         title={resolveMessage(props.failure.title)}
-        detail={resolveMessage(props.failure.detail)}
+        detail={resolveMessage(
+          props.failure.zipCode
+            ? unreadableDetail(zipErrorText(props.failure.zipCode, resolveMessage))
+            : props.failure.detail,
+        )}
         action={
           <View className="flex-row gap-3">
             {props.failure.retry ? (

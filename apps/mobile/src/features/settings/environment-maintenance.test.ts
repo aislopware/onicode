@@ -1,6 +1,9 @@
+import { errorDisplayMessage } from "@onicode/client-runtime/errors";
 import { AuthOrchestrationOperateScope } from "@onicode/contracts";
+import { mFallback } from "gt-react-native";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
+import type { MessageResolver } from "../../i18n/messages";
 import { canMaintainEnvironment, findEnvironmentUpdate } from "./environment-maintenance";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -71,6 +74,12 @@ describe("environment release checks", () => {
       vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status })));
       await expect(findEnvironmentUpdate("1.0.0", signal)).rejects.toThrow(String(status));
     }
+    // Brackets show the failure is resolved where it is shown, so it follows a language switch.
+    const resolve = ((message, options) => `[${mFallback(message, options)}]`) as MessageResolver;
+    const failure = await findEnvironmentUpdate("1.0.0", signal).catch((error: unknown) => error);
+    expect(errorDisplayMessage(failure, resolve)).toBe(
+      "[Could not check releases (429). Try again.]",
+    );
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => Response.json({ tag_name: "desktop-preview" })),

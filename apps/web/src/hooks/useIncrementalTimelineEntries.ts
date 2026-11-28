@@ -1,7 +1,7 @@
 import { useLocale, useMessages } from "gt-react";
 import { useState, useSyncExternalStore } from "react";
 
-import { getI18nSnapshot, subscribeI18n } from "../i18n/runtime";
+import { getActiveCatalog, subscribeI18n } from "../i18n/runtime";
 import {
   deriveTimelineEntriesFromVisibleTurnItemsWithState,
   type TimelineEntriesInput,
@@ -27,7 +27,7 @@ export function useIncrementalTimelineEntries(
   // Keyed on the locale and catalog: without a GTProvider, useMessages() returns a new function
   // every render.
   const locale = useLocale();
-  const catalog = useSyncExternalStore(subscribeI18n, getI18nSnapshot);
+  const catalog = useSyncExternalStore(subscribeI18n, getActiveCatalog);
   const resolve = useMessages();
   const input = { ...timelineInput, resolve: timelineInput.resolve ?? resolve };
   const [state, setState] = useState(() => ({

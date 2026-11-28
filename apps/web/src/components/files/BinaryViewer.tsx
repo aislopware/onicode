@@ -1,11 +1,11 @@
 import { FilePasswordPrompt } from "./FilePasswordPrompt";
 /* oxlint-disable react/no-array-index-key -- Read-only cells retain their database row and column positions. */
 import { decodeFilePreviewText, filePreviewKind } from "@onicode/shared/filePreview";
+import { thrownErrorMessage, translatableError } from "@onicode/client-runtime/errors";
 import { formatAttachmentSize } from "@onicode/client-runtime/state/attachments";
 import { ChevronLeftIcon, ChevronRightIcon, FileIcon, FolderIcon } from "lucide-react";
 import { msg, T, useGT, useMessages } from "gt-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { m } from "~/i18n/messages";
 import { cn } from "~/lib/utils";
 
 import {
@@ -32,7 +32,7 @@ import {
 import { archiveImageUrl } from "./archiveImageUrl";
 import { PreviewImage } from "./PreviewImage";
 import { readBinaryPreview } from "./readBinaryPreview";
-import { previewErrorText, previewFailureText } from "./previewFailureMessages";
+import { previewError, previewFailureError } from "./previewFailureMessages";
 
 const SourcePreview = lazy(() => import("./ReadOnlySourcePreview"));
 type Archive = Extract<BinaryWorkerResult, { type: "archive" }>;
@@ -116,7 +116,7 @@ export default function BinaryViewer(props: {
   const [page, setPage] = useState(0);
   const [busy, setBusy] = useState(true);
   const [incorrectPassword, setIncorrectPassword] = useState<boolean | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Error | null>(null);
   const workerRef = useRef<Worker | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const send = (request: BinaryWorkerRequest) => {
@@ -124,7 +124,9 @@ export default function BinaryViewer(props: {
     setError(null);
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
-      setError(m(msg("This file took too long to preview. Close it and try again.")));
+      setError(
+        translatableError(msg("This file took too long to preview. Close it and try again.")),
+      );
       setBusy(false);
       workerRef.current?.terminate();
       workerRef.current = null;
@@ -138,9 +140,9 @@ export default function BinaryViewer(props: {
       type: "module",
     });
     workerRef.current = worker;
-    const fail = (message: string) => {
+    const fail = (failure: Error) => {
       if (controller.signal.aborted) return;
-      setError(message);
+      setError(failure);
       setBusy(false);
       controller.abort();
       worker.terminate();
@@ -148,11 +150,12 @@ export default function BinaryViewer(props: {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
     timerRef.current = setTimeout(
-      () => fail(m(msg("This file took too long to preview. Close it and try again."))),
+      () =>
+        fail(translatableError(msg("This file took too long to preview. Close it and try again."))),
       30_000,
     );
     worker.addEventListener("error", () =>
-      fail(m(msg("Could not load the file viewer. Close it and try again."))),
+      fail(translatableError(msg("Could not load the file viewer. Close it and try again."))),
     );
     worker.addEventListener("message", (event: MessageEvent<BinaryWorkerResult>) => {
       if (controller.signal.aborted) return;
@@ -160,7 +163,7 @@ export default function BinaryViewer(props: {
       const result = event.data;
       setBusy(false);
       if (result.type === "password") setIncorrectPassword(result.incorrect);
-      else if (result.type === "error") setError(previewFailureText(result));
+      else if (result.type === "error") setError(previewFailureError(result));
       else if (result.type === "archive") setArchive(result);
       else if (result.type === "entry") setEntry(result);
       else if (result.type === "rows") setRows(result);
@@ -180,9 +183,7 @@ export default function BinaryViewer(props: {
           worker.postMessage({ type: "open", name: props.name, kind: props.kind, bytes }, [bytes]);
         }
       })
-      .catch((cause: unknown) =>
-        fail(previewErrorText(cause, m(msg("Could not read this file.")))),
-      );
+      .catch((cause: unknown) => fail(previewError(cause, msg("Could not read this file."))));
     return () => {
       controller.abort();
       worker.terminate();
@@ -330,7 +331,7 @@ export default function BinaryViewer(props: {
         />
       ) : error ? (
         <FileSurfaceFailure
-          message={error}
+          message={thrownErrorMessage(error, messages) ?? error.message}
           {...(props.onRetry ? { onRetry: props.onRetry } : {})}
         />
       ) : busy ? (
@@ -401,7 +402,7 @@ export default function BinaryViewer(props: {
             </tbody>
           </table>
           {children.size === 0 ? (
-            <p className="flex flex-1 items-center justify-center p-6 text-xs text-muted-foreground">
+            <p className="flex flex-1 items-center justify-center p-6 text-center text-xs text-muted-foreground">
               <T>This folder is empty.</T>
             </p>
           ) : null}
@@ -446,13 +447,13 @@ export default function BinaryViewer(props: {
             </tbody>
           </table>
           {rows.rows.length === 0 ? (
-            <p className="flex flex-1 items-center justify-center p-6 text-xs text-muted-foreground">
+            <p className="flex flex-1 items-center justify-center p-6 text-center text-xs text-muted-foreground">
               <T>This table is empty.</T>
             </p>
           ) : null}
         </div>
       ) : (
-        <p className="flex flex-1 items-center justify-center p-6 text-xs text-muted-foreground">
+        <p className="flex flex-1 items-center justify-center p-6 text-center text-xs text-muted-foreground">
           <T>This database has no readable tables.</T>
         </p>
       )}

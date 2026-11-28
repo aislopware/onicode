@@ -1,5 +1,5 @@
 import { FilePasswordPrompt } from "./FilePasswordPrompt";
-import { thrownErrorMessage } from "@onicode/client-runtime/errors";
+import { thrownErrorMessage, translatableError } from "@onicode/client-runtime/errors";
 import {
   useEffect,
   useEffectEvent,
@@ -11,14 +11,13 @@ import {
   type ReactNode,
 } from "react";
 import { PasswordResponses, TextLayer, type PDFDocumentProxy } from "pdfjs-dist";
-import { msg, useGT } from "gt-react";
-import { m } from "~/i18n/messages";
+import { msg, useGT, useMessages } from "gt-react";
 import { ChevronDownIcon, ChevronUpIcon, MinusIcon, PlusIcon, ScanIcon } from "lucide-react";
 import { Input } from "~/components/ui/input";
 import { observeResize } from "~/lib/observeResize";
 import { FileSurfaceAction, FileSurfaceFailure, FileSurfaceLoading } from "./fileSurfaceChrome";
 import { readBoundedDocument } from "./readBoundedDocument";
-import { previewErrorText } from "./previewFailureMessages";
+import { previewError } from "./previewFailureMessages";
 import { closePdf, openPdf, pdfClosed } from "./pdfDocument";
 import {
   currentPdfPage,
@@ -103,7 +102,7 @@ function PdfPage(props: {
   width: number;
   query: string;
   onSize: (index: number, ratio: number) => void;
-  onError: (error: string) => void;
+  onError: (error: Error) => void;
   onPageLink: (target: PdfDestination) => void;
   onOpenLink: ((url: string, event: MouseEvent) => void) | undefined;
 }) {
@@ -176,8 +175,7 @@ function PdfPage(props: {
       });
       await Promise.all([shown, layer.render()]);
     })().catch((cause: unknown) => {
-      if (!cancelled)
-        onError(thrownErrorMessage(cause, m) ?? m(msg("This PDF page could not render.")));
+      if (!cancelled) onError(previewError(cause, msg("This PDF page could not render.")));
     });
     return () => {
       cancelled = true;
@@ -309,6 +307,7 @@ export default function PdfViewer(props: {
   actions?: ReactNode;
 }) {
   const gt = useGT();
+  const messages = useMessages();
   const [savedPosition] = useState(() =>
     props.positionKey === undefined ? undefined : positions.get(props.positionKey),
   );
@@ -316,7 +315,8 @@ export default function PdfViewer(props: {
     () => savedPosition ?? props.initialView ?? { page: 0, offset: 0, zoom: null, left: 0 },
   );
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // Failures stay errors and are worded at render, so they follow a language switch.
+  const [error, setError] = useState<Error | null>(null);
   const [incorrectPassword, setIncorrectPassword] = useState<boolean | null>(null);
   const submitPassword = useRef<((password: string) => void) | null>(null);
   const [revision, setRevision] = useState(0);
@@ -328,7 +328,7 @@ export default function PdfViewer(props: {
   const [query, setQuery] = useState("");
   const [matches, setMatches] = useState<number[]>([]);
   const [finding, setFinding] = useState(false);
-  const [findError, setFindError] = useState<string | null>(null);
+  const [findError, setFindError] = useState<Error | null>(null);
   const [match, setMatch] = useState(0);
   const scroll = useRef<HTMLDivElement>(null);
   const find = useRef<HTMLInputElement>(null);
@@ -350,7 +350,7 @@ export default function PdfViewer(props: {
     let task: ReturnType<typeof openPdf> | undefined;
     const startTimeout = () =>
       setTimeout(() => {
-        setError(m(msg("This PDF took too long to load. Try again.")));
+        setError(translatableError(msg("This PDF took too long to load. Try again.")));
         controller.abort();
         closePdf(task);
       }, 30_000);
@@ -377,8 +377,8 @@ export default function PdfViewer(props: {
         };
         const document = await task.promise;
         if (document.numPages > MAX_PAGES)
-          throw new Error(
-            m(msg("Preview limited to 2,000 pages. Save this PDF to read it in full.")),
+          throw translatableError(
+            msg("Preview limited to 2,000 pages. Save this PDF to read it in full."),
           );
         const first = (await document.getPage(1)).getViewport({ scale: 1 });
         const sizes = await Promise.all(
@@ -401,7 +401,7 @@ export default function PdfViewer(props: {
       })
       .catch((cause: unknown) => {
         if (!disposed && !controller.signal.aborted)
-          setError(previewErrorText(cause, m(msg("Unable to open PDF."))));
+          setError(previewError(cause, msg("Unable to open PDF.")));
       })
       .finally(() => clearTimeout(timeout));
     return () => {
@@ -558,8 +558,8 @@ export default function PdfViewer(props: {
           const text = pdfPageText(content.items);
           size += text.length;
           if (size > MAX_FIND_TEXT)
-            throw new Error(
-              m(msg("This PDF has too much text to search. Save it to search in another app.")),
+            throw translatableError(
+              msg("This PDF has too much text to search. Save it to search in another app."),
             );
           if (!pdfFindIncludes(text, query)) continue;
           found.push(index);
@@ -573,8 +573,7 @@ export default function PdfViewer(props: {
         setMatches(found);
       })()
         .catch((cause: unknown) => {
-          if (!cancelled)
-            setFindError(thrownErrorMessage(cause, m) ?? m(msg("Could not search this PDF.")));
+          if (!cancelled) setFindError(previewError(cause, msg("Could not search this PDF.")));
         })
         .finally(() => {
           if (!cancelled) setFinding(false);
@@ -672,7 +671,9 @@ export default function PdfViewer(props: {
             <span role="status">
               {finding
                 ? gt("Searching…")
-                : (findError ?? `${matches.length ? match + 1 : 0}/${matches.length}`)}
+                : findError
+                  ? thrownErrorMessage(findError, messages)
+                  : `${matches.length ? match + 1 : 0}/${matches.length}`}
             </span>
             <FileSurfaceAction
               label={gt("Next matching page")}
@@ -715,7 +716,7 @@ export default function PdfViewer(props: {
           <div className="flex min-h-full flex-col">
             {error ? (
               <FileSurfaceFailure
-                message={error}
+                message={thrownErrorMessage(error, messages) ?? error.message}
                 onRetry={() => {
                   setError(null);
                   setPdf(null);

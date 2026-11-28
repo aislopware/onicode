@@ -1,4 +1,4 @@
-import { T, Var, useGT } from "gt-react";
+import { T, Var, useGT, useMessages } from "gt-react";
 import type { ToolCallDiffTarget } from "../../diffPanelStore";
 import type {
   EnvironmentId,
@@ -108,6 +108,7 @@ function useFetchedTurnItem(
   skip = false,
 ) {
   const gt = useGT();
+  const messages = useMessages();
   const wireItem = projectedItem.item;
   const fetches = !skip && turnItemNeedsDetailFetch(wireItem);
   const detail = useTurnItemDetail(
@@ -120,6 +121,7 @@ function useFetchedTurnItem(
         }
       : null,
     source?.detail,
+    messages,
   );
   const fetchedItem = detail.data?.item;
   const item = fetchedItem?.type === wireItem.type ? fetchedItem : wireItem;

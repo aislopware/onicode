@@ -1,12 +1,11 @@
-import { thrownErrorMessage } from "@onicode/client-runtime/errors";
-import { m } from "~/i18n/messages";
+import { translatableError } from "@onicode/client-runtime/errors";
 import {
   isModifierPairShortcut,
   type SnapShotModifier,
   type SnapShotShortcut,
 } from "@onicode/contracts";
 import { parseKeybindingShortcut } from "@onicode/shared/keybindings";
-import { useGT } from "gt-react";
+import { msg, useGT } from "gt-react";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { getDesktopSnapShotBridge } from "../../lib/desktopSnapShot";
 import {
@@ -48,7 +47,8 @@ export function useSnapShotShortcutRecorder({
   allowModifierPairs?: boolean;
   onRecord: (shortcut: SnapShotShortcut) => void;
   onStart?: () => void;
-  onError: (message: string) => void;
+  /** The error worded where it renders, so it follows a language switch. */
+  onError: (cause: Error) => void;
 }) {
   const gt = useGT();
   const bridge = getDesktopSnapShotBridge();
@@ -76,8 +76,8 @@ export function useSnapShotShortcutRecorder({
       requests.clear();
       onError(
         error instanceof Error
-          ? (thrownErrorMessage(error, m) ?? error.message)
-          : gt("Could not start shortcut recording."),
+          ? error
+          : translatableError(msg("Could not start shortcut recording.")),
       );
     }
   };
@@ -104,7 +104,9 @@ export function useSnapShotShortcutRecorder({
       const [left, right] = MODIFIER_CODES[modifier];
       if (held.has(left) && held.has(right)) {
         if (!allowModifierPairs) {
-          onError(gt("Add a letter, number, or function key to your shortcut."));
+          onError(
+            translatableError(msg("Add a letter, number, or function key to your shortcut.")),
+          );
           return;
         }
         stopRecording();

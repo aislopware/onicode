@@ -9,6 +9,7 @@ import type {
   ProviderSessionInfoOf,
 } from "@onicode/contracts";
 import { formatTokens } from "@onicode/shared/usageFormat";
+import { useMessages } from "gt-react";
 import { ArrowLeftIcon, ChevronRightIcon } from "lucide-react";
 import { useState } from "react";
 
@@ -81,6 +82,7 @@ function SettingsContent(props: {
       environmentId: target.environmentId,
       input: { threadId: target.threadId, view: PROVIDER_SESSION_INFO_VIEWS[view] },
     }),
+    useMessages(),
   );
   const [openMemory, setOpenMemory] = useState<string | null>(null);
   const { title, description } = TITLES[view];
@@ -271,6 +273,7 @@ function MemoryFileView(props: {
       environmentId: props.target.environmentId,
       input: { threadId: props.target.threadId, path: props.path },
     }),
+    useMessages(),
   );
   return (
     <>

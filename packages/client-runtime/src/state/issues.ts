@@ -369,15 +369,15 @@ export interface IssueListTarget {
   readonly input: IssueListInput;
 }
 
-export interface MergedIssueList {
+export interface MergedIssueList<Failure = string> {
   /** One answer per environment that has one, in target order. */
   readonly answers: ReadonlyArray<readonly [EnvironmentId, IssueListResult]>;
   /** The first environment that failed outright; the others may still have answered. */
-  readonly error: string | null;
+  readonly error: Failure | null;
   readonly isPending: boolean;
 }
 
-const NO_ISSUE_LISTS: MergedIssueList = { answers: [], error: null, isPending: false };
+const NO_ISSUE_LISTS: MergedIssueList<never> = { answers: [], error: null, isPending: false };
 
 function refreshFailed<Target, A, E>(
   registry: AtomRegistry.AtomRegistry,
@@ -397,7 +397,7 @@ function refreshFailed<Target, A, E>(
  * environment that fails contributes nothing rather than blanking the list. Retry reloads only
  * the environments that failed, so a read still in flight elsewhere is not restarted.
  */
-export function createMergedIssueListAtoms<E>(
+export function createMergedIssueListAtoms<E, Failure>(
   {
     list,
     refreshList,
@@ -411,13 +411,15 @@ export function createMergedIssueListAtoms<E>(
       mode: IssueListRefreshMode,
     ) => void;
   },
-  formatError: (cause: Cause.Cause<E>) => string,
+  formatError: (cause: Cause.Cause<E>) => Failure,
 ) {
-  const empty = Atom.make(NO_ISSUE_LISTS).pipe(Atom.withLabel("issues:merged-list:empty"));
+  const empty = Atom.make<MergedIssueList<Failure>>(NO_ISSUE_LISTS).pipe(
+    Atom.withLabel("issues:merged-list:empty"),
+  );
   const family = Atom.family((key: string) =>
-    Atom.make((get): MergedIssueList => {
+    Atom.make((get): MergedIssueList<Failure> => {
       const answers: Array<readonly [EnvironmentId, IssueListResult]> = [];
-      let error: string | null = null;
+      let error: Failure | null = null;
       let isPending = false;
       for (const target of JSON.parse(key) as ReadonlyArray<IssueListTarget>) {
         const result = get(list(target));
@@ -438,7 +440,10 @@ export function createMergedIssueListAtoms<E>(
   };
   // The targets behind each listing atom, so a write made elsewhere can refresh the ones still
   // shown. Weak, so a closed search goes with its atom once the registry drops it.
-  const targetsOf = new WeakMap<Atom.Atom<MergedIssueList>, ReadonlyArray<IssueListTarget>>();
+  const targetsOf = new WeakMap<
+    Atom.Atom<MergedIssueList<Failure>>,
+    ReadonlyArray<IssueListTarget>
+  >();
   return {
     atom: (targets: ReadonlyArray<IssueListTarget>) => {
       if (targets.length === 0) return empty;
@@ -470,15 +475,15 @@ export interface IssueCandidatesTarget {
 }
 
 /** What a list filter can offer: the labels and people of every scope asked, each named once. */
-export interface MergedIssueCandidates {
+export interface MergedIssueCandidates<Failure = string> {
   readonly labels: ReadonlyArray<IssueLabelCandidate>;
   readonly assignees: ReadonlyArray<IssueAssigneeCandidate>;
-  readonly error: string | null;
+  readonly error: Failure | null;
   readonly isPending: boolean;
   readonly truncated: boolean;
 }
 
-const NO_ISSUE_CANDIDATES: MergedIssueCandidates = {
+const NO_ISSUE_CANDIDATES: MergedIssueCandidates<never> = {
   labels: [],
   assignees: [],
   error: null,
@@ -490,18 +495,20 @@ const NO_ISSUE_CANDIDATES: MergedIssueCandidates = {
  * Fans out like the merged listing: a scope that fails leaves the others' answers in place.
  * Retry skips scopes that already answered or still have a request in flight.
  */
-export function createMergedIssueCandidatesAtoms<E>(
+export function createMergedIssueCandidatesAtoms<E, Failure>(
   candidates: (
     target: IssueCandidatesTarget,
   ) => Atom.Atom<AsyncResult.AsyncResult<IssueCandidates, E>>,
-  formatError: (cause: Cause.Cause<E>) => string,
+  formatError: (cause: Cause.Cause<E>) => Failure,
 ) {
-  const empty = Atom.make(NO_ISSUE_CANDIDATES).pipe(Atom.withLabel("issues:candidates:empty"));
+  const empty = Atom.make<MergedIssueCandidates<Failure>>(NO_ISSUE_CANDIDATES).pipe(
+    Atom.withLabel("issues:candidates:empty"),
+  );
   const family = Atom.family((key: string) =>
-    Atom.make((get): MergedIssueCandidates => {
+    Atom.make((get): MergedIssueCandidates<Failure> => {
       const labels = new Map<string, IssueLabelCandidate>();
       const assignees = new Map<string, IssueAssigneeCandidate>();
-      let error: string | null = null;
+      let error: Failure | null = null;
       let isPending = false;
       let truncated = false;
       for (const target of JSON.parse(key) as ReadonlyArray<IssueCandidatesTarget>) {

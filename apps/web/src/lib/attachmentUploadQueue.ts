@@ -7,7 +7,11 @@ import {
   type EnvironmentId,
 } from "@onicode/contracts";
 import { parseScopedThreadKey } from "@onicode/client-runtime/environment";
-import { errorDisplayMessage } from "@onicode/client-runtime/errors";
+import {
+  errorDisplayMessage,
+  errorI18nMessage,
+  translatableError,
+} from "@onicode/client-runtime/errors";
 import { resolveAssetUrl } from "@onicode/client-runtime/state/assets";
 import {
   attachmentUploadError,
@@ -163,12 +167,12 @@ function uploadBytes(input: {
       if (xhr.status >= 200 && xhr.status < 300) {
         resolve();
       } else {
-        reject(new Error(m(msg("Upload rejected ({status})", { status: xhr.status }))));
+        reject(translatableError(msg("Upload rejected ({status})", { status: xhr.status })));
       }
     });
-    xhr.addEventListener("error", () => reject(new Error(m(msg("Upload failed")))));
-    xhr.addEventListener("timeout", () => reject(new Error(m(msg("Upload timed out")))));
-    xhr.addEventListener("abort", () => reject(new Error(m(msg("Upload cancelled")))));
+    xhr.addEventListener("error", () => reject(translatableError(msg("Upload failed"))));
+    xhr.addEventListener("timeout", () => reject(translatableError(msg("Upload timed out"))));
+    xhr.addEventListener("abort", () => reject(translatableError(msg("Upload cancelled"))));
     input.signal.addEventListener("abort", () => xhr.abort(), { once: true });
     xhr.send(input.file);
   });
@@ -183,6 +187,14 @@ const uploadFailureReason = (reasonMessage: string) => ({
 });
 
 /** Records the failure the composer shows, then fails the upload with it. */
+/** One marked sentence stays marked so the composer shows it in the current language. */
+function uploadFailureText(error: Error): string {
+  const [sentence, ...rest] = errorI18nMessage(error) ?? [];
+  return sentence !== undefined && rest.length === 0
+    ? sentence
+    : msg("{reason}", { reason: errorDisplayMessage(error, m) ?? error.message });
+}
+
 const failUpload = (job: UploadJob, reasonMessage: string, attachmentId?: string) =>
   Effect.sync(() =>
     setUploadState(job.image.id, {
@@ -319,9 +331,7 @@ const uploadJob = Effect.fn("WebAttachmentUploads.upload")(function* (job: Uploa
           ? msg("Not connected")
           : msg("This connection cannot upload attachments.")
         : result.error instanceof Error
-          ? msg("{reason}", {
-              reason: errorDisplayMessage(result.error, m) ?? result.error.message,
-            })
+          ? uploadFailureText(result.error)
           : msg("Upload failed"),
     result.attachmentId ?? undefined,
   );

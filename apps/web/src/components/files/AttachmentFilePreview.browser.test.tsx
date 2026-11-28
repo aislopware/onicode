@@ -90,7 +90,7 @@ import { formatArchiveModifiedDate, type BinaryWorkerResult } from "./binaryPrev
 import type { TextPreviewResult } from "./largeTextProtocol";
 import type { ReactElement } from "react";
 import type { OfficeWorkerRequest, OfficeWorkerResult } from "./officePreviewProtocol";
-import { previewErrorText } from "./previewFailureMessages";
+import { previewError } from "./previewFailureMessages";
 import { PreviewPositionKey } from "./previewPosition";
 
 // Real worker imports and WASM initialization can exceed waitFor's default second
@@ -2149,7 +2149,7 @@ it.each([
     const { prepareOffice } = await import("./officeArchive");
     if (row > 250000) {
       await expect(
-        prepareOffice(bytes, "xlsx").catch((cause: unknown) => previewErrorText(cause, "")),
+        prepareOffice(bytes, "xlsx").catch((cause: unknown) => previewError(cause, "").message),
       ).resolves.toContain("This workbook exceeds the preview limit");
       return;
     }

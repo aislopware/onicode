@@ -23,8 +23,7 @@ export function resolveMarkedText(text: MarkedText, resolve: MFunctionType = mFa
   return text.map((sentence) => resolve(sentence)).join(" ");
 }
 
-/** Resolves a string a resolver left marked, including marked variables inside it. */
-export function resolveMarkedString(marked: string, resolve: MFunctionType = mFallback): string {
+function resolveMarkedVariables(marked: string, resolve: MFunctionType): string {
   const options = decodeOptions(marked);
   if (typeof options?.$_source !== "string") return marked;
   const { $_source: source, ...variables } = options;
@@ -34,11 +33,22 @@ export function resolveMarkedString(marked: string, resolve: MFunctionType = mFa
       Object.entries(variables).map(([key, value]) => [
         key,
         typeof value === "string" && !key.startsWith("$")
-          ? resolveMarkedString(value, resolve)
+          ? resolveMarkedVariables(value, resolve)
           : value,
       ]),
     ),
   );
+}
+
+/**
+ * Resolves a whole `msg()` string a resolver left marked, including marked variables inside it.
+ * `msg()` without options returns its plain text, so an unencoded string is resolved too: raw
+ * text must arrive wrapped in a marked message. Unencoded variables stay as they are.
+ */
+export function resolveMarkedString(marked: string, resolve: MFunctionType = mFallback): string {
+  return typeof decodeOptions(marked)?.$_source === "string"
+    ? resolveMarkedVariables(marked, resolve)
+    : resolve(marked);
 }
 
 /** `detail` in English plus the marked text, for errors whose `message` reads `detail`. */

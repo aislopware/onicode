@@ -1,12 +1,12 @@
 import { GitCommandError } from "@onicode/contracts";
 import * as Cause from "effect/Cause";
 import * as Schema from "effect/Schema";
-import { mFallback } from "gt-i18n";
+import { mFallback, msg } from "gt-i18n";
 import type { MFunctionType } from "gt-i18n/types";
 import { describe, expect, it } from "vite-plus/test";
 
 import { squashAtomCommandFailure } from "../state/runtime.ts";
-import { errorDisplayMessage, thrownErrorMessage } from "./translatable.ts";
+import { errorDisplayMessage, resolveMarkedString, thrownErrorMessage } from "./translatable.ts";
 
 const decodeDefect = Schema.decodeUnknownSync(Schema.Defect());
 
@@ -46,5 +46,25 @@ describe("error display messages", () => {
     expect(thrownErrorMessage(error)).toBe(
       "RPC contract is registered but unavailable in the control plane: projectClone.start",
     );
+  });
+
+  it("resolve a kept-marked string, including a msg() that had no options", () => {
+    const resolve = ((message, options) => `[fr] ${mFallback(message, options)}`) as MFunctionType;
+
+    expect(resolveMarkedString(msg("Device stream failed."), resolve)).toBe(
+      "[fr] Device stream failed.",
+    );
+    // Raw text inside a marked message is passed through, braces and all.
+    expect(
+      resolveMarkedString(msg("Video decoder: {message}", { message: "bad {frame" }), resolve),
+    ).toBe("[fr] Video decoder: bad {frame");
+    expect(
+      resolveMarkedString(
+        msg("Device lease ended: {reason}", {
+          reason: msg("ended", { $context: "device lease end reason" }),
+        }),
+        resolve,
+      ),
+    ).toBe("[fr] Device lease ended: [fr] ended");
   });
 });

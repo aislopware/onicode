@@ -81,6 +81,7 @@ export function LinkSeveralEnvironmentsDialog({
   // The same shared list `useLinkableMachines` reads `linked` from.
   const links = useEnvironmentQuery(
     open ? peerLinkEnvironment.list({ environmentId, input: {} }) : null,
+    m,
   );
   const linksState = linkListState(links);
   const writable = useEnvironmentsWithScope(machines, AuthAccessWriteScope);

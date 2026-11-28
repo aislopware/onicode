@@ -5,7 +5,7 @@ import type {
   OrchestrationV2NativeChildWork,
   ThreadId,
 } from "@onicode/contracts";
-import { T, useGT } from "gt-react";
+import { T, useGT, useMessages } from "gt-react";
 import { ListTreeIcon } from "lucide-react";
 import { useState } from "react";
 
@@ -65,6 +65,7 @@ function NativeChildWorkContent(props: {
       environmentId: props.environmentId,
       input: { threadId: props.threadId },
     }),
+    useMessages(),
   );
   const children = query.data?.children;
   return (

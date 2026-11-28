@@ -35,6 +35,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { AsyncResult, Atom, type AtomRegistry } from "effect/reactivity";
+import { useMessages } from "gt-react";
 
 import { connectionAtomRuntime } from "../connection/runtime";
 import { appAtomRegistry } from "../rpc/atomRegistry";
@@ -614,11 +615,29 @@ interface EnvironmentQueryError {
   readonly message: string;
 }
 
+/** Kept unformatted in the cached view so the message follows a language switch. */
+interface EnvironmentQueryFailure {
+  readonly environmentId: EnvironmentId;
+  readonly cause: Cause.Cause<unknown>;
+}
+
 interface MergedEnvironmentQueryView<A> {
   readonly observations: ReadonlyArray<readonly [EnvironmentId, A, number]>;
   readonly values: ReadonlyArray<readonly [EnvironmentId, A]>;
-  readonly error: EnvironmentQueryError | null;
+  readonly failure: EnvironmentQueryFailure | null;
   readonly isPending: boolean;
+}
+
+function useEnvironmentQueryError(
+  failure: EnvironmentQueryFailure | null,
+): EnvironmentQueryError | null {
+  const messages = useMessages();
+  return failure === null
+    ? null
+    : {
+        environmentId: failure.environmentId,
+        message: formatEnvironmentQueryError(failure.cause, messages),
+      };
 }
 
 const failedListObservedAt = new WeakMap<object, number>();
@@ -657,17 +676,14 @@ function createMergedEnvironmentQuery<Input, A>(
       const values: Array<readonly [EnvironmentId, A]> = [];
       const observations: Array<readonly [EnvironmentId, A, number]> = [];
       const pendingEnvironments = new Set<EnvironmentId>();
-      let error: EnvironmentQueryError | null = null;
+      let failure: EnvironmentQueryFailure | null = null;
       let isPending = false;
       for (const target of targets) {
         const result = get(atomFor(target));
         isPending ||= result.waiting;
         if (result.waiting) pendingEnvironments.add(target.environmentId);
-        if (result._tag === "Failure" && error === null) {
-          error = {
-            environmentId: target.environmentId,
-            message: formatEnvironmentQueryError(result.cause),
-          };
+        if (result._tag === "Failure" && failure === null) {
+          failure = { environmentId: target.environmentId, cause: result.cause };
         }
         const value = AsyncResult.getOrElse(result, () => null);
         if (value !== null) values.push([target.environmentId, value]);
@@ -682,7 +698,7 @@ function createMergedEnvironmentQuery<Input, A>(
       }
       return {
         values,
-        error,
+        failure,
         isPending,
         // Another batch can still find a readable checkout on this environment.
         observations: observations.filter(
@@ -694,7 +710,7 @@ function createMergedEnvironmentQuery<Input, A>(
   const empty = Atom.make<MergedEnvironmentQueryView<A>>({
     observations: [],
     values: [],
-    error: null,
+    failure: null,
     isPending: false,
   }).pipe(Atom.withLabel(`${label}:empty`));
   return function useMergedQuery(targets: ReadonlyArray<EnvironmentQueryTarget<Input>>) {
@@ -778,9 +794,10 @@ export function usePullRequestList(
 ): MergedPullRequestListView {
   const query = usePullRequestListsQuery(targets);
   const data = mergePullRequestLists(query.values);
+  const error = useEnvironmentQueryError(query.failure);
   return {
     data,
-    error: query.error,
+    error,
     isPending: query.isPending,
     observations: query.observations,
     refresh: query.refresh,
@@ -793,9 +810,10 @@ export function usePullRequestHostList(
 ): MergedPullRequestListView {
   const query = usePullRequestHostListsQuery(targets);
   const data = mergePullRequestLists(query.values);
+  const error = useEnvironmentQueryError(query.failure);
   return {
     data,
-    error: query.error,
+    error,
     isPending: query.isPending,
     observations: query.observations,
     refresh: query.refresh,
@@ -830,7 +848,7 @@ export function usePullRequestFilterOptions(
     labels: query.values.flatMap(([, options]) => options.labels),
     authors: query.values.flatMap(([, options]) => options.authors),
     references: query.values.flatMap(([, options]) => options.references),
-    error: query.error,
+    failed: query.failure !== null,
     isPending: query.isPending,
   };
 }

@@ -1,3 +1,4 @@
+import { translatableError } from "@onicode/client-runtime/errors";
 import { SourceControlProviderKind } from "@onicode/contracts";
 import {
   EnvironmentId,
@@ -12,6 +13,7 @@ import {
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import { AsyncResult, Atom } from "effect/reactivity";
+import { msg } from "gt-react";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 const listAnswers = vi.hoisted(() => new Map<string, unknown>());
@@ -24,6 +26,17 @@ vi.mock("@effect/atom-react", async (importOriginal) => ({
   useAtomValue: (atom: Atom.Atom<unknown>) => registry.get(atom),
 }));
 vi.mock("../rpc/atomRegistry", () => ({ appAtomRegistry: registry }));
+// Brackets show a message went through the render-time resolver, so it follows a language switch.
+vi.mock("gt-react", async (importOriginal) => {
+  const gt = await importOriginal<typeof import("gt-react")>();
+  return {
+    ...gt,
+    useMessages: () =>
+      ((message, options) => `[${gt.mFallback(message, options)}]`) as ReturnType<
+        typeof gt.useMessages
+      >,
+  };
+});
 vi.mock("@onicode/client-runtime/state/pull-requests", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("@onicode/client-runtime/state/pull-requests")>();
@@ -544,7 +557,9 @@ describe("pull request list answers across a reload", () => {
     listAnswers.set(
       remote,
       Atom.make(
-        AsyncResult.failure(Cause.fail(new Error("Could not reach the environment endpoint."))),
+        AsyncResult.failure(
+          Cause.fail(translatableError(msg("Could not reach the environment endpoint."))),
+        ),
       ),
     );
 
@@ -556,7 +571,7 @@ describe("pull request list answers across a reload", () => {
     expect(view.data?.entries.map((row) => [row.environmentId, row.number])).toEqual([[local, 1]]);
     expect(view.error).toEqual({
       environmentId: remote,
-      message: "Could not reach the environment endpoint.",
+      message: "[Could not reach the environment endpoint.]",
     });
   });
 

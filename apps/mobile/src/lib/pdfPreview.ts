@@ -1,6 +1,6 @@
+import { translatableError } from "@onicode/client-runtime/errors";
 import { downloadAttachmentForPreview } from "./attachmentDownload";
 import { msg } from "gt-react-native";
-import { m } from "../i18n/messages";
 
 export function isPdfPreviewUri(uri: string): boolean {
   try {
@@ -65,8 +65,8 @@ export async function preparePdfPreview(uri: string, signal: AbortSignal) {
     try {
       const header = await handle.readBytes(5);
       if (String.fromCharCode(...header) !== "%PDF-") {
-        throw new Error(
-          m(msg("The server did not return a PDF. Check the connection and try again.")),
+        throw translatableError(
+          msg("The server did not return a PDF. Check the connection and try again."),
         );
       }
     } finally {

@@ -1,5 +1,4 @@
 import { thrownErrorMessage } from "@onicode/client-runtime/errors";
-import { m } from "~/i18n/messages";
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import {
   isModifierPairShortcut,
@@ -79,6 +78,8 @@ type ShortcutCheck =
       readonly shortcut: SnapShotShortcut;
       readonly savedShortcut: SnapShotShortcut;
       readonly availability: DesktopSnapShotShortcutAvailability;
+      /** A failed check, worded where it renders so it follows a language switch. */
+      readonly failure?: { readonly cause: unknown };
     };
 
 export function SnapShotSettings() {
@@ -102,7 +103,12 @@ export function SnapShotSettings() {
     refreshFailure &&
     snapShotSetupError(gt("Couldn't check capture setup"), refreshFailure.cause, messages);
   const [setupBusy, setSetupBusy] = useState(false);
-  const [setupError, setSetupError] = useState<SnapShotSetupError | null>(null);
+  const [setupFailure, setSetupError] = useState<{
+    readonly title: string;
+    readonly cause: unknown;
+  } | null>(null);
+  const setupError: SnapShotSetupError | null =
+    setupFailure && snapShotSetupError(setupFailure.title, setupFailure.cause, messages);
   // macOS can quit the app from a permission prompt; until the user opens or closes the wizard
   // themselves, a saved resume reopens it where it left off.
   const [resume] = useState(readSnapShotSetupResume);
@@ -118,8 +124,8 @@ export function SnapShotSettings() {
         : null;
   // The wizard shows errors inline; outside it there is nowhere to, so they become a toast.
   const reportSetupError = (title: string, error: unknown) => {
+    setSetupError({ title, cause: error });
     const report = snapShotSetupError(title, error);
-    setSetupError(report);
     if (!wizard)
       toastManager.add({ type: "error", title: report.title, description: report.message });
   };
@@ -234,13 +240,8 @@ export function SnapShotSettings() {
         status: "checked",
         shortcut,
         savedShortcut,
-        availability: {
-          available: false,
-          message:
-            error instanceof Error
-              ? (thrownErrorMessage(error, m) ?? error.message)
-              : gt("Could not check this shortcut."),
-        },
+        availability: { available: false, message: "" },
+        failure: { cause: error },
       });
     }
   };
@@ -259,12 +260,13 @@ export function SnapShotSettings() {
       shortcutCheckIdRef.current++;
       setShortcutCheck({ status: "idle", availability: null });
     },
-    onError: (message) =>
+    onError: (cause) =>
       setShortcutCheck({
         status: "checked",
         shortcut: candidate,
         savedShortcut,
-        availability: { available: false, message },
+        availability: { available: false, message: "" },
+        failure: { cause },
       }),
   });
 
@@ -279,7 +281,12 @@ export function SnapShotSettings() {
         : shortcutCheck.availability
           ? shortcutCheck.availability.available
             ? gt("Ready to save.")
-            : shortcutCheck.availability.message
+            : shortcutCheck.status !== "checked" || shortcutCheck.failure === undefined
+              ? shortcutCheck.availability.message
+              : shortcutCheck.failure.cause instanceof Error
+                ? (thrownErrorMessage(shortcutCheck.failure.cause, messages) ??
+                  shortcutCheck.failure.cause.message)
+                : gt("Could not check this shortcut.")
           : state?.mode === "portal" &&
               !state.shortcutLabel &&
               isModifierPairShortcut(displayShortcut)

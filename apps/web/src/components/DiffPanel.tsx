@@ -393,6 +393,8 @@ export default function DiffPanel({
           environmentId: routeThreadRef.environmentId,
         }
       : null,
+    undefined,
+    messages,
   );
   const toolCallItem = toolCallDetail.data?.item;
 

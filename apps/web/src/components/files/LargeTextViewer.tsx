@@ -1,6 +1,6 @@
+import { thrownErrorMessage, translatableError } from "@onicode/client-runtime/errors";
 import { msg, T, useGT, useMessages } from "gt-react";
 import { useEffect, useImperativeHandle, useRef, useState, type RefObject } from "react";
-import { m } from "~/i18n/messages";
 import { Spinner } from "~/components/ui/spinner";
 import { parseDelimitedPreview } from "@onicode/shared/delimitedPreview";
 import { formatAttachmentSize } from "@onicode/client-runtime/state/attachments";
@@ -11,7 +11,7 @@ import {
   PREVIEW_PAGE_ROWS,
   type TextPreviewResult,
 } from "./largeTextProtocol";
-import { previewFailureText } from "./previewFailureMessages";
+import { previewFailureError } from "./previewFailureMessages";
 import VirtualTablePreview from "./VirtualTablePreview";
 
 const FIRST_SCREEN_BYTES = 16 * 1024;
@@ -87,7 +87,7 @@ export default function LargeTextViewer(props: {
   });
   const [meta, setMeta] = useState<Meta | null>(initial?.meta ?? null);
   const [pages, setPages] = useState(initial?.pages ?? new Map<number, string[][]>());
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Error | null>(null);
   const worker = useRef<Worker | null>(null);
   const copyPending = useRef<{
     resolve: (text: string) => void;
@@ -125,9 +125,9 @@ export default function LargeTextViewer(props: {
           copyPending.current?.resolve(result.text);
           copyPending.current = null;
         } else if (result.type === "error") {
-          copyPending.current?.reject(new Error(previewFailureText(result)));
+          copyPending.current?.reject(previewFailureError(result));
           copyPending.current = null;
-          if (result.operation !== "copy") setError(previewFailureText(result));
+          if (result.operation !== "copy") setError(previewFailureError(result));
         } else if (result.type === "meta") {
           indexed = true;
           if (prefetched) {
@@ -163,9 +163,11 @@ export default function LargeTextViewer(props: {
         }
       });
       engine.addEventListener("error", () => {
-        copyPending.current?.reject(new Error(m(msg("The text viewer stopped."))));
+        copyPending.current?.reject(translatableError(msg("The text viewer stopped.")));
         copyPending.current = null;
-        setError(m(msg("Could not load the text viewer. Close the file and try again.")));
+        setError(
+          translatableError(msg("Could not load the text viewer. Close the file and try again.")),
+        );
       });
       engine.postMessage(
         {
@@ -224,7 +226,7 @@ export default function LargeTextViewer(props: {
     } else startWorker();
     return () => {
       controller.abort();
-      copyPending.current?.reject(new Error(m(msg("Preview closed."))));
+      copyPending.current?.reject(translatableError(msg("Preview closed.")));
       copyPending.current = null;
       worker.current?.terminate();
       worker.current = null;
@@ -236,11 +238,11 @@ export default function LargeTextViewer(props: {
     () => () =>
       new Promise<string>((resolve, reject) => {
         if (!worker.current) {
-          reject(new Error(m(msg("The file is unavailable."))));
+          reject(translatableError(msg("The file is unavailable.")));
           return;
         }
         if (copyPending.current) {
-          reject(new Error(m(msg("Another copy is in progress."))));
+          reject(translatableError(msg("Another copy is in progress.")));
           return;
         }
         copyPending.current = { resolve, reject };
@@ -250,7 +252,10 @@ export default function LargeTextViewer(props: {
   );
   if (error)
     return (
-      <FileSurfaceFailure message={error} {...(props.onRetry ? { onRetry: props.onRetry } : {})} />
+      <FileSurfaceFailure
+        message={thrownErrorMessage(error, messages) ?? error.message}
+        {...(props.onRetry ? { onRetry: props.onRetry } : {})}
+      />
     );
   if (!meta || (meta.count > 0 && !pages.has(0))) return <FileSurfaceLoading />;
   const header = props.delimiter ? pages.get(0)?.[0] : undefined;

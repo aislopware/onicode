@@ -95,6 +95,17 @@ vi.mock("expo-file-system", () => ({
   },
 }));
 vi.mock("expo/fetch", () => ({ fetch: vi.fn() }));
+// Brackets show which text went through the render-time resolver.
+vi.mock("gt-react-native", async (importOriginal) => {
+  const gt = await importOriginal<typeof import("gt-react-native")>();
+  return {
+    ...gt,
+    useMessages: () =>
+      ((message, options) => `[${gt.mFallback(message, options)}]`) as ReturnType<
+        typeof gt.useMessages
+      >,
+  };
+});
 vi.mock("expo-crypto", () => ({ randomUUID: vi.fn() }));
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ canGoBack: () => false }),
@@ -296,6 +307,17 @@ it("asks for a password before browsing encrypted entries", async () => {
     expect(screen.container.textContent).toContain("This file requires a password."),
   );
   expect(screen.container.querySelector('[aria-label="first.txt"]')).toBeNull();
+});
+
+it("words a damaged archive's reason where it renders", async () => {
+  const screen = setup();
+  files.set("file:///first.zip", new TextEncoder().encode("not a zip archive"));
+  await screen.render();
+  await screen.settle(() =>
+    expect(screen.container.textContent).toContain(
+      "[[This is not a readable ZIP archive.] Save the ZIP to open it in another app.]",
+    ),
+  );
 });
 
 it("keeps the archive and selected entry when the parent re-renders with a new refresh", async () => {

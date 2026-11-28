@@ -73,7 +73,9 @@ export function ttmlCaptions(root: XmlNode) {
 
   function captionTime(value: string | undefined) {
     const time = value?.trim() ?? "";
-    const tick = /^(\d+(?:\.\d+)?)t$/.exec(time);
+    // TTML §10.3.1: offset times, ticks included, are undefined in SMPTE time; the clock time
+    // base forbids frames and sub-frames, which the frame checks below reject.
+    const tick = timeBase === "smpte" ? null : /^(\d+(?:\.\d+)?)t$/.exec(time);
     if (tick) {
       const seconds = Number.isFinite(tickRate) && tickRate > 0 ? Number(tick[1]) / tickRate : NaN;
       return Number.isFinite(seconds * 1000) ? seconds : undefined;

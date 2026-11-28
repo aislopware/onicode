@@ -44,7 +44,7 @@ import { AttachmentFilePreview } from "./AttachmentFilePreview";
 import { zipEntries, zipFixture } from "../../../test/zip";
 import { OFFICE_PREVIEW_MAX_COLUMNS, type OfficeWorkerResult } from "./officePreviewProtocol";
 import { WORD_LIMITS } from "./officeArchive";
-import { previewErrorText, previewFailureText } from "./previewFailureMessages";
+import { previewError, previewFailureText } from "./previewFailureMessages";
 
 it.each(["<w:body/>", "<w:body></w:body>"])(
   "opens an empty Word document with %s",
@@ -828,8 +828,8 @@ it.each(['<u val="double"/>', '<u val="double"></u>'])(
     }
     archive["xl/styles.xml"] = "<styleSheet><numFmts/><numFmts/></styleSheet>";
     await expect(
-      prepareOffice(zipFixture(archive).buffer, "xlsx").catch((cause: unknown) =>
-        previewErrorText(cause, ""),
+      prepareOffice(zipFixture(archive).buffer, "xlsx").catch(
+        (cause: unknown) => previewError(cause, "").message,
       ),
     ).resolves.toContain("duplicate stylesheet blocks");
   },

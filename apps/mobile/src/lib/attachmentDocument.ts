@@ -161,7 +161,7 @@ export function useAttachmentDocument(input: {
       (errorDisplayMessage(localPreview.error, resolve) ??
         resolve(msg("The local file is unavailable.")))
     : AsyncResult.isFailure(remote)
-      ? (Option.getOrNull(AsyncResult.error(remote))?.message ??
+      ? (errorDisplayMessage(Option.getOrNull(AsyncResult.error(remote)), resolve) ??
         resolve(msg("The attachment is unavailable.")))
       : null;
   const share = async () => {

@@ -8,6 +8,7 @@ import {
   type TextGeneratorModel,
 } from "@onicode/contracts";
 import { pickModelSelection } from "@onicode/shared/model";
+import type * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -16,6 +17,7 @@ import { useId, useState } from "react";
 import { msg, T, useGT, useMessages, Var } from "gt-react";
 
 import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "../../hooks/useSettings";
+import { formatEnvironmentQueryError } from "../../state/query";
 import {
   checkTextGeneratorConfig,
   rereadTextGeneratorModels,
@@ -293,7 +295,8 @@ function TextGeneratorWizard({
   );
   const [keyValid, setKeyValid] = useState(true);
   const [checking, setChecking] = useState(false);
-  const [checkError, setCheckError] = useState<string | null>(null);
+  const [checkFailure, setCheckError] = useState<Cause.Cause<unknown> | null>(null);
+  const checkError = checkFailure && formatEnvironmentQueryError(checkFailure, messages);
   const [modelCount, setModelCount] = useState(0);
   // Fixed once saved, so editing the form again after Back updates the same generator.
   const [savedId, setSavedId] = useState<ProviderInstanceId | null>(
@@ -330,8 +333,8 @@ function TextGeneratorWizard({
     // The form is disabled while this runs, so the checked config is the one saved below.
     const result = await checkTextGeneratorConfig(environmentId, id, config.value);
     setChecking(false);
-    if ("error" in result) {
-      setCheckError(result.error);
+    if ("failure" in result) {
+      setCheckError(result.failure);
       return;
     }
     onSave(id, config.value);
@@ -548,6 +551,7 @@ function TextGenerationTaskPicker({
   readonly settingKey: (typeof TASKS)[number]["key"];
   readonly label: string;
 }) {
+  const messages = useMessages();
   const settings = useEnvironmentSettings(environmentId);
   const updateSettings = useUpdateEnvironmentSettings(environmentId);
   const own = settings[settingKey];
@@ -566,18 +570,23 @@ function TextGenerationTaskPicker({
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState<{
     readonly key: string;
-    readonly error: string | null;
+    readonly failure: Cause.Cause<unknown> | null;
   } | null>(null);
-  const shown = result?.key === testKey ? result : null;
+  const shown =
+    result?.key === testKey
+      ? {
+          error: result.failure && formatEnvironmentQueryError(result.failure, messages),
+        }
+      : null;
   const test = async () => {
     setTesting(true);
-    const error = await testTextGeneratorModel(
+    const failure = await testTextGeneratorModel(
       environmentId,
       selection.instanceId,
       selection.model,
     );
     setTesting(false);
-    setResult({ key: testKey, error });
+    setResult({ key: testKey, failure });
   };
   return (
     <>
@@ -756,7 +765,9 @@ function TextGeneratorModelsDialog({
     }
   };
   const models = AsyncResult.isSuccess(result) ? result.value : null;
-  const error = Option.getOrUndefined(AsyncResult.error(result));
+  const error = AsyncResult.isFailure(result)
+    ? formatEnvironmentQueryError(result.cause, messages)
+    : undefined;
   return (
     <Dialog
       open

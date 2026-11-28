@@ -7,6 +7,7 @@ import {
 } from "@onicode/client-runtime/state/issues";
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@onicode/contracts";
+import { useMessages } from "gt-react-native";
 
 import { connectionAtomRuntime } from "../connection/runtime";
 import { appAtomRegistry } from "./atom-registry";
@@ -18,13 +19,16 @@ export const issueEnvironment = createIssueEnvironmentAtoms(
   composerPullRequests.linkChanges,
 );
 
-const mergedIssueLists = createMergedIssueListAtoms(issueEnvironment, formatEnvironmentQueryError);
+// The atoms keep the failure; hooks word it at render so it follows a language switch.
+const mergedIssueLists = createMergedIssueListAtoms(issueEnvironment, (cause) => cause);
 
 /** One listing read across every environment asked. */
 export function useIssueList(targets: ReadonlyArray<IssueListTarget>) {
   const view = useAtomValue(mergedIssueLists.atom(targets));
+  const messages = useMessages();
   return {
     ...view,
+    error: view.error === null ? null : formatEnvironmentQueryError(view.error, messages),
     refresh: () => mergedIssueLists.refresh(appAtomRegistry, targets, "manual"),
   };
 }
@@ -36,12 +40,17 @@ export function refreshIssueLists(environmentId: EnvironmentId) {
 
 const mergedIssueCandidates = createMergedIssueCandidatesAtoms(
   issueEnvironment.candidates,
-  formatEnvironmentQueryError,
+  (cause) => cause,
 );
 
 /** The labels and people of every scope a list filter covers; no targets reads nothing. */
 export function useIssueFilterCandidates(targets: ReadonlyArray<IssueCandidatesTarget>) {
-  return useAtomValue(mergedIssueCandidates.atom(targets));
+  const view = useAtomValue(mergedIssueCandidates.atom(targets));
+  const messages = useMessages();
+  return {
+    ...view,
+    error: view.error === null ? null : formatEnvironmentQueryError(view.error, messages),
+  };
 }
 
 /** Asks again only the scopes that failed; the ones that answered keep their answer. */

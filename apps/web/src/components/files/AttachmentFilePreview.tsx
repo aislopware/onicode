@@ -1,4 +1,4 @@
-import { thrownErrorMessage } from "@onicode/client-runtime/errors";
+import { thrownErrorMessage, translatableError } from "@onicode/client-runtime/errors";
 import { filePreviewDelimiter } from "@onicode/shared/delimitedPreview";
 import type { AssetResource, EnvironmentId, ScopedThreadRef } from "@onicode/contracts";
 import { formatAttachmentSize } from "@onicode/client-runtime/state/attachments";
@@ -38,6 +38,7 @@ import { cn } from "~/lib/utils";
 
 import { BinaryFilePreview } from "./BinaryFilePreview";
 import { PreviewImage } from "./PreviewImage";
+import { previewError } from "./previewFailureMessages";
 import { AudioPreview } from "./AudioPreview";
 import { BrowserDocumentFrame } from "./BrowserDocumentFrame";
 import { DelimitedTablePreview } from "./DelimitedTablePreview";
@@ -165,8 +166,9 @@ export function AttachmentFilePreview(props: {
   const [rendered, setRendered] = useState(true);
   const [revision, setRevision] = useState(0);
   const [content, setContent] = useState<{ text: string; truncated: boolean } | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [contentError, setContentError] = useState<string | null>(null);
+  // Kept as errors and worded at render, so they follow a language switch.
+  const [error, setError] = useState<Error | null>(null);
+  const [contentError, setContentError] = useState<Error | null>(null);
   const copyContents = useRef<(() => Promise<string>) | null>(null);
   const authorizedAt = useRef(0);
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- creates an object URL for the local file and revokes it on cleanup
@@ -187,13 +189,12 @@ export function AttachmentFilePreview(props: {
     void refresh()
       .then((url) => {
         if (cancelled) return;
-        if (!url) throw new Error(m(msg("Reconnect to the environment and try again.")));
+        if (!url) throw translatableError(msg("Reconnect to the environment and try again."));
         authorizedAt.current = Date.now();
         setRemoteUrl(url);
       })
       .catch((cause: unknown) => {
-        if (!cancelled)
-          setError(thrownErrorMessage(cause, m) ?? m(msg("The attachment is unavailable.")));
+        if (!cancelled) setError(previewError(cause, msg("The attachment is unavailable.")));
       });
     return () => {
       cancelled = true;
@@ -219,7 +220,7 @@ export function AttachmentFilePreview(props: {
       if (!file && Date.now() - authorizedAt.current > STALE_URL_MS) {
         const target = await refresh();
         if (controller.signal.aborted) return;
-        if (!target) throw new Error(m(msg("Reconnect to the environment and try again.")));
+        if (!target) throw translatableError(msg("Reconnect to the environment and try again."));
         authorizedAt.current = Date.now();
         if (target !== url) {
           setRemoteUrl(target);
@@ -239,11 +240,12 @@ export function AttachmentFilePreview(props: {
       if (!controller.signal.aborted) setContent(result);
     })().catch((cause: unknown) => {
       if (!controller.signal.aborted)
-        setContentError(thrownErrorMessage(cause, m) ?? m(msg("Could not load this file.")));
+        setContentError(previewError(cause, msg("Could not load this file.")));
     });
     return () => controller.abort();
   }, [url, needsText, streamsText, revision, props.sizeBytes, props.file, refresh]);
-  const failure = error ?? (needsText ? contentError : null);
+  const failedWith = error ?? (needsText ? contentError : null);
+  const failure = failedWith && thrownErrorMessage(failedWith, messages);
   const defaultWordWrap = useClientSettings((settings) => settings.wordWrap);
   const [wordWrapOverride, setWordWrapOverride] = useState<boolean | null>(null);
   const wordWrap = wordWrapOverride ?? defaultWordWrap;
@@ -376,7 +378,7 @@ export function AttachmentFilePreview(props: {
     <AudioPreview
       src={url}
       name={props.name}
-      onError={() => setError(gt("Unable to load audio."))}
+      onError={() => setError(translatableError(msg("Unable to load audio.")))}
     />
   ) : kind === "video" ? (
     <div className="flex min-h-0 flex-1 items-center justify-center bg-black">
@@ -386,7 +388,7 @@ export function AttachmentFilePreview(props: {
         src={url}
         aria-label={props.name}
         className="max-h-full max-w-full"
-        onError={() => setError(gt("Unable to load video."))}
+        onError={() => setError(translatableError(msg("Unable to load video.")))}
       />
     </div>
   ) : kind === "image" ? (
@@ -395,7 +397,7 @@ export function AttachmentFilePreview(props: {
       src={url}
       name={props.name}
       mimeType={props.mimeType}
-      onError={() => setError(gt("Unable to load image."))}
+      onError={() => setError(translatableError(msg("Unable to load image.")))}
     />
   ) : (
     <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 px-6 text-center">
