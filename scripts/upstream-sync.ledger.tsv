@@ -4775,3 +4775,4 @@ c2257b919c	take	fix(server): task_cancel also cancels the parent's queued follow
 5b6b26d503	take	fix(themes): keep inline SVG data URLs with double quotes in theme CSS
 dc82176c5e	take	fix(web): keep reopened palette open after project creation; merged with Onicode's picked-folder flag; scenario ported to the desktop harness (ControlOrMeta+k)
 f5974546f0	take	fix(web): ODT preview continues list numbers across a break; test uses TestArchive
+6ea7f15422	take	fix(client-runtime): recognize an empty quoted heredoc delimiter in command labels
