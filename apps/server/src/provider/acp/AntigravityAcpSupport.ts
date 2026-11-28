@@ -31,6 +31,7 @@ import {
   type AcpRuntimePolicy,
 } from "@onicode/provider-acp/server/clientPolicy";
 import type { AcpSessionModeState } from "@onicode/provider-acp/server/runtimeModel";
+import { imageMimeTypeFromBytes } from "@onicode/shared/image";
 import {
   ONICODE_MCP_TOOL_NAMES,
   ONICODE_READ_ONLY_MCP_TOOL_NAMES,
@@ -563,7 +564,11 @@ export const buildAntigravityPrompt = Effect.fn("buildAntigravityPrompt")(functi
       );
     }
     if (image) {
-      blocks.push({ type: "image", data: Buffer.from(bytes).toString("base64"), mimeType });
+      blocks.push({
+        type: "image",
+        data: Buffer.from(bytes).toString("base64"),
+        mimeType: imageMimeTypeFromBytes(bytes) ?? mimeType,
+      });
     } else if (audio) {
       blocks.push({ type: "audio", data: Buffer.from(bytes).toString("base64"), mimeType });
     } else {

@@ -25,6 +25,7 @@ import {
   parseClaudeWorkflowRunHandles,
 } from "./claudeWorkflowProgress.ts";
 
+import { imageMimeTypeFromBytes } from "@onicode/shared/image";
 import { isWorkspaceImagePreviewPath } from "@onicode/shared/filePreview";
 import { backgroundWorkTextPreview } from "@onicode/shared/orchestrationV2PendingBackgroundWork";
 import { pastedUrl } from "@onicode/shared/oauthCallback";
@@ -3892,11 +3893,15 @@ const makeClaudeUserMessageWithAttachments = Effect.fnUntraced(function* (input:
     if (retainedBytes > input.pdfReservation.budget.remainingBytes) continue;
     input.pdfReservation.budget.pending.bytes += retainedBytes;
     input.pdfReservation.bytes += retainedBytes;
+    const sniffedMimeType = imageMimeTypeFromBytes(bytes);
     const block: ClaudeUserContentBlock = {
       type: "image",
       source: {
         type: "base64",
-        media_type: attachment.mimeType,
+        media_type:
+          sniffedMimeType !== null && isSupportedClaudeImageMimeType(sniffedMimeType)
+            ? sniffedMimeType
+            : attachment.mimeType,
         data: Buffer.from(bytes).toString("base64"),
       },
     };

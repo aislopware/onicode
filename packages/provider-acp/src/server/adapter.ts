@@ -38,6 +38,7 @@ import {
   parseGoalCommand,
   type TurnTokenUsage,
 } from "@onicode/contracts";
+import { imageMimeTypeFromBytes } from "@onicode/shared/image";
 import { AgentScope, AgentScopeThreadId } from "@onicode/shared/AgentScope";
 import { parseGrepOutput } from "@onicode/shared/grepOutput";
 import * as HostProcess from "@onicode/shared/HostProcess";
@@ -10972,7 +10973,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             blocks.push({
               type: "image",
               data: Buffer.from(bytes).toString("base64"),
-              mimeType: attachment.mimeType,
+              mimeType: imageMimeTypeFromBytes(bytes) ?? attachment.mimeType,
             });
           }
           return blocks;

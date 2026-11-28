@@ -9,6 +9,7 @@ import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import { type ClaudeSettings, TextGenerationError } from "@onicode/contracts";
+import { imageMimeTypeFromBytes } from "@onicode/shared/image";
 import { resolveSpawnCommand } from "@onicode/shared/shell";
 import { deepMerge } from "@onicode/shared/Struct";
 
@@ -241,7 +242,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
         type: "image",
         source: {
           type: "base64",
-          media_type: attachment.mimeType,
+          media_type: imageMimeTypeFromBytes(bytes) ?? attachment.mimeType,
           data: Buffer.from(bytes).toString("base64"),
         },
       });

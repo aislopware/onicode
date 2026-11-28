@@ -232,6 +232,7 @@ const makeOpenCodeRuntimeHarness = Effect.fn("makeOpenCodeRuntimeHarness")(funct
       compatibility: () => Effect.undefined,
       ...host,
     } as unknown as ProviderHost.ProviderHost["Service"]),
+    Effect.provide(NodeServices.layer),
   );
   const runtime = yield* adapter.openSession({
     threadId,
@@ -511,6 +512,7 @@ describe("OpenCodeAdapterV2", () => {
             resolveAttachmentPath: () => null,
             compatibility: () => Effect.undefined,
           } as unknown as ProviderHost.ProviderHost["Service"]),
+          Effect.provide(NodeServices.layer),
         );
         yield* adapter.openSession({
           threadId,
@@ -4088,6 +4090,7 @@ describe("OpenCodeAdapterV2", () => {
           resolveAttachmentPath: () => null,
           compatibility: () => Effect.undefined,
         } as unknown as ProviderHost.ProviderHost["Service"]),
+        Effect.provide(NodeServices.layer),
       );
       const threadId = ThreadId.make("thread-opencode-admission-race");
       const providerSessionId = ProviderSessionId.make("session-opencode-admission-race");
@@ -4734,6 +4737,7 @@ describe("OpenCodeAdapterV2", () => {
           resolveAttachmentPath: () => null,
           compatibility: () => Effect.undefined,
         } as unknown as ProviderHost.ProviderHost["Service"]),
+        Effect.provide(NodeServices.layer),
       );
       const threadId = ThreadId.make("thread-opencode-initial-stop");
       const providerSessionId = ProviderSessionId.make("session-opencode-initial-stop");
@@ -5286,6 +5290,7 @@ describe("OpenCodeAdapterV2", () => {
         Layer.mergeAll(
           IdAllocator.layer,
           McpProviderSessions.layer,
+          NodeServices.layer,
           TestProviderHost.layer().pipe(Layer.provide(NodeServices.layer)),
         ),
       ),

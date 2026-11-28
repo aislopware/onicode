@@ -1,3 +1,4 @@
+import { imageMimeTypeFromBytes } from "@onicode/shared/image";
 import * as HostProcess from "@onicode/shared/HostProcess";
 import * as NodeUtil from "node:util";
 import { AgentScope } from "@onicode/shared/AgentScope";
@@ -3430,7 +3431,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
             images.push({
               type: "image",
               data: Buffer.from(bytes).toString("base64"),
-              mimeType: attachment.mimeType,
+              mimeType: imageMimeTypeFromBytes(bytes) ?? attachment.mimeType,
             });
           }
         }
