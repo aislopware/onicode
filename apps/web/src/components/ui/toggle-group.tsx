@@ -45,6 +45,7 @@ function ToggleGroup({
               : "flex-col *:not-first:rounded-t-none *:not-last:rounded-b-none *:not-first:border-t-0",
         className,
       )}
+      data-segmented={sliding || undefined}
       data-size={size}
       data-slot="toggle-group"
       data-variant={variant}
@@ -58,8 +59,12 @@ function ToggleGroup({
   );
 }
 
-/** The selected surface of a segmented group: one element that slides to the pressed item. */
-function SegmentedIndicator() {
+/**
+ * The selected surface of a segmented group: one element that slides to the selected item. Place
+ * it last in a `relative isolate` track marked `data-segmented`; `selected` finds the item (radio groups mark theirs
+ * `data-checked`).
+ */
+function SegmentedIndicator({ selected = "data-pressed" }: { selected?: string }) {
   const ref = React.useRef<HTMLSpanElement>(null);
 
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- the pressed item's box is known only from layout
@@ -68,7 +73,7 @@ function SegmentedIndicator() {
     const group = indicator?.parentElement;
     if (!indicator || !group) return;
     const place = () => {
-      const pressed = group.querySelector<HTMLElement>("[data-pressed]");
+      const pressed = group.querySelector<HTMLElement>(`[${selected}]`);
       indicator.hidden = pressed === null;
       if (pressed === null) return;
       const from = group.getBoundingClientRect();
@@ -90,7 +95,7 @@ function SegmentedIndicator() {
     indicator.dataset.placed = "";
     const pressedChanges = new MutationObserver(place);
     pressedChanges.observe(group, {
-      attributeFilter: ["data-pressed"],
+      attributeFilter: [selected],
       attributes: true,
       characterData: true,
       childList: true,
@@ -101,12 +106,12 @@ function SegmentedIndicator() {
       pressedChanges.disconnect();
       stopObservingSize();
     };
-  }, []);
+  }, [selected]);
 
   return (
     <span
       aria-hidden
-      className="pointer-events-none absolute top-0 left-0 -z-1 h-(--pressed-height) w-(--pressed-width) translate-x-(--pressed-left) translate-y-(--pressed-top) rounded-(--control-radius) border border-transparent bg-card shadow-raised transition-[translate,width,height] duration-200 ease-out-quint not-data-placed:transition-none motion-reduce:transition-none in-[[data-slot=toggle-group]:has(:focus-visible)]:transition-none dark:bg-white/8"
+      className="pointer-events-none absolute top-0 left-0 -z-1 h-(--pressed-height) w-(--pressed-width) translate-x-(--pressed-left) translate-y-(--pressed-top) rounded-(--control-radius) border border-transparent bg-card shadow-raised transition-[translate,width,height] duration-200 ease-out-quint not-data-placed:transition-none motion-reduce:transition-none in-[[data-segmented]:has(:focus-visible)]:transition-none dark:bg-white/8"
       data-slot="toggle-group-indicator"
       ref={ref}
     />
@@ -145,4 +150,4 @@ function Toggle({
   );
 }
 
-export { ToggleGroup, Toggle, Toggle as ToggleGroupItem };
+export { ToggleGroup, Toggle, Toggle as ToggleGroupItem, SegmentedIndicator };

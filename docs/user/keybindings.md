@@ -47,14 +47,14 @@ Both are unbound by default. Increase wraps from the highest level to the
 lowest, and decrease wraps from the lowest level to the highest.
 
 The model picker lists your favorites first, then the models you picked recently on this
-device, then every provider. Type to search them all.
+device, then every provider. The column on its left shows one provider's models at a time;
+All brings back the whole list. Typing searches every provider, whichever is chosen.
 
 In the model picker, Up/Down move through the models and Enter chooses one. The
 chosen model's effort levels and options sit next to the list: Right at the end of the
 search moves to them, and Up comes back. Choosing a model keeps the picker open on its
-effort. `mod+shift+up` and `mod+shift+down` move to the previous or next provider and
-clear the search; from the short list, the first press opens every provider. These provider
-shortcuts can also be changed in Settings.
+effort. `mod+shift+up` and `mod+shift+down` move to the previous or next provider in that
+column and clear the search. These provider shortcuts can also be changed in Settings.
 
 These shortcuts run inside the focused desktop app window. `mod` uses Command
 on macOS and Ctrl on Windows and Linux, including GNOME, KDE Plasma, Niri, and

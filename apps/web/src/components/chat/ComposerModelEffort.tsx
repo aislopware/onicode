@@ -26,6 +26,7 @@ import {
   useTraitsSelection,
 } from "./TraitsPicker";
 import { SharedTooltipTrigger } from "../ui/shared-tooltip";
+import { SegmentedIndicator } from "../ui/toggle-group";
 
 type SelectDescriptor = Extract<ProviderOptionDescriptor, { type: "select" }>;
 type BooleanDescriptor = Extract<ProviderOptionDescriptor, { type: "boolean" }>;
@@ -182,9 +183,10 @@ const OPTION_ROW =
 const COLUMN_LABEL = "px-2 pt-1.5 pb-1 font-medium text-muted-foreground text-xs";
 
 /** The track a group of segments sits in; the picker's footer uses the same one. */
-const SEGMENT_TRACK = "flex rounded-lg bg-input/40 p-0.5";
+const SEGMENT_TRACK =
+  "relative isolate flex gap-0.5 rounded-lg bg-secondary p-0.5 dark:bg-white/4.5";
 const SEGMENT =
-  "flex h-6 cursor-pointer items-center justify-center gap-1 rounded-md px-2 text-muted-foreground text-xs outline-none hover:text-foreground data-checked:bg-input/72 data-checked:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset disabled:cursor-not-allowed disabled:opacity-55";
+  "flex h-6 cursor-pointer items-center justify-center gap-1 rounded-md px-2 text-muted-foreground text-xs outline-none hover:text-foreground data-checked:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset disabled:cursor-not-allowed disabled:opacity-55";
 
 function LevelSegment(props: {
   label: string;
@@ -552,7 +554,7 @@ function EffortRows(props: { control: ColumnControl; traits: TraitsSelection; lo
   const { descriptor } = control;
   if (control.kind === "boolean") {
     return (
-      <div role="radiogroup" aria-label={descriptor.label} className={SEGMENT_TRACK}>
+      <div role="radiogroup" data-segmented aria-label={descriptor.label} className={SEGMENT_TRACK}>
         {([true, false] as const).map((value) => (
           <LevelSegment
             key={String(value)}
@@ -566,6 +568,7 @@ function EffortRows(props: { control: ColumnControl; traits: TraitsSelection; lo
             onPick={() => traits.changeBoolean(descriptor.id, value)}
           />
         ))}
+        <SegmentedIndicator selected="data-checked" />
       </div>
     );
   }
@@ -583,6 +586,7 @@ function EffortRows(props: { control: ColumnControl; traits: TraitsSelection; lo
       ) : null}
       <div
         role="radiogroup"
+        data-segmented
         aria-label={descriptor.label}
         className={cn(SEGMENT_TRACK, "flex-wrap")}
       >
@@ -598,6 +602,7 @@ function EffortRows(props: { control: ColumnControl; traits: TraitsSelection; lo
             onPick={() => traits.changeSelect(control.descriptor, option.id)}
           />
         ))}
+        <SegmentedIndicator selected="data-checked" />
       </div>
     </>
   );
@@ -627,6 +632,7 @@ function OptionChoicesRow(props: {
       ) : (
         <div
           role="radiogroup"
+          data-segmented
           aria-label={descriptor.label}
           className={cn(SEGMENT_TRACK, "max-w-full grow flex-wrap")}
         >
@@ -644,6 +650,7 @@ function OptionChoicesRow(props: {
               }}
             />
           ))}
+          <SegmentedIndicator selected="data-checked" />
         </div>
       )}
     </div>
@@ -707,6 +714,7 @@ export function ComposerPickerFooter(props: {
       </span>
       <div
         role="radiogroup"
+        data-segmented
         aria-label={gt("Permissions")}
         data-composer-permissions
         className={SEGMENT_TRACK}
@@ -762,6 +770,7 @@ export function ComposerPickerFooter(props: {
             </SharedTooltipTrigger>
           );
         })}
+        <SegmentedIndicator selected="data-checked" />
       </div>
       {options.map((option) => (
         <span key={option.mode} id={`${descriptionId}-${option.mode}`} className="sr-only">
