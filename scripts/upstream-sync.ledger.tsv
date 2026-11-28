@@ -4988,3 +4988,4 @@ d5b30c6b3a	take	scenario ported to the desktop target (onicode fixture)
 3d1c1778aa	take	taken as is
 533c3ef609	take	taken as is
 9d1f3629b7	take	import conflict; Onicode-only OpenCode stdio-MCP test now provides FileSystem the adapter needs
+a9b301f927	take	taken as is
