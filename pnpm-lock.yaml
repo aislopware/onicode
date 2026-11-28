@@ -362,7 +362,7 @@ packageExtensionsChecksum: sha256-+v8ntounVLrYFu5whiqOiF5wsCM8sIM8cT3HaXVONag=
 pnpmfileChecksum: sha256-V4l4scZuq2tJGzv9CIPYF0cGBGNRBI8wBVBZg42BsCM=
 
 patchedDependencies:
-  '@cursor/sdk@1.5.2': 0d4a0be1e981e950963d8322c6320e227fa32981db069a59b84959df0ff16abc
+  '@cursor/sdk@1.5.2': 38c103d5c83bd2276fa1b8788747df0b9aedb5ae0006aeb5bc351cd4cd32f95a
   '@e2e-dev/mobile@0.12.9': c40d4ab0cc2917388badb005d86e3c62570d6450ffedb66d8ceb8a51de2ca5b0
   '@e2e-dev/web@0.17.0': d4a718e516e19ad4db63cddd1e97439910bb260100dcde5de6213ecf75bc5b6b
   '@effect/platform-node-shared@4.1.7': c1e465e4b1faca5839831624bd0705c7dd346412f06279c656aeefb5c3b3080d
@@ -819,7 +819,7 @@ importers:
         version: 0.3.332(@anthropic-ai/sdk@1.12.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.32.2(supports-color@10.2.2)(zod@4.6.7))(zod@4.6.7)
       '@cursor/sdk':
         specifier: 1.5.2
-        version: 1.5.2(patch_hash=0d4a0be1e981e950963d8322c6320e227fa32981db069a59b84959df0ff16abc)(zod@4.6.7)
+        version: 1.5.2(patch_hash=38c103d5c83bd2276fa1b8788747df0b9aedb5ae0006aeb5bc351cd4cd32f95a)(zod@4.6.7)
       '@effect/platform-node':
         specifier: 4.1.7
         version: 4.1.7(effect@4.1.7(patch_hash=eca58993801b2681500afba78da973110d0d6311df77564258edc4bf8a46544c))(redis@6.4.0(@opentelemetry/api@1.10.0))
@@ -1740,7 +1740,7 @@ importers:
     dependencies:
       '@cursor/sdk':
         specifier: 1.5.2
-        version: 1.5.2(patch_hash=0d4a0be1e981e950963d8322c6320e227fa32981db069a59b84959df0ff16abc)(zod@4.6.7)
+        version: 1.5.2(patch_hash=38c103d5c83bd2276fa1b8788747df0b9aedb5ae0006aeb5bc351cd4cd32f95a)(zod@4.6.7)
       '@onicode/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -12813,7 +12813,7 @@ snapshots:
   '@cursor/sdk-win32-x64@1.5.2':
     optional: true
 
-  '@cursor/sdk@1.5.2(patch_hash=0d4a0be1e981e950963d8322c6320e227fa32981db069a59b84959df0ff16abc)(zod@4.6.7)':
+  '@cursor/sdk@1.5.2(patch_hash=38c103d5c83bd2276fa1b8788747df0b9aedb5ae0006aeb5bc351cd4cd32f95a)(zod@4.6.7)':
     dependencies:
       '@statsig/js-client': 3.31.0
       zod: 4.6.7
