@@ -15,6 +15,7 @@ const UPSTREAM = "upstream/main";
 // The rebrand's own rules, so upstream text lines up with ours. Protected spans stay verbatim.
 const PROTECT =
   /[Tt]3[ _-]?[Cc]onnect|T3CONNECT|T3_CONNECT|[Tt]3[ _.-]?[Cc]hat|T3CHAT|T3_CHAT|pingdotgg\/t3code|-t3\.\d+|t3\.codes|T3 Tools Inc\.?/g;
+const unescaped = (source: string) => new RegExp(String.raw`(?<!(?<!\\)\\(?:\\\\)*)` + source, "g");
 const RULES: ReadonlyArray<readonly [RegExp, string]> = [
   [/(?<![\w.])com\.t3tools\.t3code/g, "dev.aislopware.onicode"],
   [/(?<![\w.])com\/t3tools\/t3code/g, "dev/aislopware/onicode"],
@@ -39,13 +40,13 @@ const RULES: ReadonlyArray<readonly [RegExp, string]> = [
   [/(?<=[a-z])T3(?=[A-Z]|\b)/g, "Oni"],
   [/\bT3(?=[A-Z][a-z])/g, "Oni"],
   [/\bT3(?=[A-Z])/g, "ONI"],
-  [/\bt3(?=[A-Z])/g, "oni"],
+  // An odd run of backslashes before it makes the t an escape, as in `\t3`.
+  [unescaped(String.raw`\bt3(?=[A-Z])`), "oni"],
   [/(?<=\\[nrt])t3(?=[A-Z])/g, "oni"],
-  [/(?<!\\)\bt3(?=[a-z])/g, "oni"],
-  [/(?<!\\)\bt3_/g, "oni_"],
-  [/(?<!\\)\bt3-/g, "oni-"],
-  // A backslash before it makes the t an escape, as in `\t3`.
-  [/(?<!\\)\bt3\b/g, "onicode"],
+  [unescaped(String.raw`\bt3(?=[a-z])`), "oni"],
+  [unescaped(String.raw`\bt3_`), "oni_"],
+  [unescaped(String.raw`\bt3-`), "oni-"],
+  [unescaped(String.raw`\bt3\b`), "onicode"],
   [/\bT3\b/g, "Onicode"],
 ];
 const REPO_RULES: ReadonlyArray<readonly [RegExp, string]> = [
