@@ -3268,6 +3268,7 @@
   "56bd23d35d50c1b5": "Old and new files have no newline at end of file.",
   "b486894b9edcec6f": "New file has no newline at end of file.",
   "b5103cf5b997ec12": "Old file has no newline at end of file.",
+  "15e5597f8f93ce12": "{start} to {end}",
   "2c7645e1de3fe206": "Review",
   "00f180d4af508b45": "Staged, unstaged, and untracked files",
   "b816058fba61e4d6": "Turn {count}",

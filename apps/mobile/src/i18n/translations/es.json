@@ -3261,6 +3261,7 @@
   "56bd23d35d50c1b5": "Los archivos antiguo y nuevo no tienen salto de línea al final.",
   "b486894b9edcec6f": "El archivo nuevo no tiene salto de línea al final.",
   "b5103cf5b997ec12": "El archivo antiguo no tiene salto de línea al final.",
+  "15e5597f8f93ce12": "{start} a {end}",
   "2c7645e1de3fe206": "Revisión",
   "00f180d4af508b45": "Archivos preparados, sin preparar y sin seguimiento",
   "b816058fba61e4d6": "Turno {count}",
