@@ -4963,7 +4963,7 @@ fd967044a8	take	taken as is
 39d0e0f6f9	take	taken as is
 abbca876d4	take	adopted upstream's destination scanner over Onicode's regex; kept Onicode's stray-bracket guard (labels holding [ stay prose)
 a13e801af7	take	taken as is
-d824084f76	take	taken as is
+d824084f76	take	test reads Onicode's TestArchive instead of JSZip (follow-up c8bfb33cc1)
 e5168b099d	take	taken as is
 28972b0dbc	take	taken as is
 2547fb284f	take	taken as is
