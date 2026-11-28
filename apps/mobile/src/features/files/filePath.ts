@@ -3,7 +3,6 @@ import { filePreviewDelimiter } from "@onicode/shared/delimitedPreview";
 import { joinPath, resolvePathLinkTarget } from "@onicode/shared/fileLinks";
 import {
   isWorkspaceAudioPreviewPath,
-  isWorkspaceImagePreviewPath,
   isWorkspaceVideoPreviewPath,
 } from "@onicode/shared/filePreview";
 
@@ -127,23 +126,15 @@ export function isZipPreviewFile(path: string): boolean {
   return /\.zip$/i.test(path);
 }
 
-/**
- * Images reload after a workspace change, as on web. Audio and video keep their URL: servers
- * without file revisions mint a new one per change, which would restart playback.
- */
-export function tracksWorkspaceMutations(path: string): boolean {
-  return isWorkspaceImagePreviewPath(path) && !isVideoPreviewFile(path);
-}
-
 export function workspacePreviewUri(
   url: string,
-  input: { readonly retry: number; readonly mutationId: string | null },
+  input: { readonly retry: number; readonly fileVersion: string | null },
 ): string {
   const params = [
     ...(input.retry === 0 ? [] : [`revision=${input.retry}`]),
-    ...(input.mutationId === null
+    ...(input.fileVersion === null
       ? []
-      : [`workspace-revision=${encodeURIComponent(input.mutationId)}`]),
+      : [`workspace-revision=${encodeURIComponent(input.fileVersion)}`]),
   ];
   return params.length === 0 ? url : `${url}${url.includes("?") ? "&" : "?"}${params.join("&")}`;
 }

@@ -42,6 +42,7 @@ import { SettingsSection } from "../settings/components/SettingsSection";
 import { Button } from "../../components/ui/Button";
 import { Sheet } from "../../components/ui/Sheet";
 import { RUNTIME_MODE_CHOICES } from "./thread-settings-options";
+import { LabeledConnectionField } from "../connection/ConnectionFormField";
 
 /** The same five levels as web's access picker: read-only, then the runtime modes. */
 export const LINK_ACCESS_CHOICES: ReadonlyArray<{
@@ -377,17 +378,19 @@ function LinkRequestSheet(props: {
         ) : null}
         {needsAddress && item.url === undefined ? (
           <View className="gap-2">
-            <TextInput
-              accessibilityLabel={gt("Address")}
-              placeholder="https://machine.tailnet.ts.net"
-              value={address}
-              onChangeText={setAddress}
-              editable={!busy}
-              autoCorrect={false}
-              autoCapitalize="none"
-              keyboardType="url"
-              spellCheck={false}
-            />
+            <LabeledConnectionField label={gt("Address")}>
+              <TextInput
+                accessibilityLabel={gt("Address")}
+                placeholder="https://machine.tailnet.ts.net"
+                value={address}
+                onChangeText={setAddress}
+                editable={!busy}
+                autoCorrect={false}
+                autoCapitalize="none"
+                keyboardType="url"
+                spellCheck={false}
+              />
+            </LabeledConnectionField>
             {target.kind === "machine" ? (
               <Text className="font-sans text-xs text-foreground-muted">
                 <T>
@@ -409,18 +412,20 @@ function LinkRequestSheet(props: {
           <>
             {canMint ? null : (
               <View className="gap-2">
-                <TextInput
-                  accessibilityLabel={gt("Pairing code")}
-                  placeholder={gt("Paste the code")}
-                  value={pairingCode}
-                  onChangeText={setPairingCode}
-                  editable={!busy}
-                  autoCorrect={false}
-                  autoCapitalize="none"
-                  autoComplete="one-time-code"
-                  textContentType="oneTimeCode"
-                  spellCheck={false}
-                />
+                <LabeledConnectionField label={gt("Pairing code")}>
+                  <TextInput
+                    accessibilityLabel={gt("Pairing code")}
+                    placeholder={gt("Paste the code")}
+                    value={pairingCode}
+                    onChangeText={setPairingCode}
+                    editable={!busy}
+                    autoCorrect={false}
+                    autoCapitalize="none"
+                    autoComplete="one-time-code"
+                    textContentType="oneTimeCode"
+                    spellCheck={false}
+                  />
+                </LabeledConnectionField>
                 <Text className="font-sans text-xs text-foreground-muted">
                   {targetName === null ? (
                     <T>

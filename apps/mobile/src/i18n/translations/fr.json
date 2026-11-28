@@ -1088,6 +1088,8 @@
   "d6f6b0c536401f97": "Modèle d’image",
   "1def3827b7403ac6": "Modèle d’e-mail",
   "9ed38458996c973a": "Modèle Slack",
+  "1e111f8f1aefd524": "Ce fichier contient des données binaires et ne peut pas être affiché comme du texte.",
+  "e7881b28c1acad7d": "Ce fichier n’est pas du texte UTF-8. Ouvrez-le dans une autre app pour voir son contenu.",
   "615ce9f2edf7208f": "Associer une pull request",
   "4ece383dad280e57": "Associer des pull requests",
   "6c221cecc3a34d8e": "Dissocier une pull request",
@@ -4710,7 +4712,7 @@
   "51e507aa054ee63b": "Enregistrer de façon sécurisée",
   "4ba3eff83827c2d4": "Refuser",
   "4b46098670d70460": [
-    "Mène à",
+    "Destiné à",
     " ",
     {
       "i": 1,
@@ -4727,7 +4729,7 @@
     }
   ],
   "cf39d1301df07f46": [
-    "Mène à",
+    "Destiné à",
     " ",
     {
       "i": 1,

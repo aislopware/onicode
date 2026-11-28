@@ -196,9 +196,15 @@ describe("attachment preview classification", () => {
   ])("classifies %s (%s) as %s", (name, mimeType, expected) => {
     expect(filePreviewKind({ name, mimeType })).toBe(expected);
   });
-  it("rejects binary and invalid UTF-8 data", () => {
-    expect(() => decodeFilePreviewText(new Uint8Array([65, 0, 66]))).toThrow("binary");
-    expect(() => decodeFilePreviewText(new Uint8Array([255]))).toThrow("UTF-8");
+  it.each([
+    [[65, 0, 66], "binary"],
+    [[255], "UTF-8"],
+  ])("rejects %j as %s with a translatable reason", (bytes, reason) => {
+    const decode = () => decodeFilePreviewText(new Uint8Array(bytes));
+    expect(decode).toThrow(reason);
+    expect(decode).toThrow(
+      expect.objectContaining({ i18nMessage: [expect.stringContaining(reason)] }),
+    );
   });
   it("decodes a GBK source file instead of rejecting it", () => {
     const gbk = new Uint8Array([

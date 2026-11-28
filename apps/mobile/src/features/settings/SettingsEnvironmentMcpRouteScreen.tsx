@@ -62,6 +62,7 @@ import { useEnvironmentQuery } from "../../state/query";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { SettingsSection } from "./components/SettingsSection";
 import { usePublicAccessWriter } from "./PublicAccessSection";
+import { LabeledConnectionField } from "../connection/ConnectionFormField";
 
 const DEVICE_APPS = [
   { name: "Claude Code", commands: claudeCodeCommands },
@@ -451,16 +452,18 @@ function AgentToken({
     >
       {token === null ? (
         <View className="gap-3 p-4">
-          <AppTextInput
-            accessibilityLabel={gt("Token name")}
-            placeholder={gt("Name, such as Nightly triage")}
-            className="min-h-11 rounded-xl border-continuous bg-card px-3 text-base text-foreground"
-            value={name}
-            onChangeText={setName}
-            onSubmitEditing={() => void create()}
-            returnKeyType="done"
-            editable={!pending}
-          />
+          <LabeledConnectionField label={gt("Token name")}>
+            <AppTextInput
+              accessibilityLabel={gt("Token name")}
+              placeholder={gt("Name, such as Nightly triage")}
+              className="min-h-11 rounded-xl border-continuous bg-card px-3 text-base text-foreground"
+              value={name}
+              onChangeText={setName}
+              onSubmitEditing={() => void create()}
+              returnKeyType="done"
+              editable={!pending}
+            />
+          </LabeledConnectionField>
           <Button
             label={pending ? gt("Creating…") : gt("Create token")}
             tone="secondary"

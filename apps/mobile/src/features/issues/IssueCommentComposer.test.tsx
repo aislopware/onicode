@@ -1,7 +1,7 @@
 import type { IssueCommentAudience } from "@onicode/contracts";
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import { expect, it, vi } from "vite-plus/test";
+import { expect, it, onTestFinished, vi } from "vite-plus/test";
 
 const state = vi.hoisted(() => ({
   type: null as ((text: string) => void) | null,
@@ -78,21 +78,32 @@ vi.mock("../voice-input/voiceInputPresentation", () => ({
 
 import { IssueCommentComposer } from "./IssueCommentComposer";
 
+function setup() {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  state.type = null;
+  state.send = null;
+  state.pickAudience = null;
+  const root = createRoot(document.createElement("div"));
+  onTestFinished(() => {
+    act(() => root.unmount());
+    vi.unstubAllGlobals();
+  });
+  return root;
+}
+
 it.each([
   { typedDuringSend: false, nextAudience: "internal" },
   { typedDuringSend: true, nextAudience: "public" },
 ])(
   "starts the next comment internal after a customer reply, unless text was typed during the send ($typedDuringSend)",
   async ({ typedDuringSend, nextAudience }) => {
-    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const root = setup();
     const sent: Array<IssueCommentAudience | undefined> = [];
     let posted = Promise.withResolvers<boolean>();
     const onSubmit = (_body: string, audience?: IssueCommentAudience) => {
       sent.push(audience);
       return posted.promise;
     };
-    const root = createRoot(document.createElement("div"));
-    using _root = { [Symbol.dispose]: () => act(() => root.unmount()) };
     act(() => {
       root.render(
         <IssueCommentComposer
@@ -121,5 +132,6 @@ it.each([
     if (!typedDuringSend) act(() => state.type!("Next"));
     await act(async () => state.send!());
     expect(sent).toEqual(["public", nextAudience]);
+    await act(async () => posted.resolve(false));
   },
 );

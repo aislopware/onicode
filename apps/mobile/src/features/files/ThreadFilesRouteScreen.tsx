@@ -21,7 +21,6 @@ import {
   ThreadId,
 } from "@onicode/contracts";
 import { clampFileAttachmentUploadBytes } from "@onicode/client-runtime/state/attachments";
-import * as Option from "effect/Option";
 import { AsyncResult } from "effect/reactivity";
 import { errorDisplayMessage } from "@onicode/client-runtime/errors";
 import { scopeThreadRef } from "@onicode/client-runtime/environment";
@@ -71,6 +70,7 @@ import { ThreadRouteScreen } from "../threads/ThreadRouteScreen";
 import { FilePreviewLoading, FilePreviewNotice } from "./FilePreviewFeedback";
 import { FileMarkdownPreview } from "./FileMarkdownPreview";
 import { FileTreeBrowser } from "./FileTreeBrowser";
+import { binaryFileFailure } from "./binaryFileFailure";
 import { useFileTreeEntries } from "./useFileTreeEntries";
 import { preloadWorkspaceFileContents } from "./preload-workspace-file";
 import { SourceFileSurface } from "./SourceFileSurface";
@@ -156,9 +156,8 @@ function FileHeader(props: {
   readonly title: string;
   readonly subtitle: string;
   readonly activeMode: string;
-  readonly fileInspectorSupported: boolean;
+  readonly chrome: ReturnType<typeof useFileHeaderChrome>;
   readonly onBack: () => void;
-  readonly onReturnToThread: () => void;
   readonly actions: ReadonlyArray<{
     readonly id: string;
     readonly title: string;
@@ -169,7 +168,7 @@ function FileHeader(props: {
   }>;
 }) {
   const gt = useGT();
-  const chrome = useFileHeaderChrome(props.fileInspectorSupported, props.onReturnToThread);
+  const { chrome } = props;
   const modes = props.actions.filter(({ inline }) => inline);
   return (
     <AppBar
@@ -281,9 +280,14 @@ function FileContent(props: {
   readonly fileContents: string | null;
   readonly fileError: string | null;
   /** Why a file the server would not read as text could not be decoded here either. */
-  readonly binaryError: string | null;
+  readonly binaryError: {
+    readonly message: string;
+    readonly canOpenInViewer: boolean;
+    readonly canRetry: boolean;
+  } | null;
   readonly onSave: () => void;
   readonly saving: boolean;
+  readonly saveDisabled: boolean;
   readonly onOpenInViewer: () => void;
   readonly relativePath: string;
   readonly threadId: ThreadId | null;
@@ -363,16 +367,26 @@ function FileContent(props: {
         <EmptyState
           variant="plain"
           title={gt("No preview for this file")}
-          detail={props.binaryError}
+          detail={props.binaryError.message}
           action={
             <View className="flex-row flex-wrap justify-center gap-3">
+              {props.binaryError.canRetry && props.onRefresh ? (
+                <Button
+                  tone="primary"
+                  label={gt("Try again")}
+                  onPress={() => void props.onRefresh?.()}
+                />
+              ) : null}
               <Button
-                tone="primary"
+                tone={props.binaryError.canRetry ? "secondary" : "primary"}
                 label={gt("Save or share")}
                 loading={props.saving}
+                disabled={props.saveDisabled}
                 onPress={props.onSave}
               />
-              <Button label={gt("Open in file viewer")} onPress={props.onOpenInViewer} />
+              {props.binaryError.canOpenInViewer ? (
+                <Button label={gt("Open in file viewer")} onPress={props.onOpenInViewer} />
+              ) : null}
             </View>
           }
         />
@@ -830,7 +844,11 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
       : { _tag: "draft-workspace-file", cwd, path: relativePath, disposition: "attachment" };
   }, [targetPath, relativePath, threadId, cwd]);
   const decodedTextResource = needsDecodedText ? downloadResource : null;
-  const decodedTextUrlResult = useFreshAssetUrl(environmentId, decodedTextResource, 0);
+  const decodedTextUrlResult = useFreshAssetUrl(
+    environmentId,
+    decodedTextResource,
+    fileRefreshCount,
+  );
   const decodedTextUrl =
     AsyncResult.isSuccess(decodedTextUrlResult) && !decodedTextUrlResult.waiting
       ? decodedTextUrlResult.value
@@ -853,16 +871,18 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
     decodedText === null &&
     !AsyncResult.isFailure(decodedTextResult) &&
     !AsyncResult.isFailure(decodedTextUrlResult);
-  // Either the download URL or the download itself can fail; both leave only Save to offer.
-  const binaryFailure: { readonly cause: unknown } | null = AsyncResult.isFailure(decodedTextResult)
-    ? { cause: Option.getOrNull(AsyncResult.error(decodedTextResult)) }
-    : AsyncResult.isFailure(decodedTextUrlResult)
-      ? { cause: Option.getOrNull(AsyncResult.error(decodedTextUrlResult)) }
-      : null;
+  const binaryFailure = needsDecodedText
+    ? binaryFileFailure(decodedTextUrlResult, decodedTextResult)
+    : null;
   const binaryError =
-    needsDecodedText && binaryFailure !== null
-      ? (errorDisplayMessage(binaryFailure.cause, messages) ?? gt("Could not read this file."))
-      : null;
+    binaryFailure === null
+      ? null
+      : {
+          message:
+            errorDisplayMessage(binaryFailure.cause, messages) ?? gt("Could not read this file."),
+          canOpenInViewer: binaryFailure.canOpenInViewer,
+          canRetry: binaryFailure.canRetry,
+        };
   // Until the full text arrives, the 1 MB preview shows with its partial-file notice.
   const fileContents = fullText ?? fileData?.contents ?? decodedText?.text ?? null;
   const fileTruncated =
@@ -929,13 +949,13 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
           actionsSource: mediaSource,
         }
       : null;
-  // A rewritten image keeps its URL on servers that report file revisions; the suffix reloads it.
+  // The file revision changes only when the file does; without one, any workspace change reloads.
   const previewUri =
-    assetPreviewUri === null
+    assetPreview._tag !== "Success"
       ? null
-      : workspacePreviewUri(assetPreviewUri, {
+      : workspacePreviewUri(assetPreview.url, {
           retry: previewRevision,
-          mutationId: assetPreview.workspaceMutationId ?? null,
+          fileVersion: assetPreview.fileRevision ?? assetPreview.workspaceMutationId ?? null,
         });
   // Remounting the preview after a re-mint is what makes a failed asset URL retryable.
   const handleRetryPreview = () => {
@@ -1137,10 +1157,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
             title: gt("Refresh", { $context: "verb, reloads the file" }),
             icon: "arrow.clockwise",
             inline: false,
-            onPress: async () => {
-              if (isVideoFile || isAudioFile) await assetPreview.refresh();
-              setPreviewRevision((current) => current + 1);
-            },
+            onPress: handleRetryPreview,
           } as const)
         : null,
     ].filter((action) => action !== null);
@@ -1262,6 +1279,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
             ? clampFileAttachmentUploadBytes(capabilities.fileAttachments.maxUploadBytes)
             : undefined
         }
+        saving={mediaActions.sharing}
         onSave={mediaActions.share}
         onRemove={null}
       />,
@@ -1274,9 +1292,8 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
         title={basename(relativePath)}
         subtitle={headerSubtitle}
         activeMode={resolvedActiveMode}
-        fileInspectorSupported={fileInspector.supported}
+        chrome={fileHeaderChrome}
         onBack={handleBack}
-        onReturnToThread={handleReturnToThread}
         actions={fileMenuActions}
       />
       <ScreenContent>
@@ -1296,6 +1313,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
           binaryError={binaryError}
           onSave={mediaActions.share}
           saving={mediaActions.sharing}
+          saveDisabled={saveAction?.disabled === true}
           onOpenInViewer={openInFileViewer}
           initialLine={targetLine}
           relativePath={relativePath}

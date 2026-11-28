@@ -349,7 +349,12 @@ function ProjectOverviewContent(props: {
 
       <SettingsSection title={gt("Project")}>
         <View className="gap-3 p-4">
-          <Text className="text-sm font-oni-medium text-foreground-muted">
+          {/* The input reads its own label; this one is for sighted users. */}
+          <Text
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+            className="text-sm font-oni-medium text-foreground-muted"
+          >
             <T>Name</T>
           </Text>
           <View className="flex-row items-center gap-3">

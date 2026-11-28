@@ -14,7 +14,7 @@ import {
 } from "@onicode/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { useRef, useState } from "react";
-import { Pressable, ScrollView, TextInput, useWindowDimensions, View } from "react-native";
+import { Pressable, ScrollView, useWindowDimensions, View } from "react-native";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { m } from "../../i18n/messages";
@@ -38,7 +38,7 @@ import { SettingsSection } from "./components/SettingsSection";
 import { AddClaudeAccount, ClaudeAccount } from "./ClaudeAccounts";
 import { CLAUDE_DRIVER } from "./claude-accounts";
 import { useSettingsEnvironmentFilter, type SettingsTarget } from "./settings-environment-filter";
-import { LabeledConnectionField } from "../connection/ConnectionFormField";
+import { ConnectionFormField } from "../connection/ConnectionFormField";
 
 export function SettingsProviderAccountsRouteScreen() {
   const gt = useGT();
@@ -228,21 +228,16 @@ function ProviderAccount({
   }
   function field(name: string, label: string, secret: boolean) {
     return (
-      <LabeledConnectionField label={label}>
-        <TextInput
-          accessibilityLabel={label}
-          className="rounded-lg border border-border-subtle px-3 py-2 text-base text-foreground"
-          placeholderTextColorClassName="accent-foreground-muted"
-          placeholder={label}
-          secureTextEntry={secret}
-          autoCapitalize="none"
-          autoCorrect={false}
-          editable={!disabled}
-          maxLength={secret && interaction?.type === "terminal" ? 4_095 : 16_384}
-          value={values[name] ?? ""}
-          onChangeText={(value) => setDraft({ id: draftId, values: { ...values, [name]: value } })}
-        />
-      </LabeledConnectionField>
+      <ConnectionFormField
+        label={label}
+        secureTextEntry={secret}
+        autoCapitalize="none"
+        autoCorrect={false}
+        editable={!disabled}
+        maxLength={secret && interaction?.type === "terminal" ? 4_095 : 16_384}
+        value={values[name] ?? ""}
+        onChangeText={(value) => setDraft({ id: draftId, values: { ...values, [name]: value } })}
+      />
     );
   }
   const name = provider.displayName ?? provider.driver;
