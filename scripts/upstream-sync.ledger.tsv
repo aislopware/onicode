@@ -4856,3 +4856,4 @@ ef0c28e2b9	take	taken as is
 9b0459269a	take	doc conflict: kept Onicode's sidebar guide, added the hover pin button to its Pin section; scenario ported with the desktop (WEB) target; Sidebar row-render test green
 369682aac6	take	test adapted: Onicode has no hosted links, so the definitions use oni-thread links (fails without the fix)
 d700fc25bb	take	conflict: upstream's search over ready then warning instances, plus Onicode's last tier of picker-ready instances that kept models after a failed check; tests merged
+99bd2dd2a1	take	extractor output changed, so DocumentText VERSION 25→26 (also covers 76b2d92ddd)
