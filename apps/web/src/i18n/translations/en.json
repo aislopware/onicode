@@ -12384,5 +12384,11 @@
   "faa3bb26abb39c93": "Review guide failed",
   "b7df38b7d8792d78": "Open guide",
   "9e91e9a77b664e4e": "Could not start a review guide",
-  "d454bfdeea6f1129": "Open preview"
+  "d454bfdeea6f1129": "Open preview",
+  "ffd3cdd328e21c9d": "Copy",
+  "b96de95f92a8eeeb": "MCP URL",
+  "c0ca4e817099761e": "outside agents chatgpt claude codex hosted bot oauth server address copy",
+  "79e3840f1ef8741e": "Give this URL to a hosted agent, such as ChatGPT: {url}",
+  "1d5f687593c4e8ed": "Give this URL to an agent running on this machine: {url}",
+  "3db385bf17d8f48e": "Give this URL to an agent that can reach this environment: {url}"
 }

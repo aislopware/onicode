@@ -12383,5 +12383,11 @@
   "faa3bb26abb39c93": "Granskningsguiden misslyckades",
   "b7df38b7d8792d78": "Öppna guiden",
   "9e91e9a77b664e4e": "Kunde inte starta en granskningsguide",
-  "d454bfdeea6f1129": "Öppna förhandsvisning"
+  "d454bfdeea6f1129": "Öppna förhandsvisning",
+  "ffd3cdd328e21c9d": "Kopiera",
+  "b96de95f92a8eeeb": "MCP-URL",
+  "c0ca4e817099761e": "externa agenter chatgpt claude codex molnbaserad bot oauth server adress kopiera",
+  "79e3840f1ef8741e": "Ge denna URL till en molnbaserad agent, till exempel ChatGPT: {url}",
+  "1d5f687593c4e8ed": "Ge denna URL till en agent som körs på den här datorn: {url}",
+  "3db385bf17d8f48e": "Ge denna URL till en agent som kan nå den här miljön: {url}"
 }

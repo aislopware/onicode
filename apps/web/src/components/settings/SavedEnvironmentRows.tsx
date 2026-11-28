@@ -16,6 +16,8 @@ import {
   connectionErrorText,
   connectionStatusText,
   environmentMcpUrl,
+  localEnvironmentMcpUrl,
+  type ConnectionCatalogEntry,
 } from "@onicode/client-runtime/connection";
 import { msg, T, useGT, useMessages } from "gt-react";
 import { m, type MessageResolver } from "../../i18n/messages";
@@ -43,7 +45,11 @@ import {
   supportsDesktopAppUpdate,
 } from "~/versionSkew";
 import { environmentCatalog } from "~/connection/catalog";
+import { isLoopbackHostname } from "~/environments/primary/target";
 import { type EnvironmentPresentation, usePrimaryEnvironmentId } from "~/state/environments";
+import { usePublicAccess } from "./publicAccess";
+import { SettingsRow } from "./settingsLayout";
+import { useSearchableSetting } from "./settingsSearch";
 import { APP_VERSION } from "~/branding";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { serverEnvironment } from "~/state/server";
@@ -103,6 +109,35 @@ export function savedBackendStatus(
   }
 }
 
+function useCopyMcpUrl() {
+  const gt = useGT();
+  return useCopyToClipboard<{ url: string }>({
+    target: {
+      target: "MCP URL",
+      unavailableMessage: msg("Clipboard API is unavailable while copying MCP URL."),
+      failureMessage: msg("Failed to copy MCP URL to the clipboard."),
+    },
+    onCopy: ({ url }) => {
+      toastManager.add({
+        type: "success",
+        title: gt("MCP URL copied"),
+        description: gt("Add it to an agent, e.g. claude mcp add --transport http onicode {url}", {
+          url,
+        }),
+      });
+    },
+    onError: (error) => {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: gt("Could not copy MCP URL"),
+          description: error.message,
+        }),
+      );
+    },
+  });
+}
+
 export function SavedBackendListRow({
   environment,
   removingEnvironmentId,
@@ -142,31 +177,7 @@ export function SavedBackendListRow({
   const copyTraceId = (traceId: string) => {
     copyTraceIdToClipboard(traceId, { traceId });
   };
-  const { copyToClipboard: copyMcpUrl } = useCopyToClipboard<{ url: string }>({
-    target: {
-      target: "MCP URL",
-      unavailableMessage: msg("Clipboard API is unavailable while copying MCP URL."),
-      failureMessage: msg("Failed to copy MCP URL to the clipboard."),
-    },
-    onCopy: ({ url }) => {
-      toastManager.add({
-        type: "success",
-        title: gt("MCP URL copied"),
-        description: gt("Add it to an agent, e.g. claude mcp add --transport http onicode {url}", {
-          url,
-        }),
-      });
-    },
-    onError: (error) => {
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: gt("Could not copy MCP URL"),
-          description: error.message,
-        }),
-      );
-    },
-  });
+  const { copyToClipboard: copyMcpUrl } = useCopyMcpUrl();
   const versionMismatch = resolveServerConfigVersionMismatch(environment.serverConfig, messages);
   const serverUpdateState = useAtomValue(serverEnvironment.updateStateAtom(environmentId));
   const resumingServerUpdate =
@@ -439,6 +450,43 @@ export function SavedBackendListRow({
         </MenuPopup>
       </Menu>
     </EnvironmentRow>
+  );
+}
+
+/** Copying the host's own MCP address, for hosted agents or agents on this machine. */
+export function LocalEnvironmentMcpUrlRow({
+  environmentId,
+  entry,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly entry: ConnectionCatalogEntry;
+}) {
+  const setting = useSearchableSetting();
+  const gt = useGT();
+  const { copyToClipboard: copyMcpUrl } = useCopyMcpUrl();
+  // Public access through Funnel is the address hosted agents can reach.
+  const publicMcpUrl = usePublicAccess(environmentId).mcpUrl;
+  const mcpUrl = publicMcpUrl ?? localEnvironmentMcpUrl({ entry });
+  if (mcpUrl === null) return null;
+  const loopback = isLoopbackHostname(new URL(mcpUrl).hostname);
+  return (
+    <SettingsRow
+      {...setting("mcp-url")}
+      description={
+        publicMcpUrl !== null
+          ? gt("Give this URL to a hosted agent, such as ChatGPT: {url}", { url: mcpUrl })
+          : loopback
+            ? gt("Give this URL to an agent running on this machine: {url}", { url: mcpUrl })
+            : gt("Give this URL to an agent that can reach this environment: {url}", {
+                url: mcpUrl,
+              })
+      }
+      control={
+        <Button size="sm" variant="outline" onClick={() => copyMcpUrl(mcpUrl, { url: mcpUrl })}>
+          <T>Copy</T>
+        </Button>
+      }
+    />
   );
 }
 

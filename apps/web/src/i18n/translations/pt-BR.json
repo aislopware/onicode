@@ -12376,5 +12376,11 @@
   "faa3bb26abb39c93": "O guia de revisão falhou",
   "b7df38b7d8792d78": "Abrir guia",
   "9e91e9a77b664e4e": "Não foi possível iniciar um guia de revisão",
-  "d454bfdeea6f1129": "Abrir pré-visualização"
+  "d454bfdeea6f1129": "Abrir pré-visualização",
+  "ffd3cdd328e21c9d": "Copiar",
+  "b96de95f92a8eeeb": "URL do MCP",
+  "c0ca4e817099761e": "agentes externos chatgpt claude codex hospedado bot oauth servidor endereço copiar",
+  "79e3840f1ef8741e": "Forneça esta URL a um agente hospedado, como o ChatGPT: {url}",
+  "1d5f687593c4e8ed": "Forneça esta URL a um agente em execução nesta máquina: {url}",
+  "3db385bf17d8f48e": "Forneça esta URL a um agente que possa acessar este ambiente: {url}"
 }

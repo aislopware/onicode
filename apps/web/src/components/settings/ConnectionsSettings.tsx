@@ -148,7 +148,11 @@ import {
 } from "./AuthorizedClientsSettings";
 import { PublicAccessSettings } from "./PublicAccessSettings";
 import { ITEM_ROW_CLASSNAME } from "./itemRows";
-import { EmptyRemoteEnvironments, SavedBackendListRow } from "./SavedEnvironmentRows";
+import {
+  EmptyRemoteEnvironments,
+  LocalEnvironmentMcpUrlRow,
+  SavedBackendListRow,
+} from "./SavedEnvironmentRows";
 import { AddEnvironmentDialog } from "./AddEnvironmentDialog";
 
 const DEFAULT_TAILSCALE_SERVE_PORT = 443;
@@ -1416,6 +1420,12 @@ function ConnectionsSettingsContent({
             {accessServerConfig?.environment.capabilities.tailnetDevices === true
               ? renderTailnetSignInRow()
               : null}
+            {isPrimaryAccess && accessEnvironment && accessEnvironmentId !== null ? (
+              <LocalEnvironmentMcpUrlRow
+                environmentId={accessEnvironmentId}
+                entry={accessEnvironment.entry}
+              />
+            ) : null}
             {accessServerConfig?.environment.capabilities.previewTunnelSetting ? (
               <SettingsRow
                 title={searchableSetting("preview-tunnel").title}

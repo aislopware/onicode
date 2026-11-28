@@ -12389,5 +12389,11 @@
   "faa3bb26abb39c93": "审查导览生成失败",
   "b7df38b7d8792d78": "打开导览",
   "9e91e9a77b664e4e": "无法开始生成审查导览",
-  "d454bfdeea6f1129": "打开预览"
+  "d454bfdeea6f1129": "打开预览",
+  "ffd3cdd328e21c9d": "复制",
+  "b96de95f92a8eeeb": "MCP URL",
+  "c0ca4e817099761e": "外部 代理 chatgpt claude codex 托管 机器人 oauth 服务器 地址 复制",
+  "79e3840f1ef8741e": "请将此 URL 提供给 ChatGPT 等托管代理：{url}",
+  "1d5f687593c4e8ed": "请将此 URL 提供给在本机上运行的代理：{url}",
+  "3db385bf17d8f48e": "请将此 URL 提供给能够访问此环境的代理：{url}"
 }
