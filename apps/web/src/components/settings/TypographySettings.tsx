@@ -26,6 +26,7 @@ import {
   resolveTerminalFontPreference,
   resolveTerminalFontSizePreference,
   TYPOGRAPHY_ADVANCED_STORAGE_KEY,
+  BUNDLED_TERMINAL_FONT_FAMILY,
 } from "../../appearanceFonts";
 import { AdvancedSettings } from "./AdvancedSettings";
 import { CodeFontPreview, PromptFontPreview, TerminalFontPreview } from "./SettingsFontPreviews";
@@ -188,13 +189,12 @@ function TerminalFontRow() {
   const searchableSetting = useSearchableSetting();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
-  const defaults = useFontDefaultFamilies();
   return (
     <FontFamilySettingsRow
       {...searchableSetting("terminal-font")}
       resetLabel={gt("Reset terminal font to default")}
       description={gt("Terminal output, independent from code blocks and diffs.")}
-      defaultFamily={defaults.code}
+      defaultFamily={BUNDLED_TERMINAL_FONT_FAMILY}
       defaultValue={DEFAULT_UNIFIED_SETTINGS.fontFamilyTerminal}
       value={settings.fontFamilyTerminal}
       onValueChange={(fontFamilyTerminal) => updateSettings({ fontFamilyTerminal })}

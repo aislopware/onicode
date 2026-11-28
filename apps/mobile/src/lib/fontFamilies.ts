@@ -24,6 +24,15 @@ export const MOBILE_MONO_FONT_FAMILIES: Readonly<Record<MobileMonoFontId, string
   meslo: "MesloLGS-NF-Regular",
 };
 
+// System mono faces lack Nerd Font glyphs, so the terminal's default is a bundled one.
+const MOBILE_TERMINAL_DEFAULT_FONT_FAMILY = "JetBrainsMonoNFM-Regular";
+
+export function resolveTerminalFontFamily(monoFontId: MobileMonoFontId): string {
+  return monoFontId === "system"
+    ? MOBILE_TERMINAL_DEFAULT_FONT_FAMILY
+    : MOBILE_MONO_FONT_FAMILIES[monoFontId];
+}
+
 export const DEFAULT_MOBILE_FONT_ID: MobileFontId = Platform.OS === "ios" ? "system" : "dm-sans";
 export const DEFAULT_MOBILE_MONO_FONT_ID: MobileMonoFontId = "system";
 
