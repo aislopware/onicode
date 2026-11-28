@@ -140,6 +140,14 @@ export const findPortForward = (
     (forward) => forward.environmentId === environmentId && forward.remotePort === remotePort,
   );
 
+const SAME_MACHINE_FORWARD = "LoopbackTunnelSameMachineError";
+
+/** A forward refused because the environment shares this machine's loopback. */
+export const isSameMachineForwardError = (error: unknown): boolean =>
+  error instanceof Error &&
+  error.cause instanceof Error &&
+  error.cause.message.includes(SAME_MACHINE_FORWARD);
+
 export function forwardPort(environmentId: EnvironmentId, remotePort: number) {
   const bridge = previewBridge();
   if (!bridge) return Promise.reject(new Error(m(msg("Port forwarding needs the desktop app."))));
@@ -147,7 +155,7 @@ export function forwardPort(environmentId: EnvironmentId, remotePort: number) {
     // Electron flattens main-process errors into "Error invoking remote method '…': Tag: text".
     const raw = error instanceof Error ? error.message : String(error);
     throw new Error(
-      raw.includes("LoopbackTunnelSameMachineError")
+      raw.includes(SAME_MACHINE_FORWARD)
         ? m(
             msg("This environment runs on this computer, so localhost:{port} already reaches it.", {
               port: remotePort,
@@ -168,7 +176,8 @@ export function stopPortForward(environmentId: EnvironmentId, remotePort: number
 /** `url` with its host and port moved to the forward's end on this machine. */
 export function forwardedUrl(forward: DesktopPortForward, url?: string): string {
   const local = new URL(url ?? "http://localhost/");
-  local.hostname = "localhost";
+  // A *.localhost name already reaches this machine's loopback and may route a dev server.
+  if (!local.hostname.endsWith(".localhost")) local.hostname = "localhost";
   local.port = String(forward.localPort);
   return local.toString();
 }

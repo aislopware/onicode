@@ -9,6 +9,7 @@ import {
   canForwardPorts,
   forwardedUrl,
   forwardPort,
+  isSameMachineForwardError,
   useForwardLocality,
 } from "~/state/portForwards";
 import { useEnvironmentScope } from "~/state/session";
@@ -65,6 +66,8 @@ export function useOpenInSystemBrowser(
           await forwardPort(environmentId, port).then(
             (forward) => forwardedUrl(forward, url),
             (error: unknown) => {
+              // The probe had not settled yet: this machine's own loopback already serves it.
+              if (isSameMachineForwardError(error)) return url;
               if (directUrl === null) throw error;
               return directUrl;
             },
