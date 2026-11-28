@@ -208,10 +208,17 @@ export function guessThreadLinkRef(
   return null;
 }
 
-function threadLinkHref(link: ThreadLink): string {
-  return link.environmentId === null
-    ? `${V1_PREFIX}${link.threadId}`
-    : `${V2_PREFIX}${link.environmentId}/${link.threadId}`;
+// A Markdown destination cannot hold these verbatim. Such ids are percent-encoded: readers try the
+// id as written, then decoded.
+const UNSAFE_HREF = /[\s<>\\\p{Cc}]/u;
+const hrefId = (id: string) => (UNSAFE_HREF.test(id) ? encodeURIComponent(id) : id);
+
+function threadLinkHref({ environmentId, threadId }: ThreadLink): string {
+  // A v2 link splits at its first slash and never decodes its environment id, so an environment id
+  // it cannot hold verbatim falls back to a v1 link, which resolves in the message's environment.
+  return environmentId === null || environmentId.includes("/") || UNSAFE_HREF.test(environmentId)
+    ? V1_PREFIX + hrefId(threadId)
+    : `${V2_PREFIX}${environmentId}/${hrefId(threadId)}`;
 }
 
 const linkLabel = (label: string | undefined) =>

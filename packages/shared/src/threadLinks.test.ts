@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@onicode/contracts";
 import { mFallback } from "gt-i18n";
 import type { MFunctionType } from "gt-i18n/types";
+import remarkParse from "remark-parse";
+import { unified } from "unified";
 
 import {
   formatThreadLink,
@@ -467,5 +469,23 @@ describe("thread links", () => {
         expected === undefined ? [] : [ref("there", "t1")],
       );
     }
+  });
+
+  it("keeps relabeled links navigable when the thread id contains a space", () => {
+    const linkUrl = (markdown: string) => {
+      const paragraph = unified().use(remarkParse).parse(markdown).children[0];
+      const node = paragraph?.type === "paragraph" ? paragraph.children[0] : undefined;
+      return node?.type === "link" ? node.url : undefined;
+    };
+    const thread = ref("local", "work item");
+    const titles = titlesIn({ local: { "work item": "Review" } });
+
+    const relabeled = relabelThreadLinks(formatThreadLink(thread), local, titles);
+    expect(linkUrl(relabeled)).toBe("oni-thread://v2/local/work%20item");
+    expect(threadLinkRefs(relabeled, local)).toContainEqual(thread);
+
+    const v1Relabeled = relabelThreadLinks("[old](oni-thread://v1/work%20item)", local, titles);
+    expect(linkUrl(v1Relabeled)).toBe("oni-thread://v1/work%20item");
+    expect(formatThreadLink(v1("work item"))).toBe("<oni-thread://v1/work%20item>");
   });
 });
