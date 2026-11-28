@@ -4864,3 +4864,4 @@ d588352064	take	taken as is
 999b9ad3ac	take	conflicts: upstream test imports; agentContextBudget re-measured for Onicode (mcpToolListJsonBytes 66678→66386); decoding still accepts array and object option forms
 cfd359f79e	take	taken as is
 f459c51d65	take	translation conflicts: kept Onicode's pl catalogs, applied the 26 changed keys Onicode has (2 web keys Onicode lacks dropped)
+5faf5976d1	take	taken as is
