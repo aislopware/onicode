@@ -4908,6 +4908,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               startedAt,
               completedAt,
               updatedAt,
+              ...(item.status === "declined" ? { toolNonExecutionKind: "declined" } : {}),
               type: "file_change",
               fileName: firstChange.path,
               diffStr:
