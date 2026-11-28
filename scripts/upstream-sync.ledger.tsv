@@ -4746,3 +4746,4 @@ c203d93314	take	taken as is (other forge)
 af70189a8f	take	adapted: Onicode's resolver kept (null when unreachable); hook follows ThreadServersPanel (forward, else direct address, else in-app tab via useOpenLink); no web branch; tagged error; translated
 09418562d6	take	kept Onicode's boundedRedactedText (already surrogate-safe, plus redaction); only the test taken, expecting the ellipsis
 84f4fad02b	take	kept Onicode's inline/block text-box split; DocumentText VERSION 21 -> 22 so cached sidecars re-extract (also covers ce36269560)
+ce36269560	take	taken as is (VERSION bump in 84f4fad02b covers it)
