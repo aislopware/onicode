@@ -33,6 +33,7 @@ import type {
   ProjectSearchEntriesResult,
 } from "@onicode/contracts";
 import * as HostProcess from "@onicode/shared/HostProcess";
+import { splitsSurrogatePair } from "@onicode/shared/assistantCitations";
 import { PROJECT_FAVICON_EXTENSIONS, isProjectFaviconPath } from "@onicode/shared/projectFavicon";
 import { scoreSubsequenceMatch } from "@onicode/shared/searchRanking";
 
@@ -900,7 +901,12 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
         break;
       }
       const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
-      const lineContent = line.slice(0, CONTENT_LINE_MAX_LENGTH);
+      const lineContent = line.slice(
+        0,
+        splitsSurrogatePair(line, CONTENT_LINE_MAX_LENGTH)
+          ? CONTENT_LINE_MAX_LENGTH - 1
+          : CONTENT_LINE_MAX_LENGTH,
+      );
       const ranges = (
         literal
           ? Array.from((input.wholeWord ? line : lineContent).matchAll(literal), (match) => ({
