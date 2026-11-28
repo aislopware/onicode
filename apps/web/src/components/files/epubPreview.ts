@@ -609,8 +609,14 @@ export async function openEpub(archive: OfficeArchive) {
       const bytes = typeof entry === "string" ? new TextEncoder().encode(entry) : entry;
       if (bytes.length > 1024 * 1024) return "";
       const type = media.get(target);
+      const ext = extension(target);
       let content;
-      if (type === "application/ttml+xml" || extension(target) === "ttml") {
+      if (
+        type === "application/ttml+xml" ||
+        type === "application/ttaf+xml" ||
+        ext === "ttml" ||
+        ext === "dfxp"
+      ) {
         try {
           content = ttmlCaptions(
             parseXml(typeof entry === "string" ? entry : officeXmlDecoder(bytes).decode(bytes)),
