@@ -1224,7 +1224,7 @@ function wrappedShellCommandProgramName(
     target === target.toLowerCase() &&
     NON_DESCRIPTIVE_SHELL_PROGRAMS.has(target) &&
     !TERMINAL_SHELL_PROGRAMS.has(target) &&
-    !(target === "true" && separator === "||") &&
+    !((target === "true" || target === ":") && separator === "||") &&
     remainingCommand
   ) {
     return commandProgramNameInternal(remainingCommand, depth, "shell", segmentsRemaining - 1);
@@ -1325,7 +1325,7 @@ function parseCommandProgramName(
       continue;
     }
     if (executionContext === "shell" && token === ":") {
-      return commandSplit.remainingCommand
+      return commandSplit.remainingCommand && commandSplit.separator !== "||"
         ? commandProgramNameInternal(
             commandSplit.remainingCommand,
             depth,
