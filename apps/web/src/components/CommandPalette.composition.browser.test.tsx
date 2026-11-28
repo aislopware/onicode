@@ -20,6 +20,7 @@ const scopes = vi.hoisted(() => ({
   denied: undefined as string | undefined,
   sourceControl: undefined as unknown,
   isBrowsePending: false,
+  findDirectories: false,
   lookupRepository: vi.fn(),
   createNewProject: vi.fn<() => Promise<typeof createdProject>>(),
   openDraft: vi.fn<() => Promise<void>>(),
@@ -35,6 +36,7 @@ const setup = (deniedScope?: string, sourceControl?: unknown, isBrowsePending = 
     value: { projectId: "project-cloned" },
   });
   scopes.isBrowsePending = isBrowsePending;
+  scopes.findDirectories = false;
 };
 const githubAvailable = {
   versionControlSystems: [],
@@ -115,6 +117,9 @@ vi.mock("../state/environments", async (original) => ({
           environment: { platform: { os: "linux" }, capabilities: { projectCloneTracking: true } },
           settings: { addProjectBaseDirectory: "/workspace/" },
           newProjectsRoot: "/workspace/",
+          get findDirectories() {
+            return scopes.findDirectories;
+          },
         },
       },
     ],
@@ -354,6 +359,20 @@ it("keeps the view the user went back to when a folder add finishes late", async
   await finish();
   expect(page.getByTestId("command-palette").element()).toHaveAttribute("data-open");
   expect(page.getByText("Git URL", { exact: true }).element()).toBeVisible();
+});
+
+it("keeps the folder search the user cleared the path for when a folder add finishes late", async () => {
+  setup();
+  scopes.findDirectories = true;
+  await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
+  const finish = await startLateProjectAdd("Local folder", "/workspace/existing");
+  const search = page.getByRole("combobox");
+  await search.fill("");
+  await search.fill("recent");
+
+  await finish();
+  expect(page.getByTestId("command-palette").element()).toHaveAttribute("data-open");
+  expect(search.element()).toHaveValue("recent");
 });
 
 it("keeps a reopened palette open after a late folder pick", async () => {
