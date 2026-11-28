@@ -1,15 +1,20 @@
 import { useAtomValue } from "@effect/atom-react";
 import {
+  AuthProvidersManageScope,
   AuthDiagnosticsReadScope,
   USAGE_CONTRACT_VERSION,
   type EnvironmentId,
   type UsageBucket,
+  type UsageAccessRequest,
   type UsageSummary,
   type UsageProviderKind,
   type UsageSummaryInput,
 } from "@onicode/contracts";
 import { refreshUsage, usageSummaryInput } from "@onicode/client-runtime/state/usage";
-import { resolveUsageAccess } from "@onicode/client-runtime/state/usage-access";
+import {
+  resolveUsageAccess,
+  unansweredUsageAccessRequests,
+} from "@onicode/client-runtime/state/usage-access";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { msg, useMessages } from "gt-react";
 import { useState } from "react";
@@ -18,7 +23,7 @@ import { mergeUsage, type EnvironmentUsage, type MergedUsage } from "@onicode/sh
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentPresentations } from "./presentation";
 import { serverEnvironment } from "./server";
-import { environmentSession, readEnvironmentScope } from "./session";
+import { environmentSession, readEnvironmentScope, sessionHasScope } from "./session";
 import { keepMarked } from "../i18n/messages";
 
 export interface EnvironmentUsageStatus {
@@ -26,6 +31,8 @@ export interface EnvironmentUsageStatus {
   readonly label: string;
   readonly isPending: boolean;
   readonly canReadDiagnostics: boolean;
+  /** Agents still waiting for a usage access answer that this session may save. */
+  readonly accessRequests: readonly UsageAccessRequest[];
   readonly isConnected: boolean;
   readonly error: string | null;
   readonly summary: UsageSummary | null;
@@ -55,6 +62,7 @@ const usageByWindowAtom = Atom.family((windowKey: string) =>
           label: presentation.entry.target.label,
           isConnected,
           ...access,
+          accessRequests: [],
           summary: null,
         });
         continue;
@@ -74,6 +82,11 @@ const usageByWindowAtom = Atom.family((windowKey: string) =>
         label: presentation.entry.target.label,
         isPending: result.waiting,
         canReadDiagnostics: true,
+        accessRequests: unansweredUsageAccessRequests({
+          canAnswer: sessionHasScope(sessionResult, AuthProvidersManageScope),
+          summary,
+          config: get(serverEnvironment.configValueAtom(environmentId)),
+        }),
         isConnected,
         error: result._tag === "Failure" ? msg("This environment could not report usage.") : null,
         summary,

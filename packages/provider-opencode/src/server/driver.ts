@@ -38,6 +38,7 @@ import type * as ProviderAdapter from "@onicode/provider-core/server/ProviderAda
 import type { ProviderTextGeneration } from "@onicode/provider-core/server/textGeneration";
 import { ProviderDriverError } from "@onicode/provider-core/server/errors";
 import { openCodeUsageReader, type OpenCodeUsageReaderEnv } from "./usage.ts";
+import { withUsageAccess } from "@onicode/provider-core/server/usageLimits";
 import { readOpenCodeGoUsageLimits } from "./usageLimits.ts";
 import { loadOpenCode2Catalog, loadOpenCode2DirectoryCatalog } from "./openCode2Catalog.ts";
 import {
@@ -274,6 +275,7 @@ export const OpenCodeDriver: ProviderDriver<
     accentColor,
     environment,
     enabled,
+    usageAccess = Effect.succeed(false),
     config,
   }) {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
@@ -564,11 +566,15 @@ export const OpenCodeDriver: ProviderDriver<
       ),
     );
 
-    const legacyUsageLimits = readOpenCodeGoUsageLimits({
-      enabled: effectiveConfig.enabled,
-      serverUrl: effectiveConfig.serverUrl,
-      environment: processEnv,
-    }).pipe(
+    // Reads OpenCode's auth.json and credential table for the Go key.
+    const legacyUsageLimits = withUsageAccess(
+      usageAccess,
+      readOpenCodeGoUsageLimits({
+        enabled: effectiveConfig.enabled,
+        serverUrl: effectiveConfig.serverUrl,
+        environment: processEnv,
+      }),
+    ).pipe(
       Effect.provideService(FileSystem.FileSystem, fileSystem),
       Effect.provideService(Path.Path, pathService),
       Effect.provideService(HttpClient.HttpClient, httpClient),

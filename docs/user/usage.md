@@ -15,6 +15,11 @@ cost, split by token type and by speed. These estimates are not your subscriptio
 split, such as a provider-reported cost for a model without public rates, shows as **Other**.
 Select a model under **Breakdown** to see its trend, cache hit rate, and cost per million tokens.
 
+Onicode reads an agent's history only for agents you have turned on and allowed. The first time
+you open **Usage**, it asks which agents to include. Change the answer for each agent under
+**Usage access** in **Settings → Providers** on desktop. Grok and OpenCode Go limits read the
+agent's sign-in, so they also wait for this permission.
+
 Totals depend on the history available on each server. Grok turns without a saved completed-turn
 record are missing from the totals.
 Text generation (thread titles, commit messages, PR text, branch names and review guides) is not in

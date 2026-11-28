@@ -80,7 +80,7 @@ it.layer(NodeServices.layer)("ClaudeHome", (it) => {
   });
 
   it.effect(
-    "drops the launching Claude session and Electron's run-as-Node flag, and labels processes onicode unless overridden",
+    "drops the launching Claude session and Electron's run-as-Node flag, and labels processes onicode unless overridden, without reading settings while turned off",
     () =>
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;
@@ -103,11 +103,15 @@ it.layer(NodeServices.layer)("ClaudeHome", (it) => {
           { name: "CLAUDE_EFFORT", value: "low", sensitive: false },
         ];
 
-        expect(yield* mergeClaudeProcessEnvironment({ homePath }, undefined, host)).toEqual({
+        expect(
+          yield* mergeClaudeProcessEnvironment({ homePath, enabled: true }, undefined, host),
+        ).toEqual({
           CLAUDE_CODE_ENTRYPOINT: "onicode",
           KEEP: "1",
         });
-        expect(yield* mergeClaudeProcessEnvironment({ homePath }, instance, host)).toEqual({
+        expect(
+          yield* mergeClaudeProcessEnvironment({ homePath, enabled: true }, instance, host),
+        ).toEqual({
           CLAUDE_CODE_ENTRYPOINT: "instance",
           CLAUDE_EFFORT: "low",
           KEEP: "1",
@@ -118,16 +122,20 @@ it.layer(NodeServices.layer)("ClaudeHome", (it) => {
           JSON.stringify({ env: { CLAUDE_CODE_ENTRYPOINT: "custom" } }),
         );
         expect(
-          (yield* mergeClaudeProcessEnvironment({ homePath }, instance, host))
+          (yield* mergeClaudeProcessEnvironment({ homePath, enabled: true }, instance, host))
             .CLAUDE_CODE_ENTRYPOINT,
         ).toBe("custom");
+        expect(
+          (yield* mergeClaudeProcessEnvironment({ homePath, enabled: false }, instance, host))
+            .CLAUDE_CODE_ENTRYPOINT,
+        ).toBe("instance");
       }),
   );
 
   it.effect("keeps reading host variables set after it was built", () =>
     Effect.gen(function* () {
       const host: NodeJS.ProcessEnv = { PATH: "/bin", CLAUDECODE: "1" };
-      const config = { homePath: "/tmp/oni-claude-late-host" };
+      const config = { homePath: "/tmp/oni-claude-late-host", enabled: true };
       const environment = yield* makeClaudeEnvironment(
         config,
         yield* mergeClaudeProcessEnvironment(config, undefined, host),
