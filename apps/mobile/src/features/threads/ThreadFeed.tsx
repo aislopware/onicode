@@ -2967,7 +2967,7 @@ function UserMessageContent(props: UserMessageContentProps) {
           },
           linkCustomization: (href) =>
             withChipIcon(
-              enrichedContextLinkCustomization(href, props.context?.records ?? []) ??
+              enrichedContextLinkCustomization(href, props.context?.records ?? [], messages) ??
                 props.linkHandlers.linkCustomization?.(href),
               threadIcons.get(href),
             ),
