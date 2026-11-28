@@ -106,8 +106,8 @@ interface XmlNode {
   epubTable?: boolean;
   mathmlFirstChildSeen?: boolean;
   epubBlock?: boolean;
-  odfBlockTextBox?: boolean;
   odfInlineParagraphs?: boolean;
+  odfFloating?: boolean;
   odfParagraphHidden?: boolean;
   odfStyleHidden?: boolean;
   odfSpanHidden?: boolean;
@@ -342,10 +342,23 @@ function xml(
         if (display === "none" || display === "true") parent.odfStyleHidden = display === "none";
       }
     }
-    if (odf && node.name === "text-box" && namespaceOf(tag.name, stack) === ODF_DRAW_NS) {
-      if (stack.at(-2)?.attrs["anchor-type"] === "as-char") node.odfInlineParagraphs = true;
-      else node.odfBlockTextBox = true;
-    }
+    if (odf && node.name === "text-box" && namespaceOf(tag.name, stack) === ODF_DRAW_NS)
+      node.odfInlineParagraphs = true;
+    const anchor =
+      odf && namespaceOf(tag.name, stack) === ODF_DRAW_NS
+        ? odfAttribute(tag.attributes, "anchor-type", stack)?.trim()
+        : undefined;
+    // Only a character-anchored drawing sits in the line; other anchors float beside the text.
+    // A frame without one is paragraph-anchored, as LibreOffice reads it.
+    if (anchor === "as-char") node.odfInlineParagraphs = true;
+    else if (
+      anchor ||
+      (odf &&
+        node.name === "frame" &&
+        node.attrs["anchor-type"]?.trim() !== "as-char" &&
+        namespaceOf(tag.name, stack) === ODF_DRAW_NS)
+    )
+      node.odfFloating = true;
     if (
       extension === ".odt" &&
       node.name === "hidden-paragraph" &&
@@ -630,9 +643,8 @@ function* text(node: XmlNode, line?: Line): Generator<TextPart, void> {
     yield { imageDescription: node.imageDescription };
     return;
   }
-  // Word and anchored OpenDocument text boxes hold their own paragraphs inside the anchoring
-  // paragraph.
-  if (node.name === "txbxContent" || node.odfBlockTextBox) {
+  // Word text boxes and floating ODF drawings hold their own paragraphs inside the anchoring one.
+  if (node.name === "txbxContent" || node.odfFloating) {
     // Held until the box shows something, so an empty box adds no line.
     const held: Array<TextPart> = [];
     let shown = false;
