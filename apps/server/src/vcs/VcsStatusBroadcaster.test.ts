@@ -2293,6 +2293,64 @@ describe("VcsStatusBroadcaster", () => {
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
+  it("refreshes once per checkout in either event order, and on every soft reset", () => {
+    // Each event says whether HEAD's identity was already the one last seen.
+    const cases = [
+      {
+        events: [
+          ["lock", false],
+          ["head", true],
+        ],
+        refreshes: [true, false],
+      },
+      {
+        events: [
+          ["head", false],
+          ["lock", true],
+        ],
+        refreshes: [true, false],
+      },
+      {
+        events: [
+          ["lock", true],
+          ["lock", true],
+        ],
+        refreshes: [true, true],
+      },
+      {
+        events: [
+          ["head", false],
+          ["lock", true],
+          ["lock", true],
+        ],
+        refreshes: [true, false, true],
+      },
+      {
+        events: [
+          ["poll", false],
+          ["lock", true],
+        ],
+        refreshes: [true, true],
+      },
+      {
+        events: [
+          ["head", true],
+          ["lock", true],
+        ],
+        refreshes: [false, true],
+      },
+    ] as const;
+    for (const { events, refreshes } of cases) {
+      let checkoutAwaitsLock = false;
+      const seen = events.map(([kind, reported]) => {
+        const next = VcsStatusBroadcaster.nextHeadWatch(kind, reported, checkoutAwaitsLock);
+        checkoutAwaitsLock = next.checkoutAwaitsLock;
+        return next.refresh;
+      });
+      assert.deepStrictEqual(seen, [...refreshes], JSON.stringify(events));
+    }
+  });
+
   it.live("a terminal commit or soft reset refreshes local-only Changes totals", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

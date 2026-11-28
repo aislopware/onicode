@@ -4950,5 +4950,5 @@ a505181812	take	taken as is; fixes Claude restart continuation for awaited shell
 7d31551cfd	take	documentTextWorker repeat counts; bumped DocumentText VERSION 26->27 since extractor output changes
 a5eb0ec0e8	take	taken as is
 01cb3020b5	take	taken as is
-7f694ec917	take	taken as is
+7f694ec917	take	kept Onicode's HEAD-identity dedup; HEAD.lock removals get their own kind so a checkout refreshes once in either event order and a soft reset always refreshes (a808e0a4c1 + follow-up)
 b927b1fd93	take	CONFLICT in NotebookPreview (Onicode's empty-notebook branch); kept Onicode's layout, took upstream's notebookCellFileName

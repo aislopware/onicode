@@ -59,6 +59,19 @@ const UNREADABLE_HEAD = "unreadable";
 // Edits outside a turn move no ref, so idle polls still re-read local status this often.
 const POLLS_PER_FORCED_LOCAL_READ = 4;
 
+// A checkout raises HEAD and HEAD.lock events in either order and refreshes once; a soft reset
+// leaves HEAD as it was and raises only the HEAD.lock one.
+export function nextHeadWatch(
+  kind: "head" | "poll" | "lock",
+  reported: boolean,
+  checkoutAwaitsLock: boolean,
+): { readonly refresh: boolean; readonly checkoutAwaitsLock: boolean } {
+  if (kind === "lock")
+    return { refresh: !(reported && checkoutAwaitsLock), checkoutAwaitsLock: false };
+  if (reported) return { refresh: false, checkoutAwaitsLock };
+  return { refresh: true, checkoutAwaitsLock: kind === "head" };
+}
+
 function boundedDiagnosticValue(value: string): string {
   return value.slice(0, MAX_FAILURE_DIAGNOSTIC_VALUE_LENGTH);
 }
@@ -1356,6 +1369,7 @@ export const make = Effect.gen(function* () {
       Effect.orElseSucceed(() => UNREADABLE_HEAD),
     );
     const seenHead = yield* SubscriptionRef.make(yield* headIdentity);
+    let checkoutAwaitsLock = false;
     const watching = yield* Deferred.make<void>();
     // Subscribers wait for the watch and for the check that covers its start.
     const covered = Deferred.await(watching).pipe(
@@ -1381,14 +1395,18 @@ export const make = Effect.gen(function* () {
             name === "HEAD" || name === "index" || (name === "HEAD.lock" && event._tag === "Remove")
           );
         }),
-        // A soft reset leaves HEAD untouched, so its HEAD.lock event skips the HEAD dedup below.
-        Stream.map((event) =>
-          path.basename(event.path) === "HEAD" ? ("head" as const) : ("index" as const),
-        ),
+        Stream.map((event) => {
+          const name = path.basename(event.path);
+          return name === "HEAD"
+            ? ("head" as const)
+            : name === "index"
+              ? ("index" as const)
+              : ("lock" as const);
+        }),
         // A checkout made as the watch starts raises no event on macOS.
         Stream.merge(
           pollUnreportedChanges(headIdentity, seenHead, covered).pipe(
-            Stream.map(() => "head" as const),
+            Stream.map(() => "poll" as const),
           ),
           { haltStrategy: "left" },
         ),
@@ -1399,7 +1417,7 @@ export const make = Effect.gen(function* () {
             headGenerations.set(cwd, (headGenerations.get(cwd) ?? 0) + 1);
           }),
         ),
-        // An event for a HEAD change the check above already published is dropped here; index and ref moves always refresh.
+        // An event for a HEAD change the check above already published is dropped here; index updates always refresh.
         Stream.filterEffect((kind) =>
           kind === "index"
             ? Effect.succeed(true)
@@ -1408,7 +1426,9 @@ export const make = Effect.gen(function* () {
                 const reported =
                   head !== UNREADABLE_HEAD && head === (yield* SubscriptionRef.get(seenHead));
                 if (!reported) yield* SubscriptionRef.set(seenHead, head);
-                return !reported;
+                const next = nextHeadWatch(kind, reported, checkoutAwaitsLock);
+                checkoutAwaitsLock = next.checkoutAwaitsLock;
+                return next.refresh;
               }),
         ),
         // A rebase moves HEAD many times; refresh once for whatever arrived during a refresh.
