@@ -4343,7 +4343,7 @@ d6061ec8ad	take	Markdown copy uses Onicode's formatThreadLink (hosted thread URL
 abdb695a56	take	taken as is
 39388dd0d6	take	taken as is
 90221188bf	take	test only; kept Onicode's map search keys (isImeKeyDown + shared clearSearchOnEscape), which pass upstream's IME test unchanged; mock drops relayManaged
-8a99245cae	skip	only changes scripts/smoke-desktop-app.ts, T3's release-job launch check, which Onicode removed with T3's release pipeline (357fb754fa)
+8a99245cae	take	adapted: applied to apps/desktop/scripts/smoke-packaged-app.mjs, Onicode's copy of the launch check
 fb7839477e	take	tests only; kept Onicode's leadingFrontmatterLength (already looks ahead for a closer, shared with the preview masks), which passes upstream's tests
 83d7e53f84	take	upstream's naming body inside Onicode's widgetAccounts signature (keeps is24Hour)
 40958c381e	take	applied cleanly onto normalizeLocalFileHref
