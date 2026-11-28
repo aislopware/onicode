@@ -174,7 +174,7 @@ describe("resolvePromptLinkModelSelection", () => {
 
   it("maps the requested provider and model onto a usable instance", () => {
     const providers = [
-      provider("broken", "claudeAgent", "error", true),
+      provider("broken", "claudeAgent", "error", undefined, true),
       provider("work", "claudeAgent"),
     ];
     expect(
