@@ -136,6 +136,28 @@ describe("thread links", () => {
       );
       expect(relabelThreadLinks(link, local, () => undefined)).toBe("Original");
     }
+    for (const threadId of ["mcp:launch:qa(1)", "feature(a(b))"]) {
+      const thread = ref("there", threadId);
+      const unbracketed = `[Original](oni-thread://v2/there/${threadId})`;
+      expect(threadLinkRefs(unbracketed, local)).toEqual([thread]);
+      expect(relabelThreadLinks(unbracketed, local, () => "Renamed")).toBe(
+        `[Renamed](<oni-thread://v2/there/${threadId}>)`,
+      );
+      expect(relabelThreadLinks(unbracketed, local, () => undefined)).toBe("Original");
+    }
+    expect(threadLinkRefs("[Original](oni-thread://v2/there/feature\\(test\\))", local)).toEqual([
+      ref("there", "feature(test)"),
+    ]);
+    expect(
+      relabelThreadLinks(
+        "[Original](oni-thread://v2/there/feature\\(test\\))",
+        local,
+        () => undefined,
+      ),
+    ).toBe("Original");
+    const unbalanced = "[Original](oni-thread://v2/there/feature(test)";
+    expect(threadLinkRefs(unbalanced, local)).toEqual([]);
+    expect(relabelThreadLinks(unbalanced, local, () => "Renamed")).toBe(unbalanced);
   });
 
   it("turns a v2 link it cannot resolve into plain text, never the raw link", () => {
@@ -473,6 +495,7 @@ describe("thread links", () => {
     for (const [markdown, expected] of [
       [`[ ${autolink} ](https://example.com)`],
       [`[${autolink}](<https://example.com/a b> "Title")`],
+      [`[${autolink}](oni-thread://v2/local/id "Title")`],
       [`[a](https://example.com/x_(y)) ${autolink}`, `[a](https://example.com/x_(y)) ${relabeled}`],
       [`[[[ [old](oni-thread://v2/there/t1)`, `[[[ ${relabeled}`],
       [`\\\\[old](oni-thread://v2/there/t1)`, `\\\\${relabeled}`],

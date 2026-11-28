@@ -4945,3 +4945,4 @@ eefff120ff	take	taken; kept Onicode's network-link guard (networkPathReachedBy) 
 96612aedd9	take	taken as is
 cc2e1c4e07	take	adopted upstream over Onicode's radial Escape guard: only a picker with variants open eats Escape and focus returns to its trigger; kept Onicode's held-Escape (event.repeat) guard so a held key that closed a picker does not close Settings
 fe78a9f07e	take	taken as is
+ac2c28bc76	take	taken; hosted-link alternatives dropped (hosted web links removed in Onicode)
