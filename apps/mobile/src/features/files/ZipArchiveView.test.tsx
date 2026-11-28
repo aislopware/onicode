@@ -203,6 +203,7 @@ function setup() {
     environmentId: null,
     draftKey: null,
     maxAttachmentBytes: undefined,
+    saving: false,
     onSave: () => {},
     onRemove: null,
   };
@@ -367,4 +368,6 @@ it("keeps a remote archive open when its signed URL is minted again", async () =
     expect(screen.container.querySelector('[aria-label="first.txt"]')).not.toBeNull(),
   );
   expect(fetchArchive).toHaveBeenCalledTimes(1);
+  // A cached URL can name a rebuilt ZIP the HTTP cache still holds.
+  expect(fetchArchive).toHaveBeenCalledWith("https://host.test/a.zip?sig=2", expect.anything());
 });

@@ -9,7 +9,7 @@ import {
 
 import { appAtomRegistry } from "../../state/atom-registry";
 import { projectEnvironment } from "../../state/projects";
-import { isAudioPreviewFile, isVideoPreviewFile, isZipPreviewFile } from "./filePath";
+import { needsWorkspaceFileContents } from "./filePath";
 import { prepareSourceFileDocument } from "./source-file-document";
 import { sourceHighlightAtom } from "./sourceHighlightingState";
 import type { HighlightScheme } from "../../lib/highlights";
@@ -35,10 +35,11 @@ export function preloadWorkspaceFileContents(input: {
     !readEnvironmentScope(input.environmentId, AuthFilesystemReadScope) ||
     isWorkspaceBrowserPreviewPath(input.relativePath) ||
     isWorkspaceImagePreviewPath(input.relativePath) ||
-    isVideoPreviewFile(input.relativePath) ||
-    // Played or listed from their bytes; the file screen never reads them as text.
-    isAudioPreviewFile(input.relativePath) ||
-    isZipPreviewFile(input.relativePath)
+    !needsWorkspaceFileContents({
+      relativePath: input.relativePath,
+      metadataKind: "file",
+      activeMode: "source",
+    })
   ) {
     return;
   }

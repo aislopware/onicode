@@ -272,7 +272,14 @@ function SwitchRow(props: {
         !props.isLast && "border-b border-border-subtle",
       )}
     >
-      <Text className="text-sm font-oni-medium text-foreground">{props.label}</Text>
+      {/* The switch reads its own label; this one is for sighted users. */}
+      <Text
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        className="text-sm font-oni-medium text-foreground"
+      >
+        {props.label}
+      </Text>
       <ThemedSwitch
         accessibilityLabel={props.label}
         onValueChange={props.onValueChange}

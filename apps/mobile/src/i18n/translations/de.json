@@ -1088,6 +1088,8 @@
   "d6f6b0c536401f97": "Bildvorlage",
   "1def3827b7403ac6": "E-Mail-Vorlage",
   "9ed38458996c973a": "Slack-Vorlage",
+  "1e111f8f1aefd524": "Diese Datei enthält Binärdaten und kann nicht als Text angezeigt werden.",
+  "e7881b28c1acad7d": "Diese Datei ist kein UTF-8-Text. Öffne sie in einer anderen App, um ihren Inhalt zu sehen.",
   "615ce9f2edf7208f": "Pull Request verknüpfen",
   "4ece383dad280e57": "Pull Requests verknüpfen",
   "6c221cecc3a34d8e": "Verknüpfung eines Pull Requests aufheben",
@@ -4715,7 +4717,7 @@
   "51e507aa054ee63b": "Sicher speichern",
   "4ba3eff83827c2d4": "Ablehnen",
   "4b46098670d70460": [
-    "Führt zu",
+    "Geht an",
     " ",
     {
       "i": 1,
@@ -4732,7 +4734,7 @@
     }
   ],
   "cf39d1301df07f46": [
-    "Führt zu",
+    "Geht an",
     " ",
     {
       "i": 1,

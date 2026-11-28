@@ -12,7 +12,7 @@ import {
   type ServerProvider,
 } from "@onicode/contracts";
 import { useRef, useState } from "react";
-import { TextInput, View } from "react-native";
+import { View } from "react-native";
 import { m } from "../../i18n/messages";
 
 import * as Dialog from "../../components/ui/Dialog";
@@ -29,7 +29,7 @@ import {
   type ClaudeAccountDraft,
 } from "./claude-accounts";
 import type { SettingsTarget } from "./settings-environment-filter";
-import { LabeledConnectionField } from "../connection/ConnectionFormField";
+import { ConnectionFormField } from "../connection/ConnectionFormField";
 
 function useProviderInstanceMutation(environment: SettingsTarget) {
   const gt = useGT();
@@ -231,19 +231,15 @@ function ClaudeAccountForm({
   }
   function field(key: keyof ClaudeAccountDraft, label: string, placeholder: string) {
     return (
-      <LabeledConnectionField label={label}>
-        <TextInput
-          accessibilityLabel={label}
-          className="rounded-lg border border-border-subtle px-3 py-2 text-base text-foreground"
-          placeholderTextColorClassName="accent-foreground-muted"
-          placeholder={placeholder}
-          autoCapitalize="none"
-          autoCorrect={false}
-          editable={!pending}
-          value={draft[key]}
-          onChangeText={(value) => setDraft((current) => ({ ...current, [key]: value }))}
-        />
-      </LabeledConnectionField>
+      <ConnectionFormField
+        label={label}
+        placeholder={placeholder}
+        autoCapitalize="none"
+        autoCorrect={false}
+        editable={!pending}
+        value={draft[key]}
+        onChangeText={(value) => setDraft((current) => ({ ...current, [key]: value }))}
+      />
     );
   }
   return (
@@ -270,7 +266,7 @@ function ClaudeAccountForm({
           {error}
         </Text>
       ) : null}
-      <View className="flex-row justify-end gap-2">
+      <View className="flex-row flex-wrap justify-end gap-2">
         <ControlPill variant="pill" label={gt("Cancel")} disabled={pending} onPress={onDone} />
         <ControlPill
           variant="primary"

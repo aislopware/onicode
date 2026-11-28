@@ -230,8 +230,8 @@ function useZipArchive(input: {
         if ((file.size ?? 0) > ARCHIVE_MAX_BYTES) throw new ZipFailureError({ failure: TOO_LARGE });
         return openArchive(await file.arrayBuffer(), abort.signal);
       }
-      // The parent just minted the first URL; a retry may outlive it.
-      const url = revision === 0 ? uri : ((await refresh()) ?? uri);
+      // A cached URL can name an archive the HTTP cache still holds after a rebuild.
+      const url = (await refresh()) ?? uri;
       const response = await fetch(url, { signal: abort.signal });
       if (!response.ok || !response.body) throw new ZipFailureError({ failure: NETWORK });
       const bytes = await readArchiveBody(response.body, (receivedBytes) =>
@@ -259,6 +259,7 @@ function useZipArchive(input: {
           });
       });
     return () => abort.abort();
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Retry must reload the archive.
   }, [source, isLocal, sizeBytes, revision]);
   return {
     state,
@@ -354,6 +355,7 @@ function ZipArchiveHeader(props: {
   readonly name: string;
   readonly subtitle: string;
   readonly chrome: ZipArchiveChrome | undefined;
+  readonly saving: boolean;
   readonly onSave: () => void;
   readonly onRemove: (() => void) | null;
 }) {
@@ -372,7 +374,13 @@ function ZipArchiveHeader(props: {
       backInSplitView={props.chrome?.backInSplitView}
       actions={[
         ...(props.chrome?.actions ?? []),
-        { accessibilityLabel: gt("Save ZIP"), icon: "square.and.arrow.up", onPress: props.onSave },
+        {
+          accessibilityLabel: gt("Save ZIP"),
+          icon: "square.and.arrow.up",
+          loading: props.saving,
+          disabled: props.saving,
+          onPress: props.onSave,
+        },
         ...(props.onRemove
           ? [
               {
@@ -432,6 +440,7 @@ function ZipArchiveProgress(props: {
 function ZipArchiveFailure(props: {
   readonly failure: ZipFailure;
   readonly onRetry: () => void;
+  readonly saving: boolean;
   readonly onSave: () => void;
 }) {
   const gt = useGT();
@@ -454,6 +463,7 @@ function ZipArchiveFailure(props: {
             <Button
               tone={props.failure.retry ? "secondary" : "primary"}
               label={gt("Save ZIP")}
+              loading={props.saving}
               onPress={props.onSave}
             />
           </View>
@@ -572,6 +582,7 @@ export function ZipArchiveView(props: {
   readonly draftKey: string | null;
   readonly maxAttachmentBytes: number | undefined;
   readonly chrome?: ZipArchiveChrome;
+  readonly saving: boolean;
   readonly onSave: () => void;
   readonly onRemove: (() => void) | null;
 }) {
@@ -608,6 +619,7 @@ export function ZipArchiveView(props: {
               : props.subtitle
           }
           chrome={props.chrome}
+          saving={props.saving}
           onSave={props.onSave}
           onRemove={props.onRemove}
         />
@@ -637,7 +649,12 @@ export function ZipArchiveView(props: {
           ) : state.status === "locked" ? (
             <FilePasswordPrompt incorrect={state.incorrect} onSubmit={unlock} />
           ) : (
-            <ZipArchiveFailure failure={state.failure} onRetry={retry} onSave={props.onSave} />
+            <ZipArchiveFailure
+              failure={state.failure}
+              onRetry={retry}
+              saving={props.saving}
+              onSave={props.onSave}
+            />
           )}
         </View>
       )}
@@ -650,6 +667,7 @@ export function ZipArchiveView(props: {
             environmentId={props.environmentId}
             draftKey={props.draftKey}
             maxAttachmentBytes={props.maxAttachmentBytes}
+            chrome={props.chrome}
             onBack={() => setSelection(null)}
           />
         </View>
@@ -697,7 +715,7 @@ type EntryContent =
   | {
       readonly status: "failed";
       readonly reason: "tooBig" | "unreadable";
-      readonly detail: string | null;
+      readonly cause: unknown;
     };
 
 function ZipEntryView(props: {
@@ -706,6 +724,7 @@ function ZipEntryView(props: {
   readonly environmentId: EnvironmentId | null;
   readonly draftKey: string | null;
   readonly maxAttachmentBytes: number | undefined;
+  readonly chrome: ZipArchiveChrome | undefined;
   readonly onBack: () => void;
 }) {
   const { entry, draftKey, maxAttachmentBytes } = props;
@@ -719,7 +738,7 @@ function ZipEntryView(props: {
   const viewerKind = isText || kind === "audio" ? null : (nativeViewerKind(kind) ?? "document");
   const tooBig = entry.sizeBytes > ARCHIVE_ENTRY_MAX_BYTES;
   const [content, setContent] = useState<EntryContent>(
-    tooBig ? { status: "failed", reason: "tooBig", detail: null } : { status: "loading" },
+    tooBig ? { status: "failed", reason: "tooBig", cause: null } : { status: "loading" },
   );
   const [rendered, setRendered] = useState(true);
   const [revision, setRevision] = useState(0);
@@ -756,8 +775,7 @@ function ZipEntryView(props: {
           setContent({
             status: "failed",
             reason: "unreadable",
-            detail:
-              cause instanceof Error ? (errorDisplayMessage(cause, m) ?? cause.message) : null,
+            cause,
           });
       });
     return () => {
@@ -825,6 +843,13 @@ function ZipEntryView(props: {
         title={entry.name}
         subtitle={subtitle}
         onBack={props.onBack}
+        // Split view has no system back here; this one closes the entry.
+        backInSplitView={
+          props.chrome?.backInSplitView
+            ? { accessibilityLabel: gt("Back"), icon: "chevron.left", onPress: props.onBack }
+            : undefined
+        }
+        actions={props.chrome?.actions}
         menus={[
           {
             title: gt("File actions"),
@@ -874,7 +899,7 @@ function ZipEntryView(props: {
                 ? gt("Previews stop at {size}. Save the file to open it in another app.", {
                     size: formatAttachmentSize(ARCHIVE_ENTRY_MAX_BYTES, messages),
                   })
-                : (content.detail ?? gt("Could not read this file."))
+                : (errorDisplayMessage(content.cause, messages) ?? gt("Could not read this file."))
             }
             action={
               <Button

@@ -1088,6 +1088,8 @@
   "d6f6b0c536401f97": "Bildmall",
   "1def3827b7403ac6": "E-postmall",
   "9ed38458996c973a": "Slack-mall",
+  "1e111f8f1aefd524": "Filen innehåller binärdata och kan inte visas som text.",
+  "e7881b28c1acad7d": "Filen är inte UTF-8-text. Öppna den i en annan app för att se innehållet.",
   "615ce9f2edf7208f": "Länka en pull request",
   "4ece383dad280e57": "Länka pull requests",
   "6c221cecc3a34d8e": "Ta bort länk till en pull request",

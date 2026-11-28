@@ -17,6 +17,7 @@ import { Sheet } from "../../components/ui/Sheet";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { LabeledConnectionField } from "../connection/ConnectionFormField";
 
 export interface McpSignInTarget {
   readonly threadId: ThreadId;
@@ -135,19 +136,21 @@ export function McpSignInSheet(props: {
           fullWidth
         />
         {url !== null ? (
-          <TextInput
-            accessibilityLabel={gt("Address of the page your browser opened")}
-            placeholder="http://127.0.0.1:…/callback?code=…"
-            value={callbackUrl}
-            onChangeText={setCallbackUrl}
-            editable={!busy}
-            autoCorrect={false}
-            autoCapitalize="none"
-            keyboardType="url"
-            spellCheck={false}
-            returnKeyType="done"
-            onSubmitEditing={() => void finish()}
-          />
+          <LabeledConnectionField label={gt("Final localhost URL")}>
+            <TextInput
+              accessibilityLabel={gt("Address of the page your browser opened")}
+              placeholder="http://127.0.0.1:…/callback?code=…"
+              value={callbackUrl}
+              onChangeText={setCallbackUrl}
+              editable={!busy}
+              autoCorrect={false}
+              autoCapitalize="none"
+              keyboardType="url"
+              spellCheck={false}
+              returnKeyType="done"
+              onSubmitEditing={() => void finish()}
+            />
+          </LabeledConnectionField>
         ) : null}
         {error !== null ? (
           <Text

@@ -31,7 +31,12 @@ export function ScheduledTaskPromptField(props: {
 
   return (
     <View className="gap-2 border-t border-border-subtle px-4 py-3">
-      <Text className="text-sm text-foreground-muted">
+      {/* The input reads its own label; this one is for sighted users. */}
+      <Text
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        className="text-sm text-foreground-muted"
+      >
         <T>Prompt</T>
       </Text>
       <View className="flex-row items-end">

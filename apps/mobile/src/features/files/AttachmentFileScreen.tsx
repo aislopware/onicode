@@ -157,6 +157,7 @@ export function AttachmentFileScreen(props: AttachmentFileScreenProps) {
           title: sharing ? gt("Opening share sheet…") : gt("Save or share"),
           icon: "square.and.arrow.up",
           inline: false,
+          disabled: sharing,
           onPress: () => void share(),
         } as const)
       : null,
@@ -212,6 +213,7 @@ export function AttachmentFileScreen(props: AttachmentFileScreenProps) {
           title: action.title,
           icon: action.icon,
           destructive: "destructive" in action,
+          disabled: "disabled" in action && action.disabled,
           onPress: action.onPress,
         })),
     ],
@@ -250,6 +252,7 @@ export function AttachmentFileScreen(props: AttachmentFileScreenProps) {
             ? clampFileAttachmentUploadBytes(capabilities.fileAttachments.maxUploadBytes)
             : undefined
         }
+        saving={sharing}
         onSave={() => void share()}
         onRemove={draftKey ? removeFromDraft : null}
       />

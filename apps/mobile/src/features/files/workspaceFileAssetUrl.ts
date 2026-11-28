@@ -1,6 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import { scopeThreadRef } from "@onicode/client-runtime/environment";
 import type { AssetResource, EnvironmentId, ThreadId } from "@onicode/contracts";
+import { isWorkspaceImagePreviewPath } from "@onicode/shared/filePreview";
 import { useMemo } from "react";
 
 import { useAssetUrlState, useRefreshAssetUrl } from "../../state/assets";
@@ -11,7 +12,6 @@ import {
   isAudioPreviewFile,
   isVideoPreviewFile,
   resolveWorkspaceFilePath,
-  tracksWorkspaceMutations,
 } from "./filePath";
 
 export function useWorkspaceFileAssetUrlState(props: {
@@ -46,9 +46,11 @@ export function useWorkspaceFileAssetUrlState(props: {
     return { _tag: "draft-workspace-file", cwd: draftCwd, path: relativePath };
   }, [absolutePath, relativePath, props.threadId, draftCwd]);
   // A file outside the root is granted by its inode, so a replaced image needs a new grant.
+  // Audio and video keep their URL: servers without file revisions would restart playback.
   const workspaceMutationId = useAtomValue(
     absolutePath !== null &&
-      tracksWorkspaceMutations(absolutePath) &&
+      isWorkspaceImagePreviewPath(absolutePath) &&
+      !isVideoPreviewFile(absolutePath) &&
       props.environmentId !== null &&
       props.threadId !== null
       ? environmentThreadDetails.workspaceMutationIdAtom(

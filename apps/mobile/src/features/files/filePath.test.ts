@@ -8,7 +8,6 @@ import {
   resolveFileLinkPath,
   resolveMarkdownFileLinkPath,
   resolveWorkspaceRelativeFilePath,
-  tracksWorkspaceMutations,
   workspacePreviewUri,
 } from "./filePath";
 
@@ -72,8 +71,8 @@ describe("needsWorkspaceFileContents", () => {
     expect(needsWorkspaceFileContents({ ...input, metadataKind: "directory" })).toBe(false);
   });
 
-  it("leaves a ZIP to the archive view, which downloads its bytes", () => {
-    for (const relativePath of ["dist/build.zip", "dist/BUILD.ZIP"]) {
+  it("leaves media and ZIPs to their viewers, which download their bytes", () => {
+    for (const relativePath of ["dist/build.zip", "dist/BUILD.ZIP", "voice.m4a", "clip.mp4"]) {
       expect(
         needsWorkspaceFileContents({ relativePath, activeMode: "source", metadataKind: "file" }),
       ).toBe(false);
@@ -101,16 +100,6 @@ describe("workspace preview classifiers", () => {
 
 describe("workspace preview revisions", () => {
   it.each([
-    ["logo.png", true],
-    ["/outside/logo.png", true],
-    ["clip.mp4", false],
-    ["voice.m4a", false],
-    ["notes.md", false],
-  ])("re-mints %s after a workspace change: %s", (path, expected) => {
-    expect(tracksWorkspaceMutations(path)).toBe(expected);
-  });
-
-  it.each([
     ["https://h/a.png?sig=1", 0, null, "https://h/a.png?sig=1"],
     ["https://h/a.png", 0, "m-2", "https://h/a.png?workspace-revision=m-2"],
     [
@@ -119,7 +108,7 @@ describe("workspace preview revisions", () => {
       "m 2",
       "https://h/a.png?sig=1&revision=3&workspace-revision=m%202",
     ],
-  ])("reloads %s for retry %i and change %s", (url, retry, mutationId, expected) => {
-    expect(workspacePreviewUri(url, { retry, mutationId })).toBe(expected);
+  ])("reloads %s for retry %i and file version %s", (url, retry, fileVersion, expected) => {
+    expect(workspacePreviewUri(url, { retry, fileVersion })).toBe(expected);
   });
 });

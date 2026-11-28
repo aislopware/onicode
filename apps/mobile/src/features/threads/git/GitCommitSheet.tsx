@@ -176,7 +176,12 @@ export function GitCommitSheet(props: GitCommitSheetProps) {
         </Text>
       ) : null}
       <View className="gap-2">
-        <Text className="text-sm font-oni-medium text-foreground">
+        {/* The input reads its own label; this one is for sighted users. */}
+        <Text
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          className="text-sm font-oni-medium text-foreground"
+        >
           <T>Commit message</T>
         </Text>
         <TextInput

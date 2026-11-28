@@ -1,3 +1,5 @@
+import * as Schema from "effect/Schema";
+import { msg } from "gt-i18n";
 import {
   audioMimeTypeFromExtension,
   isWorkspaceImagePreviewPath,
@@ -185,14 +187,25 @@ function decodeBoundedText(bounded: Uint8Array, truncated: boolean) {
   return null;
 }
 
+/** The bytes arrived but cannot be shown as text; retrying does not change that. */
+export class FilePreviewDecodeError extends Schema.TaggedError<FilePreviewDecodeError>()(
+  "FilePreviewDecodeError",
+  { message: Schema.String, i18nMessage: Schema.Array(Schema.String) },
+) {}
+
+const decodeError = (text: string) =>
+  new FilePreviewDecodeError({ message: text, i18nMessage: [text] });
+
 export function decodeFilePreviewText(bytes: Uint8Array, truncated = false) {
   const bounded = bytes.subarray(0, FILE_TEXT_PREVIEW_MAX_BYTES);
   if (bounded.some((byte) => byte === 0))
-    throw new Error("This file contains binary data and cannot be shown as text.");
+    throw decodeError(msg("This file contains binary data and cannot be shown as text."));
   const isTruncated = truncated || bytes.length > bounded.length;
   const text = decodeBoundedText(bounded, isTruncated);
   if (text === null)
-    throw new Error("This file is not UTF-8 text. Open it in another app to view its contents.");
+    throw decodeError(
+      msg("This file is not UTF-8 text. Open it in another app to view its contents."),
+    );
   return { text, truncated: isTruncated };
 }
 
