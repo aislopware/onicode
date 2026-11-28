@@ -4847,3 +4847,4 @@ f875d2ab53	take	doc conflict: kept Onicode's sidebar guide, added the Indefinite
 6a775ea48e	take	adapted: T3 Connect tunnel and CloudLinkRow stripped; the row offers the Funnel public MCP URL when public agents are on, else loopback/https; doc rewritten for public access
 ddcd0486de	take	translation conflicts: kept Onicode catalogs, added the 7 new keys; kept Onicode's fold reveal when keeping the visible file, shared by both filter toggles
 1b12bcd498	take	taken as is (Onicode's compactTrailing carries the same 2pt trailing offset)
+cce3f8bccb	take	conflict: kept Onicode's Stop-hook reopen handler beside upstream's autoApprovalReview handler
