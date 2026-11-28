@@ -545,8 +545,10 @@ function ComposerCitationNodeView({ node, editor, getPos }: NodeViewProps) {
     const from = removeOnCancel.before && doc.textBetween(pos - 1, pos) === " " ? pos - 1 : pos;
     const to = removeOnCancel.after && doc.textBetween(end, end + 1) === " " ? end + 1 : end;
     // A read-only composer (dictation) can still receive a new citation, so Cancel must undo it.
-    const chain = editor.chain();
-    (editor.isEditable ? chain.focus() : chain).deleteRange({ from, to }).run();
+    // Not the focus command: it defers DOM focus a frame, so keys typed meanwhile land on body.
+    // Focus comes first because the view scrolls only to a selection it owns.
+    if (editor.isEditable) editor.view.focus();
+    editor.chain().deleteRange({ from, to }).setTextSelection(from).scrollIntoView().run();
   };
 
   const sentRef = useRef(false);
@@ -567,8 +569,15 @@ function ComposerCitationNodeView({ node, editor, getPos }: NodeViewProps) {
     const trailingSpace =
       doc.textBetween(end, end + 1) === " " && doc.resolve(end).end() === end + 1;
     const caret = trailingSpace ? end + 1 : end;
+    // Not the focus command: it defers DOM focus a frame, so keys typed meanwhile land on body.
+    editor.view.focus();
     // The send's controlled rewrite may still be pending; emitting this caret move would restore the old prompt.
-    editor.chain().setMeta(SILENT_SELECTION_META, sent).focus(caret).run();
+    editor
+      .chain()
+      .setMeta(SILENT_SELECTION_META, sent)
+      .setTextSelection(caret)
+      .scrollIntoView()
+      .run();
   };
 
   return (
@@ -2190,9 +2199,9 @@ function ComposerPromptEditorTiptapInner(
       clipboardData.setData("text/html", encodeComposerContextClipboardHtml(text, fragment));
     }
     if (cut) {
+      editor.view.focus();
       editor
         .chain()
-        .focus()
         .command(({ tr }) => {
           markAsClipboardEdit(tr, "cut");
           return true;

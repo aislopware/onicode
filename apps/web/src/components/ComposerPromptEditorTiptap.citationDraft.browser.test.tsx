@@ -43,6 +43,7 @@ function Composer({
 }) {
   const [prompt, setPrompt] = useState(initialPrompt);
   const [answer, setAnswer] = useState("");
+  const [cursor, setCursor] = useState(0);
   return (
     <>
       <div data-assistant-citation-viewport="">
@@ -58,12 +59,16 @@ function Composer({
       <ComposerPromptEditor
         editorRef={editorRef}
         value={question ? answer : prompt}
-        cursor={0}
+        cursor={cursor}
         contextRecords={new Map()}
         skills={[]}
         disabled={disabled}
         placeholder=""
-        onChange={(next) => (question ? setAnswer(next) : setPrompt(next))}
+        onChange={(next, nextCursor) => {
+          setCursor(nextCursor);
+          if (question) setAnswer(next);
+          else setPrompt(next);
+        }}
         onCitationDraftSave={(replacedValue, savedValue) => {
           if (replacedValue === prompt) setPrompt(savedValue);
         }}
@@ -154,8 +159,9 @@ it.each(["blocked", "refusedLater"] as const)(
     );
     const comment = page.getByLabelText("Comment on selected text");
     await expect.element(comment).toHaveFocus();
+    const focus = focusWhenRemoved(comment.element());
     await userEvent.keyboard("{Control>}{Enter}{/Control}");
-    await expect.element(comment).not.toBeInTheDocument();
+    expect(await focus).toBe(screen.getByTestId("composer-editor").element());
     await userEvent.keyboard("x");
 
     await expect
@@ -163,6 +169,53 @@ it.each(["blocked", "refusedLater"] as const)(
       .toHaveAttribute("data-prompt", `See ${serializeAssistantCitation(citation)} x`);
   },
 );
+
+it.each([
+  {
+    close: "{Enter}",
+    prompt: `See ${serializeAssistantCitation(withAssistantCitationComment(citation, "note"))} x`,
+  },
+  { close: "{Escape}", prompt: "See x" },
+])(
+  "has focus back in the composer the moment $close closes a new citation's comment",
+  async ({ close, prompt }) => {
+    const editorRef = createRef<ComposerPromptEditorHandle>();
+    await using screen = await render(<Composer question={false} editorRef={editorRef} />);
+
+    const sourceAnchor = findAssistantCitationSourceAnchor(document, citation);
+    if (!sourceAnchor) throw new Error("Citation source did not resolve");
+    await act(async () =>
+      editorRef.current?.requestCitationComment({
+        previousValue: "See ",
+        value: promptBefore,
+        citationStart: "See ".length,
+        sourceAnchor,
+        insertedSpaces: { before: false, after: true },
+      }),
+    );
+    const comment = page.getByLabelText("Comment on selected text");
+    await expect.element(comment).toHaveFocus();
+    await userEvent.keyboard("note");
+    const focus = focusWhenRemoved(comment.element());
+    await userEvent.keyboard(close);
+    expect(await focus).toBe(screen.getByTestId("composer-editor").element());
+    await userEvent.keyboard("x");
+
+    await expect.element(screen.getByRole("status")).toHaveAttribute("data-prompt", prompt);
+  },
+);
+
+// A key typed while focus sits on body is lost, so focus must be back the moment the box goes.
+function focusWhenRemoved(commentInput: Element) {
+  return new Promise<Element | null>((resolve) => {
+    const observer = new MutationObserver(() => {
+      if (commentInput.isConnected) return;
+      observer.disconnect();
+      resolve(document.activeElement);
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+  });
+}
 
 it("keeps the following word whole when typing after a citation saved mid-text", async () => {
   const editorRef = createRef<ComposerPromptEditorHandle>();

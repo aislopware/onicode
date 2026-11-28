@@ -1240,7 +1240,11 @@ const harness = Effect.fnUntraced(function* (store?: typeof WorkflowStore.layer)
       Effect.scoped(Effect.provide(use, engineOf(registered))),
       Effect.forever(Effect.andThen(clock.await, TestClock.adjust("1 second"))),
     );
-  return { counts, failures, latch, boot, agents, forge, clock, database };
+  // Scheduled workflows start runs of their own as time runs on, which lands in a watcher's diffs.
+  const unscheduled = all.filter((definition) =>
+    definition.triggers.every((trigger) => trigger.kind !== "schedule"),
+  );
+  return { counts, failures, latch, boot, unscheduled, agents, forge, clock, database };
 });
 
 /** The store the engine writes to, for a test to leave what a crash would have left. */
@@ -1353,7 +1357,7 @@ it.effect(
 
 it.effect("a signal to a paused run is kept for the resume and does not run the failed step", () =>
   Effect.gen(function* () {
-    const { counts, failures, latch, boot } = yield* harness();
+    const { counts, failures, latch, boot, unscheduled } = yield* harness();
     yield* Ref.set(failures, 2);
     yield* boot(
       Effect.gen(function* () {
@@ -1380,6 +1384,7 @@ it.effect("a signal to a paused run is kept for the resume and does not run the 
         const bad = (yield* workflows.get(runId)).steps.find((step) => step.name === "bad");
         assert.equal(bad?.attempts, 3);
       }),
+      unscheduled,
     );
     assert.deepStrictEqual(yield* Ref.get(counts), { "bad tries": 3, bad: 1 });
   }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
@@ -2574,7 +2579,7 @@ it.effect("a cancelled run is cleaned up only once every agent it had is stopped
 
 it.effect("a watcher is sent the runs again when one changes", () =>
   Effect.gen(function* () {
-    const { boot } = yield* harness();
+    const { boot, unscheduled } = yield* harness();
     yield* boot(
       Effect.gen(function* () {
         const workflows = yield* Workflows.Workflows;
@@ -2590,11 +2595,12 @@ it.effect("a watcher is sent the runs again when one changes", () =>
         });
         const { runId } = yield* workflows.start(
           "review",
-          { change: "c9", timeout: "1 hour" },
+          { change: "c9" },
           { idempotencyKey: "c9" },
         );
+        // It waits twice: past its first sleep it still moves, which would land in a watcher's diffs.
         const seen = yield* Workflows.wholeLists(workflows.watch).pipe(
-          Stream.filter((snapshot) => snapshot.runs.some((run) => run.status === "waiting")),
+          Stream.filter((snapshot) => snapshot.runs.some(atVerdict)),
           Stream.runHead,
         );
         assert.deepStrictEqual(
@@ -2616,12 +2622,14 @@ it.effect("a watcher is sent the runs again when one changes", () =>
         while (!done) {
           for (const update of yield* changes) {
             assert.isTrue("_tag" in update);
+            assert.isFalse(update.runs.some((run) => run.runId === runId));
             done ||= update.runs.some(
               (run) => run.runId === other.runId && run.status === "completed",
             );
           }
         }
       }),
+      unscheduled,
     );
   }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
 );
@@ -4568,15 +4576,17 @@ it.effect("one run moving sends a watcher an update about that run, not the whol
     yield* boot(
       Effect.gen(function* () {
         const workflows = yield* Workflows.Workflows;
-        // Half the other runs wait at a gate, half wait on a question to a person.
+        // Half the other runs wait at a gate, half wait on a question to a person. They must all be
+        // parked before a mover is measured: one still on its way there shares the mover's update.
         const park = (from: number, to: number) =>
           Effect.forEach(
             Array.from({ length: to - from }, (_, i) => from + i),
             (i) =>
-              i % 2 === 0
+              (i % 2 === 0
                 ? workflows.start("gate", { gate: "south" }, { idempotencyKey: `visit/${i}` })
-                : workflows.start("sorter", { tags: [] }, { idempotencyKey: `asked/${i}` }),
-            { discard: true },
+                : workflows.start("sorter", { tags: [] }, { idempotencyKey: `asked/${i}` })
+              ).pipe(Effect.flatMap(({ runId }) => workflows.waitFor(runId, status("waiting")))),
+            { discard: true, concurrency: "unbounded" },
           );
         // The size of the first update a watcher gets after `mover` ends, let through a gate or
         // by its question being answered.
@@ -4618,6 +4628,8 @@ it.effect("one run moving sends a watcher an update about that run, not the whol
           assert.isBelow(many, few * 2, `${few} bytes beside 10 runs, ${many} beside 300`);
         }
       }).pipe(Effect.scoped),
+      // Scheduled workflows would start runs of their own as time runs on, inside a mover's update.
+      [gate, ...sorted],
     );
   }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
 );
