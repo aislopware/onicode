@@ -6,6 +6,7 @@ import {
   OrchestrationV2AppThreadJson,
   OrchestrationV2ProviderSessionJson,
   StorageCleanupReportEntry,
+  trimAsciiWhitespace,
 } from "@onicode/contracts";
 import * as Base64Url from "effect/encoding/Base64Url";
 import * as Schema from "effect/Schema";
@@ -812,8 +813,8 @@ const make = Effect.gen(function* () {
       ]);
       return unreachable === null || unreachable.stdout.trim() !== "";
     }
-    const ref = head.stdout.trim();
-    const name = ref.startsWith("refs/heads/") ? ref.slice("refs/heads/".length).trim() : null;
+    const ref = trimAsciiWhitespace(head.stdout);
+    const name = ref.startsWith("refs/heads/") ? ref.slice("refs/heads/".length) : null;
     return name !== branch;
   });
 
@@ -1832,7 +1833,7 @@ const make = Effect.gen(function* () {
               allowNonZeroExit: true,
             });
             if (projectHead.exitCode !== 0) return keep("project branch is unavailable");
-            defaultRef = projectHead.stdout.trim();
+            defaultRef = trimAsciiWhitespace(projectHead.stdout);
             branch = defaultRef.slice("refs/heads/".length);
           } else {
             const defaultBranchKey = `${repositoryCwd}\0${remote}`;
