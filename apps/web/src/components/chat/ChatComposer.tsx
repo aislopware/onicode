@@ -3205,7 +3205,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       environmentId,
       primaryEnvironmentId,
       connection: Option.getOrNull(preparedConnection),
-      isDesktopRenderer: true,
       // Only "remote" or not matters here; WSL conversion is decided when a folder is picked.
       primaryRunsInWsl: false,
     }) !== "remote";
