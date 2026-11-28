@@ -581,6 +581,10 @@ function gitFailureDetail(reason: GitCommandFailureReason | null): string {
   );
 }
 
+const GIT_CONFIG_UNREADABLE_PATTERN =
+  /^(?:warning|fatal): unable to access '[^'\n]*config': Permission denied\r?$/m;
+const CONFIG_READ_RETRIES = 5;
+
 // Existing non-commit objects share the missing-ref fatal diagnostic; Git
 // distinguishes them with a separate error line.
 const GIT_NOT_A_COMMIT_PATTERN = /^error: .+(?:, not a commit|expected commit type)/im;
@@ -1428,7 +1432,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       const maxOutputBytes = input.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
       const appendTruncationMarker = input.appendTruncationMarker ?? false;
 
-      const runGitCommand = Effect.fn("runGitCommand")(function* () {
+      const runGitProcess = Effect.fnUntraced(function* () {
         const trace2Monitor = yield* createTrace2Monitor(commandInput, input.progress).pipe(
           Effect.provideService(Path.Path, path),
           Effect.provideService(FileSystem.FileSystem, fileSystem),
@@ -1534,6 +1538,23 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           { concurrency: "unbounded" },
         ).pipe(Effect.map(([stdout, stderr, exitCode]) => [stdout, stderr, exitCode] as const));
         yield* trace2Monitor.flush;
+        return { stdout, stderr, exitCode };
+      }, Effect.scoped);
+
+      const runGitCommand = Effect.fn("runGitCommand")(function* () {
+        let run = yield* runGitProcess();
+        // Git for Windows cannot open .git/config while a sibling renames config.lock over it.
+        // Git stops before doing anything, and starting it again outlasts the rename.
+        for (
+          let retry = 0;
+          retry < CONFIG_READ_RETRIES &&
+          run.exitCode !== 0 &&
+          GIT_CONFIG_UNREADABLE_PATTERN.test(run.stderr.text);
+          retry += 1
+        ) {
+          run = yield* runGitProcess();
+        }
+        const { stdout, stderr, exitCode } = run;
 
         if (!input.allowNonZeroExit && exitCode !== 0) {
           const reason = classifyGitFailure(stderr.text);
@@ -1556,7 +1577,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         } satisfies GitVcsDriver.ExecuteGitResult;
       });
 
-      const execution = runGitCommand().pipe(Effect.scoped);
+      const execution = runGitCommand();
       if (timeoutMs === null) {
         return yield* execution;
       }
