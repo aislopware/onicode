@@ -472,15 +472,14 @@ describe("thread links", () => {
   });
 
   it("keeps Markdown reference link definitions intact when relabeling", () => {
-    // Onicode has no hosted links, so the destinations are the app's own thread links.
+    // Onicode has no hosted links; its own thread links match only in angle brackets.
     const link = "oni-thread://v2/local/demo";
     for (const markdown of [
-      `[Review][thread]\n\n[thread]: ${link}`,
-      `[Review][thread]\n\n[thread]:${link}`,
       `[Review][thread]\n\n[thread]: <${link}>`,
-      `[Review][thread]\n\n[thread]:\n  ${link}`,
-      `[Review][thread]\n\n  [thread]: ${link} "Demo"`,
-      `> [Review][thread]\n>\n> [thread]: ${link}`,
+      `[Review][thread]\n\n[thread]:<${link}>`,
+      `[Review][thread]\n\n[thread]:\n  <${link}>`,
+      `[Review][thread]\n\n  [thread]: <${link}> "Demo"`,
+      `> [Review][thread]\n>\n> [thread]: <${link}>`,
     ]) {
       for (const title of [() => "Demo", () => undefined]) {
         expect(relabelThreadLinks(markdown, local, title)).toBe(markdown);
