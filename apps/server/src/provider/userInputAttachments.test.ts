@@ -2278,6 +2278,18 @@ describe("question answer paths", () => {
           expected: [],
         },
         {
+          ext: "odt",
+          parts: {
+            "content.xml":
+              '<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0">' +
+              '<office:body><office:text><text:p>Badge <draw:g text:anchor-type="as-char"><draw:frame><draw:text-box><text:p>A</text:p></draw:text-box></draw:frame></draw:g> required.</text:p>' +
+              "<text:p>Before<draw:frame><draw:text-box><text:p>Callout</text:p></draw:text-box></draw:frame>after</text:p>" +
+              "</office:text></office:body></office:document-content>",
+          },
+          exact: "Badge A required.\nBefore\nCallout\nafter",
+          expected: [],
+        },
+        {
           ext: "ods",
           parts: {
             "content.xml":

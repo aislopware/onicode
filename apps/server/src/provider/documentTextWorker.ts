@@ -349,14 +349,19 @@ function xml(
         ? odfAttribute(tag.attributes, "anchor-type", stack)?.trim()
         : undefined;
     // Only a character-anchored drawing sits in the line; other anchors float beside the text.
-    // A frame without one is paragraph-anchored, as LibreOffice reads it.
+    // A frame without one is paragraph-anchored, as LibreOffice reads it, unless it sits in an
+    // anchored drawing group, which places it.
     if (anchor === "as-char") node.odfInlineParagraphs = true;
     else if (
       anchor ||
       (odf &&
         node.name === "frame" &&
         node.attrs["anchor-type"]?.trim() !== "as-char" &&
-        namespaceOf(tag.name, stack) === ODF_DRAW_NS)
+        namespaceOf(tag.name, stack) === ODF_DRAW_NS &&
+        !stack.some(
+          (ancestor) =>
+            ancestor.name === "g" && (ancestor.odfInlineParagraphs || ancestor.odfFloating),
+        ))
     )
       node.odfFloating = true;
     if (
