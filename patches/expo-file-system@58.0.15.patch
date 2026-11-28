@@ -1,0 +1,16 @@
+diff --git a/ios/FileSystemDownloadTask.swift b/ios/FileSystemDownloadTask.swift
+index 172a109967988c9c6fee555726cf8be0a0aad953..d717bf13913e1dd4be27cf32ac3ded691950b818 100644
+--- a/ios/FileSystemDownloadTask.swift
++++ b/ios/FileSystemDownloadTask.swift
+@@ -178,6 +178,11 @@ final class NetworkTaskSessionManager {
+   #endif
+ 
+   func session(for type: NetworkTaskSessionType) -> URLSession {
++    // An upload starts on the module queue, but the lazy sessions are unsynchronized and creating the
++    // background one reads the main-actor subscriber repository.
++    guard Thread.isMainThread else {
++      return DispatchQueue.main.sync { session(for: type) }
++    }
+     switch type {
+     case .foreground:
+       return foregroundSession
