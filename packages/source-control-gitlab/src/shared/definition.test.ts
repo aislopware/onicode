@@ -90,6 +90,7 @@ describe("GitLab change request URLs", () => {
     ).toBe("https://gitlab.com/group/sub/project/-/merge_requests/4");
     for (const [host, repository] of [
       ["gitlab.com", "gitlab.com/group/project"],
+      ["altssh.gitlab.com", "gitlab.com/group/project"],
       ["gitlab.internal:8080", "gitlab.internal/team/app"],
       ["gitlab.com", "project"],
       ["gitlab.com", "group//project"],
