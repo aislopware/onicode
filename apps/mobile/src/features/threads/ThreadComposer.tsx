@@ -7,6 +7,9 @@ import { useAppearancePreferences } from "../settings/appearance/AppearancePrefe
 import type { EnvironmentThreadShell } from "@onicode/client-runtime/state/shell";
 import { settlePromise, squashAtomCommandFailure } from "@onicode/client-runtime/state/runtime";
 import { AsyncResult } from "effect/reactivity";
+import { isSkillReloadCommand } from "@onicode/client-runtime/providerSkills";
+import { serverEnvironment } from "../../state/server";
+import { useAtomCommand } from "../../state/use-atom-command";
 import { useAtomValue } from "@effect/atom-react";
 import { clampFileAttachmentUploadBytes } from "@onicode/client-runtime/state/attachments";
 import { pastedTextDisposition, replaceTextSelection } from "@onicode/client-runtime/text-paste";
@@ -408,6 +411,9 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
       draftKey: composerDraftKey,
     });
   };
+  const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
+    reportFailure: false,
+  });
   const usageLimitsOffered =
     selectedProviderStatus !== null &&
     hasProviderUsageLimits(
@@ -678,7 +684,18 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
       console.error("[composer] send failed", squashAtomCommandFailure(sent));
       return false;
     }
-    return sent.value !== null;
+    if (sent.value === null) return false;
+    if (isSkillReloadCommand(draftAtSend.text) && props.projectCwd) {
+      void refreshProviders({
+        environmentId: props.environmentId,
+        input: {
+          instanceId: currentModelSelection.instanceId,
+          cwd: props.projectCwd,
+          fresh: true,
+        },
+      });
+    }
+    return true;
   };
 
   const nativeImageSubmit = useSubmitAfterNativeImages({

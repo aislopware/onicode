@@ -13,6 +13,7 @@ import {
   getProviderSkillsForSlashMenu,
   hasCompleteProviderWorkspaceSnapshot,
   isProviderWorkspaceSnapshotScanning,
+  isSkillReloadCommand,
   providerSkillInstructionsPath,
   resolveProviderSkillsForCwd,
   resolveProviderSlashCommandsForCwd,
@@ -99,6 +100,15 @@ describe("providerSkillInstructionsPath", () => {
     [undefined, undefined],
   ])("opens %s as %s", (path, expected) => {
     expect(providerSkillInstructionsPath({ path })).toBe(expected);
+  });
+});
+
+describe("isSkillReloadCommand", () => {
+  it("matches only a bare reload command", () => {
+    expect(isSkillReloadCommand(" /reload-skills\n")).toBe(true);
+    expect(isSkillReloadCommand("/Reload-Plugins")).toBe(true);
+    expect(isSkillReloadCommand("/reload-skills then use it")).toBe(false);
+    expect(isSkillReloadCommand("reload-skills")).toBe(false);
   });
 });
 
