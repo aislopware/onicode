@@ -613,7 +613,7 @@ function recoveredListStartsWithParagraph(
 
 // Normalize lone CR without changing offsets or splitting CRLF into two line endings.
 function normalizeLoneCarriageReturns(text: string): string {
-  return text.replace(/\r(?!\n)/g, "\n");
+  return text.includes("\r") ? text.replace(/\r(?!\n)/g, "\n") : text;
 }
 
 export function extractInlineCodeSpans(text: string): string[] {
@@ -914,6 +914,8 @@ function blankCodeBlocks(text: string): string {
 // Labels may nest balanced brackets (`[the [docs] guide](...)`), and the composer escapes them
 // (`[\[id\].tsx](...)`), so `\[` and `\]` never count. A paragraph end closes its labels.
 export function extractMarkdownLinkHrefs(text: string): string[] {
+  // Runs on every streamed chunk; without a label there is nothing to scan.
+  if (!text.includes("[")) return [];
   const markdown = blankCodeBlocks(normalizeLoneCarriageReturns(text));
   const hrefs: string[] = [];
   const scanDestination = markdownLinkDestinationScanner(markdown);
