@@ -73,6 +73,7 @@ function presentation(
   url: string,
   props: Pick<SelectableMarkdownTextProps, "linkCustomization" | "skills" | "models" | "textStyle">,
   parentSuffixByPath: ReadonlyMap<string, string>,
+  folderTint: string,
 ): MarkdownLinkCustomization | undefined {
   const custom = props.linkCustomization?.(url);
   if (custom) return custom;
@@ -108,9 +109,9 @@ function presentation(
   if (link.kind === "file")
     return {
       label: link.label,
-      // Desktop draws a muted folder for a folder link, as for any folder entry.
+      // Desktop draws a muted folder for a folder link, as for any folder entry in the tree.
       ...(link.folder
-        ? { icon: CONTEXT_CHIP_ICON_SOURCES.folder, iconTintColor: props.textStyle.mutedColor }
+        ? { icon: CONTEXT_CHIP_ICON_SOURCES.folder, iconTintColor: folderTint }
         : { icon: markdownFileIconSource(link.icon) }),
       chip: { accent: contextChipPresentation("mention").accent, tintsIcon: false },
     };
@@ -146,11 +147,16 @@ export function useEnrichedLinkVariants(
             color: textStyle.fileTextColor,
             icon: markdownFileIconSource(resolveMarkdownFileIcon(label)),
           }
-        : presentation(url, { linkCustomization, skills, models, textStyle }, parentSuffixByPath);
+        : presentation(
+            url,
+            { linkCustomization, skills, models, textStyle },
+            parentSuffixByPath,
+            theme["--color-icon-subtle"],
+          );
       if (value) byUrl.set(url, value);
     }
     return byUrl;
-  }, [urls, linkCustomization, skills, models, textStyle, fileHrefs, fileEmbedLabel]);
+  }, [urls, linkCustomization, skills, models, textStyle, fileHrefs, fileEmbedLabel, theme]);
   const chipForegrounds = useMemo(
     () =>
       new Map(

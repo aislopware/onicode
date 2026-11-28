@@ -108,9 +108,11 @@ export function IssueCommentComposer(props: {
     if (submitted.trim().length === 0) return;
     const sent = await props.onSubmit(submitted, props.audiences ? audience : undefined);
     if (!sent) return;
+    // Text typed during the send keeps the audience it was written for.
+    if (latestDraft.current !== submitted) return;
+    changeDraft("");
     // A customer reply is a choice per comment; the next one starts internal again.
     setAudience("internal");
-    if (latestDraft.current === submitted) changeDraft("");
   };
   const send = () => {
     if (!canSend || sending.current) return Promise.resolve();

@@ -2261,12 +2261,12 @@
   "5957c075ecbc3906": "Falló la vista previa",
   "b89be031608768f7": "Demasiado grande para explorarlo aquí",
   "60966cd36b4bf51c": "Se puede explorar hasta {size}. Guarda el ZIP para abrirlo en otra app.",
+  "e61f747e1fb31a8d": "{error} Guarda el ZIP para abrirlo en otra app.",
   "14fdaffe7ede45b8": "Descarga cancelada",
   "ebe0da8151c3ebde": "No se descargó el ZIP. Inténtalo de nuevo para listar sus archivos.",
   "795a59914c41c8b2": "No se pudo descargar este ZIP",
   "d1662ac1c28df58e": "Revisa la conexión con este entorno e inténtalo de nuevo.",
   "ee6bc2c56acbdebf": "No se pudo explorar este ZIP",
-  "e61f747e1fb31a8d": "{error} Guarda el ZIP para abrirlo en otra app.",
   "f3e9200679dd916d": "Puede estar incompleto o dañado. Guarda el ZIP para abrirlo en otra app.",
   "b8f98d3cb512e722": "Este mensaje ya tiene todos los adjuntos que admite.",
   "dc429ef6ac7de65e": "No se pudo guardar el archivo",
@@ -2707,6 +2707,7 @@
   "4bc1f12855e979de": "Generados",
   "01656e6237ddc437": "Documentación",
   "e1d19bd1b90ef329": "{count, plural, one {{count} archivo visible} other {{count} archivos visibles}}",
+  "872bf68b2e05f055": "{count, plural, one {{count} archivo visto oculto} other {{count} archivos vistos ocultos}}",
   "322f9f6712e4a3a7": "{count, plural, one {{count} visto} other {{count} vistos}}",
   "ccd5fc4db08374d7": "{count, plural, one {{count} archivo de prueba oculto} other {{count} archivos de prueba ocultos}}",
   "cb1e1e72fc3d2382": "Archivos de pruebas incluidos",
@@ -2714,7 +2715,12 @@
   "9103c6fa7accc088": "Ver diff de {path}, {additions, plural, one {{additions} adición} other {{additions} adiciones}}, {deletions, plural, one {{deletions} eliminación} other {{deletions} eliminaciones}}",
   "a52407bfe5da5df2": "Revisar archivos",
   "a7764874320578a8": "Ocultar archivos de prueba",
+  "f538b8016f5ca2f3": "Ocultar archivos vistos",
   "186b7ac75ed4674c": "Filtrar archivos de la revisión",
+  "be348514e8486295": "Aún no se han cargado archivos sin ver",
+  "6b7765835778dc77": "Todos los archivos están ocultos",
+  "bd2cfcb7be24cd38": "Los archivos vistos están ocultos en esta revisión.",
+  "6ae1484aa5bd2bc8": "Mostrar archivos vistos",
   "5f6124336821ef3c": "Aún no se han cargado archivos que no sean de pruebas",
   "6d63711bee3ce542": "Solo cambiaron archivos de pruebas",
   "7cb130d96321fe5a": "Los archivos de pruebas están ocultos en esta revisión.",
@@ -2925,6 +2931,7 @@
   "8e5f5001f74a460f": "Añadir comentario de revisión",
   "8055c658cf61dd31": "Copiar línea",
   "89a7eb448db48738": "{count, plural, one {{count} prueba oculta} other {{count} pruebas ocultas}}",
+  "15db3431c35d4927": "{count, plural, one {{count} visto oculto} other {{count} vistos ocultos}}",
   "b4f58b68410c319f": "Recargar cambios",
   "01cb0224aa3208c1": "Diff no disponible",
   "b683d10f00d06824": "Abre esta {term, select, mr {merge request} cr {solicitud de cambios} other {pull request}} en su proveedor para ver los cambios.",
@@ -4701,6 +4708,32 @@
   "9605dc349bd2c872": "Referencia de {label} en {source}",
   "51e507aa054ee63b": "Guardar de forma segura",
   "4ba3eff83827c2d4": "Rechazar",
+  "4b46098670d70460": [
+    "Va a",
+    " ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " ",
+    "en",
+    " ",
+    {
+      "i": 2,
+      "k": "_gt_value_2",
+      "v": "v"
+    }
+  ],
+  "cf39d1301df07f46": [
+    "Va a",
+    " ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
   "1c4391ec5c411ba7": "No se pudo detener el flujo de trabajo",
   "fece74611dcf4173": "No se pudo detener el agente",
   "9ce30f31a483c017": "Deteniendo el flujo de trabajo {label}",
@@ -5822,12 +5855,5 @@
   "ad208e3e32c85029": "Ocultar todo",
   "3328503592789bed": "Zen",
   "856812e7e1fc445e": "Llamadas a herramientas en el chat",
-  "8d545d54c0a9e950": "Oculta los comandos, ediciones y búsquedas que ejecutan los agentes. Ocultar las correctas mantiene los fallos. Zen solo muestra las respuestas finales. Las aprobaciones, preguntas y errores siempre se muestran.",
-  "872bf68b2e05f055": "{count, plural, one {{count} archivo visto oculto} other {{count} archivos vistos ocultos}}",
-  "f538b8016f5ca2f3": "Ocultar archivos vistos",
-  "be348514e8486295": "Aún no se han cargado archivos sin ver",
-  "6b7765835778dc77": "Todos los archivos están ocultos",
-  "bd2cfcb7be24cd38": "Los archivos vistos están ocultos en esta revisión.",
-  "6ae1484aa5bd2bc8": "Mostrar archivos vistos",
-  "15db3431c35d4927": "{count, plural, one {{count} visto oculto} other {{count} vistos ocultos}}"
+  "8d545d54c0a9e950": "Oculta los comandos, ediciones y búsquedas que ejecutan los agentes. Ocultar las correctas mantiene los fallos. Zen solo muestra las respuestas finales. Las aprobaciones, preguntas y errores siempre se muestran."
 }

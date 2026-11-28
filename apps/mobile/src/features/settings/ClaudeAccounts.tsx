@@ -29,6 +29,7 @@ import {
   type ClaudeAccountDraft,
 } from "./claude-accounts";
 import type { SettingsTarget } from "./settings-environment-filter";
+import { LabeledConnectionField } from "../connection/ConnectionFormField";
 
 function useProviderInstanceMutation(environment: SettingsTarget) {
   const gt = useGT();
@@ -230,17 +231,19 @@ function ClaudeAccountForm({
   }
   function field(key: keyof ClaudeAccountDraft, label: string, placeholder: string) {
     return (
-      <TextInput
-        accessibilityLabel={label}
-        className="rounded-lg border border-border-subtle px-3 py-2 text-base text-foreground"
-        placeholderTextColorClassName="accent-foreground-muted"
-        placeholder={placeholder}
-        autoCapitalize="none"
-        autoCorrect={false}
-        editable={!pending}
-        value={draft[key]}
-        onChangeText={(value) => setDraft((current) => ({ ...current, [key]: value }))}
-      />
+      <LabeledConnectionField label={label}>
+        <TextInput
+          accessibilityLabel={label}
+          className="rounded-lg border border-border-subtle px-3 py-2 text-base text-foreground"
+          placeholderTextColorClassName="accent-foreground-muted"
+          placeholder={placeholder}
+          autoCapitalize="none"
+          autoCorrect={false}
+          editable={!pending}
+          value={draft[key]}
+          onChangeText={(value) => setDraft((current) => ({ ...current, [key]: value }))}
+        />
+      </LabeledConnectionField>
     );
   }
   return (

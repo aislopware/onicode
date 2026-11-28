@@ -10,6 +10,7 @@ const reactTests = [
   "src/features/threads/useSubmitAfterNativeImages.test.tsx",
   "src/features/threads/git/GitBranchesSheet.test.tsx",
   "src/features/issues/IssueEditScreen.test.tsx",
+  "src/features/issues/IssueCommentComposer.test.tsx",
   "src/features/threads/git/GitConfirmSheet.test.tsx",
   "src/features/threads/git/GitCommitSheet.test.tsx",
   "src/features/threads/new-task-flow-provider.test.tsx",

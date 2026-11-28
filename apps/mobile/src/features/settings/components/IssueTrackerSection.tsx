@@ -227,7 +227,8 @@ export function IssueTrackerCredentialForm(props: {
           onChangeText={(value) => setDrafts({ ...drafts, [field.key]: value })}
         />
       ))}
-      {fields.length === 0 ? (
+      {/* Alone under its own section title, the token needs no label; "Another account" is not one. */}
+      {fields.length === 0 && !props.addAccount ? (
         tokenInput
       ) : (
         <LabeledConnectionField label={tracker.credential.label}>
