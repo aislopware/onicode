@@ -394,15 +394,15 @@ function resolveLink(linkSearch: string) {
     void openScratchDraft(request);
     return;
   }
-  const lastActivity = new Map<string, string>();
-  for (const thread of threads) {
-    const key = `${thread.environmentId}:${thread.projectId}`;
-    if (thread.updatedAt > (lastActivity.get(key) ?? "")) lastActivity.set(key, thread.updatedAt);
-  }
-  const activityOf = (project: EnvironmentProject) =>
-    lastActivity.get(`${project.environmentId}:${project.id}`) ?? "";
   // Read again on Clone: a project's repository identity can arrive after the shells settle.
   const openMatchingProject = () => {
+    const lastActivity = new Map<string, string>();
+    for (const thread of appAtomRegistry.get(environmentThreadShells.threadShellsAtom)) {
+      const key = `${thread.environmentId}:${thread.projectId}`;
+      if (thread.updatedAt > (lastActivity.get(key) ?? "")) lastActivity.set(key, thread.updatedAt);
+    }
+    const activityOf = (project: EnvironmentProject) =>
+      lastActivity.get(`${project.environmentId}:${project.id}`) ?? "";
     const projects = findPromptLinkProjects(
       [...appAtomRegistry.get(environmentProjects.projectsAtom)].sort((left, right) =>
         activityOf(right).localeCompare(activityOf(left)),

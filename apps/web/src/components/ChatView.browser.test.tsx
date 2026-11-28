@@ -660,7 +660,9 @@ it("a question that opens while a stashed file is checked keeps a machine stash"
 it("a pull request link waits for the repository identity a project learns after startup", async () => {
   await page.viewport(1400, 900);
   using _environment = installFakeEnvironment([]);
-  using _linked = answerRpc(WS_METHODS.pullRequestsLinkedThreads, () => ({ threads: [] }));
+  using _linked = answerRpc(WS_METHODS.pullRequestsLinkedThreads, () =>
+    Effect.succeed({ threads: [] }),
+  );
   __setClientSettingsForTests({
     ...DEFAULT_CLIENT_SETTINGS,
     onboardingCompletedAt: "2026-01-01T00:00:00.000Z",

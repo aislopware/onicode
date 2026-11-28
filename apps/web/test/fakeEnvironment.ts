@@ -780,7 +780,10 @@ export function dispatchedCommands(): ReadonlyArray<OrchestrationV2Command> {
 type ThreadEvent = Extract<OrchestrationV2ThreadStreamItem, { readonly kind: "event" }>["event"];
 
 /** Answers one RPC method with `handler` until disposed. */
-export function answerRpc(method: string, handler: (input: never) => unknown): Disposable {
+export function answerRpc(
+  method: string,
+  handler: (input: never) => Effect.Effect<unknown, unknown> | Stream.Stream<unknown, unknown>,
+): Disposable {
   const previous = handlers[method];
   handlers[method] = handler;
   return {
@@ -837,7 +840,28 @@ export async function emitProjectRepositoryIdentity(
   repositoryIdentity: NonNullable<OrchestrationProjectShell["repositoryIdentity"]>,
 ): Promise<AsyncDisposable> {
   await offerProjectRepositoryIdentity(repositoryIdentity);
-  return { [Symbol.asyncDispose]: () => offerProjectRepositoryIdentity(null) };
+  return {
+    [Symbol.asyncDispose]: async () => {
+      if (shellSubscriber === null) {
+        projects = projects.map((entry) => ({ ...entry, repositoryIdentity: null }));
+        return;
+      }
+      // Imported here: at module load it would pull the app's state into every fake environment.
+      const { readProjects, subscribeProjects } = await import("~/state/entities");
+      const learned = (list: ReadonlyArray<{ id: string; repositoryIdentity?: unknown }>) =>
+        list.some((entry) => entry.id === PROJECT_ID && entry.repositoryIdentity);
+      // The client keeps the identity until its shell stream has read the reset.
+      let unsubscribe = () => {};
+      const cleared = new Promise<void>((resolve) => {
+        unsubscribe = subscribeProjects((list) => {
+          if (!learned(list)) resolve();
+        });
+      });
+      await offerProjectRepositoryIdentity(null);
+      if (learned(readProjects())) await cleared;
+      unsubscribe();
+    },
+  };
 }
 
 /** Delivers one domain event, such as a run or turn-item update, to the thread's subscription. */

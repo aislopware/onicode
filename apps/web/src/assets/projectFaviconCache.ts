@@ -21,7 +21,15 @@ function openDatabase() {
         request.result.createObjectStore(STORE_NAME);
       }
     });
-    request.addEventListener("success", () => resolve(request.result));
+    request.addEventListener("success", () => {
+      const opened = request.result;
+      // Another window upgrading or deleting the cache waits on this connection.
+      opened.addEventListener("versionchange", () => {
+        database = undefined;
+        opened.close();
+      });
+      resolve(opened);
+    });
     request.addEventListener("error", () => reject(request.error));
     request.addEventListener("blocked", () => reject(new Error("Project icon cache is blocked.")));
   }));

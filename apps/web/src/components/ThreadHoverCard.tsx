@@ -5,6 +5,10 @@ import { cn } from "~/lib/utils";
 
 const HOVER_CARD_CLASS_NAME = "max-w-80 text-left whitespace-normal";
 
+// Shift, not flip: a card that grows under the pointer (Show more, a live status) keeps covering
+// it, so it does not close under a hand that never moved.
+export const HOVER_CARD_COLLISION = { side: "flip", align: "shift" } as const;
+
 export function ThreadHoverCardPopup({ className, ...props }: ComponentProps<typeof TooltipPopup>) {
   return (
     <TooltipPopup {...props} variant="glass" className={cn(HOVER_CARD_CLASS_NAME, className)} />
@@ -17,6 +21,7 @@ export function ThreadHoverCardTrigger({
   side = "right",
   align = "start",
   sideOffset = 4,
+  collisionAvoidance = HOVER_CARD_COLLISION,
   ...props
 }: Omit<ComponentProps<typeof SharedTooltipTrigger>, "label" | "variant" | "className"> & {
   card: ReactNode;
@@ -28,6 +33,7 @@ export function ThreadHoverCardTrigger({
       side={side}
       align={align}
       sideOffset={sideOffset}
+      collisionAvoidance={collisionAvoidance}
       variant="glass"
       className={HOVER_CARD_CLASS_NAME}
     />

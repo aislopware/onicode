@@ -37,7 +37,6 @@ interface SharedTooltipContent {
   readonly contentKey?: unknown;
   readonly side?: "top" | "bottom" | "left" | "right";
   readonly align?: "start" | "center" | "end";
-  /** Pass a module-level constant: an open tooltip refreshes when its identity changes. */
   readonly collisionAvoidance?: ComponentProps<typeof TooltipPopup>["collisionAvoidance"];
   readonly sideOffset?: number;
   readonly variant?: "default" | "glass" | "code";
@@ -183,7 +182,8 @@ export function SharedTooltipProvider({ children }: { children: ReactNode }) {
           active.contentKey === content.contentKey &&
           active.side === content.side &&
           active.align === content.align &&
-          active.collisionAvoidance === content.collisionAvoidance &&
+          JSON.stringify(active.collisionAvoidance) ===
+            JSON.stringify(content.collisionAvoidance) &&
           active.sideOffset === content.sideOffset &&
           active.variant === content.variant &&
           active.className === content.className &&
