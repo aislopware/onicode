@@ -4861,3 +4861,4 @@ d588352064	take	taken as is
 7cce01a1ca	take	taken as is (translations already in every locale); mobile has no markdown fence preview
 1d2248cf01	take	adapted: marketing catalog dropped (removed); pl catalogs pruned to Onicode's keys; Onicode-only keys translated in a follow-up commit; polyfill conflict kept Onicode's .js imports plus pl
 66d2d73a83	take	taken as is (per-line scan work only)
+999b9ad3ac	take	conflicts: upstream test imports; agentContextBudget re-measured for Onicode (mcpToolListJsonBytes 66678→66386); decoding still accepts array and object option forms
