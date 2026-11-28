@@ -5001,7 +5001,7 @@ b00170689e	take	taken as is
 f5ea2d3586	take	taken as is
 c3f060f077	take	taken as is
 c1cce2e8c6	take	scenarios ported to the desktop harness (WEB = dev Electron window)
-d0717f7e20	take	taken as is
+d0717f7e20	take	test archives built as a Map instead of JSZip (follow-up eb6ade4b04)
 c7dd6ad0a3	take	taken as is
 cc009e63dd	take	taken as is
 17b845a5d8	take	taken as is
