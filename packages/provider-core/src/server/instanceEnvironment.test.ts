@@ -135,6 +135,12 @@ describe("mergeProviderInstanceEnvironment", () => {
       libraryPath: `${appDir}/usr/lib:`,
       keptLibraryPath: ":",
     },
+    {
+      label: "when mount entries contain redundant separators or dot segments",
+      environment: undefined,
+      libraryPath: `/tmp/./.mount_Onicod-XXXX//usr/./lib;/tmp/link/../.mount_Onicod-XXXX/lib;${appDir}/../../opt/lib`,
+      keptLibraryPath: `/tmp/link/../.mount_Onicod-XXXX/lib:${appDir}/../../opt/lib`,
+    },
   ])(
     "drops the AppImage runtime from the inherited environment $label",
     ({ environment, libraryPath, keptLibraryPath }) =>
