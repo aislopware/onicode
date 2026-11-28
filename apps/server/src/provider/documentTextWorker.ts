@@ -547,6 +547,10 @@ function xml(
       (extension === ".odp" &&
         node.name === "page-thumbnail" &&
         stack.some((ancestor) => ancestor.name === "notes")) ||
+      // Calc anchors floating shapes inside cells; their text is not cell data.
+      (extension === ".ods" &&
+        parent.name === "table-cell" &&
+        namespaceOf(tag.name, [...stack, node]) === ODF_DRAW_NS) ||
       (isCompatibilityChoice && parent.hasSelectedChoice)
     ) {
       parent.children.pop();
