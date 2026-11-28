@@ -4758,3 +4758,4 @@ bf6c5dfd55	take	taken as is
 33adeef65d	take	taken as is
 ce223f8414	skip	guest share only; Onicode removed guest links
 9b5a03bf8a	take	taken as is
+48ee15ee34	take	taken; scenario uses ControlOrMeta+k
