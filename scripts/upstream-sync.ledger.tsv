@@ -4773,3 +4773,4 @@ ae8c3c8d6a	take	taken as is
 6ce5c5b4d4	take	taken as is; scenario typechecks against the desktop harness
 c2257b919c	take	fix(server): task_cancel also cancels the parent's queued follow-ups in the child; test helpers keep Onicode's ManagedProjectFolders/TaskFolders mocks
 5b6b26d503	take	fix(themes): keep inline SVG data URLs with double quotes in theme CSS
+dc82176c5e	take	fix(web): keep reopened palette open after project creation; merged with Onicode's picked-folder flag; scenario ported to the desktop harness (ControlOrMeta+k)
