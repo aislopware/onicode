@@ -3007,6 +3007,11 @@ const make = Effect.gen(function* () {
             enabledForCaller ? provider : { ...provider, enabled: false },
             orchestrationCapableInstanceIds.has(provider.instanceId),
           );
+          const isFavorite = (model: ServerProviderModel) =>
+            (settings.favorites ?? []).some(
+              (favorite) =>
+                favorite.provider === provider.instanceId && favorite.model === model.slug,
+            );
           const { listed, omitted } = listCapabilityModels({
             provider,
             preferences: settings.providerModelPreferences?.[provider.instanceId],
@@ -3014,10 +3019,7 @@ const make = Effect.gen(function* () {
             isPinned: (model) =>
               model.isCustom ||
               (inherited?.instanceId === provider.instanceId && inherited.model === model.slug) ||
-              (settings.favorites ?? []).some(
-                (favorite) =>
-                  favorite.provider === provider.instanceId && favorite.model === model.slug,
-              ),
+              isFavorite(model),
           });
           return {
             providerInstanceId: provider.instanceId,
@@ -3031,6 +3033,7 @@ const make = Effect.gen(function* () {
                   ? {}
                   : { label: model.name }),
                 ...(options.length === 0 ? {} : { options: options.map(capabilityModelOption) }),
+                ...(isFavorite(model) ? { favorite: true as const } : {}),
               };
             }),
             ...(omitted === 0 ? {} : { omittedModels: omitted }),
