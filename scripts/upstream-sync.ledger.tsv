@@ -4927,3 +4927,4 @@ a7484fbd51	take	took the 1.5.2 bump and upstream's patch (Onicode's 1.5.0 patch 
 c5d7fddabc	take	kept Onicode's RangeError fallback parser beside upstream's simpler parse guard
 0ac1453a39	take	taken as is
 b68de0fb09	take	taken as is
+13cda455bd	take	adapted: test builds the archive as a Map, as Onicode's openDocument reads it (no JSZip)
