@@ -1381,8 +1381,9 @@ export const make = Effect.gen(function* () {
             name === "HEAD" || name === "index" || (name === "HEAD.lock" && event._tag === "Remove")
           );
         }),
+        // A soft reset leaves HEAD untouched, so its HEAD.lock event skips the HEAD dedup below.
         Stream.map((event) =>
-          path.basename(event.path) === "index" ? ("index" as const) : ("head" as const),
+          path.basename(event.path) === "HEAD" ? ("head" as const) : ("index" as const),
         ),
         // A checkout made as the watch starts raises no event on macOS.
         Stream.merge(
@@ -1398,7 +1399,7 @@ export const make = Effect.gen(function* () {
             headGenerations.set(cwd, (headGenerations.get(cwd) ?? 0) + 1);
           }),
         ),
-        // An event for a HEAD change the check above already published is dropped here; index updates always refresh.
+        // An event for a HEAD change the check above already published is dropped here; index and ref moves always refresh.
         Stream.filterEffect((kind) =>
           kind === "index"
             ? Effect.succeed(true)
