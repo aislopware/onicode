@@ -238,11 +238,12 @@ function filePreview(
   composerDraftTarget: ScopedThreadRef | DraftId = threadRef,
   reveal: { line: number; requestId: number } | null = null,
   thread = threadRef,
+  cwd = "/workspace",
 ) {
   return (
     <FilePreviewPanel
       environmentId={environmentId}
-      cwd="/workspace"
+      cwd={cwd}
       projectName="Project"
       relativePath={relativePath}
       threadRef={thread}
@@ -583,6 +584,56 @@ describe("source file scroll", () => {
       await vi.waitFor(() => expect(scroller()?.scrollTop).toBe(4200));
       await screen.rerender(panel(second));
       await vi.waitFor(() => expect(scroller()?.scrollTop).toBe(1000));
+    },
+  );
+
+  it.each([
+    ["an editable file", "a.ts", 4200, 1000],
+    ["a table", "a.csv", 4350, 1160],
+  ])(
+    "keeps each checkout's offset in %s when a handoff moves the thread to another one",
+    async (_, path, first, second) => {
+      await using _settings = setup();
+      const style = document.createElement("style");
+      style.textContent = appCss;
+      document.head.append(style);
+      using _style = { [Symbol.dispose]: () => style.remove() };
+      await preloadHighlighter({ themes: Object.values(DEFAULT_THEMES), langs: ["typescript"] });
+      const contents = path.endsWith(".csv")
+        ? ["a,b", ...Array.from({ length: 2000 }, (_, i) => `${i},${i}`)].join("\n")
+        : Array.from({ length: 2000 }, (_, i) => `const line${i} = ${i};`).join("\n");
+      state.file = { relativePath: path, contents, byteLength: contents.length, truncated: false };
+      const thread = { environmentId, threadId: ThreadId.make(`handoff:${path}`) };
+      const panel = (cwd: string) => (
+        <div style={{ height: 400, display: "flex", flexDirection: "column" }}>
+          {filePreview(path, null, threadRef, null, thread, cwd)}
+        </div>
+      );
+      const scroller = () =>
+        document.querySelector<HTMLElement>(
+          path.endsWith(".csv") ? "[class*='overflow-anchor:none']" : ".file-preview-virtualizer",
+        );
+      const scrollTo = async (top: number) => {
+        await vi.waitFor(() => expect(scroller()?.scrollHeight).toBeGreaterThan(5000));
+        // The viewer saves its position from the scroll event, not from the assignment.
+        const saved = new Promise((resolve) =>
+          scroller()!.addEventListener("scroll", resolve, { once: true }),
+        );
+        scroller()!.scrollTop = top;
+        await saved;
+        expect(scroller()?.scrollTop).toBe(top);
+      };
+
+      await using screen = await render(panel("/workspace"));
+      await scrollTo(first);
+      await screen.rerender(panel("/worktrees/handoff"));
+      await scrollTo(second);
+      // Within a row: a table lines its saved row up under the header.
+      const near = (top: number) => expect(Math.abs(scroller()!.scrollTop - top)).toBeLessThan(29);
+      await screen.rerender(panel("/workspace"));
+      await vi.waitFor(() => near(first));
+      await screen.rerender(panel("/worktrees/handoff"));
+      await vi.waitFor(() => near(second));
     },
   );
 

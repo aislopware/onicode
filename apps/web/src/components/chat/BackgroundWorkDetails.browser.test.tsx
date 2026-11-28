@@ -195,4 +195,6 @@ it("offers to open a subagent running in a linked environment", async () => {
   await expect
     .element(page.getByRole("dialog").getByRole("button", { name: "Open subagent" }))
     .toBeVisible();
+  // Only a command streams output; the hub has no such command for a subagent's item.
+  await expect.element(page.getByText("Command output stream")).not.toBeInTheDocument();
 });

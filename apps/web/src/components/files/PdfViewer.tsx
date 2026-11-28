@@ -710,25 +710,30 @@ export default function PdfViewer(props: {
           }
         }}
       >
-        {error ? (
-          <FileSurfaceFailure
-            message={error}
-            onRetry={() => {
-              setError(null);
-              setPdf(null);
-              setRevision((value) => value + 1);
-            }}
-          />
-        ) : incorrectPassword !== null ? (
-          <FilePasswordPrompt
-            incorrect={incorrectPassword}
-            onSubmit={(password) => {
-              setIncorrectPassword(null);
-              submitPassword.current?.(password);
-            }}
-          />
-        ) : !pdf ? (
-          <FileSurfaceLoading />
+        {error || incorrectPassword !== null || !pdf ? (
+          // The scroll region is a block, so a centered state needs a column that fills it.
+          <div className="flex h-full flex-col">
+            {error ? (
+              <FileSurfaceFailure
+                message={error}
+                onRetry={() => {
+                  setError(null);
+                  setPdf(null);
+                  setRevision((value) => value + 1);
+                }}
+              />
+            ) : incorrectPassword !== null ? (
+              <FilePasswordPrompt
+                incorrect={incorrectPassword}
+                onSubmit={(password) => {
+                  setIncorrectPassword(null);
+                  submitPassword.current?.(password);
+                }}
+              />
+            ) : (
+              <FileSurfaceLoading />
+            )}
+          </div>
         ) : (
           <div
             className="relative"

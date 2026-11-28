@@ -1965,7 +1965,7 @@ function FilePreviewPanelContent({
               </Suspense>
             ) : isMarkdown && renderMarkdown ? (
               <RenderedMarkdownSurface
-                key={relativePath}
+                key={`${environmentId}:${threadRef.threadId}:${cwd}:${relativePath}`}
                 environmentId={environmentId}
                 cwd={cwd}
                 relativePath={relativePath}
@@ -1979,7 +1979,7 @@ function FilePreviewPanelContent({
               />
             ) : tableDelimiter && renderTable ? (
               <DelimitedTablePreview
-                key={`${threadRef.threadId}:${relativePath}`}
+                key={`${environmentId}:${threadRef.threadId}:${cwd}:${relativePath}`}
                 name={relativePath}
                 text={file.data.contents}
                 delimiter={tableDelimiter}
@@ -1989,7 +1989,7 @@ function FilePreviewPanelContent({
               isHostFile ||
               !canWriteFiles ? (
               <SourceFilePreview
-                key={`${threadRef.threadId}:${relativePath}`}
+                key={`${environmentId}:${threadRef.threadId}:${cwd}:${relativePath}`}
                 name={relativePath}
                 text={file.data.contents}
                 cacheKey={projectFileCacheKey(cwd, relativePath, file.data.contents)}
@@ -1999,7 +1999,7 @@ function FilePreviewPanelContent({
             ) : (
               <DiffWorkerPoolProvider>
                 <EditableFileSurface
-                  key={`${threadRef.threadId}:${relativePath}:${resolvedTheme}`}
+                  key={`${environmentId}:${threadRef.threadId}:${cwd}:${relativePath}:${resolvedTheme}`}
                   environmentId={environmentId}
                   projectId={projectId}
                   cwd={cwd}
