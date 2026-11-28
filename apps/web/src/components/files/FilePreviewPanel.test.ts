@@ -1108,7 +1108,10 @@ Third}`;
       '<style:style style:name="TextOnly" style:family="text"><style:text-properties text:display="none"/></style:style>' +
       "</office:styles></office:document-styles>";
     const result = await openDocument(
-      new JSZip().file("content.xml", xml).file("styles.xml", styles),
+      new Map([
+        ["content.xml", xml],
+        ["styles.xml", styles],
+      ]),
       "odt",
     );
     if (result.type !== "document") throw new Error("Expected document");
