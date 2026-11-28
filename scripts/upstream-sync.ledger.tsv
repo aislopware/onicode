@@ -4755,3 +4755,4 @@ bf6c5dfd55	take	taken as is
 5f435d1457	take	taken as is (shared sessions are Codex/ACP-style; Claude is single-thread)
 2338c6f305	take	kept Onicode's CommonMark fallback parse; test and scenario use oni-thread:// links (Onicode has no web thread URLs)
 1060a7e151	take	taken as is
+33adeef65d	take	taken as is
