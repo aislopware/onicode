@@ -4943,3 +4943,4 @@ f9f5ccb86b	take	taken as is
 eefff120ff	take	taken; kept Onicode's network-link guard (networkPathReachedBy) and applied it to each decoded candidate path
 69e979df91	take	taken as is
 96612aedd9	take	taken as is
+cc2e1c4e07	take	adopted upstream over Onicode's radial Escape guard: only a picker with variants open eats Escape and focus returns to its trigger; kept Onicode's held-Escape (event.repeat) guard so a held key that closed a picker does not close Settings
