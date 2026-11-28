@@ -1251,7 +1251,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
         const repo = yield* makeTempDir("onicode-workspace-repo-");
         const fileSystem = yield* FileSystem.FileSystem;
         const branch = "feat\u00a0";
-        const worktree = path.join(repo, ".claude", "worktrees", "feature");
+        const worktree = path.join(repo, ".claude", "worktrees", "feature\u2028tools");
         yield* Effect.sync(() => {
           const git = (...args: string[]) =>
             NodeChildProcess.execFileSync("git", ["-C", repo, ...args], { stdio: "ignore" });
