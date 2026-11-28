@@ -12394,5 +12394,7 @@
   "1d5f687593c4e8ed": "Przekaż ten URL agentowi działającemu na tym komputerze: {url}",
   "3db385bf17d8f48e": "Przekaż ten URL agentowi, który ma dostęp do tego środowiska: {url}",
   "8363b914aade0bdc": "Zmaksymalizuj panel ({shortcut})",
-  "6f9f7ac334779864": "Przywróć rozmiar panelu ({shortcut})"
+  "6f9f7ac334779864": "Przywróć rozmiar panelu ({shortcut})",
+  "1e111f8f1aefd524": "Ten plik zawiera dane binarne i nie może zostać wyświetlony jako tekst.",
+  "e7881b28c1acad7d": "Ten plik nie jest tekstem UTF-8. Otwórz go w innej aplikacji, aby zobaczyć jego zawartość."
 }
