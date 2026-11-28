@@ -97,20 +97,24 @@ export function ttmlCaptions(root: XmlNode) {
     let seconds = clockSeconds + (frames + fractionalFrame) / frameRate;
     if (continuousSmpte) {
       const minutes = Math.floor(clockSeconds / 60);
-      const atMinuteStart = clock?.[2] !== undefined && clockSeconds % 60 === 0;
+      const atMinuteStart = clock !== null && clockSeconds % 60 === 0;
       let droppedFrames = 0;
+      let skippedLabels = 0;
       // TTML §N.3 counts skipped labels before applying the effective frame rate.
       if (dropMode === "dropNTSC") {
-        if (atMinuteStart && minutes % 10 !== 0 && frames < 2) return;
+        if (atMinuteStart && minutes % 10 !== 0) skippedLabels = 2;
         droppedFrames = (minutes - Math.floor(minutes / 10)) * 2;
       } else if (dropMode === "dropPAL") {
-        if (atMinuteStart && minutes % 2 === 0 && minutes % 20 !== 0 && frames < 4) return;
+        if (atMinuteStart && minutes % 2 === 0 && minutes % 20 !== 0) skippedLabels = 4;
         droppedFrames = (Math.floor(minutes / 2) - Math.floor(minutes / 20)) * 4;
       } else if (dropMode !== "nonDrop") {
         return;
       }
+      // A skipped label names no frame; a clock without one names the minute's first frame.
+      if (clock?.[2] !== undefined && frames < skippedLabels) return;
+      const frame = Math.max(frames, skippedLabels);
       seconds =
-        (clockSeconds * nominalFrameRate + frames - droppedFrames + fractionalFrame) / frameRate;
+        (clockSeconds * nominalFrameRate + frame - droppedFrames + fractionalFrame) / frameRate;
     }
     if (Number.isFinite(seconds * 1000)) return seconds;
   }
@@ -122,9 +126,17 @@ export function ttmlCaptions(root: XmlNode) {
     return node.children.map(captionText).join("");
   }
   function visit(node: XmlNode, start: number, end: number): number {
-    const begin = start + (captionTime(node.attrs.begin) ?? 0);
+    const offset = captionTime(node.attrs.begin);
     const until = captionTime(node.attrs.end);
     const duration = captionTime(node.attrs.dur);
+    // A timing the parser rejects leaves the element out, rather than reading as zero or forever.
+    if (
+      (node.attrs.begin !== undefined && offset === undefined) ||
+      (node.attrs.end !== undefined && until === undefined) ||
+      (node.attrs.dur !== undefined && duration === undefined)
+    )
+      return start;
+    const begin = start + (offset ?? 0);
     const finish = Math.min(
       end,
       until === undefined ? Infinity : start + until,

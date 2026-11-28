@@ -49,3 +49,9 @@ export function template(message: string): string {
   });
   return typeof target === "string" ? target : source;
 }
+
+/**
+ * Keeps `msg()` text unresolved, for helpers whose result is cached past a language switch.
+ * Only for helpers that pass a whole `msg()` string; display sites resolve the result.
+ */
+export const keepMarked = ((message: string) => message) as MessageResolver;

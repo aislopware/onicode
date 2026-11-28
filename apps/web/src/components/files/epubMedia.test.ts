@@ -66,21 +66,22 @@ it.each([
     "00:02:00:04",
     "00:02:00.087 --> 00:02:00.120",
   ],
+  // A clock without a frame label at a drop minute names the minute's first frame that exists.
   [
     "continuous SMPTE NTSC clocks without a frame label at a drop minute",
     ttml,
     `${smpte} ${ntscRate} p:dropMode="dropNTSC"`,
-    "00:00:59:27",
+    "00:00:59:29",
     "00:01:00",
-    "00:00:59.960 --> 00:00:59.993",
+    "00:01:00.027 --> 00:01:00.060",
   ],
   [
     "continuous SMPTE PAL clocks without a frame label at a drop minute",
     ttml,
     `${smpte} ${ntscRate} p:dropMode="dropPAL"`,
-    "00:01:59:25",
+    "00:01:59:29",
     "00:02:00",
-    "00:01:59.953 --> 00:01:59.987",
+    "00:02:00.087 --> 00:02:00.120",
   ],
   [
     "tick offsets at an explicit tick rate",
@@ -113,4 +114,17 @@ it.each([
     </tt>
   `);
   expect(ttmlCaptions(captions)).toBe(`WEBVTT\n\n${timing}\nDoor closes\n`);
+});
+
+it.each([
+  ["a dropped NTSC frame label", `${smpte} ${ntscRate} p:dropMode="dropNTSC"`, "00:01:00:00"],
+  ["a frame past the frame rate", 'p:frameRate="25"', "00:00:01:25"],
+  ["an unknown time", "", "soon"],
+])("leaves out a caption whose begin is %s", (_label, parameters, begin) => {
+  const captions = parseXml(`
+    <tt xmlns="${ttml}" xmlns:p="${ttml}#parameter" ${parameters}>
+      <body><div><p begin="${begin}" end="00:01:30:00">Door closes</p></div></body>
+    </tt>
+  `);
+  expect(ttmlCaptions(captions)).toBe("");
 });

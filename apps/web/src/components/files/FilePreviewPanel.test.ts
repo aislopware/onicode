@@ -597,6 +597,10 @@ Third}`;
       [{ kernelspec }, "python"],
       [{ language_info: { name: "" }, kernelspec }, "python"],
       [{ language_info: { name: "python" }, kernelspec: { language: "r" } }, "python"],
+      // A name that sanitizes to nothing, or is not a string, falls back to the kernel's language.
+      [{ language_info: { name: "Питон" }, kernelspec }, "python"],
+      [{ language_info: { name: { id: "py" } }, kernelspec }, "python"],
+      [{ language_info: { name: { id: "py" } } }, "text"],
     ] as const) {
       expect(
         openNotebook(bytes(JSON.stringify({ nbformat: 4, metadata, cells: [] }))),

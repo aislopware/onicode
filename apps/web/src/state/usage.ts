@@ -11,7 +11,7 @@ import {
 import { refreshUsage, usageSummaryInput } from "@onicode/client-runtime/state/usage";
 import { resolveUsageAccess } from "@onicode/client-runtime/state/usage-access";
 import { AsyncResult, Atom } from "effect/reactivity";
-import { msg } from "gt-react";
+import { msg, useLocale, useMessages } from "gt-react";
 import { useState } from "react";
 
 import { mergeUsage, type EnvironmentUsage, type MergedUsage } from "@onicode/shared/usageMerge";
@@ -19,7 +19,7 @@ import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentPresentations } from "./presentation";
 import { serverEnvironment } from "./server";
 import { environmentSession, readEnvironmentScope } from "./session";
-import { m } from "../i18n/messages";
+import { keepMarked, type MessageResolver } from "../i18n/messages";
 
 export interface EnvironmentUsageStatus {
   readonly environmentId: EnvironmentId;
@@ -46,7 +46,8 @@ const usageByWindowAtom = Atom.family((windowKey: string) =>
           session: AsyncResult.getOrElse(sessionResult, () => null),
           hasSessionError: sessionResult._tag === "Failure",
         },
-        m,
+        // Resolved in useUsage, so a language that activates while /usage is open applies.
+        keepMarked,
       );
       if (!access.canReadDiagnostics) {
         statuses.push({
@@ -74,8 +75,7 @@ const usageByWindowAtom = Atom.family((windowKey: string) =>
         isPending: result.waiting,
         canReadDiagnostics: true,
         isConnected,
-        error:
-          result._tag === "Failure" ? m(msg("This environment could not report usage.")) : null,
+        error: result._tag === "Failure" ? msg("This environment could not report usage.") : null,
         summary,
       });
     }
@@ -140,15 +140,24 @@ function withoutProviders(
 }
 
 function deriveSelection(
-  environments: readonly EnvironmentUsageStatus[],
+  marked: readonly EnvironmentUsageStatus[],
+  locale: string,
+  messages: MessageResolver,
   selectedEnvironmentIds: ReadonlySet<EnvironmentId> | null,
   hiddenProviders: ReadonlySet<UsageProviderKind>,
 ) {
+  const environments = marked.map((environment) =>
+    environment.error === null
+      ? environment
+      : { ...environment, error: messages(environment.error) },
+  );
   const selectedEnvironments =
     selectedEnvironmentIds === null
       ? environments
       : environments.filter((environment) => selectedEnvironmentIds.has(environment.environmentId));
   return {
+    marked,
+    locale,
     environments,
     selectedEnvironmentIds,
     hiddenProviders,
@@ -171,21 +180,24 @@ export function useUsage(
     untilTime: input.untilTime,
   });
   const atom = usageByWindowAtom(windowKey);
-  const environments = useAtomValue(atom);
+  const marked = useAtomValue(atom);
+  const locale = useLocale();
+  const messages = useMessages();
   // Identity-based render sync needs a derivation retained by inputs across renders.
   const [derived, setDerived] = useState(() =>
-    deriveSelection(environments, selectedEnvironmentIds, hiddenProviders),
+    deriveSelection(marked, locale, messages, selectedEnvironmentIds, hiddenProviders),
   );
   let current = derived;
   if (
-    derived.environments !== environments ||
+    derived.marked !== marked ||
+    derived.locale !== locale ||
     derived.selectedEnvironmentIds !== selectedEnvironmentIds ||
     derived.hiddenProviders !== hiddenProviders
   ) {
-    current = deriveSelection(environments, selectedEnvironmentIds, hiddenProviders);
+    current = deriveSelection(marked, locale, messages, selectedEnvironmentIds, hiddenProviders);
     setDerived(current);
   }
-  const { selectedEnvironments, merged } = current;
+  const { environments, selectedEnvironments, merged } = current;
 
   const refresh = (nextInput?: UsageSummaryInput) =>
     refreshUsage({
