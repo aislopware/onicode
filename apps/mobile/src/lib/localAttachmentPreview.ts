@@ -1,9 +1,13 @@
 import { useAtomValue } from "@effect/atom-react";
-import { errorDisplayMessage } from "@onicode/client-runtime/errors";
+import {
+  MarkedText,
+  messageFromError,
+  translatableError,
+  translatableMessage,
+} from "@onicode/client-runtime/errors";
 import { videoMimeType } from "@onicode/shared/video";
 import * as Effect from "effect/Effect";
 import { msg } from "gt-react-native";
-import { m } from "../i18n/messages";
 import * as Equal from "effect/Equal";
 import * as Hash from "effect/Hash";
 import * as Option from "effect/Option";
@@ -66,9 +70,10 @@ export async function loadLocalAttachmentPreview(
   } catch (cause) {
     release();
     if (signal.aborted) return null;
-    throw new Error(m(msg("This attachment is no longer available. Attach the file again.")), {
-      cause,
-    });
+    throw Object.assign(
+      translatableError(msg("This attachment is no longer available. Attach the file again.")),
+      { cause },
+    );
   }
 }
 
@@ -94,6 +99,7 @@ class LocalAttachmentPreviewLoadError extends Schema.TaggedError<LocalAttachment
   "LocalAttachmentPreviewLoadError",
   {
     message: Schema.String,
+    i18nMessage: Schema.optionalKey(MarkedText),
     cause: Schema.Defect(),
   },
 ) {}
@@ -107,7 +113,9 @@ const localAttachmentPreviewFamily = Atom.family((key: LocalAttachmentPreviewKey
         try: (signal) => loadLocalAttachmentPreview(key.attachment, signal),
         catch: (cause) =>
           new LocalAttachmentPreviewLoadError({
-            message: errorDisplayMessage(cause, m) ?? m(msg("The local file is unavailable.")),
+            ...(cause instanceof Error && cause.message.trim().length > 0
+              ? messageFromError(cause)
+              : translatableMessage(msg("The local file is unavailable."))),
             cause,
           }),
       }).pipe(

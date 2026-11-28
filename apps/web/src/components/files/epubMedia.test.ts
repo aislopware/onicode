@@ -117,13 +117,26 @@ it.each([
 });
 
 it.each([
-  ["a dropped NTSC frame label", `${smpte} ${ntscRate} p:dropMode="dropNTSC"`, "00:01:00:00"],
-  ["a frame past the frame rate", 'p:frameRate="25"', "00:00:01:25"],
-  ["an unknown time", "", "soon"],
-])("leaves out a caption whose begin is %s", (_label, parameters, begin) => {
+  [
+    "a begin at a dropped NTSC frame label",
+    `${smpte} ${ntscRate} p:dropMode="dropNTSC"`,
+    'begin="00:01:00:00"',
+  ],
+  [
+    "a begin whose drop minute has no frame left",
+    `${smpte} p:frameRate="2" p:dropMode="dropNTSC"`,
+    'begin="00:01:00"',
+  ],
+  ["a begin past the frame rate", 'p:frameRate="25"', 'begin="00:00:01:25"'],
+  ["a fractional clock in SMPTE time", `${smpte} p:frameRate="25"`, 'begin="00:01:00.5"'],
+  ["a seconds offset in SMPTE time", `${smpte} p:frameRate="25"`, 'begin="10s"'],
+  ["an unknown begin", "", 'begin="soon"'],
+  ["an unknown end", "", 'end="soon"'],
+  ["an unknown dur", "", 'dur="soon"'],
+])("leaves out a caption with %s", (_label, parameters, timing) => {
   const captions = parseXml(`
     <tt xmlns="${ttml}" xmlns:p="${ttml}#parameter" ${parameters}>
-      <body><div><p begin="${begin}" end="00:01:30:00">Door closes</p></div></body>
+      <body><div end="00:01:30:00"><p ${timing}>Door closes</p></div></body>
     </tt>
   `);
   expect(ttmlCaptions(captions)).toBe("");

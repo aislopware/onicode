@@ -1441,10 +1441,12 @@ function FilePreviewPanelContent({
     true,
     Schema.Boolean,
   );
-  // Reveal ids restart at one per file; pair with the path so dismissal cannot swallow another file's reveal.
-  const [handledReveal, setHandledReveal] = useState<{ path: string; requestId: number } | null>(
-    null,
-  );
+  const positionKey = useContext(PreviewPositionKey);
+  // Reveal ids restart at one per file; pair with the file so dismissal cannot swallow another file's reveal.
+  const [handledReveal, setHandledReveal] = useState<{
+    positionKey: string;
+    requestId: number;
+  } | null>(null);
   const breadcrumbRef = useRef<HTMLDivElement>(null);
   const isMarkdown = previewPath ? isMarkdownPreviewFile(previewPath) : false;
   const isMermaid = previewPath !== null && /\.(mmd|mermaid)$/i.test(previewPath);
@@ -1457,7 +1459,7 @@ function FilePreviewPanelContent({
     previewPath && attachment === undefined ? filePreviewDelimiter({ name: previewPath }) : null;
   const revealHandled =
     revealLine === null ||
-    (handledReveal?.path === relativePath && handledReveal.requestId === revealRequestId);
+    (handledReveal?.positionKey === positionKey && handledReveal.requestId === revealRequestId);
   const markdownRenderable = isMarkdown && (file.data?.byteLength ?? 0) <= FULL_TEXT_MAX_BYTES;
   const renderMarkdown = markdownRenderable && renderMarkdownPreferred && revealHandled;
   const renderMermaid = isMermaid && renderMermaidPreferred && revealHandled;
@@ -1607,7 +1609,6 @@ function FilePreviewPanelContent({
     downloadFile && previewPath !== null && absolutePath !== null && !rendersOwnSave
       ? () => downloadFile(cwd, absolutePath)
       : null;
-  const positionKey = useContext(PreviewPositionKey);
   const fileLineReveal = useFileLineReveal(relativePath, positionKey, revealLine, revealRequestId);
   // Mounting the file read under the workspace mutation id refetches it after each mutation.
   useAtomMount(
@@ -1682,7 +1683,7 @@ function FilePreviewPanelContent({
       );
     }
     return (
-      <div className="p-4 text-sm text-muted-foreground">
+      <div className="flex min-h-0 flex-1 items-center justify-center p-4 text-center text-sm text-muted-foreground">
         {fileAccess.error ?? gt("This connection cannot read host files.")}
       </div>
     );
@@ -1736,8 +1737,8 @@ function FilePreviewPanelContent({
                 const pressed = !rendered;
                 setRenderedPreferred(pressed);
                 setHandledReveal(
-                  pressed && relativePath !== null
-                    ? { path: relativePath, requestId: revealRequestId }
+                  pressed && positionKey !== null
+                    ? { positionKey, requestId: revealRequestId }
                     : null,
                 );
               }}
@@ -1846,7 +1847,7 @@ function FilePreviewPanelContent({
             />
           ) : relativePath && isVideo && absolutePath ? (
             <WorkspaceVideoPreview
-              key={`${environmentId}:${threadRef.threadId}:${absolutePath}`}
+              key={positionKey}
               environmentId={environmentId}
               threadRef={threadRef}
               draft={draft}
@@ -1857,7 +1858,7 @@ function FilePreviewPanelContent({
             />
           ) : relativePath && isAudio && absolutePath ? (
             <WorkspaceAudioPreview
-              key={`${environmentId}:${threadRef.threadId}:${absolutePath}`}
+              key={positionKey}
               environmentId={environmentId}
               threadRef={threadRef}
               draft={draft}
@@ -1868,7 +1869,7 @@ function FilePreviewPanelContent({
             />
           ) : relativePath && isImage && absolutePath ? (
             <WorkspaceImagePreview
-              key={absolutePath}
+              key={positionKey}
               environmentId={environmentId}
               threadRef={threadRef}
               draft={draft}
@@ -1879,7 +1880,7 @@ function FilePreviewPanelContent({
             />
           ) : relativePath && renderBrowserFile && absolutePath ? (
             <WorkspaceBrowserPreview
-              key={absolutePath}
+              key={positionKey}
               environmentId={environmentId}
               threadRef={threadRef}
               draft={draft}
@@ -1890,7 +1891,7 @@ function FilePreviewPanelContent({
             />
           ) : relativePath && absolutePath && showsLargeText ? (
             <WorkspaceLargeTextPreview
-              key={`${threadRef.threadId}:${absolutePath}:${renderTable}:${renderMarkdown}:${fileRefreshRevision}`}
+              key={`${positionKey}:${renderTable}:${renderMarkdown}:${fileRefreshRevision}`}
               environmentId={environmentId}
               threadRef={threadRef}
               absolutePath={absolutePath}
@@ -1911,7 +1912,7 @@ function FilePreviewPanelContent({
             absolutePath &&
             (isDocument || file.readError?.failure === "binary_file") ? (
             <WorkspaceDocumentPreview
-              key={`${environmentId}:${threadRef.threadId}:${absolutePath}`}
+              key={positionKey}
               environmentId={environmentId}
               threadRef={threadRef}
               draft={draft}
@@ -1961,11 +1962,11 @@ function FilePreviewPanelContent({
           ) : relativePath && file.data ? (
             renderMermaid ? (
               <Suspense fallback={<FileSurfaceLoading />}>
-                <MermaidFilePreview text={file.data.contents} />
+                <MermaidFilePreview key={positionKey} text={file.data.contents} />
               </Suspense>
             ) : isMarkdown && renderMarkdown ? (
               <RenderedMarkdownSurface
-                key={`${environmentId}:${threadRef.threadId}:${cwd}:${relativePath}`}
+                key={positionKey}
                 environmentId={environmentId}
                 cwd={cwd}
                 relativePath={relativePath}
@@ -1979,7 +1980,7 @@ function FilePreviewPanelContent({
               />
             ) : tableDelimiter && renderTable ? (
               <DelimitedTablePreview
-                key={`${environmentId}:${threadRef.threadId}:${cwd}:${relativePath}`}
+                key={positionKey}
                 name={relativePath}
                 text={file.data.contents}
                 delimiter={tableDelimiter}
@@ -1989,7 +1990,7 @@ function FilePreviewPanelContent({
               isHostFile ||
               !canWriteFiles ? (
               <SourceFilePreview
-                key={`${environmentId}:${threadRef.threadId}:${cwd}:${relativePath}`}
+                key={positionKey}
                 name={relativePath}
                 text={file.data.contents}
                 cacheKey={projectFileCacheKey(cwd, relativePath, file.data.contents)}
@@ -1999,7 +2000,7 @@ function FilePreviewPanelContent({
             ) : (
               <DiffWorkerPoolProvider>
                 <EditableFileSurface
-                  key={`${environmentId}:${threadRef.threadId}:${cwd}:${relativePath}:${resolvedTheme}`}
+                  key={`${positionKey}:${resolvedTheme}`}
                   environmentId={environmentId}
                   projectId={projectId}
                   cwd={cwd}

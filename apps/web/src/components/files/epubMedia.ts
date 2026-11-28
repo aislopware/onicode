@@ -81,6 +81,7 @@ export function ttmlCaptions(root: XmlNode) {
     const offset = /^(\d+(?:\.\d+)?)f$/.exec(time);
     const clockMatch = /^(\d{2,}:[0-5]\d:[0-5]\d)(?::(\d{2,})(?:\.(\d+))?)?$/.exec(time);
     const clock = continuousSmpte || clockMatch?.[2] !== undefined ? clockMatch : null;
+    if (timeBase === "smpte" && !clock) return;
     if (!offset && !clock) return mediaTime(value);
     if (timeBase !== "media" && !(continuousSmpte && clock)) return;
     if (!Number.isFinite(frameRate) || frameRate <= 0) return;
@@ -113,6 +114,7 @@ export function ttmlCaptions(root: XmlNode) {
       // A skipped label names no frame; a clock without one names the minute's first frame.
       if (clock?.[2] !== undefined && frames < skippedLabels) return;
       const frame = Math.max(frames, skippedLabels);
+      if (frame >= nominalFrameRate) return;
       seconds =
         (clockSeconds * nominalFrameRate + frame - droppedFrames + fractionalFrame) / frameRate;
     }
@@ -129,7 +131,8 @@ export function ttmlCaptions(root: XmlNode) {
     const offset = captionTime(node.attrs.begin);
     const until = captionTime(node.attrs.end);
     const duration = captionTime(node.attrs.dur);
-    // A timing the parser rejects leaves the element out, rather than reading as zero or forever.
+    // A rejected timing leaves the element out, children included, since they begin and end within
+    // it; reading it as zero or forever would show captions at the wrong time.
     if (
       (node.attrs.begin !== undefined && offset === undefined) ||
       (node.attrs.end !== undefined && until === undefined) ||

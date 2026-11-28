@@ -102,15 +102,7 @@ export function BackgroundWorkDetails(props: {
                   : command
                     ? gt("Command", { $context: "title of a background shell command" })
                     : kindLabel(task.kind);
-              // Only a command streams output; a task's item may be a subagent or a tool.
-              const itemId =
-                item === undefined
-                  ? task.kind === "command"
-                    ? task.itemId
-                    : undefined
-                  : item.type === "command_execution"
-                    ? item.id
-                    : undefined;
+              const itemId = item?.type === "command_execution" ? item.id : undefined;
               const childThreadId = task.kind === "subagent" ? task.childThreadId : undefined;
               const remoteChild =
                 task.kind === "subagent" && item?.type === "subagent"

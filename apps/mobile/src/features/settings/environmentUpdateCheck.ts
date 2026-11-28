@@ -1,4 +1,9 @@
-import { errorDisplayMessage } from "@onicode/client-runtime/errors";
+import {
+  errorDisplayMessage,
+  MarkedText,
+  messageFromError,
+  translatableMessage,
+} from "@onicode/client-runtime/errors";
 import type { EnvironmentId } from "@onicode/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -6,7 +11,7 @@ import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { msg } from "gt-react-native";
 
-import { m } from "../../i18n/messages";
+import { m, type MessageResolver } from "../../i18n/messages";
 import { findEnvironmentUpdate } from "./environment-maintenance";
 
 export interface EnvironmentReleaseCheck {
@@ -18,16 +23,16 @@ export class EnvironmentUpdateCheckError extends Schema.TaggedError<EnvironmentU
   "EnvironmentUpdateCheckError",
   {
     message: Schema.String,
+    i18nMessage: Schema.optionalKey(MarkedText),
     cause: Schema.optional(Schema.Defect()),
   },
 ) {}
 
 const asError = (cause: unknown) =>
   new EnvironmentUpdateCheckError({
-    message:
-      cause instanceof Error
-        ? (errorDisplayMessage(cause, m) ?? cause.message)
-        : m(msg("Could not check for updates.")),
+    ...(cause instanceof Error
+      ? messageFromError(cause)
+      : translatableMessage(msg("Could not check for updates."))),
     cause,
   });
 
@@ -49,9 +54,9 @@ export const environmentReleaseCheckAtom = Atom.family((environmentId: Environme
           duration: "20 seconds",
           orElse: () =>
             Effect.fail(
-              new EnvironmentUpdateCheckError({
-                message: m(msg("Checking for updates timed out. Try again.")),
-              }),
+              new EnvironmentUpdateCheckError(
+                translatableMessage(msg("Checking for updates timed out. Try again.")),
+              ),
             ),
         }),
       );
@@ -68,7 +73,9 @@ export function releaseCheckValue(
 
 export function releaseCheckError(
   result: AsyncResult.AsyncResult<EnvironmentReleaseCheck, Error>,
+  resolve: MessageResolver = m,
 ): string | null {
   if (!AsyncResult.isFailure(result) || result.waiting) return null;
-  return Option.getOrNull(AsyncResult.error(result))?.message ?? null;
+  const error = Option.getOrNull(AsyncResult.error(result));
+  return error === null ? null : (errorDisplayMessage(error, resolve) ?? error.message);
 }

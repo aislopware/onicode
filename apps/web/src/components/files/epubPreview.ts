@@ -638,9 +638,10 @@ export async function openEpub(archive: OfficeArchive) {
         const target = par.children.find((child) => child.name === "smil:text")?.attrs.src;
         const textPath = target?.split("#", 1)[0];
         if (!textPath || localPath(archive, narrationPath, textPath) !== path || !audio) continue;
-        const begin = mediaTime(audio.attrs.clipBegin) ?? 0;
+        const begin = audio.attrs.clipBegin === undefined ? 0 : mediaTime(audio.attrs.clipBegin);
         const end = mediaTime(audio.attrs.clipEnd);
-        if (end !== undefined && end <= begin) continue;
+        if (begin === undefined) continue;
+        if (audio.attrs.clipEnd !== undefined && (end === undefined || end <= begin)) continue;
         const src = await resource(localPath(archive, narrationPath, audio.attrs.src ?? ""));
         if (!src) continue;
         const anchor = target && resolve(narrationPath, target)?.anchor;

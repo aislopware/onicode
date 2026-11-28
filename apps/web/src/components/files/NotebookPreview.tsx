@@ -131,96 +131,97 @@ export default function NotebookPreview(props: {
       <FileSurfaceNotice>
         <T>Saved outputs only. Code is never executed.</T>
       </FileSurfaceNotice>
-      <div
-        ref={scroll}
-        className="scrollbar-gutter-both min-h-0 flex-1 overflow-auto"
-        onScroll={(event) => savePosition(event.currentTarget, visible)}
-      >
-        <div className="mx-auto max-w-4xl space-y-5 px-5 py-6">
-          {props.notebook.cells.slice(0, visible).map((cell, index) => (
-            <section
-              key={index}
-              aria-label={gt("Cell {number}", { number: String(index + 1) })}
-              className="min-w-0 overflow-hidden rounded-md border border-border"
-            >
-              <div className="border-b border-border bg-muted px-3 py-1.5 text-xs text-muted-foreground">
-                {cell.kind === "code" ? props.notebook.language : cell.kind} · {index + 1}
-              </div>
-              {cell.kind === "markdown" ? (
-                <ChatMarkdown
-                  text={lineCappedText(cell.source, more)}
-                  cwd={undefined}
-                  parseRawHtml={false}
-                  extensions={NOTEBOOK_MARKDOWN}
-                  className="px-4 py-3"
-                />
-              ) : cell.source.trim() ? (
-                <NotebookSource
-                  name={`cell.${cell.kind === "code" ? (({ python: "py", javascript: "js", typescript: "ts", julia: "jl" } as Record<string, string>)[props.notebook.language] ?? props.notebook.language) : "txt"}`}
-                  text={cell.source}
-                />
-              ) : null}
-              {cell.outputs.map((output, outputIndex) => {
-                const key = `${index}-${outputIndex}`;
-                const mounted = outputView.mounted.has(key);
-                const estimatedHeight = outputView.heights.get(key) ?? 80;
-                return (
-                  <div
-                    key={outputIndex}
-                    data-notebook-output={output.kind === "html" ? key : undefined}
-                    className="box-content border-t border-border"
-                    style={{
-                      minHeight: output.kind === "html" && !mounted ? estimatedHeight : undefined,
-                    }}
-                  >
-                    {output.kind === "html" ? (
-                      mounted ? (
-                        <DocumentPages
-                          html={output.text}
-                          name={gt("Cell {number} HTML output", { number: String(index + 1) })}
-                          output
-                          estimatedOutputHeight={estimatedHeight}
+      {props.notebook.cells.length === 0 ? (
+        <p className="flex flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
+          <T>This notebook is empty.</T>
+        </p>
+      ) : (
+        <div
+          ref={scroll}
+          className="scrollbar-gutter-both min-h-0 flex-1 overflow-auto"
+          onScroll={(event) => savePosition(event.currentTarget, visible)}
+        >
+          <div className="mx-auto max-w-4xl space-y-5 px-5 py-6">
+            {props.notebook.cells.slice(0, visible).map((cell, index) => (
+              <section
+                key={index}
+                aria-label={gt("Cell {number}", { number: String(index + 1) })}
+                className="min-w-0 overflow-hidden rounded-md border border-border"
+              >
+                <div className="border-b border-border bg-muted px-3 py-1.5 text-xs text-muted-foreground">
+                  {cell.kind === "code" ? props.notebook.language : cell.kind} · {index + 1}
+                </div>
+                {cell.kind === "markdown" ? (
+                  <ChatMarkdown
+                    text={lineCappedText(cell.source, more)}
+                    cwd={undefined}
+                    parseRawHtml={false}
+                    extensions={NOTEBOOK_MARKDOWN}
+                    className="px-4 py-3"
+                  />
+                ) : cell.source.trim() ? (
+                  <NotebookSource
+                    name={`cell.${cell.kind === "code" ? (({ python: "py", javascript: "js", typescript: "ts", julia: "jl" } as Record<string, string>)[props.notebook.language] ?? props.notebook.language) : "txt"}`}
+                    text={cell.source}
+                  />
+                ) : null}
+                {cell.outputs.map((output, outputIndex) => {
+                  const key = `${index}-${outputIndex}`;
+                  const mounted = outputView.mounted.has(key);
+                  const estimatedHeight = outputView.heights.get(key) ?? 80;
+                  return (
+                    <div
+                      key={outputIndex}
+                      data-notebook-output={output.kind === "html" ? key : undefined}
+                      className="box-content border-t border-border"
+                      style={{
+                        minHeight: output.kind === "html" && !mounted ? estimatedHeight : undefined,
+                      }}
+                    >
+                      {output.kind === "html" ? (
+                        mounted ? (
+                          <DocumentPages
+                            html={output.text}
+                            name={gt("Cell {number} HTML output", { number: String(index + 1) })}
+                            output
+                            estimatedOutputHeight={estimatedHeight}
+                          />
+                        ) : null
+                      ) : output.kind === "image" ? (
+                        <img
+                          src={output.text}
+                          alt={gt("Cell {number} output", { number: String(index + 1) })}
+                          loading="lazy"
+                          className="max-h-96 max-w-full p-4 object-contain"
                         />
-                      ) : null
-                    ) : output.kind === "image" ? (
-                      <img
-                        src={output.text}
-                        alt={gt("Cell {number} output", { number: String(index + 1) })}
-                        loading="lazy"
-                        className="max-h-96 max-w-full p-4 object-contain"
-                      />
-                    ) : (
-                      <pre className="overflow-x-auto p-4 text-xs whitespace-pre-wrap break-words">
-                        <LineCappedText text={output.text} more={more} />
-                      </pre>
-                    )}
-                  </div>
-                );
-              })}
-            </section>
-          ))}
-          {props.notebook.cells.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              <T>This notebook is empty.</T>
-            </p>
-          ) : null}
-          {visible < props.notebook.cells.length ? (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                if (scroll.current) savePosition(scroll.current, visible + 20);
-                setVisible(visible + 20);
-              }}
-            >
-              {gt(
-                "{count, plural, one {Show more cells ({count} remaining)} other {Show more cells ({count} remaining)}}",
-                { count: props.notebook.cells.length - visible },
-              )}
-            </Button>
-          ) : null}
+                      ) : (
+                        <pre className="overflow-x-auto p-4 text-xs whitespace-pre-wrap break-words">
+                          <LineCappedText text={output.text} more={more} />
+                        </pre>
+                      )}
+                    </div>
+                  );
+                })}
+              </section>
+            ))}
+            {visible < props.notebook.cells.length ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (scroll.current) savePosition(scroll.current, visible + 20);
+                  setVisible(visible + 20);
+                }}
+              >
+                {gt(
+                  "{count, plural, one {Show more cells ({count} remaining)} other {Show more cells ({count} remaining)}}",
+                  { count: props.notebook.cells.length - visible },
+                )}
+              </Button>
+            ) : null}
+          </div>
         </div>
-      </div>
+      )}
     </>
   );
 }

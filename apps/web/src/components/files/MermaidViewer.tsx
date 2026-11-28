@@ -16,7 +16,10 @@ export default function MermaidViewer(props: { readonly text: string }) {
     )
   )
     return (
-      <div role="alert" className="p-6 text-xs text-muted-foreground">
+      <div
+        role="alert"
+        className="flex flex-1 items-center justify-center p-6 text-center text-xs text-muted-foreground"
+      >
         <T>
           This diagram contains resource URLs, markup, node metadata, or custom configuration. Show
           Mermaid source to inspect it safely.
