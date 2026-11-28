@@ -42,6 +42,10 @@ describe("upstream-sync translation", () => {
     ["react-native-screens-5.0.0-t3.48.tgz", "react-native-screens-5.0.0-t3.48.tgz"],
     // A tab escape before a digit is not the t3 brand.
     ['"Apples green\\t3\\t\\nAfter"', '"Apples green\\t3\\t\\nAfter"'],
+    ['"row\\t3A"', '"row\\t3A"'],
+    // An escaped backslash before it leaves the brand.
+    ['"C:\\\\t3\\\\bin"', '"C:\\\\onicode\\\\bin"'],
+    ['"C:\\\\t3-cli"', '"C:\\\\oni-cli"'],
     [
       "runInNewContext(`${source}\\nt3McpExtension(pi)`)",
       "runInNewContext(`${source}\\noniMcpExtension(pi)`)",
