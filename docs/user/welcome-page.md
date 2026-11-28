@@ -15,6 +15,10 @@ If Onicode cannot read your saved settings, it shows **Could not read settings**
 Select **Retry** after storage becomes available. Setup does not replace
 unreadable settings with defaults.
 
+To import more projects later, open **Settings → Projects → Import projects and
+their threads**. It scans the environment shown there and opens the full project
+list; pick another environment in Settings to import from it.
+
 ## Agents
 
 Onicode lists the agents it found on the computer first, ready ones on top.
