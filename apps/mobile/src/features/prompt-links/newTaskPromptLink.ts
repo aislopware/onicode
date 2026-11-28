@@ -431,7 +431,15 @@ function resolveLink(linkSearch: string) {
       {
         text: m(msg("Clone", { $context: "verb, clones the repository" })),
         onPress: () => {
-          if (!openMatchingProject()) cloneRepository(repository, request);
+          const thread =
+            link.kind === "pull-request"
+              ? findPromptLinkPullRequestThread(
+                  appAtomRegistry.get(environmentThreadShells.threadShellsAtom),
+                  link.pullRequest,
+                )
+              : undefined;
+          if (thread) openThread(thread, link.prompt);
+          else if (!openMatchingProject()) cloneRepository(repository, request);
         },
       },
     ],

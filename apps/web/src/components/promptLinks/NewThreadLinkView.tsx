@@ -33,7 +33,13 @@ import { useComposerDraftStore } from "~/composerDraftStore";
 import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
 import { useScratchProject } from "~/hooks/useScratchProject";
 import { newProjectId } from "~/lib/utils";
-import { useProjects, useThreadShells, waitForProject } from "~/state/entities";
+import {
+  readProjects,
+  readThreadShells,
+  useProjects,
+  useThreadShells,
+  waitForProject,
+} from "~/state/entities";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
 import { environmentPresentations } from "~/state/presentation";
@@ -209,7 +215,14 @@ export function NewThreadLinkView({ link }: { readonly link: NewThreadLink }) {
   };
 
   const cloneRepository = async (repository: PromptLinkRepository) => {
-    if (findPromptLinkProjects(recentProjects(), repository).length > 0) {
+    // The click handler's render can be a snapshot behind the store.
+    const liveProjects = readProjects().filter((project) => project.isScratch !== true);
+    const liveThreads = readThreadShells();
+    if (
+      findPromptLinkProjects(liveProjects, repository).length > 0 ||
+      (link.kind === "pull-request" &&
+        findPromptLinkPullRequestThread(liveThreads, link.pullRequest) !== undefined)
+    ) {
       setStarted(false);
       setState({ status: "opening" });
       return;

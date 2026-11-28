@@ -11,7 +11,18 @@ const STORE_NAME = "images";
 let database: Promise<IDBDatabase> | undefined;
 
 function openDatabase() {
-  return (database ??= new Promise<IDBDatabase>((resolve, reject) => {
+  if (database) return database;
+  let settled = false;
+  const pending = new Promise<IDBDatabase>((resolve, reject) => {
+    // A newer open may already have replaced this one.
+    const forget = () => {
+      if (database === pending) database = undefined;
+    };
+    const fail = (error: unknown) => {
+      settled = true;
+      forget();
+      reject(error);
+    };
     const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
     request.addEventListener("upgradeneeded", () => {
       for (const name of request.result.objectStoreNames) {
@@ -23,16 +34,26 @@ function openDatabase() {
     });
     request.addEventListener("success", () => {
       const opened = request.result;
+      // A blocked open rejected already; its late connection would hold the upgrade.
+      if (settled) {
+        opened.close();
+        return;
+      }
+      settled = true;
+      opened.addEventListener("close", forget);
       // Another window upgrading or deleting the cache waits on this connection.
       opened.addEventListener("versionchange", () => {
-        database = undefined;
+        forget();
         opened.close();
       });
       resolve(opened);
     });
-    request.addEventListener("error", () => reject(request.error));
-    request.addEventListener("blocked", () => reject(new Error("Project icon cache is blocked.")));
-  }));
+    // A failed open is not kept, so a later read tries again.
+    request.addEventListener("error", () => fail(request.error));
+    request.addEventListener("blocked", () => fail(new Error("Project icon cache is blocked.")));
+  });
+  database = pending;
+  return pending;
 }
 
 function completed(transaction: IDBTransaction) {

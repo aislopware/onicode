@@ -137,13 +137,10 @@ const browserTestProject = {
           heldPointers.delete(page);
           await page.mouse.up();
         },
-        // What a timed-out test leaves on the page outlives it: a held button, emulated media.
+        // A timed-out test leaves its held button pressed for the next one.
         resetPage: async ({ page }) => {
           if (heldPointers.delete(page)) await page.mouse.up();
           await page.mouse.move(-1, -1);
-          const session = await page.context().newCDPSession(page);
-          await session.send("Emulation.setEmulatedMedia", { features: [] });
-          await session.detach();
         },
       },
     },
