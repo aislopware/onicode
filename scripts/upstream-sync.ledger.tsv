@@ -4835,3 +4835,4 @@ dff313a7ca	take	conflict: Onicode builds file menu items async; added canOpenPre
 0f1ad2f97f	take	taken as is
 fd5bae05e5	take	conflict: kept Onicode's extraRoots, passed cwd through
 a91808a108	take	taken as is; desktop only
+5fe9961bd4	take	adapted: Onicode has no hosted links; unsafe v2 thread ids are percent-encoded (readers try decoded), unsafe environment ids fall back to v1
