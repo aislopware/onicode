@@ -4788,3 +4788,4 @@ f5bf14070f	take	fix(server): code-workspace folder paths with trailing whitespac
 051145c223	take	fix(mobile): review comment ranges follow the app language; ThreadFeed keeps Onicode's composerContextLinkMarkdown; catalogs regenerated, new key translated as upstream
 a9f90d599a	take	fix(server): transcription cleanup asks for the JSON reply it decodes; voice-cleanup eval not rerun locally
 9349bdf0d9	take	fix(shared): uppercase pull request commit links open the named commit
+13790f8b08	take	fix(client-runtime): keep literal backslashes in relative POSIX project paths; test block merged beside Onicode's trailing-space cases
