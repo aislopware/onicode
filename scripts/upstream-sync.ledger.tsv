@@ -4831,3 +4831,4 @@ d0108065f3	take	conflict: kept Onicode's Set skip arg with upstream's attrs-base
 df5704048a	take	import conflict: kept Onicode's worktreesDirectory imports
 22cd21bad5	take	taken as is
 e8fd54a4f6	take	taken as is
+dff313a7ca	take	conflict: Onicode builds file menu items async; added canOpenPreview beside it; translations re-applied onto Onicode catalogs
