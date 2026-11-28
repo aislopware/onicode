@@ -467,6 +467,30 @@ describe("buildProjectGroups", () => {
     expect(groups.map((group) => group.key)).toEqual([`${key}::app`, key]);
   });
 
+  it("keeps literal POSIX backslashes distinct from repository path separators", () => {
+    const identity = { ...repositoryIdentity, canonicalKey: "host/org/repo", rootPath: "/repo" };
+    const groups = buildProjectGroups({
+      projects: [
+        makeProject("literal", String.raw`/repo/a\b`, { repositoryIdentity: identity }),
+        makeProject("nested", "/repo/a/b", { repositoryIdentity: identity }),
+        makeProject("windows", String.raw`C:\repo\a\b`, {
+          environmentId: EnvironmentId.make("windows"),
+          repositoryIdentity: { ...identity, rootPath: String.raw`C:\repo` },
+        }),
+      ],
+      settings: settings("repository_path"),
+    });
+
+    expect(groups.map((group) => group.key)).toEqual([
+      String.raw`host/org/repo::a\b`,
+      "host/org/repo::a/b",
+    ]);
+    expect(groups.map((group) => group.members.map(({ project }) => project.id))).toEqual([
+      ["literal"],
+      ["nested", "windows"],
+    ]);
+  });
+
   it("applies a physical-project override without dropping its siblings", () => {
     const first = makeProject("onicode", "/work/onicode");
     const second = makeProject("onicode-2", "/work/onicode-2");
