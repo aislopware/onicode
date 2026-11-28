@@ -352,3 +352,74 @@ it("stashes the side chat's prompt when Mod+S is pressed inside its portaled pop
   expect(mainPromptRef.current).toBe("Main chat prompt");
   expect(sidePromptRef.current).toBe("");
 });
+
+function queuedEditInput(
+  target: DraftId,
+  promptRef: { current: string },
+  editingQueuedMessage: NonNullable<StashInput["editingQueuedMessage"]>,
+): StashInput {
+  return { ...stashInput(target, promptRef), editingQueuedMessage };
+}
+
+function pressStashShortcut() {
+  const mod = isMacPlatform(navigator.platform) ? { metaKey: true } : { ctrlKey: true };
+  window.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "s", ...mod, bubbles: true, cancelable: true }),
+  );
+}
+
+it("moves an edited queued message to the stash and ends the edit", async () => {
+  const target = DraftId.make("stash-queued-edit");
+  using _draft = {
+    [Symbol.dispose]: () => useComposerDraftStore.getState().clearComposerContent(target),
+  };
+  using _stash = {
+    [Symbol.dispose]: () => {
+      writePromptStashStorageForTest("");
+      removeLocalStorageItem(PROMPT_STASH_STORAGE_KEY);
+    },
+  };
+  const promptRef = { current: "Queued follow-up, edited" };
+  const onMovedToStash = vi.fn();
+  await using _screen = await render(
+    <Harness
+      input={queuedEditInput(target, promptRef, { canMoveToStash: true, onMovedToStash })}
+    />,
+  );
+
+  await act(pressStashShortcut);
+
+  await vi.waitFor(() => {
+    expect(usePromptStashStore.getState().entries.map((entry) => entry.prompt)).toEqual([
+      "Queued follow-up, edited",
+    ]);
+  });
+  expect(onMovedToStash).toHaveBeenCalledTimes(1);
+  expect(promptRef.current).toBe("");
+});
+
+it("leaves an edited queued message alone when the stash cannot hold all of it", async () => {
+  const target = DraftId.make("stash-queued-edit-attachments");
+  using _draft = {
+    [Symbol.dispose]: () => useComposerDraftStore.getState().clearComposerContent(target),
+  };
+  using _stash = {
+    [Symbol.dispose]: () => {
+      writePromptStashStorageForTest("");
+      removeLocalStorageItem(PROMPT_STASH_STORAGE_KEY);
+    },
+  };
+  const promptRef = { current: "Queued follow-up with a screenshot" };
+  const onMovedToStash = vi.fn();
+  await using _screen = await render(
+    <Harness
+      input={queuedEditInput(target, promptRef, { canMoveToStash: false, onMovedToStash })}
+    />,
+  );
+
+  await act(pressStashShortcut);
+
+  expect(usePromptStashStore.getState().entries).toEqual([]);
+  expect(onMovedToStash).not.toHaveBeenCalled();
+  expect(promptRef.current).toBe("Queued follow-up with a screenshot");
+});

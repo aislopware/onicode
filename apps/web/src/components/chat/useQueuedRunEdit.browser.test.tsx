@@ -27,6 +27,7 @@ import { INLINE_TERMINAL_CONTEXT_PLACEHOLDER } from "../../lib/terminalContext";
 import {
   environmentContextRecord,
   environmentContextReference,
+  terminalContextRecord,
   threadContextReference,
 } from "../../lib/composerContextRecords";
 import { deriveComposerSendState } from "../ChatView.logic";
@@ -51,6 +52,8 @@ const mocks = await vi.hoisted(async () => {
     resumeThreadQueue: vi.fn<(value: unknown) => Promise<unknown>>(),
     promoteCommand: {},
     resumeCommand: {},
+    cancelQueuedRun: vi.fn<(value: unknown) => Promise<{ readonly _tag: "Success" }>>(),
+    cancelCommand: {},
     // The projection's runs per thread, written by each test to stand in for the server.
     threadRuns: Atom.family((_key: string) =>
       Atom.make<ReadonlyArray<RunStatus> | null>(null).pipe(Atom.keepAlive),
@@ -64,7 +67,9 @@ vi.mock("../../state/use-atom-command", () => ({
       ? mocks.promoteQueuedRun
       : command === mocks.resumeCommand
         ? mocks.resumeThreadQueue
-        : mocks.editQueuedRun,
+        : command === mocks.cancelCommand
+          ? mocks.cancelQueuedRun
+          : mocks.editQueuedRun,
 }));
 
 vi.mock("../../hooks/useSettings", () => ({
@@ -82,6 +87,7 @@ vi.mock("../../state/threads", async () => {
       editQueuedRun: {},
       promoteQueuedRun: mocks.promoteCommand,
       resumeThreadQueue: mocks.resumeCommand,
+      cancelQueuedRun: mocks.cancelCommand,
     },
     environmentThreadDetails: {
       statusAtom: () => Atom.make("ready"),
@@ -216,6 +222,7 @@ function setup() {
   mocks.editQueuedRun.mockReset();
   mocks.promoteQueuedRun.mockReset();
   mocks.resumeThreadQueue.mockReset();
+  mocks.cancelQueuedRun.mockReset();
   useAttachmentUploadStore.setState({ uploadsByImageId: {} });
   useComposerDraftStore.setState({ draftsByThreadKey: {}, draftThreadsByThreadKey: {} });
   setRuns(THREAD_A, "queued");
@@ -372,6 +379,74 @@ describe("useQueuedRunEdit", () => {
       );
     },
   );
+
+  it("ends the edit and removes the queued message once it moved to the stash", async () => {
+    const { hook } = setup();
+    mocks.cancelQueuedRun.mockResolvedValue({ _tag: "Success" });
+    const composer: ComposerRefs = {
+      promptRef: { current: "changed" },
+      composerRef: { current: null },
+      currentRouteThreadKeyRef: { current: scopedThreadKey(THREAD_A) },
+    };
+    await using _screen = await render(view(THREAD_A, "queued", hook, [], composer));
+    await beginChangedEdit(hook);
+    const editTarget = requireHook(hook).draftTarget;
+
+    await act(() => requireHook(hook).removeEditedRun());
+
+    expect(requireHook(hook).isEditing).toBe(false);
+    expect(useComposerDraftStore.getState().getComposerDraft(editTarget)).toBeNull();
+    expect(mocks.cancelQueuedRun).toHaveBeenCalledExactlyOnceWith({
+      environmentId: THREAD_A.environmentId,
+      input: { threadId: THREAD_A.threadId, runId: RUN },
+    });
+  });
+
+  it("lets an edit move to the stash only when the stash can hold all of the message", async () => {
+    const { hook } = setup();
+    const thread = threadContextRecord(THREAD_B, "Kept in the draft");
+    const terminalDraft = {
+      id: "terminal-1",
+      threadId: THREAD_A.threadId,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      terminalId: "term-1",
+      terminalLabel: "Terminal 1",
+      lineStart: 1,
+      lineEnd: 2,
+      text: "npm test",
+    };
+    const terminal = terminalContextRecord(terminalDraft);
+    const threadOnly = MessageId.make("message-thread");
+    const withTerminal = MessageId.make("message-terminal");
+    const threadText = `see ${formatInlineContextReference(threadContextReference(thread))}`;
+    // A save keeps a terminal record even after its chip left the text; the stash cannot.
+    const terminalText = "see the output";
+    const messages = [
+      { id: threadOnly, text: threadText, context: { version: 1, records: [thread] } },
+      { id: withTerminal, text: terminalText, context: { version: 1, records: [terminal] } },
+    ];
+    await using _screen = await render(view(THREAD_A, "queued", hook, messages));
+
+    await act(() =>
+      requireHook(hook).beginEdit({
+        runId: RUN,
+        messageId: threadOnly,
+        text: threadText,
+        attachments: [],
+      }),
+    );
+    expect(requireHook(hook).canMoveEditToStash).toBe(true);
+
+    await act(() =>
+      requireHook(hook).beginEdit({
+        runId: RUN,
+        messageId: withTerminal,
+        text: terminalText,
+        attachments: [],
+      }),
+    );
+    expect(requireHook(hook).canMoveEditToStash).toBe(false);
+  });
 
   it("saves an effort-only prompt without claiming removed attachments remain", async () => {
     const { hook } = setup();
