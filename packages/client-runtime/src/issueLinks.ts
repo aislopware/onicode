@@ -113,7 +113,7 @@ export function isStandaloneIssueLink(url: string): boolean {
 
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const STANDALONE_LINK_HINT_PATTERN = new RegExp(
-  `${escapeRegExp(LINEAR_HOST)}/|\\.${escapeRegExp(JIRA_HOST)}/`,
+  `${escapeRegExp(LINEAR_HOST)}(?::\\d*)?/|\\.${escapeRegExp(JIRA_HOST)}(?::\\d*)?/`,
   "i",
 );
 
