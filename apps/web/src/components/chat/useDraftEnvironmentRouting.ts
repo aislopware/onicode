@@ -478,6 +478,7 @@ export function useDraftEnvironmentRouting(input: DraftEnvironmentRoutingInput) 
         const nextPrompt = replaceTriagePlaybookLink(prompt, triagePrompt);
         if (nextPrompt !== prompt) setPrompt(draftId, nextPrompt);
       }
+      const moved = changesProject(currentDraft, projectRef);
       carryFanoutSelections(currentDraft, target.environmentId);
       if (activeProjectIsScratch) {
         setLogicalProjectDraftThreadId(
@@ -494,7 +495,7 @@ export function useDraftEnvironmentRouting(input: DraftEnvironmentRoutingInput) 
           ...workspace,
         });
       }
-      seedDraftModelSelection(draftId, projectRef);
+      if (moved) seedDraftModelSelection(draftId, projectRef);
     };
     const finish = () => {
       if (environmentChangeRef.current === request) environmentChangeRef.current = null;
