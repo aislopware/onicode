@@ -1519,6 +1519,7 @@
   "67051e1797a303c8": "Não foi possível carregar as configurações salvas do navegador.",
   "822f2a1b8c0a799e": "O navegador integrado não está disponível neste runtime.",
   "19eb7450f158369f": "Não é possível abrir links.",
+  "112173d046bfc910": "localhost:{port} roda em outra máquina, e o encaminhamento de porta não está disponível para ela agora.",
   "e4f274ef6c9c9a6c": "Escolha uma pasta na outra máquina.",
   "5aa50c97d1573919": "Não foi possível iniciar o clone.",
   "1a31b5a1f4fe467f": "Esta máquina",
@@ -1647,6 +1648,7 @@
   "09fc00e945452096": "O arquivo não foi encontrado em {machine} no caminho {path}.",
   "489ad5b6df027e0d": "Mídia indisponível",
   "a4d43351599654ca": "Esta conexão não pode mostrar arquivos neste ambiente.",
+  "086ecbb6f4c2e959": "Não foi possível abrir no navegador",
   "a2ef393fa7b48ae8": "Rolar equação em destaque",
   "e94685ea5642e088": "Rolar equação em linha",
   "2b06a4b6f5369ae2": "O acesso à pré-visualização não está disponível para este cliente.",
@@ -3120,9 +3122,9 @@
   "519dd506361059c9": "Comando",
   "b851b1f4c772dea4": "Aguardando",
   "83915f0968cde2cc": "Executando",
+  "2188eee8f81b0f51": "Abrir subagente",
   "b90e87f4b7125237": "Detalhes",
   "16dc67f5429d8bae": "Trabalho em segundo plano",
-  "2188eee8f81b0f51": "Abrir subagente",
   "28bb7ce40dfd349a": "A saída do terminal não pode ser adicionada à resposta de uma pergunta.",
   "801cb8edea94b8f6": "Responda ou dispense a pergunta primeiro e depois adicione ao chat.",
   "aa5507f20d94d5a9": "Atualize este servidor para enviar arquivos com respostas a perguntas",
@@ -3988,7 +3990,6 @@
   "ac242b57dbfa5259": "Gerenciar tarefas agendadas",
   "d93c0db04f4c8e46": "Editar automação",
   "3fe420ed9b5bdb75": "Executar agora",
-  "fdf273ca647a967f": "Excluir",
   "0c433351a8606e50": [
     "Não foi possível carregar as automações: ",
     {
@@ -4171,7 +4172,6 @@
   "e89974d6fdbe5552": "Remover desta thread",
   "562eeedc0de805fe": "Nenhum outro repositório",
   "1d2025060ba3d1c3": "Não foi possível encaminhar a porta {port}",
-  "086ecbb6f4c2e959": "Não foi possível abrir no navegador",
   "51052c00ab1ac8cc": "Não foi possível abrir a pré-visualização",
   "0ccd37739f9cf2b6": "Não foi possível parar o servidor",
   "a610a81c4061bb4c": "Servidores",
@@ -4891,9 +4891,9 @@
   "2d67b3fae24b20b2": "Procurando dispositivos…",
   "c928303400ccaf24": "Falha ao iniciar o device hub.",
   "4cb21672153c1f18": "Nenhum simulador ou emulador foi encontrado neste ambiente.",
-  "c82410197256eb53": "Simuladores iOS",
-  "31a71fec6b5f2bf3": "Dispositivos Android",
   "1bd21d5284dc2d8e": "Dispositivos iOS",
+  "31a71fec6b5f2bf3": "Dispositivos Android",
+  "c82410197256eb53": "Simuladores iOS",
   "ac18a5e35195a258": "Emuladores Android",
   "f28d1d2b5f30a8cd": "Físico",
   "94215375ea2558b8": "Em execução",
@@ -9409,6 +9409,7 @@
     }
   ],
   "f2a687289f3b3c81": "Entregas",
+  "fdf273ca647a967f": "Excluir",
   "b07d394fdeed8b92": [
     "Entregas · ",
     {

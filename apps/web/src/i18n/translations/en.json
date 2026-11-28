@@ -1519,6 +1519,7 @@
   "67051e1797a303c8": "Saved browser settings could not be loaded.",
   "822f2a1b8c0a799e": "The integrated browser is unavailable in this runtime.",
   "19eb7450f158369f": "Link opening is unavailable.",
+  "112173d046bfc910": "localhost:{port} runs on another machine, and port forwarding isn't available for it right now.",
   "e4f274ef6c9c9a6c": "Choose a folder on the other machine.",
   "5aa50c97d1573919": "Could not start the clone.",
   "1a31b5a1f4fe467f": "This machine",
@@ -1647,6 +1648,7 @@
   "09fc00e945452096": "The file was not found on {machine} at {path}.",
   "489ad5b6df027e0d": "Media unavailable",
   "a4d43351599654ca": "This connection cannot reveal files on this environment.",
+  "086ecbb6f4c2e959": "Unable to open in browser",
   "a2ef393fa7b48ae8": "Scroll display equation",
   "e94685ea5642e088": "Scroll inline equation",
   "2b06a4b6f5369ae2": "Preview access is unavailable for this client.",
@@ -3120,9 +3122,9 @@
   "519dd506361059c9": "Command",
   "b851b1f4c772dea4": "Waiting",
   "83915f0968cde2cc": "Running",
+  "2188eee8f81b0f51": "Open subagent",
   "b90e87f4b7125237": "Details",
   "16dc67f5429d8bae": "Background work",
-  "2188eee8f81b0f51": "Open subagent",
   "28bb7ce40dfd349a": "Terminal output can't be added to a question answer.",
   "801cb8edea94b8f6": "Answer or dismiss the question first, then add it to chat.",
   "aa5507f20d94d5a9": "Update this server to send files with question answers",
@@ -3989,7 +3991,6 @@
   "ac242b57dbfa5259": "Manage scheduled tasks",
   "d93c0db04f4c8e46": "Edit automation",
   "3fe420ed9b5bdb75": "Run now",
-  "fdf273ca647a967f": "Delete",
   "0c433351a8606e50": [
     "Could not load automations: ",
     {
@@ -4173,7 +4174,6 @@
   "e89974d6fdbe5552": "Remove from this thread",
   "562eeedc0de805fe": "No other repositories",
   "1d2025060ba3d1c3": "Could not forward port {port}",
-  "086ecbb6f4c2e959": "Unable to open in browser",
   "51052c00ab1ac8cc": "Unable to open preview",
   "0ccd37739f9cf2b6": "Could not stop server",
   "a610a81c4061bb4c": "Servers",
@@ -4893,9 +4893,9 @@
   "2d67b3fae24b20b2": "Finding devices…",
   "c928303400ccaf24": "The device hub failed to start.",
   "4cb21672153c1f18": "No simulators or emulators were found on this environment.",
-  "c82410197256eb53": "iOS Simulators",
-  "31a71fec6b5f2bf3": "Android Devices",
   "1bd21d5284dc2d8e": "iOS Devices",
+  "31a71fec6b5f2bf3": "Android Devices",
+  "c82410197256eb53": "iOS Simulators",
   "ac18a5e35195a258": "Android Emulators",
   "f28d1d2b5f30a8cd": "Physical",
   "94215375ea2558b8": "Running",
@@ -9418,6 +9418,7 @@
     }
   ],
   "f2a687289f3b3c81": "Deliveries",
+  "fdf273ca647a967f": "Delete",
   "b07d394fdeed8b92": [
     "Deliveries · ",
     {

@@ -1519,6 +1519,7 @@
   "67051e1797a303c8": "Sparade webbläsarinställningar kunde inte läsas in.",
   "822f2a1b8c0a799e": "Den integrerade webbläsaren är inte tillgänglig i den här körmiljön.",
   "19eb7450f158369f": "Det går inte att öppna länkar.",
+  "112173d046bfc910": "localhost:{port} körs på en annan dator, och portvidarebefordran är inte tillgänglig för den just nu.",
   "e4f274ef6c9c9a6c": "Välj en mapp på den andra datorn.",
   "5aa50c97d1573919": "Kunde inte starta kloningen.",
   "1a31b5a1f4fe467f": "Den här datorn",
@@ -1647,6 +1648,7 @@
   "09fc00e945452096": "Filen hittades inte på {machine} i {path}.",
   "489ad5b6df027e0d": "Media är inte tillgängligt",
   "a4d43351599654ca": "Den här anslutningen kan inte visa filer i den här miljön.",
+  "086ecbb6f4c2e959": "Det gick inte att öppna i webbläsaren",
   "a2ef393fa7b48ae8": "Rulla fristående ekvation",
   "e94685ea5642e088": "Rulla ekvation i texten",
   "2b06a4b6f5369ae2": "Förhandsvisningsåtkomst är inte tillgänglig för den här klienten.",
@@ -3120,9 +3122,9 @@
   "519dd506361059c9": "Kommando",
   "b851b1f4c772dea4": "Väntar",
   "83915f0968cde2cc": "Körs",
+  "2188eee8f81b0f51": "Öppna subagent",
   "b90e87f4b7125237": "Detaljer",
   "16dc67f5429d8bae": "Bakgrundsarbete",
-  "2188eee8f81b0f51": "Öppna subagent",
   "28bb7ce40dfd349a": "Terminalutdata kan inte läggas till i ett svar på en fråga.",
   "801cb8edea94b8f6": "Svara på eller stäng frågan först och lägg sedan till det i chatten.",
   "aa5507f20d94d5a9": "Uppdatera servern för att skicka filer med svar på frågor",
@@ -3988,7 +3990,6 @@
   "ac242b57dbfa5259": "Hantera schemalagda uppgifter",
   "d93c0db04f4c8e46": "Redigera automatisering",
   "3fe420ed9b5bdb75": "Kör nu",
-  "fdf273ca647a967f": "Ta bort",
   "0c433351a8606e50": [
     "Kunde inte läsa in automatiseringar: ",
     {
@@ -4172,7 +4173,6 @@
   "e89974d6fdbe5552": "Ta bort från den här tråden",
   "562eeedc0de805fe": "Inga andra repon",
   "1d2025060ba3d1c3": "Kunde inte vidarebefordra port {port}",
-  "086ecbb6f4c2e959": "Det gick inte att öppna i webbläsaren",
   "51052c00ab1ac8cc": "Det gick inte att öppna förhandsvisningen",
   "0ccd37739f9cf2b6": "Kunde inte stoppa servern",
   "a610a81c4061bb4c": "Servrar",
@@ -4892,9 +4892,9 @@
   "2d67b3fae24b20b2": "Hittar enheter…",
   "c928303400ccaf24": "Enhetshubben kunde inte starta.",
   "4cb21672153c1f18": "Inga simulatorer eller emulatorer hittades i den här miljön.",
-  "c82410197256eb53": "iOS-simulatorer",
-  "31a71fec6b5f2bf3": "Android-enheter",
   "1bd21d5284dc2d8e": "iOS-enheter",
+  "31a71fec6b5f2bf3": "Android-enheter",
+  "c82410197256eb53": "iOS-simulatorer",
   "ac18a5e35195a258": "Android-emulatorer",
   "f28d1d2b5f30a8cd": "Fysisk",
   "94215375ea2558b8": "Körs",
@@ -9417,6 +9417,7 @@
     }
   ],
   "f2a687289f3b3c81": "Leveranser",
+  "fdf273ca647a967f": "Ta bort",
   "b07d394fdeed8b92": [
     "Leveranser · ",
     {
