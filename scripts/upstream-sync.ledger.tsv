@@ -4828,3 +4828,4 @@ c1dd74931e	take	conflicts: kept Onicode's uninterruptible remote delegation and 
 7bb23743f1	take	conflict: kept Onicode's raw-path-first guard, added upstream's normalized fallback
 d0108065f3	take	conflict: kept Onicode's Set skip arg with upstream's attrs-based wordVanish; DocumentText VERSION 25
 9ceb8bfbec	take	taken as is
+df5704048a	take	import conflict: kept Onicode's worktreesDirectory imports
