@@ -52,6 +52,7 @@ import {
   ThreadId,
   type TurnItemId,
 } from "@onicode/contracts";
+import { imageMimeTypeFromBytes } from "@onicode/shared/image";
 import { SKILL_MENTION_PATTERN } from "@onicode/shared/composerInlineTokens";
 import { AgentScope } from "@onicode/shared/AgentScope";
 import * as HostProcess from "@onicode/shared/HostProcess";
@@ -4445,7 +4446,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             );
             return {
               type: "image" as const,
-              url: `data:${attachment.mimeType};base64,${Buffer.from(bytes).toString("base64")}`,
+              url: `data:${imageMimeTypeFromBytes(bytes) ?? attachment.mimeType};base64,${Buffer.from(bytes).toString("base64")}`,
             } satisfies CodexSchema.V2TurnStartParams__UserInput;
           },
         );

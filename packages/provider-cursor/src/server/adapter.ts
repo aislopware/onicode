@@ -9,6 +9,7 @@ import type {
   SettingSource,
   ToolCall,
 } from "@cursor/sdk";
+import { imageMimeTypeFromBytes } from "@onicode/shared/image";
 import { formatReadToolLabel, formatSearchToolLabel } from "@onicode/shared/toolActivity";
 import * as HostProcess from "@onicode/shared/HostProcess";
 import { backgroundWorkTextPreview } from "@onicode/shared/orchestrationV2PendingBackgroundWork";
@@ -3019,7 +3020,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
                 );
                 return {
                   data: Buffer.from(bytes).toString("base64"),
-                  mimeType: attachment.mimeType,
+                  mimeType: imageMimeTypeFromBytes(bytes) ?? attachment.mimeType,
                 };
               }),
             { concurrency: 1 },

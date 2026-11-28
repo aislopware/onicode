@@ -25,6 +25,7 @@ import {
   type ThreadId,
 } from "@onicode/contracts";
 import type { MuseSettings } from "../settings.ts";
+import { imageMimeTypeFromBytes } from "@onicode/shared/image";
 import { AgentScope } from "@onicode/shared/AgentScope";
 import { getModelSelectionStringOptionValue } from "@onicode/shared/model";
 import { formatDuration } from "@onicode/shared/orchestrationTiming";
@@ -2082,7 +2083,7 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
             parts.push({
               type: "image",
               base64Data: Buffer.from(bytes).toString("base64"),
-              mediaType: attachment.mimeType,
+              mediaType: imageMimeTypeFromBytes(bytes) ?? attachment.mimeType,
             });
           }
         if (!parts.length) return yield* protocolError("Muse needs text or an image");
