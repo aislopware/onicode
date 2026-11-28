@@ -12,8 +12,29 @@ const APPIMAGE_PATH_LIKE_ENV_SEPARATORS: ReadonlyMap<string, RegExp> = new Map([
   ["GSETTINGS_SCHEMA_DIR", /:/],
 ]);
 
-function isPathSegmentUnderAppDir(segment: string, appDir: string): boolean {
-  return segment === appDir || segment.startsWith(`${appDir}/`);
+interface NormalizedPosixPath {
+  readonly absolute: boolean;
+  readonly parts: readonly string[];
+}
+
+function normalizePosixPath(value: string): NormalizedPosixPath {
+  return {
+    absolute: value.startsWith("/"),
+    parts: value.split("/").filter((part) => part !== "" && part !== "."),
+  };
+}
+
+function isPathSegmentUnderAppDir(segment: string, appDir: NormalizedPosixPath): boolean {
+  const normalized = normalizePosixPath(segment);
+  // Where ".." lands depends on symlinks, so such an entry may point outside the mount; keep it.
+  if (
+    normalized.absolute !== appDir.absolute ||
+    normalized.parts.length < appDir.parts.length ||
+    normalized.parts.includes("..")
+  ) {
+    return false;
+  }
+  return appDir.parts.every((part, index) => normalized.parts[index] === part);
 }
 
 /**
@@ -26,11 +47,11 @@ export function appImageRuntimeScrub(
 ): ((name: string, value: string) => string | undefined) | undefined {
   if (env.APPIMAGE === undefined && env.APPDIR === undefined) return undefined;
 
-  const appDir = env.APPDIR?.replace(/\/+$/, "");
+  const appDir = env.APPDIR ? normalizePosixPath(env.APPDIR) : undefined;
   return (name, value) => {
     if (APPIMAGE_RUNTIME_ENV_KEYS.has(name)) return undefined;
     const separator = APPIMAGE_PATH_LIKE_ENV_SEPARATORS.get(name);
-    if (!appDir || separator === undefined) return value;
+    if (!appDir || appDir.parts.length === 0 || separator === undefined) return value;
     const segments = value.split(separator);
     const kept = segments.filter((segment) => !isPathSegmentUnderAppDir(segment, appDir));
     if (kept.length === segments.length) return value;
