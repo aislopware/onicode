@@ -151,6 +151,15 @@ describe("resolvePromptLinkModelSelection", () => {
     instanceId: string,
     driver: string,
     status: "ready" | "warning" | "error" | "disabled" = "ready",
+    models: ReadonlyArray<{
+      readonly slug: string;
+      readonly name: string;
+      readonly aliases?: ReadonlyArray<string>;
+      readonly isDefault?: boolean;
+    }> = [
+      { slug: "small", name: "Small" },
+      { slug: "big", name: "Big", aliases: ["opus"], isDefault: true },
+    ],
     modelsRetained?: boolean,
   ) => ({
     instanceId: ProviderInstanceId.make(instanceId),
@@ -160,10 +169,7 @@ describe("resolvePromptLinkModelSelection", () => {
     auth: { status: "authenticated" as const },
     status,
     ...(modelsRetained === undefined ? {} : { modelsRetained }),
-    models: [
-      { slug: "small", name: "Small" },
-      { slug: "big", name: "Big", aliases: ["opus"], isDefault: true },
-    ],
+    models,
   });
 
   it("maps the requested provider and model onto a usable instance", () => {
@@ -199,7 +205,7 @@ describe("resolvePromptLinkModelSelection", () => {
   });
 
   it("uses an instance that kept its models after a failed check, as the pickers do", () => {
-    const providers = [provider("codex", "codex", "error", true)];
+    const providers = [provider("codex", "codex", "error", undefined, true)];
     expect(
       resolvePromptLinkModelSelection(providers, { provider: "codex", model: "small" }),
     ).toEqual({ selection: { instanceId: "codex", model: "small" }, exact: true });
@@ -209,5 +215,38 @@ describe("resolvePromptLinkModelSelection", () => {
         model: "small",
       })?.selection.instanceId,
     ).toBe("work");
+  });
+
+  it("checks other usable instances in ready-before-warning order for the requested model", () => {
+    const providers = [
+      provider("warn", "codex", "warning", [
+        { slug: "work-only", name: "Work Only", isDefault: true },
+        { slug: "warn-only", name: "Warn Only" },
+      ]),
+      provider("personal", "codex", "ready", [{ slug: "base", name: "Base", isDefault: true }]),
+      provider("work", "codex", "ready", [
+        { slug: "work-only", name: "Work Only", isDefault: true },
+      ]),
+      provider("broken", "codex", "error", [{ slug: "broken-only", name: "Broken Only" }]),
+    ];
+
+    expect(
+      resolvePromptLinkModelSelection(providers, { provider: "codex", model: "work-only" }),
+    ).toEqual({
+      selection: { instanceId: "work", model: "work-only" },
+      exact: true,
+    });
+    expect(
+      resolvePromptLinkModelSelection(providers, { provider: "codex", model: "warn-only" }),
+    ).toEqual({
+      selection: { instanceId: "warn", model: "warn-only" },
+      exact: true,
+    });
+    expect(
+      resolvePromptLinkModelSelection(providers, { provider: "codex", model: "broken-only" }),
+    ).toEqual({
+      selection: { instanceId: "personal", model: "base" },
+      exact: false,
+    });
   });
 });
