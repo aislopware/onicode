@@ -3267,6 +3267,7 @@
   "56bd23d35d50c1b5": "Den gamla och den nya filen saknar radbrytning i slutet av filen.",
   "b486894b9edcec6f": "Den nya filen saknar radbrytning i slutet av filen.",
   "b5103cf5b997ec12": "Den gamla filen saknar radbrytning i slutet av filen.",
+  "15e5597f8f93ce12": "{start} till {end}",
   "2c7645e1de3fe206": "Granskning",
   "00f180d4af508b45": "Köade, ej köade och ospårade filer",
   "b816058fba61e4d6": "Omgång {count}",
