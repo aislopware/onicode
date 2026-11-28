@@ -106,7 +106,7 @@ export function UsageAccessCard({ prompts }: { readonly prompts: readonly UsageA
       />
       <View className="gap-5">
         <SettingsSection
-          footer={gt("You can change this for each agent in web or desktop Settings → Providers.")}
+          footer={gt("You can change this for each agent in desktop Settings → Providers.")}
         >
           {prompts.map((prompt) => {
             const key = promptKey(prompt);

@@ -75,7 +75,6 @@ export function unansweredUsageAccessRequests(input: {
 /** What usage access lets Onicode read for an agent, as the short note beside its switch. */
 export function usageAccessReadsLabel(driver: string, resolve: MFunctionType = mFallback): string {
   switch (driver) {
-    case "claudeAgent":
     case "grok":
       return resolve(msg("Session history and sign-in"));
     case "opencode":

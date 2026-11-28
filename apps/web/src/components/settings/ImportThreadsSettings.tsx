@@ -31,9 +31,12 @@ const NOTHING_SELECTED: WelcomeImportSelection = { knownKeys: [], keys: [], opte
 /** Imports agent history into projects after setup, from the same scan as the Welcome page. */
 export function ImportThreadsRow({ environmentId }: { readonly environmentId: EnvironmentId }) {
   const setting = useSearchableSetting();
-  const { label: importSourcesLabel } = useImportSourcesLabel(environmentId);
+  const { count: importSourceCount, label: importSourcesLabel } =
+    useImportSourcesLabel(environmentId);
   const [open, setOpen] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  // The scan reads only turned-on agents that keep history, so with none there is nothing to import.
+  if (importSourceCount === 0 && !open) return null;
   return (
     <SettingsRow
       {...setting("import-threads")}
