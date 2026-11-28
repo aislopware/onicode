@@ -4973,3 +4973,4 @@ e5168b099d	take	taken as is
 e08c2e0df7	take	conflict; dropped upstream's telemetry env names (removed in Onicode), contract fields optional
 5009bdb1c6	skip	only hosted web-app thread links (app.t3.codes/threads), removed in Onicode
 c1bc3845db	take	taken as is
+05d42458a6	take	import conflict only
