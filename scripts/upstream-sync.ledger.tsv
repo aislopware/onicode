@@ -4842,3 +4842,4 @@ ad26d58576	take	taken as is; covered by this sync's DocumentText VERSION 25
 209dfb170a	take	taken as is
 6db3de5a69	take	taken as is
 a14583be35	take	taken as is
+f11aadfac8	take	kept Onicode's broader exit handling (already fails any settled held turn and cancels requests first); added upstream's finalize-timer staling and agentRequests clear before the cancel; both tests kept
