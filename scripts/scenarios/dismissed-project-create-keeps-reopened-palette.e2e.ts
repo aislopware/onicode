@@ -76,8 +76,14 @@ test(
     await palette.waitFor({ state: "hidden" });
     await browser.keyboard.press("ControlOrMeta+k");
     await palette.getByRole("combobox").fill("Current work");
-    await browser.evaluate(async () => {
+    const threadUrl = await browser.url();
+    await browser.evaluate(() => {
       document.dispatchEvent(new Event("release-palette-create-project"));
+      return null;
+    });
+    // The reply opens the new project's draft behind the palette, then would close the palette.
+    await expect.poll(() => browser.url()).not.toBe(threadUrl);
+    await browser.evaluate(async () => {
       await new Promise<void>((resolve) =>
         requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
       );
