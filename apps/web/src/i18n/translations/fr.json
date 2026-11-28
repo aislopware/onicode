@@ -12376,5 +12376,11 @@
   "faa3bb26abb39c93": "Échec du guide de revue",
   "b7df38b7d8792d78": "Ouvrir le guide",
   "9e91e9a77b664e4e": "Impossible de démarrer un guide de revue",
-  "d454bfdeea6f1129": "Ouvrir l’aperçu"
+  "d454bfdeea6f1129": "Ouvrir l’aperçu",
+  "ffd3cdd328e21c9d": "Copier",
+  "b96de95f92a8eeeb": "URL MCP",
+  "c0ca4e817099761e": "agents externes chatgpt claude codex hébergé bot oauth serveur adresse copier",
+  "79e3840f1ef8741e": "Donnez cette URL à un agent hébergé, comme ChatGPT : {url}",
+  "1d5f687593c4e8ed": "Donnez cette URL à un agent exécuté sur cette machine : {url}",
+  "3db385bf17d8f48e": "Donnez cette URL à un agent pouvant accéder à cet environnement : {url}"
 }

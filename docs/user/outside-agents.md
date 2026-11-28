@@ -25,6 +25,10 @@ URL and setup commands or steps.
   on and use `https://<machine>.<tailnet>.ts.net:8443/mcp`. The setup dialog can
   turn **Public agents** on if your connection may change settings.
 
+To copy the MCP URL of the machine you are on without the dialog, use **MCP URL**
+in **Settings → Sharing & access**. It shows the public address when public agents
+are on, otherwise a `localhost` or `https` address.
+
 ## Approve a sign-in
 
 The first time an app connects, it opens a sign-in page served by your Onicode

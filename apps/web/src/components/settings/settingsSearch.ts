@@ -1471,6 +1471,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     wslAvailableOnly: true,
   },
   {
+    id: "mcp-url",
+    localEnvironmentOnly: true,
+    title: msg("MCP URL"),
+    to: "/settings/access",
+    targetId: "connections-environment",
+    searchTerms: [msg("outside agents chatgpt claude codex hosted bot oauth server address copy")],
+  },
+  {
     id: "preview-tunnel",
     title: msg("Preview tunnel"),
     to: "/settings/access",
