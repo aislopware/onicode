@@ -553,9 +553,11 @@ export function openRtf(bytes: ArrayBuffer): OfficeWorkerResult {
       // words stays in one run.
       if (fallback === 0 && !/^uc?-?\d/.test(source.slice(i, i + 4))) flush();
       if (next === "*") {
+        // Shape instructions are an optional destination, but a text box keeps its text there.
+        const shapeInstructions = /^\*[\r\n]*\\shpinst(?![a-z])/i.test(source.slice(i, i + 16));
         i++;
         if (fallback > 0) fallback--;
-        else state.skip = true;
+        else if (!shapeInstructions) state.skip = true;
         continue;
       }
       const match = /^([a-z]+)(-?\d+)? ?/i.exec(source.slice(i));
@@ -629,6 +631,9 @@ export function openRtf(bytes: ArrayBuffer): OfficeWorkerResult {
           "pict",
           "object",
           "fldinst",
+          // Shape properties, and the drawing that repeats a shape for older readers.
+          "sp",
+          "shprslt",
           "header",
           "headerl",
           "headerr",
