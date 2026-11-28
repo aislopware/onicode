@@ -527,7 +527,10 @@ const makeReconcile = <R>(input: {
             existing.setPresentation(entry);
             builtEntries.set(instanceId, { ...existing, entry });
             presentationChanged = true;
-            if (existing.entry.usageAccess !== entry.usageAccess) {
+            if (
+              driversById.get(entry.driver)?.metadata.limitsNeedUsageAccess === true &&
+              (existing.entry.usageAccess === "allowed") !== (entry.usageAccess === "allowed")
+            ) {
               const { snapshot } = existing.instance;
               yield* (snapshot.refreshUsage ?? snapshot.refresh).pipe(
                 Effect.ignore,

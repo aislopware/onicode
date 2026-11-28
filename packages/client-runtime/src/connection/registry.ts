@@ -102,10 +102,9 @@ export class EnvironmentRegistry extends Context.Service<
     readonly networkStatus: SubscriptionRef.SubscriptionRef<NetworkStatus>;
     readonly start: Effect.Effect<void>;
     /**
-     * Succeeds with `false` and changes nothing when the environment is
-     * platform-managed, since the host owns that entry. With `knownAddressOnly`, it fails like
-     * `assertKnownAddress`, checked under the environment's lease. A route added to a saved
-     * environment keeps the saved label unless `useRegistrationLabel` marks it as a requested edit.
+     * Changes nothing (`false`) for a platform-managed environment. `knownAddressOnly` fails like
+     * `assertKnownAddress`, under the lease. An added route keeps the saved label unless
+     * `useRegistrationLabel` marks a requested edit, which renames every route.
      */
     readonly register: (
       registration: ConnectionRegistration,
@@ -589,12 +588,19 @@ export const make = Effect.gen(function* () {
         const previous = (yield* SubscriptionRef.get(entries)).get(environmentId);
         let entry = registered;
         if (previous !== undefined) {
-          // Keep the saved label (a local rename) unless the registration is the requested edit.
-          const route =
-            options?.useRegistrationLabel === true
-              ? incoming
-              : { ...incoming, target: targetWithLabel(incoming.target, previous.target.label) };
-          const existing = connectionRoutes(previous);
+          // Keep the saved label (a local rename) unless the registration is the requested edit,
+          // which renames every route: the entry takes its label from whichever route is first.
+          const relabel = options?.useRegistrationLabel === true;
+          const route = relabel
+            ? incoming
+            : { ...incoming, target: targetWithLabel(incoming.target, previous.target.label) };
+          const saved = connectionRoutes(previous);
+          const existing = relabel
+            ? saved.map((other) => ({
+                ...other,
+                target: targetWithLabel(other.target, incoming.target.label),
+              }))
+            : saved;
           const sameAddress = findRouteToSameAddress(existing, route);
           const routes = existing.filter(
             (existing) =>

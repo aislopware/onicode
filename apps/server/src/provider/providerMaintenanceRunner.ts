@@ -612,6 +612,10 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
               instanceId,
               "post-update",
             );
+            // A signed-out provider that reports its version still starts.
+            const cannotStart = (verifiedProvider: ServerProvider) =>
+              verifiedProvider.status === "error" &&
+              (verifiedProvider.auth.status !== "unauthenticated" || !verifiedProvider.version);
             // Cursor about probes can fail transiently; missing versions alone do not imply failure.
             const couldNotVerify =
               verifiedProviders.length === 0 ||
@@ -622,16 +626,14 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
                     : verifiedProvider.version;
                 return (
                   !isStillInstalled(verifiedProvider) ||
-                  (verifiedProvider.status === "error" &&
-                    (verifiedProvider.auth.status !== "unauthenticated" ||
-                      !verifiedProvider.version)) ||
+                  cannotStart(verifiedProvider) ||
                   (targetVersion !== undefined &&
                     installedVersion?.replace(/^v/, "") !== targetVersion)
                 );
               });
             const startupFailure = verifiedProviders.find(
               (verifiedProvider) =>
-                verifiedProvider.status === "error" && verifiedProvider.message?.trim(),
+                cannotStart(verifiedProvider) && verifiedProvider.message?.trim(),
             )?.message;
             const stillOutdated =
               targetVersion === undefined &&

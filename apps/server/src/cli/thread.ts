@@ -424,7 +424,11 @@ export const resolveProject = Effect.fn("cli.thread.resolveProject")(function* (
         const relative = path.relative(root, candidate);
         return relative === "" ? 0 : relative.split(path.sep).length;
       };
+      const containingRootAbsent =
+        containingMatch !== undefined &&
+        !(yield* fileSystem.exists(containingMatch.root).pipe(Effect.orElseSucceed(() => true)));
       return containingMatch !== undefined &&
+        containingRootAbsent &&
         depth(containingMatch.root, target) <= depth(canonical.root, checkoutTarget)
         ? containingMatch.project
         : canonical.project;

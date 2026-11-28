@@ -59,6 +59,7 @@ import {
   IDLE_COMPACTION_TEXT,
   idleCompactionOf,
   isQueuedProviderThreadPlaceholder,
+  providerThreadUpdateActivates,
   ModelSelection as ModelSelectionSchema,
   OrchestrationV2AppThreadJson as OrchestrationV2AppThreadJsonSchema,
   OrchestrationV2CheckpointJson as OrchestrationV2CheckpointJsonSchema,
@@ -1209,12 +1210,13 @@ export function applyToProjection(
           (session) => session.id !== event.payload.providerSessionId,
         ),
       };
-    case "provider-thread.updated":
+    case "provider-thread.updated": {
+      const previous = base.providerThreads.find((thread) => thread.id === event.payload.id);
       return {
         ...base,
         thread:
           event.payload.appThreadId === base.thread.id &&
-          !isQueuedProviderThreadPlaceholder(event.payload)
+          providerThreadUpdateActivates(base.thread.activeProviderThreadId, previous, event.payload)
             ? {
                 ...base.thread,
                 activeProviderThreadId: event.payload.id,
@@ -1222,13 +1224,10 @@ export function applyToProjection(
             : base.thread,
         providerThreads: upsertById(
           base.providerThreads,
-          attributePendingBackgroundTasks(
-            event.payload,
-            base.providerThreads.find((thread) => thread.id === event.payload.id),
-            event.runId,
-          ),
+          attributePendingBackgroundTasks(event.payload, previous, event.runId),
         ),
       };
+    }
     case "provider-turn.updated":
       return {
         ...base,
@@ -2995,21 +2994,24 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, ProjectionStoreService
               break;
             }
             case "provider-thread.updated": {
-              const existingRows = (event.payload.pendingBackgroundTasks ?? []).some(
-                (task) => task.runId === undefined,
-              )
-                ? yield* sql<PayloadRow>`
-                    SELECT payload_json
-                    FROM orchestration_v2_projection_provider_threads
-                    WHERE provider_thread_id = ${event.payload.id}
-                    LIMIT 1
-                  `
-                : [];
-              const existing = existingRows[0];
+              const existing = (yield* sql<
+                PayloadRow & {
+                  readonly first_run_ordinal: number | null;
+                  readonly last_run_ordinal: number | null;
+                }
+              >`
+                SELECT payload_json, first_run_ordinal, last_run_ordinal
+                FROM orchestration_v2_projection_provider_threads
+                WHERE provider_thread_id = ${event.payload.id}
+                LIMIT 1
+              `)[0];
               const payloadJson = yield* encodeProviderThreadPayload(
                 attributePendingBackgroundTasks(
                   event.payload,
-                  existing === undefined
+                  existing === undefined ||
+                    (event.payload.pendingBackgroundTasks ?? []).every(
+                      (task) => task.runId !== undefined,
+                    )
                     ? undefined
                     : yield* decodeProviderThreadPayload(existing.payload_json),
                   event.runId,
@@ -3072,16 +3074,28 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, ProjectionStoreService
                 const threadRow = threadRows[0];
                 if (threadRow !== undefined) {
                   const thread = yield* decodeThreadPayload(threadRow.payload_json);
+                  const activeProviderThreadId = providerThreadUpdateActivates(
+                    thread.activeProviderThreadId,
+                    existing === undefined
+                      ? undefined
+                      : {
+                          firstRunOrdinal: existing.first_run_ordinal,
+                          lastRunOrdinal: existing.last_run_ordinal,
+                        },
+                    event.payload,
+                  )
+                    ? event.payload.id
+                    : thread.activeProviderThreadId;
                   const updatedThread = {
                     ...thread,
-                    activeProviderThreadId: event.payload.id,
+                    activeProviderThreadId,
                     updatedAt: event.payload.updatedAt,
                   };
                   const updatedThreadPayloadJson = yield* encodeThreadPayload(updatedThread);
                   yield* sql`
                   UPDATE orchestration_v2_projection_threads
                   SET
-                    active_provider_thread_id = ${event.payload.id},
+                    active_provider_thread_id = ${activeProviderThreadId},
                     updated_at = ${stringField(parseEncodedPayload(updatedThreadPayloadJson), "updatedAt")},
                     payload_json = ${updatedThreadPayloadJson}
                   WHERE thread_id = ${event.payload.appThreadId}

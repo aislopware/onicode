@@ -676,17 +676,20 @@ const make = Effect.gen(function* () {
    * Stops the task's own thread there as its Stop button does: its running turn, queued
    * messages, pull request watches and delegated tasks. `key` names the stop (the follower
    * sends one, each cancel its own), and each is recorded there once however often it is sent.
+   * A cancel also drops the parent's queued follow-ups there; an older peer only holds them.
    */
   const stopThere = (
     scope: ThreadScope,
     remote: OrchestrationV2RemoteTaskChild,
     key: string,
     reason?: string,
+    cancelQueued = false,
   ) =>
     forwarding
       .interruptThread(scope, remote.environmentId, {
         threadId: remote.threadId,
         stop: true,
+        ...(cancelQueued ? { cancelQueued } : {}),
         ...(reason === undefined ? {} : { reason }),
         clientRequestId: `${key}:${remote.threadId}`,
       })
@@ -911,7 +914,7 @@ const make = Effect.gen(function* () {
         const count = remote.stopCount === undefined ? "stop" : `stop-${remote.stopCount}`;
         // Named for its run too: a follow-up task shares the thread there and counts its own stops.
         const key = remote.runId === undefined ? count : `${count}:${remote.runId}`;
-        yield* stopThere(scope, remote, key).pipe(
+        yield* stopThere(scope, remote, key, undefined, task.status === "cancelled").pipe(
           // Its thread there now runs above what this side may touch, say
           // because the parent here was lowered since; no retry changes that.
           Effect.catchIf(isModeRefusal, (error) =>
@@ -1087,7 +1090,7 @@ const make = Effect.gen(function* () {
       }`;
       if (task.result !== null) {
         // Best effort: the result stands whether or not the stop gets there.
-        yield* stopThere(there, remote, key, reason).pipe(
+        yield* stopThere(there, remote, key, reason, true).pipe(
           Effect.andThen(
             complete(
               task.threadId,
@@ -1110,7 +1113,7 @@ const make = Effect.gen(function* () {
       }
       // A link that is gone or a machine that is down still cancels the task
       // here; its follower keeps trying to stop it there, across restarts.
-      const unstopped = yield* stopThere(there, remote, key, reason).pipe(
+      const unstopped = yield* stopThere(there, remote, key, reason, true).pipe(
         Effect.as(undefined),
         Effect.catch((error) => Effect.succeed(error.message)),
       );

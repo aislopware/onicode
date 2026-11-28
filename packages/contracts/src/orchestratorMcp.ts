@@ -116,7 +116,7 @@ export const OrchestratorMcpTarget = Schema.Struct({
   options: Schema.optional(
     OrchestratorMcpTargetOptions.annotate({
       description:
-        "Ids vary by provider; see `orchestrator_capabilities`. Given values override inherited. [] or {} clears.",
+        "Ids vary by provider; see `orchestrator_capabilities`. Given values override inherited. {} clears.",
     }),
   ),
   environmentId: Schema.optional(
@@ -635,6 +635,11 @@ export const OrchestratorMcpThreadInterruptInput = Schema.Struct({
    * watches and stop every task it delegated. `runId` is then not used.
    */
   stop: Schema.optional(Schema.Boolean),
+  cancelQueued: Schema.optional(
+    Schema.Boolean.annotate({
+      description: "With `stop`: cancel the messages you queued there instead of holding them.",
+    }),
+  ),
   clientRequestId: Schema.optional(OrchestratorMcpClientRequestId),
 });
 export type OrchestratorMcpThreadInterruptInput = typeof OrchestratorMcpThreadInterruptInput.Type;

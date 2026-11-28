@@ -14823,10 +14823,6 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
               },
             ],
           });
-          assert.equal(
-            (yield* orchestrator.getThreadProjection(threadId)).thread.activeProviderThreadId,
-            conversationThread.id,
-          );
         }
         yield* orchestrator.dispatch(resume("first"));
         const after = yield* orchestrator.getThreadProjection(threadId);

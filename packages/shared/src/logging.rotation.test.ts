@@ -151,6 +151,41 @@ effectIt.layer(NodeServices.layer)("log rotation recovery", (it) => {
       }),
   );
 
+  it.effect.each(modes)("%s sink keeps backups when publishing recovered history fails", (mode) =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const directory = yield* fs.makeTempDirectoryScoped();
+      const filePath = path.join(directory, "provider.log");
+      yield* fs.writeFileString(filePath, "active");
+      yield* fs.writeFileString(`${filePath}.rotating`, "staged");
+      yield* fs.writeFileString(`${filePath}.1`, "backup");
+      let denials = 0;
+      const sink = yield* openSink(
+        mode,
+        filePath,
+        6,
+        3,
+        (source, target) =>
+          source === `${filePath}.rotating` && target === `${filePath}.1` && denials++ < 2,
+      );
+      expect(yield* sink.write("next").pipe(Effect.flip)).toMatchObject({ operation: "rotate" });
+      expect(denials).toBe(2);
+      expect((yield* fs.readDirectory(directory)).sort()).toEqual([
+        "provider.log",
+        "provider.log.1",
+        "provider.log.rotating",
+      ]);
+      expect(yield* fs.readFileString(`${filePath}.1`)).toBe("backup");
+
+      yield* sink.write("next");
+      expect(yield* fs.readFileString(filePath)).toBe("next");
+      expect(yield* fs.readFileString(`${filePath}.1`)).toBe("active");
+      expect(yield* fs.readFileString(`${filePath}.2`)).toBe("staged");
+      expect(yield* fs.readFileString(`${filePath}.3`)).toBe("backup");
+    }),
+  );
+
   it.effect.each(modes)("%s sink retries blocked recovery before writing after reopen", (mode) =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -215,6 +250,29 @@ effectIt.layer(NodeServices.layer)("log rotation recovery", (it) => {
         expect(yield* fs.readFileString(`${filePath}.1`)).toBe("firstsecond");
         expect(yield* fs.exists(blockedPath)).toBe(false);
       }),
+  );
+
+  it.effect("best-effort writes continue while the active file's size cannot be read", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const directory = yield* fs.makeTempDirectoryScoped();
+      const filePath = path.join(directory, "provider.log");
+      yield* fs.writeFileString(filePath, "active");
+      const sink = new RotatingFileSink({ filePath, maxBytes: 9, maxFiles: 2 });
+      const busy = Object.assign(new Error("resource busy or locked"), { code: "EBUSY" });
+      const statSpy = vi.mocked(NodeFS.statSync).mockImplementation(() => {
+        throw busy;
+      });
+      try {
+        // The rotation succeeds; reading the new active file's size fails.
+        sink.write("next");
+      } finally {
+        statSpy.mockReset();
+      }
+      expect(yield* fs.readFileString(`${filePath}.1`)).toBe("active");
+      expect(yield* fs.readFileString(filePath)).toBe("next");
+    }),
   );
 
   it.effect("best-effort writes continue while rollback is blocked", () =>

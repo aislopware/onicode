@@ -145,7 +145,8 @@ export function resolvePromptLinkModelSelection(
         isProviderPickerReady(provider),
     ),
   ];
-  const fallback = candidates[0];
+  // An instance that lists no models has none to fall back to; a later one may.
+  const fallback = candidates.find((candidate) => candidate.models.length > 0);
   if (fallback === undefined) return null;
   if (request.model !== null) {
     for (const candidate of candidates) {

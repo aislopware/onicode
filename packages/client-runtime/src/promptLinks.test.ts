@@ -202,6 +202,13 @@ describe("resolvePromptLinkModelSelection", () => {
     expect(
       resolvePromptLinkModelSelection(providers, { provider: "cursor", model: null }),
     ).toBeNull();
+    // An instance that lists no models yet leaves the default to the next one.
+    expect(
+      resolvePromptLinkModelSelection([provider("empty", "codex", "ready", []), ...providers], {
+        provider: "codex",
+        model: null,
+      }),
+    ).toEqual({ selection: { instanceId: "codex", model: "big" }, exact: true });
   });
 
   it("uses an instance that kept its models after a failed check, as the pickers do", () => {

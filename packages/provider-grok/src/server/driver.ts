@@ -147,6 +147,7 @@ export const GrokDriver: ProviderDriver<GrokSettings, GrokDriverEnv, Path.Path> 
   metadata: {
     displayName: "Grok",
     supportsMultipleInstances: true,
+    limitsNeedUsageAccess: true,
   },
   configSchema: GrokSettings,
   defaultConfig: (): GrokSettings => decodeGrokSettings({}),

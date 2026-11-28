@@ -11,6 +11,11 @@ describe("acpUnnamedTextEndsInsideCode", () => {
     expect(acpUnnamedTextEndsInsideCode("Look at `foo.")).toBe(true);
     expect(acpUnnamedTextEndsInsideCode("Here is the script:\n```bash\necho 'done.'\n")).toBe(true);
     expect(acpUnnamedTextEndsInsideCode("~~~\nls\n")).toBe(true);
+    expect(
+      acpUnnamedTextEndsInsideCode("- Steps:\n  - Run:\n\n    ```bash\n    echo a\n\n    echo b\n"),
+    ).toBe(true);
+    expect(acpUnnamedTextEndsInsideCode("1. ```bash\n   echo a\n\n   echo b\n")).toBe(true);
+    expect(acpUnnamedTextEndsInsideCode("> ~~~\n> ls\n")).toBe(true);
   });
 
   it("treats closed code and plain text as safe to split", () => {
@@ -19,6 +24,10 @@ describe("acpUnnamedTextEndsInsideCode", () => {
     expect(acpUnnamedTextEndsInsideCode("Here is the script:\n```bash\necho ok\n```\n")).toBe(
       false,
     );
+    expect(acpUnnamedTextEndsInsideCode("- Steps:\n\n    ```bash\n    echo a\n\n    ```\n")).toBe(
+      false,
+    );
+    expect(acpUnnamedTextEndsInsideCode("> ~~~\n> ls\n> ~~~\n")).toBe(false);
     expect(acpUnnamedTextEndsInsideCode("I'll search **/*.ts for usages.")).toBe(false);
     expect(acpUnnamedTextEndsInsideCode("Checking")).toBe(false);
     expect(acpUnnamedTextEndsInsideCode("")).toBe(false);

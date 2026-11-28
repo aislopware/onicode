@@ -1,8 +1,5 @@
 import { applyThreadPullRequestLinkUpdate } from "../threadPullRequests.ts";
-import {
-  applyOrchestrationV2ThreadVisit,
-  isQueuedProviderThreadPlaceholder,
-} from "@onicode/contracts";
+import { applyOrchestrationV2ThreadVisit, providerThreadUpdateActivates } from "@onicode/contracts";
 import type {
   OrchestrationV2DomainEvent,
   OrchestrationV2Run,
@@ -426,7 +423,11 @@ export function applyOrchestrationV2ProjectionEvent(
         ...base,
         thread:
           event.payload.appThreadId === base.thread.id &&
-          !isQueuedProviderThreadPlaceholder(event.payload)
+          providerThreadUpdateActivates(
+            base.thread.activeProviderThreadId,
+            base.providerThreads.find((thread) => thread.id === event.payload.id),
+            event.payload,
+          )
             ? { ...base.thread, activeProviderThreadId: event.payload.id }
             : base.thread,
         providerThreads: upsertEntity(base.providerThreads, event.payload),

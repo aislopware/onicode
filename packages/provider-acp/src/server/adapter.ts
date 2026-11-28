@@ -1940,6 +1940,8 @@ function selectAutoApprovedPermissionOption(
 
 const ACP_FENCE_OPEN_RE = /^[ ]{0,3}(`{3,}|~{3,})(.*)$/;
 const ACP_FENCE_CLOSE_RE = /^[ ]{0,3}(`{3,}|~{3,})[ \t]*$/;
+// Blockquote and list markers, plus list continuation indent, so fences inside them are found.
+const ACP_CONTAINER_PREFIX_RE = /^(?:[ \t]*(?:>|[-*+](?=[ \t])|\d{1,9}[.)](?=[ \t])))*[ \t]*/;
 
 /**
  * Returns true when unnamed streaming ACP text ends inside an unclosed code fence or inline code
@@ -1948,11 +1950,15 @@ const ACP_FENCE_CLOSE_RE = /^[ ]{0,3}(`{3,}|~{3,})[ \t]*$/;
 export function acpUnnamedTextEndsInsideCode(text: string): boolean {
   let fenceChar: "`" | "~" | null = null;
   let fenceLength = 0;
+  let fenceInContainer = false;
   let inlineCodeTicks = 0;
 
   for (const line of text.split(/\r?\n/)) {
+    const prefix = ACP_CONTAINER_PREFIX_RE.exec(line)?.[0] ?? "";
+    const inContainer = prefix.length > 3 || /[^ ]/.test(prefix);
+    const content = inContainer ? line.slice(prefix.length) : line;
     if (fenceChar !== null) {
-      const closeMatch = ACP_FENCE_CLOSE_RE.exec(line);
+      const closeMatch = ACP_FENCE_CLOSE_RE.exec(fenceInContainer ? content : line);
       if (
         closeMatch !== null &&
         closeMatch[1]![0] === fenceChar &&
@@ -1965,19 +1971,20 @@ export function acpUnnamedTextEndsInsideCode(text: string): boolean {
       continue;
     }
 
-    const openMatch = ACP_FENCE_OPEN_RE.exec(line);
+    const openMatch = ACP_FENCE_OPEN_RE.exec(content);
     if (openMatch !== null) {
       const marker = openMatch[1]!;
       const info = openMatch[2] ?? "";
       if (marker[0] === "~" || !info.includes("`")) {
         fenceChar = marker[0] as "`" | "~";
         fenceLength = marker.length;
+        fenceInContainer = inContainer;
         inlineCodeTicks = 0;
         continue;
       }
     }
 
-    if (line.trim().length === 0) {
+    if (content.trim().length === 0) {
       inlineCodeTicks = 0;
       continue;
     }
@@ -3600,7 +3607,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             const tool = owner.tools.get(toolCallId);
             const status = tool === undefined ? undefined : toolStatus(tool.status);
             if (tool !== undefined && (status === "pending" || status === "running"))
-              yield* emitTool(owner, tool, "failed");
+              yield* emitTool(owner, { ...tool, status: "failed" }, "failed");
           }
         });
         const handleRuntimeTerminationAtGeneration = (runtimeGeneration: number) =>
@@ -3610,29 +3617,43 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               yield* requireRuntimeRestart;
               yield* failReleasedTools();
               if (!followsAgentWorkState) {
-                // Releasing the request hold below would let a sleeping deferred finalize
-                // complete a held turn before it is failed, so stale that timer first.
+                // An open prompt fails with its transport. A turn held open after its prompt
+                // settled, or waiting out a retry delay, has no prompt, so nothing else ends it:
+                // it fails if it still waited on work or a reply, else it completes.
                 const heldAtExit = yield* Ref.get(activeTurn);
-                if (heldAtExit !== null && !heldAtExit.finalized) {
+                const settledAtExit =
+                  heldAtExit !== null &&
+                  !heldAtExit.finalized &&
+                  (heldAtExit.promptSettled || heldAtExit.outcomeResumeFiber !== undefined);
+                // Read before the request hold below is released.
+                const failsAtExit =
+                  heldAtExit !== null &&
+                  settledAtExit &&
+                  (heldAtExit.outcomeResumeFiber !== undefined ||
+                    heldAtExit.replyOpen ||
+                    hasDeferredBackgroundWork(heldAtExit));
+                // Releasing the hold would let a sleeping deferred finalize complete the turn
+                // before it is failed, so stale that timer first.
+                if (heldAtExit !== null && failsAtExit) {
                   heldAtExit.backgroundFinalizeGeneration += 1;
                 }
                 agentRequests.clear();
                 // The dead process cannot answer its pending approvals and questions.
                 yield* cancelPendingRuntimeRequests();
-                // An open prompt fails with its transport. A turn held open after its prompt
-                // settled, or waiting out a retry delay, has no prompt, so nothing else ends it;
-                // between turns, settle lingering work.
                 const held = yield* Ref.get(activeTurn);
+                const heldStill = held !== null && held === heldAtExit && !held.finalized;
+                if (heldStill && settledAtExit && !failsAtExit) {
+                  yield* finalizeTurn(held, held.promptSettledStatus ?? "completed");
+                }
+                // Between turns, settle lingering work.
                 const exitedBetweenTurns = held === null || held.finalized;
-                const activeHeld =
-                  !exitedBetweenTurns &&
-                  (held.promptSettled || held.outcomeResumeFiber !== undefined);
+                const activeHeld = heldStill && failsAtExit;
                 if (activeHeld) {
                   yield* cancelOutcomeResume(held);
                   for (const tool of held.tools.values()) {
                     const status = toolStatus(tool.status);
                     if (status === "pending" || status === "running" || status === "waiting") {
-                      yield* emitTool(held, tool, "failed");
+                      yield* emitTool(held, { ...tool, status: "failed" }, "failed");
                     }
                   }
                   for (const subagent of held.subagents.values()) {
@@ -3705,7 +3726,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                   const toolKey = `${owner.providerTurnId}:${tool.toolCallId}`;
                   if (!seenTools.has(toolKey)) {
                     seenTools.add(toolKey);
-                    yield* emitTool(owner, tool, "failed");
+                    yield* emitTool(owner, { ...tool, status: "failed" }, "failed");
                   }
                   const description = (tool.command ?? tool.title ?? "").trim();
                   addLostTask({
@@ -6954,10 +6975,11 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           notification: EffectAcpSchema.SessionNotification,
         ) {
           if (!postSettleContinuationEnabled || continuationRequests === undefined) {
+            // Released tools end with no wake to offer, but their rows still need the update.
             return {
               buffered: false,
               offerContinuation: false,
-              stopProcessing: false,
+              stopProcessing: yield* projectDetachedUnawaitedTool(notification, null),
             };
           }
           if (yield* Ref.get(stoppedRunQuarantine)) {
@@ -9440,181 +9462,189 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           yield* wireAcpRuntimeHandlers(runtime, yield* Ref.get(runtimeCallbackGeneration));
         });
 
-        const startReplacementAcpRuntime = Effect.fnUntraced(function* (
-          threadId: ThreadId | null,
-          commitSessionState: (
-            replacement: AcpSessionRuntime.AcpSessionRuntimeStartResult,
-          ) => Effect.Effect<void>,
-        ) {
-          const previousScope = runtimeScope;
-          const previousGeneration = yield* Ref.get(runtimeCallbackGeneration);
-          yield* runtimeCallbackPermit.withPermit(awaitAdmittedNativeResponses);
+        const startReplacementAcpRuntime = Effect.fnUntraced(
+          function* (
+            threadId: ThreadId | null,
+            commitSessionState: (
+              replacement: AcpSessionRuntime.AcpSessionRuntimeStartResult,
+            ) => Effect.Effect<void>,
+          ) {
+            // Committing the replacement clears it.
+            yield* reportStartupPhase("launch");
+            const previousScope = runtimeScope;
+            const previousGeneration = yield* Ref.get(runtimeCallbackGeneration);
+            yield* runtimeCallbackPermit.withPermit(awaitAdmittedNativeResponses);
 
-          // Keep live callbacks active until replacement startup succeeds.
-          const replacementGeneration = yield* allocateRuntimeCallbackGeneration;
-          const replacementScope = yield* Scope.make();
-          const replacementAgentRequests = new Set<string>();
-          const replacementAgentTracking: AcpAgentTracking = { ended: false };
-          type CandidateLifecycle =
-            | { readonly _tag: "Starting" }
-            | { readonly _tag: "Terminated"; readonly error: EffectAcpErrors.AcpError }
-            | { readonly _tag: "Committed" };
-          const candidateLifecycle = yield* Ref.make<CandidateLifecycle>({ _tag: "Starting" });
-          const handleCandidateTermination: AcpAdapterV2RuntimeInput["onTermination"] = (error) =>
-            Ref.modify(
-              candidateLifecycle,
-              (current): readonly [Effect.Effect<void>, CandidateLifecycle] => {
-                if (current._tag === "Committed") {
-                  return [handleRuntimeTerminationAtGeneration(replacementGeneration), current];
-                }
-                return [
-                  Effect.void,
-                  current._tag === "Terminated"
-                    ? current
-                    : ({ _tag: "Terminated", error } as const),
-                ];
-              },
-            ).pipe(Effect.flatten);
-          const stagedSessionUpdates: Array<EffectAcpSchema.SessionNotification> = [];
-          let handleCandidateSessionUpdate: (
-            notification: EffectAcpSchema.SessionNotification,
-          ) => Effect.Effect<void, EffectAcpErrors.AcpError> = (notification) =>
-            Effect.sync(() => {
-              stagedSessionUpdates.push(notification);
+            // Keep live callbacks active until replacement startup succeeds.
+            const replacementGeneration = yield* allocateRuntimeCallbackGeneration;
+            const replacementScope = yield* Scope.make();
+            const replacementAgentRequests = new Set<string>();
+            const replacementAgentTracking: AcpAgentTracking = { ended: false };
+            type CandidateLifecycle =
+              | { readonly _tag: "Starting" }
+              | { readonly _tag: "Terminated"; readonly error: EffectAcpErrors.AcpError }
+              | { readonly _tag: "Committed" };
+            const candidateLifecycle = yield* Ref.make<CandidateLifecycle>({ _tag: "Starting" });
+            const handleCandidateTermination: AcpAdapterV2RuntimeInput["onTermination"] = (error) =>
+              Ref.modify(
+                candidateLifecycle,
+                (current): readonly [Effect.Effect<void>, CandidateLifecycle] => {
+                  if (current._tag === "Committed") {
+                    return [handleRuntimeTerminationAtGeneration(replacementGeneration), current];
+                  }
+                  return [
+                    Effect.void,
+                    current._tag === "Terminated"
+                      ? current
+                      : ({ _tag: "Terminated", error } as const),
+                  ];
+                },
+              ).pipe(Effect.flatten);
+            const stagedSessionUpdates: Array<EffectAcpSchema.SessionNotification> = [];
+            let handleCandidateSessionUpdate: (
+              notification: EffectAcpSchema.SessionNotification,
+            ) => Effect.Effect<void, EffectAcpErrors.AcpError> = (notification) =>
+              Effect.sync(() => {
+                stagedSessionUpdates.push(notification);
+              });
+            let replacementMcpBridge: AcpMcpOverAcpBridge | undefined;
+            const startup = Effect.gen(function* () {
+              const mcpContext = yield* readMcpContext(threadId);
+              replacementMcpBridge = yield* makeRuntimeMcpBridge(mcpContext, replacementScope);
+              const replacementRuntime = yield* flavor
+                .makeRuntime(
+                  makeRuntimeInput(
+                    replacementGeneration,
+                    replacementAgentRequests,
+                    replacementAgentTracking,
+                    mcpContext,
+                    undefined,
+                    handleCandidateTermination,
+                  ),
+                )
+                .pipe(
+                  Effect.provideService(Scope.Scope, replacementScope),
+                  Effect.provideService(SecureRandom.SecureRandom, random),
+                  Effect.provideService(
+                    ChildProcessSpawner.ChildProcessSpawner,
+                    childProcessSpawner,
+                  ),
+                  Effect.provideService(AgentScope, agentScope),
+                  Effect.provideService(AgentScopeThreadId, threadId ?? undefined),
+                );
+              yield* trackAgentProcess(mcpContext, replacementScope, replacementAgentTracking);
+              yield* replacementRuntime.handleSessionUpdate((notification) =>
+                Effect.suspend(() => handleCandidateSessionUpdate(notification)),
+              );
+              yield* wireAcpRuntimeMcpHandlers(replacementRuntime, replacementMcpBridge);
+              const started = yield* replacementRuntime.start();
+              return { replacementRuntime, started };
             });
-          let replacementMcpBridge: AcpMcpOverAcpBridge | undefined;
-          const startup = Effect.gen(function* () {
-            const mcpContext = yield* readMcpContext(threadId);
-            replacementMcpBridge = yield* makeRuntimeMcpBridge(mcpContext, replacementScope);
-            const replacementRuntime = yield* flavor
-              .makeRuntime(
-                makeRuntimeInput(
-                  replacementGeneration,
-                  replacementAgentRequests,
-                  replacementAgentTracking,
-                  mcpContext,
-                  undefined,
-                  handleCandidateTermination,
+            const replacementExit = yield* Effect.exit(
+              (flavor.withRuntimeStartup?.(startup) ?? startup).pipe(
+                Effect.onInterrupt(() =>
+                  Scope.close(replacementScope, Exit.void).pipe(Effect.ignore),
+                ),
+              ),
+            );
+            if (Exit.isFailure(replacementExit)) {
+              yield* runtimeCallbackPermit.withPermit(
+                quarantineNativeTransportAtGeneration(replacementGeneration),
+              );
+              yield* Scope.close(replacementScope, Exit.void).pipe(Effect.ignore);
+              return yield* Effect.failCause(replacementExit.cause);
+            }
+
+            yield* runtimeCallbackPermit
+              .withPermit(
+                Effect.uninterruptible(
+                  Effect.gen(function* () {
+                    yield* awaitAdmittedNativeResponses;
+                    yield* wireAcpRuntimeHandlers(
+                      replacementExit.value.replacementRuntime,
+                      replacementGeneration,
+                      {
+                        sessionUpdates: false,
+                        terminals: false,
+                        mcp: false,
+                        scope: replacementScope,
+                      },
+                    );
+                    const lifecycle = yield* Ref.modify(
+                      candidateLifecycle,
+                      (current): readonly [CandidateLifecycle, CandidateLifecycle] =>
+                        current._tag === "Terminated"
+                          ? [current, current]
+                          : [{ _tag: "Committed" }, { _tag: "Committed" }],
+                    );
+                    if (lifecycle._tag === "Terminated") {
+                      return yield* lifecycle.error;
+                    }
+                    yield* quarantineNativeTransportAtGeneration(previousGeneration);
+                    runtime = replacementExit.value.replacementRuntime;
+                    runtimeScope = replacementScope;
+                    runtimeMcpBridge = replacementMcpBridge;
+                    openAgentRequests = replacementAgentRequests;
+                    yield* Ref.set(runtimeCallbackGeneration, replacementGeneration);
+                    prepareTerminalEnvironment(
+                      yield* readMcpContext(threadId),
+                      replacementExit.value.started.sessionId,
+                    );
+                    yield* wireAcpRuntimeTerminalHandlers(replacementExit.value.replacementRuntime);
+                    yield* commitSessionState(replacementExit.value.started);
+                    while (true) {
+                      const buffered = stagedSessionUpdates.splice(0, stagedSessionUpdates.length);
+                      if (buffered.length === 0) {
+                        handleCandidateSessionUpdate = (notification) =>
+                          projectAcpRuntimeSessionUpdate(replacementGeneration, notification);
+                        break;
+                      }
+                      yield* Effect.forEach(
+                        buffered,
+                        (notification) =>
+                          projectAcpRuntimeSessionUpdateEffect(notification).pipe(
+                            Effect.catchCause((cause) =>
+                              Effect.logError("failed to replay staged ACP session update", {
+                                driver,
+                                cause,
+                              }),
+                            ),
+                          ),
+                        { discard: true },
+                      );
+                    }
+                    yield* cancelPendingRuntimeRequests();
+                    if (previousScope !== undefined) {
+                      yield* Scope.close(previousScope, Exit.void).pipe(
+                        Effect.catchCause((cause) =>
+                          Effect.logError("failed to close replaced ACP runtime scope", {
+                            driver,
+                            cause,
+                          }),
+                        ),
+                      );
+                    }
+                  }),
                 ),
               )
               .pipe(
-                Effect.provideService(Scope.Scope, replacementScope),
-                Effect.provideService(SecureRandom.SecureRandom, random),
-                Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, childProcessSpawner),
-                Effect.provideService(AgentScope, agentScope),
-                Effect.provideService(AgentScopeThreadId, threadId ?? undefined),
-              );
-            yield* trackAgentProcess(mcpContext, replacementScope, replacementAgentTracking);
-            yield* replacementRuntime.handleSessionUpdate((notification) =>
-              Effect.suspend(() => handleCandidateSessionUpdate(notification)),
-            );
-            yield* wireAcpRuntimeMcpHandlers(replacementRuntime, replacementMcpBridge);
-            const started = yield* replacementRuntime.start();
-            return { replacementRuntime, started };
-          });
-          const replacementExit = yield* Effect.exit(
-            (flavor.withRuntimeStartup?.(startup) ?? startup).pipe(
-              Effect.onInterrupt(() =>
-                Scope.close(replacementScope, Exit.void).pipe(Effect.ignore),
-              ),
-            ),
-          );
-          if (Exit.isFailure(replacementExit)) {
-            yield* runtimeCallbackPermit.withPermit(
-              quarantineNativeTransportAtGeneration(replacementGeneration),
-            );
-            yield* Scope.close(replacementScope, Exit.void).pipe(Effect.ignore);
-            return yield* Effect.failCause(replacementExit.cause);
-          }
-
-          yield* runtimeCallbackPermit
-            .withPermit(
-              Effect.uninterruptible(
-                Effect.gen(function* () {
-                  yield* awaitAdmittedNativeResponses;
-                  yield* wireAcpRuntimeHandlers(
-                    replacementExit.value.replacementRuntime,
-                    replacementGeneration,
-                    {
-                      sessionUpdates: false,
-                      terminals: false,
-                      mcp: false,
-                      scope: replacementScope,
-                    },
-                  );
-                  const lifecycle = yield* Ref.modify(
-                    candidateLifecycle,
-                    (current): readonly [CandidateLifecycle, CandidateLifecycle] =>
-                      current._tag === "Terminated"
-                        ? [current, current]
-                        : [{ _tag: "Committed" }, { _tag: "Committed" }],
-                  );
-                  if (lifecycle._tag === "Terminated") {
-                    return yield* lifecycle.error;
-                  }
-                  yield* quarantineNativeTransportAtGeneration(previousGeneration);
-                  runtime = replacementExit.value.replacementRuntime;
-                  runtimeScope = replacementScope;
-                  runtimeMcpBridge = replacementMcpBridge;
-                  openAgentRequests = replacementAgentRequests;
-                  yield* Ref.set(runtimeCallbackGeneration, replacementGeneration);
-                  prepareTerminalEnvironment(
-                    yield* readMcpContext(threadId),
-                    replacementExit.value.started.sessionId,
-                  );
-                  yield* wireAcpRuntimeTerminalHandlers(replacementExit.value.replacementRuntime);
-                  yield* commitSessionState(replacementExit.value.started);
-                  while (true) {
-                    const buffered = stagedSessionUpdates.splice(0, stagedSessionUpdates.length);
-                    if (buffered.length === 0) {
-                      handleCandidateSessionUpdate = (notification) =>
-                        projectAcpRuntimeSessionUpdate(replacementGeneration, notification);
-                      break;
-                    }
-                    yield* Effect.forEach(
-                      buffered,
-                      (notification) =>
-                        projectAcpRuntimeSessionUpdateEffect(notification).pipe(
-                          Effect.catchCause((cause) =>
-                            Effect.logError("failed to replay staged ACP session update", {
-                              driver,
-                              cause,
-                            }),
-                          ),
-                        ),
-                      { discard: true },
-                    );
-                  }
-                  yield* cancelPendingRuntimeRequests();
-                  if (previousScope !== undefined) {
-                    yield* Scope.close(previousScope, Exit.void).pipe(
-                      Effect.catchCause((cause) =>
-                        Effect.logError("failed to close replaced ACP runtime scope", {
-                          driver,
-                          cause,
-                        }),
-                      ),
-                    );
-                  }
-                }),
-              ),
-            )
-            .pipe(
-              Effect.onError(() =>
-                Ref.get(candidateLifecycle).pipe(
-                  Effect.flatMap((lifecycle) =>
-                    lifecycle._tag === "Committed"
-                      ? // The replacement is live by then, so only the replaced runtime is left.
-                        previousScope === undefined
-                        ? Effect.void
-                        : Scope.close(previousScope, Exit.void).pipe(Effect.ignore)
-                      : Scope.close(replacementScope, Exit.void).pipe(Effect.ignore),
+                Effect.onError(() =>
+                  Ref.get(candidateLifecycle).pipe(
+                    Effect.flatMap((lifecycle) =>
+                      lifecycle._tag === "Committed"
+                        ? // The replacement is live by then, so only the replaced runtime is left.
+                          previousScope === undefined
+                          ? Effect.void
+                          : Scope.close(previousScope, Exit.void).pipe(Effect.ignore)
+                        : Scope.close(replacementScope, Exit.void).pipe(Effect.ignore),
+                    ),
                   ),
                 ),
-              ),
-            );
-          return replacementExit.value.started;
-        });
+              );
+            return replacementExit.value.started;
+          },
+          Effect.onError(() => reportStartupPhase(undefined)),
+        );
 
         const commitReplacementSession = Effect.fn("AcpAdapterV2.commitReplacementSession")(
           function* (
@@ -9710,17 +9740,21 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             started.initializeResult.agentCapabilities?.promptCapabilities?.image === true,
         });
 
-        const activateSession = Effect.fnUntraced(function* (
-          sessionId: string,
-          threadId: ThreadId | null,
-          spawnedForSession = false,
-        ) {
+        // Taken before any relaunch: the agent that would resume this session already failed to.
+        const failInitialSessionActivation = Effect.fnUntraced(function* (sessionId: string) {
           const initialFailure = yield* Ref.modify(initialSessionActivationFailure, (failure) =>
             failure?.sessionId === sessionId ? [failure.error, null] : [undefined, failure],
           );
           if (initialFailure !== undefined) {
             return yield* initialFailure;
           }
+        });
+
+        const activateSession = Effect.fnUntraced(function* (
+          sessionId: string,
+          threadId: ThreadId | null,
+          spawnedForSession = false,
+        ) {
           const mcpContext = yield* readMcpContext(threadId);
           const activationOptions = acpMcpActivation(mcpContext);
           prepareTerminalEnvironment(mcpContext, sessionId);
@@ -9728,9 +9762,10 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           const activated = yield* Effect.gen(function* () {
             // A runtime spawned for this session opens it at startup instead of an empty session/new.
             if (spawnedForSession) {
+              // Interrupted too: a retried lazy start would resume the session a second time.
               return yield* runtime
                 .start()
-                .pipe(Effect.tapError(() => Ref.set(runtimeRestartRequired, true)));
+                .pipe(Effect.onError(() => Ref.set(runtimeRestartRequired, true)));
             }
             if (canLoadSession || canResumeSession) yield* reportStartupPhase("resume");
             return canLoadSession && !(flavor.preferSessionResume === true && canResumeSession)
@@ -10650,13 +10685,20 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                   yield* Effect.sleep(Duration.millis(remaining));
                   continue;
                 }
-                if (
-                  context.tools.values().some(isRunningCommand) &&
-                  !hasDeferredBackgroundWork(context, isRunningCommand)
-                ) {
-                  yield* finalizeTurn(context, context.promptSettledStatus ?? "completed");
-                  return;
-                }
+                // Under the callback permit, so an agent exit that fails this turn decides first.
+                const expired = yield* runtimeCallbackPermit.withPermit(
+                  Effect.suspend(() =>
+                    context.finalized
+                      ? Effect.succeed(true)
+                      : context.tools.values().some(isRunningCommand) &&
+                          !hasDeferredBackgroundWork(context, isRunningCommand)
+                        ? finalizeTurn(context, context.promptSettledStatus ?? "completed").pipe(
+                            Effect.as(true),
+                          )
+                        : Effect.succeed(false),
+                  ),
+                );
+                if (expired) return;
                 // Something else still holds the turn; count silence again once it clears.
                 quietSince = now;
               }
@@ -11381,6 +11423,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             // load/resume can invoke client methods; install the incoming policy before activation.
             latestRuntimePolicy = turnInput.runtimePolicy;
             const requestedSessionId = yield* nativeThreadId(driver, turnInput.providerThread);
+            yield* failInitialSessionActivation(requestedSessionId);
             if (
               flavor.shouldRestartRuntimeBeforeTurn !== undefined &&
               (canResumeSession || canLoadSession) &&
@@ -12203,6 +12246,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                 Effect.gen(function* () {
                   yield* awaitRuntimeTeardown();
                   const sessionId = yield* nativeThreadId(driver, threadInput.providerThread);
+                  yield* failInitialSessionActivation(sessionId);
                   const previousItemIdentityVersion = itemIdentityVersion;
                   useProviderThreadIdentity(threadInput.providerThread);
                   const restorePreviousItemIdentity = Effect.sync(() => {
@@ -12841,11 +12885,12 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             ),
           readThreadSnapshot: Effect.fn("AcpAdapterV2.readThreadSnapshot")(
             function* (snapshotInput) {
+              let relaunched = false;
               return yield* runtimeTransitionPermit.withPermit(
                 Effect.gen(function* () {
                   yield* awaitRuntimeTeardown();
                   useProviderThreadIdentity(snapshotInput.providerThread);
-                  yield* restartRuntimeAfterTeardownIfRequired(
+                  relaunched = yield* restartRuntimeAfterTeardownIfRequired(
                     snapshotInput.providerThread.appThreadId,
                   ).pipe(Effect.ensuring(Effect.suspend(() => reportStartupPhase(undefined))));
                   const sessionId = yield* nativeThreadId(driver, snapshotInput.providerThread);
@@ -12897,7 +12942,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                     runtimeRequests: [],
                     providerPayload: { protocol: ACP_PROTOCOL, sessionId },
                   };
-                }),
+                }).pipe(Effect.onError(() => (relaunched ? requireRuntimeRestart : Effect.void))),
               );
             },
             (effect, snapshotInput) =>
@@ -12968,6 +13013,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               ),
           forkThread: Effect.fn("AcpAdapterV2.forkThread")(
             function* (forkInput) {
+              let relaunched = false;
               return yield* runtimeTransitionPermit.withPermit(
                 Effect.gen(function* () {
                   const currentTurn = yield* Ref.get(activeTurn);
@@ -12979,7 +13025,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                   }
                   yield* awaitRuntimeTeardown();
                   useProviderThreadIdentity(forkInput.sourceProviderThread);
-                  yield* restartRuntimeAfterTeardownIfRequired(
+                  relaunched = yield* restartRuntimeAfterTeardownIfRequired(
                     forkInput.sourceProviderThread.appThreadId,
                   ).pipe(Effect.ensuring(Effect.suspend(() => reportStartupPhase(undefined))));
                   if (!capabilities.threads.canForkThread) {
@@ -13042,7 +13088,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                     new Map(current).set(forked.sessionId, providerThread),
                   );
                   return providerThread;
-                }),
+                }).pipe(Effect.onError(() => (relaunched ? requireRuntimeRestart : Effect.void))),
               );
             },
             (effect, forkInput) =>

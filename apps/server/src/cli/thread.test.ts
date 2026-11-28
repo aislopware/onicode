@@ -239,6 +239,11 @@ it.effect(
       yield* fs.makeDirectory(nestedRoot, { recursive: true });
       yield* fs.makeDirectory(cwd);
       yield* Effect.promise(() => NodeFSP.symlink(workspaceRoot, aliasRoot, "junction"));
+      const appRoot = path.join(nestedRoot, "app");
+      yield* fs.makeDirectory(appRoot);
+      yield* Effect.promise(() =>
+        NodeFSP.symlink(appRoot, path.join(home, "app-link"), "junction"),
+      );
       const projects = [
         { id: ProjectId.make("current-project"), title: "Current", workspaceRoot: cwd },
         { id: ProjectId.make("home-project"), title: "Home", workspaceRoot: home },
@@ -300,6 +305,8 @@ it.effect(
         [path.join(aliasRoot, "absent", "plan.ts"), "absent-project"],
         [path.join(aliasRoot, "absent"), "absent-project"],
         [path.join(workspaceRoot, "absent", "plan.ts"), "physical-absent-project"],
+        // A link inside an existing project resolves where it points, as for existing files.
+        [path.join(home, "app-link", "plan.ts"), "nested-project"],
         [".", "current-project"],
         ["~/My Project", "intended-project"],
         ["~", "home-project"],

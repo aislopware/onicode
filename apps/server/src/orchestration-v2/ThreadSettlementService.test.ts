@@ -24,6 +24,7 @@ import {
   type ServerSettings as ContractServerSettings,
   type ServerSettingsPatch,
 } from "@onicode/contracts";
+import { normalizeProjectPathForComparison } from "@onicode/shared/path";
 import { applyServerSettingsPatch } from "@onicode/shared/serverSettings";
 import { visibleThreadPullRequests } from "@onicode/shared/threadPullRequests";
 import * as SecureRandom from "effect/crypto/SecureRandom";
@@ -721,6 +722,37 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
         return thread
           ? Effect.succeed(thread)
           : Effect.die(new Error(`Unexpected thread read: ${threadId}`));
+      },
+      getShellSnapshot: (shellOptions) => {
+        if (options.projections) return options.projections.getShellSnapshot(shellOptions);
+        const key =
+          shellOptions?.worktreePath === undefined
+            ? undefined
+            : normalizeProjectPathForComparison(shellOptions.worktreePath);
+        const threads = (options.currentThreads ?? [])
+          .filter(
+            (thread) =>
+              thread.deletedAt === null &&
+              (key === undefined ||
+                (thread.worktreePath !== null &&
+                  normalizeProjectPathForComparison(thread.worktreePath) === key)),
+          )
+          .map((thread) =>
+            shell({
+              id: thread.id,
+              projectId: thread.projectId,
+              worktreePath: thread.worktreePath,
+              lineage: thread.lineage,
+              settledOverride: thread.settledOverride,
+              settledAt: thread.settledAt,
+            }),
+          );
+        return Effect.succeed({
+          schemaVersion: 1,
+          snapshotSequence: 1,
+          threads,
+          archivedThreads: [],
+        });
       },
     }),
     Layer.mock(Orchestrator.OrchestratorV2)({
@@ -2832,7 +2864,7 @@ describe("ThreadSettlementServiceV2 terminals", () => {
       });
       const shared = appThread("shared-checkout-thread", "settled");
       const missing = appThread("removed-worktree-thread", "settled", "/worktrees/removed");
-      // The parent owns the worktree, so only the parent's skip is worth a warning.
+      // One warning covers every settled thread in the removed worktree.
       const missingSubagent = {
         ...appThread("removed-worktree-subagent", "settled", "/worktrees/removed"),
         lineage: {
@@ -2946,7 +2978,7 @@ describe("ThreadSettlementServiceV2 terminals", () => {
 
   it.effect("skips the settle script for a subagent in its parent's worktree", () =>
     Effect.gen(function* () {
-      const parent = appThread("subagent-parent", "settled", "/worktrees/parent");
+      const parent = appThread("subagent-parent", "active", "/worktrees/parent");
       const subagent = (id: string, worktreePath: string) => ({
         ...appThread(id, "settled", worktreePath),
         lineage: {
@@ -3006,6 +3038,58 @@ describe("ThreadSettlementServiceV2 terminals", () => {
         yield* fixture.publishEvent(settledEvent(sideChat));
         yield* fixture.publishEvent(settledEvent(own));
         assert.strictEqual((yield* Queue.take(fixture.scriptRuns)).threadId, own.id);
+      }).pipe(Effect.provide(fixture.layer));
+    }),
+  );
+
+  it.effect("runs the settle script once, for the last thread in a shared worktree", () =>
+    Effect.gen(function* () {
+      const root = appThread("shared-root", "active", "/worktrees/source");
+      const handedOff = {
+        ...appThread("handed-off-fork", "settled", "/worktrees/handed-off"),
+        lineage: {
+          parentThreadId: root.id,
+          relationshipToParent: "fork" as const,
+          rootThreadId: root.id,
+        },
+      };
+      // A fork of a fork that moved away still shares the root's worktree, spelled differently.
+      const grandchild = {
+        ...appThread("grandchild-fork", "settled", "/worktrees/source/"),
+        lineage: {
+          parentThreadId: handedOff.id,
+          relationshipToParent: "fork" as const,
+          rootThreadId: root.id,
+        },
+      };
+      const marker = appThread("marker-thread", "settled", "/worktrees/marker");
+      const currentThreads = [root, handedOff, grandchild, marker];
+      const fixture = yield* makeHarness({
+        snapshot: makeSnapshot([]),
+        currentThreads,
+        existingWorktreePaths: [
+          "/worktrees/source",
+          "/worktrees/source/",
+          "/worktrees/handed-off",
+          "/worktrees/marker",
+        ],
+      });
+
+      yield* Effect.gen(function* () {
+        const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+        yield* startHarness(service, fixture.activation, fixture.snapshotReads);
+        // The root still works in the worktree, so the grandchild skips it.
+        yield* fixture.publishEvent(settledEvent(grandchild));
+        yield* fixture.publishEvent(settledEvent(handedOff));
+        assert.strictEqual((yield* Queue.take(fixture.scriptRuns)).threadId, handedOff.id);
+        // The root settles last and runs it once for both; the grandchild's settlement is covered.
+        const settledRoot = appThread("shared-root", "settled", "/worktrees/source");
+        currentThreads[0] = settledRoot;
+        yield* fixture.publishEvent(settledEvent(settledRoot));
+        yield* fixture.publishEvent(settledEvent(grandchild));
+        yield* fixture.publishEvent(settledEvent(marker));
+        assert.strictEqual((yield* Queue.take(fixture.scriptRuns)).threadId, root.id);
+        assert.strictEqual((yield* Queue.take(fixture.scriptRuns)).threadId, marker.id);
       }).pipe(Effect.provide(fixture.layer));
     }),
   );

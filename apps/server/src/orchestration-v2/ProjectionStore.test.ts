@@ -12,6 +12,7 @@ import {
   ContextHandoffId,
   MessageId,
   type ModelSelection,
+  type OrchestrationV2DomainEvent,
   type OrchestrationV2ProviderThread,
   type OrchestrationV2TurnItem,
   OrchestrationV2ThreadHistoryPage,
@@ -7342,6 +7343,107 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
         (thread) => thread.id === threadId,
       );
       assert.deepEqual(shell?.providerInstanceHistory, [providerInstanceId, claudeInstanceId]);
+    }),
+  );
+
+  it.effect("keeps the active provider thread when one the conversation left settles", () =>
+    Effect.gen(function* () {
+      const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
+      const now = yield* DateTime.now;
+      const threadId = ThreadId.make("thread:left-provider-settles");
+      const claudeInstanceId = ProviderInstanceId.make("claude");
+      const claudeDriver = ProviderDriverKind.make("claudeAgent");
+      yield* projectionStore.apply({
+        id: EventId.make("event:left-provider-settles:thread"),
+        type: "thread.created",
+        threadId,
+        occurredAt: now,
+        payload: {
+          createdBy: "user",
+          creationSource: "web",
+          id: threadId,
+          projectId: ProjectId.make("project:left-provider-settles"),
+          title: "Left provider settles",
+          providerInstanceId,
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          activeProviderThreadId: null,
+          lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
+          forkedFrom: null,
+          createdAt: now,
+          updatedAt: now,
+          archivedAt: null,
+          settledOverride: null,
+          settledAt: null,
+          lastVisitedAt: null,
+          deletedAt: null,
+        },
+      });
+      const claudeThread = {
+        id: ProviderThreadId.make("provider-thread:left-provider-settles:claude"),
+        driver: claudeDriver,
+        providerInstanceId: claudeInstanceId,
+        providerSessionId: null,
+        appThreadId: threadId,
+        ownerNodeId: null,
+        nativeThreadRef: { driver: claudeDriver, nativeId: "claude-native", strength: "strong" },
+        nativeConversationHeadRef: null,
+        // Its session still runs background work the run left behind.
+        status: "active",
+        firstRunOrdinal: 1,
+        lastRunOrdinal: 1,
+        handoffIds: [],
+        forkedFrom: null,
+        createdAt: now,
+        updatedAt: now,
+      } satisfies OrchestrationV2ProviderThread;
+      const updateThread = (key: string, payload: OrchestrationV2ProviderThread) =>
+        ({
+          id: EventId.make(`event:left-provider-settles:${key}`),
+          type: "provider-thread.updated",
+          threadId,
+          driver: payload.driver,
+          occurredAt: now,
+          payload,
+        }) satisfies OrchestrationV2DomainEvent;
+      yield* projectionStore.apply(updateThread("claude", claudeThread));
+      const codexThreadId = ProviderThreadId.make("provider-thread:left-provider-settles:codex");
+      // The conversation switches to Codex for its second run.
+      yield* projectionStore.apply(
+        updateThread("codex", {
+          ...claudeThread,
+          id: codexThreadId,
+          driver,
+          providerInstanceId,
+          nativeThreadRef: { driver, nativeId: "codex-native", strength: "strong" },
+          status: "idle",
+          firstRunOrdinal: 2,
+          lastRunOrdinal: 2,
+        }),
+      );
+      const switched = yield* projectionStore.getThreadProjection(threadId);
+      assert.equal(switched.thread.activeProviderThreadId, codexThreadId);
+      const settled = updateThread("claude-settled", { ...claudeThread, status: "idle" });
+      assert.equal(
+        ProjectionStore.applyToProjection(switched, settled).thread.activeProviderThreadId,
+        codexThreadId,
+      );
+      yield* projectionStore.apply(settled);
+      assert.equal(
+        (yield* projectionStore.getThread(threadId)).activeProviderThreadId,
+        codexThreadId,
+      );
+      // A run that starts on the old thread brings the conversation back to it.
+      yield* projectionStore.apply(
+        updateThread("claude-resumed", { ...claudeThread, lastRunOrdinal: 3 }),
+      );
+      assert.equal(
+        (yield* projectionStore.getThread(threadId)).activeProviderThreadId,
+        claudeThread.id,
+      );
     }),
   );
 

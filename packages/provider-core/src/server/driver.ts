@@ -31,6 +31,8 @@ export interface ProviderDriverMetadata {
   /** Defaults to true; false rejects multiple instances of a global resource. */
   readonly supportsMultipleInstances?: boolean;
   readonly hasDefaultInstance?: boolean;
+  /** Its snapshot's usage limits read files behind `usageAccess`, so a new grant refreshes them. */
+  readonly limitsNeedUsageAccess?: boolean;
 }
 
 export type ProviderWorkspaceSnapshot = ServerProvider &

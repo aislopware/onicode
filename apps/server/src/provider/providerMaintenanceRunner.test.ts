@@ -2209,6 +2209,22 @@ it.effect("refuses incompatible latest versions and unapproved or unpinnable tar
     });
     assert.strictEqual(refused.providers[0]?.updateState?.status, "failed");
     assert.strictEqual(calls.length, 2);
+    yield* Ref.update(providersRef, (providers) =>
+      providers.map((entry) => ({
+        ...entry,
+        status: "error" as const,
+        auth: { status: "unauthenticated" as const },
+        message: "Codex CLI is not authenticated. Run `codex login` and try again.",
+      })),
+    );
+    const signedOut = yield* updater.updateProvider({
+      provider: CODEX_DRIVER,
+      targetVersion: "2.0.0",
+    });
+    assert.deepStrictEqual(
+      [signedOut.providers[0]?.updateState?.status, signedOut.providers[0]?.updateState?.message],
+      ["unchanged", "Update command completed, but Onicode could not verify the provider version."],
+    );
   }).pipe(
     Effect.provide(
       Layer.mergeAll(

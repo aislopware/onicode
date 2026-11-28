@@ -414,6 +414,56 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
     }).pipe(withRegistryLayer),
   );
 
+  it.effect("rereads usage limits on a new usage grant only where the limits need it", () =>
+    Effect.gen(function* () {
+      const gatedRefreshed = yield* Deferred.make<void>();
+      let ungatedRefreshes = 0;
+      const withUsageRefresh = (
+        driverKind: ProviderDriverKind,
+        limitsNeedUsageAccess: boolean,
+        refreshUsage: Effect.Effect<void>,
+      ): typeof CodexDriver => ({
+        ...CodexDriver,
+        driverKind,
+        metadata: { ...CodexDriver.metadata, limitsNeedUsageAccess },
+        create: (input) =>
+          Effect.map(CodexDriver.create(input), (instance) => ({
+            ...instance,
+            snapshot: { ...instance.snapshot, refreshUsage },
+          })),
+      });
+      const ungated = withUsageRefresh(
+        ProviderDriverKind.make("ungatedUsage"),
+        false,
+        Effect.sync(() => {
+          ungatedRefreshes++;
+        }),
+      );
+      const gated = withUsageRefresh(
+        ProviderDriverKind.make("gatedUsage"),
+        true,
+        Deferred.succeed(gatedRefreshed, undefined).pipe(Effect.asVoid),
+      );
+      const entries = (usageAccess?: "allowed" | "denied") => {
+        const entry = (driver: typeof CodexDriver) => ({
+          driver: driver.driverKind,
+          enabled: false,
+          config: makeCodexConfig({}),
+          ...(usageAccess === undefined ? {} : { usageAccess }),
+        });
+        return { [ungated.driverKind]: entry(ungated), [gated.driverKind]: entry(gated) };
+      };
+      const { mutator } = yield* makeProviderInstanceRegistry({
+        drivers: [ungated, gated],
+        configMap: entries(),
+      });
+      yield* mutator.reconcile(entries("denied"));
+      yield* mutator.reconcile(entries("allowed"));
+      yield* Deferred.await(gatedRefreshed);
+      expect(ungatedRefreshes).toBe(0);
+    }).pipe(withRegistryLayer),
+  );
+
   it.effect("restores the default Pi name after clearing a saved custom label", () =>
     Effect.gen(function* () {
       const instanceId = ProviderInstanceId.make("pi-account");

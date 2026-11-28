@@ -3,6 +3,7 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
+import type * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
@@ -177,7 +178,7 @@ const makeHarness = Effect.fn("TestConnectionHarness.make")(function* (options?:
   readonly checkHost?: (prepared: PreparedConnection) => Effect.Effect<ConnectionDriver.RouteCheck>;
   readonly preflight?: (route: ConnectionRoute) => Effect.Effect<ConnectionDriver.RoutePreflight>;
   readonly inboundFrames?: Effect.Effect<number>;
-  readonly awaitingReply?: (attempt: number) => Effect.Effect<boolean>;
+  readonly requestUnanswered?: (attempt: number, after: Duration.Input) => Effect.Effect<void>;
 }) {
   const networkStatus = yield* SubscriptionRef.make<NetworkStatus>(
     options?.networkStatus ?? "online",
@@ -240,7 +241,7 @@ const makeHarness = Effect.fn("TestConnectionHarness.make")(function* (options?:
         ready: options?.ready?.(attempt) ?? Effect.void,
         probe: options?.probe?.(attempt) ?? Effect.void,
         inboundFrames: options?.inboundFrames ?? Effect.succeed(0),
-        awaitingReply: options?.awaitingReply?.(attempt) ?? Effect.succeed(false),
+        requestUnanswered: (after) => options?.requestUnanswered?.(attempt, after) ?? Effect.never,
         closed: Deferred.await(closed),
       } satisfies RpcSession.RpcSession),
       () =>
@@ -1209,7 +1210,7 @@ describe("EnvironmentSupervisor", () => {
   const makeSilentSocketHarness = (options?: {
     readonly probe?: (attempt: number) => Effect.Effect<void, ConnectionAttemptError>;
     readonly checkHost?: (check: number) => ConnectionDriver.RouteCheck;
-    readonly awaitingReply?: (attempt: number) => boolean;
+    readonly requestUnanswered?: (attempt: number) => boolean;
   }) =>
     Effect.gen(function* () {
       const hostChecks = yield* Ref.make<ReadonlyArray<string>>([]);
@@ -1218,8 +1219,10 @@ describe("EnvironmentSupervisor", () => {
         initialConfig: () => Effect.succeed(PROBE_CAPABLE_CONFIG),
         probe: options?.probe ?? ((attempt) => (attempt === 1 ? Effect.never : Effect.void)),
         // The first socket is the silent one, so what was sent on it stays unanswered.
-        awaitingReply: (attempt) =>
-          Effect.succeed(options?.awaitingReply?.(attempt) ?? attempt === 1),
+        requestUnanswered: (attempt, after) =>
+          (options?.requestUnanswered?.(attempt) ?? attempt === 1)
+            ? Effect.sleep(after)
+            : Effect.never,
         checkHost: (prepared) =>
           Ref.updateAndGet(hostChecks, (checks) => [...checks, prepared.target._tag]).pipe(
             Effect.map((checks) => options?.checkHost?.(checks.length) ?? "answered"),
@@ -1310,6 +1313,45 @@ describe("EnvironmentSupervisor", () => {
         expect(yield* Ref.get(harness.hostChecks)).toContain("BearerConnectionTarget");
         expect(yield* Ref.get(harness.sessionCount)).toBe(2);
       }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("keeps a loopback socket whose probe answers late behind a slow request", () =>
+    Effect.gen(function* () {
+      const frames = yield* Ref.make(0);
+      const probes = yield* Ref.make(0);
+      const harness = yield* makeHarness({
+        prepare: (_attempt, target) => Effect.succeed(preparedFor(target)),
+        initialConfig: () => Effect.succeed(PROBE_CAPABLE_CONFIG),
+        inboundFrames: Ref.get(frames),
+        // A big diff is still running; the probe's reply is the next frame.
+        requestUnanswered: (_attempt, after) =>
+          Ref.get(frames).pipe(
+            Effect.flatMap((count) => (count === 0 ? Effect.sleep(after) : Effect.never)),
+          ),
+        probe: () =>
+          Ref.update(probes, (count) => count + 1).pipe(
+            Effect.andThen(Effect.sleep("600 millis")),
+            Effect.andThen(Ref.update(frames, (count) => count + 1)),
+          ),
+        checkHost: () => Effect.succeed("answered"),
+      });
+      const target = new PrimaryConnectionTarget({
+        ...TARGET,
+        httpBaseUrl: "http://127.0.0.1:3773",
+        wsBaseUrl: "ws://127.0.0.1:3773",
+      });
+      const supervisor = yield* EnvironmentSupervisor.make(
+        { ...TARGET_ENTRY, target },
+        { initiallyDesired: true },
+      ).pipe(Effect.provide(harness.dependencies));
+
+      yield* awaitState(supervisor.state, (state) => state.phase === "connected");
+      yield* TestClock.adjust("10 seconds");
+
+      expect(yield* Ref.get(probes)).toBe(1);
+      expect(yield* Ref.get(harness.sessionCount)).toBe(1);
+      expect((yield* SubscriptionRef.get(supervisor.state)).generation).toBe(1);
+    }).pipe(Effect.provide(TestClock.layer())),
   );
 
   it.effect("replaces a silent remote socket without the wait after a long resume", () =>
@@ -1470,7 +1512,7 @@ describe("EnvironmentSupervisor", () => {
       const harness = yield* makeSilentSocketHarness({
         probe: (attempt) => (attempt === 1 ? Effect.sleep("4 seconds") : Effect.void),
         // The probe's late answer is a frame, so nothing stays unanswered.
-        awaitingReply: () => false,
+        requestUnanswered: () => false,
       });
       const supervisor = yield* EnvironmentSupervisor.make(LAN_ENTRY, {
         initiallyDesired: true,

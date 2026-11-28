@@ -568,6 +568,70 @@ describe("acpToolCallDiffPatch", () => {
   });
 });
 
+/** Opens a mock ACP session that records each agent launch and the startup phase it saw. */
+const openRelaunchSession = Effect.fn("openRelaunchSession")(function* (
+  name: string,
+  mock?: Pick<Parameters<typeof makeMockRuntime>[0], "environment" | "wrapRuntime">,
+  initialNativeThreadId?: string,
+) {
+  const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  const runtimeInputs: AcpAdapterV2RuntimeInput[] = [];
+  const phasesAtLaunch: Array<string | undefined> = [];
+  let readPhase = (): string | undefined => undefined;
+  const baseMakeRuntime = makeMockRuntime({
+    childProcessSpawner,
+    mockAgentPath: yield* bundledMockAgentPath,
+    ...mock,
+  });
+  const instanceId = ProviderInstanceId.make(`acp-test-${name}`);
+  const adapter = yield* makeAcpAdapterV2({
+    instanceId,
+    flavor: {
+      driver: ACP_TEST_DRIVER,
+      capabilities: AcpProviderCapabilitiesV2,
+      makeRuntime: (runtimeInput) =>
+        Effect.sync(() => {
+          runtimeInputs.push(runtimeInput);
+          phasesAtLaunch.push(readPhase());
+        }).pipe(Effect.andThen(baseMakeRuntime(runtimeInput))),
+    },
+    selfInvocation: yield* resolveSelfInvocation(),
+  });
+  const threadId = ThreadId.make(`thread-acp-${name}`);
+  const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+    runtimeMode: "full-access",
+    interactionMode: "default",
+    cwd: process.cwd(),
+  });
+  const modelSelection = { instanceId, model: "default" } as const;
+  const runtime = yield* adapter.openSession({
+    threadId,
+    providerSessionId: ProviderSessionId.make(`provider-session-acp-${name}`),
+    modelSelection,
+    runtimePolicy,
+    ...(initialNativeThreadId === undefined ? {} : { initialNativeThreadId }),
+  });
+  readPhase = () => runtime.providerSession.startupPhase;
+  const providerThread = yield* runtime.ensureThread({ threadId, modelSelection, runtimePolicy });
+  return {
+    runtime,
+    runtimeInputs,
+    phasesAtLaunch,
+    threadId,
+    runtimePolicy,
+    modelSelection,
+    providerThread,
+    terminate: (runtimeOrdinal: number) =>
+      runtimeInputs[runtimeOrdinal - 1]!.onTermination!(
+        new EffectAcpErrors.AcpTransportError({ detail: "Injected termination", cause: "test" }),
+      ),
+    turnInput: (ordinal: number) =>
+      Effect.map(DateTime.now, (now) =>
+        makeTurnInput({ threadId, providerThread, instanceId, runtimePolicy, now, ordinal }),
+      ),
+  };
+});
+
 function makeMockRuntime(input: {
   readonly childProcessSpawner: ChildProcessSpawner.ChildProcessSpawner["Service"];
   readonly mockAgentPath: string;
@@ -7233,6 +7297,117 @@ describe("AcpAdapterV2", () => {
       });
       // The replacement agent is running, so the next send does not show it starting.
       assert.isUndefined(runtime.providerSession.startupPhase);
+    }).pipe(Effect.provide(layerTest)),
+  );
+
+  it.live("reports the launch step while a replacement session starts its agent", () =>
+    Effect.gen(function* () {
+      const opened = yield* openRelaunchSession("replacement-launch");
+      yield* opened.runtime.ensureThread({
+        threadId: opened.threadId,
+        modelSelection: opened.modelSelection,
+        runtimePolicy: opened.runtimePolicy,
+        existingProviderThread: { ...opened.providerThread, nativeThreadRef: null },
+        forceNewNativeThread: true,
+      });
+      assert.deepEqual(opened.phasesAtLaunch, [undefined, "launch"]);
+      assert.isUndefined(opened.runtime.providerSession.startupPhase);
+    }).pipe(Effect.provide(layerTest)),
+  );
+
+  it.live("relaunches the agent on the next turn after a stop interrupts its relaunch", () =>
+    Effect.gen(function* () {
+      const relaunchStarting = yield* Deferred.make<void>();
+      const opened = yield* openRelaunchSession("interrupted-relaunch", {
+        wrapRuntime: (runtime, runtimeOrdinal) =>
+          runtimeOrdinal === 2
+            ? {
+                ...runtime,
+                start: () =>
+                  Deferred.succeed(relaunchStarting, undefined).pipe(Effect.andThen(Effect.never)),
+              }
+            : runtime,
+      });
+      yield* opened.terminate(1);
+      const relaunch = yield* Effect.forkChild(
+        opened.runtime.startTurn(yield* opened.turnInput(1)),
+      );
+      yield* Deferred.await(relaunchStarting);
+      yield* Fiber.interrupt(relaunch);
+      // The stopped agent never opened the thread, so the next send launches another.
+      assert.equal(opened.runtime.providerSession.startupPhase, "launch");
+
+      yield* opened.runtime.startTurn(yield* opened.turnInput(2));
+      yield* opened.runtime.events.pipe(
+        Stream.takeUntil((event) => event.type === "turn.terminal"),
+        Stream.runDrain,
+      );
+      assert.lengthOf(opened.runtimeInputs, 3);
+    }).pipe(Effect.provide(layerTest)),
+  );
+
+  it.live("keeps the fallback session when its agent exits before a failed load is reported", () =>
+    Effect.gen(function* () {
+      const opened = yield* openRelaunchSession(
+        "fallback-agent-exit",
+        {
+          environment: (runtimeOrdinal) =>
+            runtimeOrdinal === 1 ? { ONICODE_ACP_FAIL_LOAD_SESSION: "1" } : {},
+        },
+        "stale-session",
+      );
+      const staleThread: OrchestrationV2ProviderThread = {
+        ...opened.providerThread,
+        nativeMetadata: null,
+        nativeThreadRef: { driver: ACP_TEST_DRIVER, nativeId: "stale-session", strength: "strong" },
+      };
+      yield* opened.terminate(2);
+      yield* opened.runtime
+        .resumeThread({
+          providerThread: staleThread,
+          modelSelection: opened.modelSelection,
+          runtimePolicy: opened.runtimePolicy,
+        })
+        .pipe(Effect.flip);
+      assert.lengthOf(opened.runtimeInputs, 2, "a session that failed to load launches no agent");
+      // Recovery keeps the fallback session, whose next send relaunches its agent.
+      const recovered = yield* opened.runtime.ensureThread({
+        threadId: opened.threadId,
+        modelSelection: opened.modelSelection,
+        runtimePolicy: opened.runtimePolicy,
+      });
+      assert.equal(
+        recovered.nativeThreadRef?.nativeId,
+        opened.providerThread.nativeThreadRef?.nativeId,
+      );
+      assert.equal(opened.runtime.providerSession.startupPhase, "launch");
+    }).pipe(Effect.provide(layerTest)),
+  );
+
+  it.live("keeps the launch step when a snapshot read fails on a relaunched agent", () =>
+    Effect.gen(function* () {
+      const opened = yield* openRelaunchSession("snapshot-relaunch", {
+        wrapRuntime: (runtime, runtimeOrdinal) =>
+          runtimeOrdinal === 2
+            ? {
+                ...runtime,
+                loadSession: () =>
+                  Effect.fail(
+                    new EffectAcpErrors.AcpRequestError({
+                      code: -32603,
+                      errorMessage: "Injected load failure",
+                      method: "session/load",
+                    }),
+                  ),
+              }
+            : runtime,
+      });
+      yield* opened.terminate(1);
+      yield* opened.runtime
+        .readThreadSnapshot({ providerThread: opened.providerThread })
+        .pipe(Effect.flip);
+      // The relaunched agent opened no session, so the next send still launches one.
+      assert.equal(opened.runtime.providerSession.startupPhase, "launch");
     }).pipe(Effect.provide(layerTest)),
   );
 
