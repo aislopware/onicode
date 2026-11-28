@@ -11,6 +11,7 @@ import {
 import { expandHomePath } from "@onicode/provider-core/server/pathExpansion";
 import * as HostProcess from "@onicode/shared/HostProcess";
 
+import { parseGitfileTarget } from "../../project/worktreeContainer.ts";
 import { readClaudeSettingsEnv } from "./ClaudeSkills.ts";
 
 const quotePath = Schema.encodeSync(Schema.fromJsonString(Schema.String));
@@ -116,7 +117,7 @@ const mainCheckoutRoot = Effect.fnUntraced(function* (checkout: string) {
   const path = yield* Path.Path;
   return yield* fileSystem.readFileString(path.join(checkout, ".git")).pipe(
     Effect.flatMap((pointer) => {
-      const gitDir = /^gitdir:\s*(.+)$/m.exec(pointer)?.[1]?.trim();
+      const gitDir = parseGitfileTarget(pointer);
       if (gitDir === undefined) return Effect.succeed(checkout);
       const worktreeGitDir = path.resolve(checkout, gitDir);
       return fileSystem.readFileString(path.join(worktreeGitDir, "commondir")).pipe(
