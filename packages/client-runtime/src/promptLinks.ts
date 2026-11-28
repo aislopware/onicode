@@ -133,7 +133,10 @@ export function resolvePromptLinkModelSelection(
   );
   const candidates = [
     ...usable.filter((provider) => provider.status === "ready"),
-    ...usable.filter((provider) => provider.status === "warning"),
+    // The pickers offer neither a signed-out warning instance nor its models.
+    ...usable.filter(
+      (provider) => provider.status === "warning" && isProviderPickerReady(provider),
+    ),
     // Last, instances whose check failed but whose models the pickers still offer.
     ...usable.filter(
       (provider) =>
