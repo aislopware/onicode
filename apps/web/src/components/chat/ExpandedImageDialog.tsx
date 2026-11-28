@@ -20,6 +20,7 @@ import {
   ZoomInIcon,
   ZoomOutIcon,
 } from "lucide-react";
+import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
 import { Dialog, DialogPopup, DialogTitle } from "../ui/dialog";
 import type { ExpandedImageItem, ExpandedImagePreview } from "./ExpandedImagePreview";
@@ -200,6 +201,11 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
     setEditStatus({ dirty: false, saving: false });
     editButtonRef.current?.focus({ preventScroll: true });
   };
+  // The overlay draws on the fitted image, so the zoom controls must read fitted too.
+  const startEdit = () => {
+    setZoom(1);
+    setEditing(true);
+  };
   const cancelEdit = () => {
     if (!editStatus.saving) exitEdit();
   };
@@ -330,8 +336,9 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
           >
             <XIcon aria-hidden="true" />
           </Button>
+          {/* The drawing tools float into this row over a fitted image, so they take its place. */}
           <div
-            className="flex min-w-0 flex-1 items-center gap-2 text-sm"
+            className={cn("flex min-w-0 flex-1 items-center gap-2 text-sm", editing && "invisible")}
             onClick={closeFromBackdrop}
           >
             <span className="flex min-w-0 items-center gap-2" aria-live="polite" aria-atomic="true">
@@ -464,7 +471,7 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
                         aria-label={gt("Draw on image")}
                         aria-pressed={editing}
                         disabled={editStatus.saving}
-                        onClick={() => (editing ? cancelEdit() : setEditing(true))}
+                        onClick={editing ? cancelEdit : startEdit}
                       />
                     }
                     label={gt("Draw on image")}

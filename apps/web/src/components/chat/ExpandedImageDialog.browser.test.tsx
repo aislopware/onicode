@@ -350,4 +350,51 @@ describe("ExpandedImageDialog", () => {
     expect(onClose).not.toHaveBeenCalled();
     expect(save).not.toHaveBeenCalled();
   });
+  it("draws on a fitted image, with its tools clear of the header", async () => {
+    await page.viewport(1440, 900);
+    const canvas = document.createElement("canvas");
+    canvas.width = 1600;
+    canvas.height = 1000;
+    const src = canvas.toDataURL("image/png");
+    const name = `${"a-long-screenshot-name-".repeat(4)}.png`;
+    const file = new File([await (await fetch(src)).blob()], name, { type: "image/png" });
+    const image = {
+      src,
+      name,
+      mimeType: "image/png",
+      edit: { file, name, mimeType: "image/png", save: vi.fn(async () => null) },
+    };
+    await using screen = await render(
+      <ExpandedImageDialog preview={{ images: [image, image], index: 0 }} onClose={vi.fn()} />,
+      // The dialog renders no links and reads no route.
+      { router: false },
+    );
+    const scale = screen.getByRole("toolbar", { name: "Media controls" }).getByText(/%$/);
+    await expect.element(scale).toBeVisible();
+    const fitted = scale.element().textContent ?? "";
+    await userEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+    await expect.element(scale).not.toHaveTextContent(fitted);
+
+    await userEvent.click(screen.getByRole("button", { name: "Draw on image" }));
+    await expect.element(screen.getByRole("button", { name: "Done" })).toBeVisible();
+    await expect.element(scale).toHaveTextContent(fitted);
+    const tools = screen
+      .getByRole("group", { name: "Drawing tool" })
+      .element()
+      .closest(".absolute");
+    if (!tools) throw new Error("No drawing toolbar");
+    const toolsRect = tools.getBoundingClientRect();
+    const close = screen.getByRole("button", { name: "Cancel drawing" }).element();
+    const caption = screen.getByText("1 / 2").element().parentElement;
+    if (!caption) throw new Error("No caption");
+    for (const element of [close, caption]) {
+      const rect = element.getBoundingClientRect();
+      const overlaps =
+        rect.left < toolsRect.right &&
+        toolsRect.left < rect.right &&
+        rect.top < toolsRect.bottom &&
+        toolsRect.top < rect.bottom;
+      expect(overlaps && getComputedStyle(element).visibility === "visible").toBe(false);
+    }
+  });
 });
