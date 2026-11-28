@@ -4738,3 +4738,4 @@ ce56dfe956	take	taken as is (shared notebookOutput under @onicode/shared; Docume
 b8233e5ed7	take	taken as is
 2e2af395f6	take	adapted: test builds the EPUB with Onicode's TestArchive (no JSZip)
 7d77f07fef	take	taken as is
+9f5740c93d	take	test adapted to Onicode's TestArchive
