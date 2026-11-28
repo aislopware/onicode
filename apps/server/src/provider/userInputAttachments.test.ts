@@ -1290,6 +1290,21 @@ describe("question answer paths", () => {
           expected: ["Percent-encoded rootfile chapter text."],
           absent: ["[Skipped document part", "[Extracted text truncated"],
         })),
+        // A relative package path whose raw name is the archive entry, even when it does not decode.
+        ...[
+          ["./100% Book/draft/../book.opf", "100% Book"],
+          ["./OEBPS/draft/../book%201.opf", "OEBPS"],
+        ].map(([packagePath, folder]) => ({
+          ext: "epub",
+          parts: {
+            "META-INF/container.xml": `<container><rootfile full-path="${packagePath}"/></container>`,
+            [`${folder}/${packagePath!.slice(packagePath!.lastIndexOf("/") + 1)}`]:
+              '<package><item id="ch1" href="ch1.xhtml"/><itemref idref="ch1"/></package>',
+            [`${folder}/ch1.xhtml`]: "<html><p>Raw relative rootfile chapter text.</p></html>",
+          },
+          expected: ["Raw relative rootfile chapter text."],
+          absent: ["[Skipped document part", "[Extracted text truncated"],
+        })),
         {
           ext: "epub",
           parts: {
