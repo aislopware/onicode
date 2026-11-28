@@ -4782,3 +4782,4 @@ a2d5fd3a5d	take	fix(server): keep text box text in RTF attachments; test row mer
 3dbade5f1c	take	fix(shared): preserve log history when the active file is locked
 3b5c881d61	take	fix(projects): ghq clone layout works for absolute SCP remote paths; kept Onicode's matchScpLikeCloneUrl (already allows absolute SCP paths and also refuses URL schemes); Windows-path check moved into parseCloneUrl as upstream
 307d916159	take	fix(server): skip covered DOCX table text in attachments
+5bea077bc5	take	fix(server): preserve newlines in filenames returned by project content search
