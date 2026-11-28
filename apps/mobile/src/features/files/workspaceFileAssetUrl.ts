@@ -11,6 +11,7 @@ import {
   isAudioPreviewFile,
   isVideoPreviewFile,
   resolveWorkspaceFilePath,
+  tracksWorkspaceMutations,
 } from "./filePath";
 
 export function useWorkspaceFileAssetUrlState(props: {
@@ -44,9 +45,12 @@ export function useWorkspaceFileAssetUrlState(props: {
     if (draftCwd === null) return null;
     return { _tag: "draft-workspace-file", cwd: draftCwd, path: relativePath };
   }, [absolutePath, relativePath, props.threadId, draftCwd]);
-  // A media file outside the root is granted by its inode, so a replaced file needs a new grant.
+  // A file outside the root is granted by its inode, so a replaced image needs a new grant.
   const workspaceMutationId = useAtomValue(
-    resource?._tag === "media-file" && props.environmentId !== null && props.threadId !== null
+    absolutePath !== null &&
+      tracksWorkspaceMutations(absolutePath) &&
+      props.environmentId !== null &&
+      props.threadId !== null
       ? environmentThreadDetails.workspaceMutationIdAtom(
           scopeThreadRef(props.environmentId, props.threadId),
         )
@@ -54,5 +58,5 @@ export function useWorkspaceFileAssetUrlState(props: {
   );
   const state = useAssetUrlState(props.environmentId, resource, workspaceMutationId);
   const refresh = useRefreshAssetUrl(props.environmentId, resource);
-  return { ...state, resource, refresh };
+  return { ...state, resource, refresh, workspaceMutationId };
 }

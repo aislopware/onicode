@@ -2260,12 +2260,12 @@
   "5957c075ecbc3906": "Vorschau fehlgeschlagen",
   "b89be031608768f7": "Zu groß zum Durchsuchen",
   "60966cd36b4bf51c": "Durchsuchen funktioniert bis {size}. Speichere die ZIP-Datei, um sie in einer anderen App zu öffnen.",
+  "e61f747e1fb31a8d": "{error} Speichere die ZIP-Datei, um sie in einer anderen App zu öffnen.",
   "14fdaffe7ede45b8": "Download abgebrochen",
   "ebe0da8151c3ebde": "Die ZIP-Datei wurde nicht heruntergeladen. Versuch es erneut, um ihre Dateien aufzulisten.",
   "795a59914c41c8b2": "Diese ZIP-Datei konnte nicht heruntergeladen werden",
   "d1662ac1c28df58e": "Prüfe die Verbindung zu dieser Umgebung und versuch es erneut.",
   "ee6bc2c56acbdebf": "Diese ZIP-Datei konnte nicht durchsucht werden",
-  "e61f747e1fb31a8d": "{error} Speichere die ZIP-Datei, um sie in einer anderen App zu öffnen.",
   "f3e9200679dd916d": "Sie ist möglicherweise unvollständig oder beschädigt. Speichere die ZIP-Datei, um sie in einer anderen App zu öffnen.",
   "b8f98d3cb512e722": "Diese Nachricht hat bereits so viele Anhänge, wie sie aufnehmen kann.",
   "dc429ef6ac7de65e": "Datei konnte nicht gespeichert werden",
@@ -2710,6 +2710,7 @@
   "4bc1f12855e979de": "Generiert",
   "01656e6237ddc437": "Doku",
   "e1d19bd1b90ef329": "{count, plural, one {{count} sichtbare Datei} other {{count} sichtbare Dateien}}",
+  "872bf68b2e05f055": "{count, plural, one {{count} angesehene Datei ausgeblendet} other {{count} angesehene Dateien ausgeblendet}}",
   "322f9f6712e4a3a7": "{count, plural, one {{count} angesehen} other {{count} angesehen}}",
   "ccd5fc4db08374d7": "{count, plural, one {{count} Testdatei ausgeblendet} other {{count} Testdateien ausgeblendet}}",
   "cb1e1e72fc3d2382": "Testdateien eingeschlossen",
@@ -2717,7 +2718,12 @@
   "9103c6fa7accc088": "Diff für {path} anzeigen, {additions, plural, one {{additions} Hinzufügung} other {{additions} Hinzufügungen}}, {deletions, plural, one {{deletions} Löschung} other {{deletions} Löschungen}}",
   "a52407bfe5da5df2": "Dateien prüfen",
   "a7764874320578a8": "Testdateien ausblenden",
+  "f538b8016f5ca2f3": "Angesehene Dateien ausblenden",
   "186b7ac75ed4674c": "Review-Dateien filtern",
+  "be348514e8486295": "Noch keine nicht angesehenen Dateien geladen",
+  "6b7765835778dc77": "Alle Dateien sind ausgeblendet",
+  "bd2cfcb7be24cd38": "Angesehene Dateien sind in diesem Review ausgeblendet.",
+  "6ae1484aa5bd2bc8": "Angesehene Dateien anzeigen",
   "5f6124336821ef3c": "Noch keine Nicht-Testdateien geladen",
   "6d63711bee3ce542": "Nur Testdateien geändert",
   "7cb130d96321fe5a": "Testdateien sind in diesem Review ausgeblendet.",
@@ -2928,6 +2934,7 @@
   "8e5f5001f74a460f": "Review-Kommentar hinzufügen",
   "8055c658cf61dd31": "Zeile kopieren",
   "89a7eb448db48738": "{count, plural, one {{count} Test ausgeblendet} other {{count} Tests ausgeblendet}}",
+  "15db3431c35d4927": "{count, plural, one {{count} angesehene ausgeblendet} other {{count} angesehene ausgeblendet}}",
   "b4f58b68410c319f": "Änderungen neu laden",
   "01cb0224aa3208c1": "Diff nicht verfügbar",
   "b683d10f00d06824": "{term, select, mr {Öffne diesen Merge Request beim Anbieter, um die Änderungen zu sehen.} cr {Öffne diese Änderungsanfrage beim Anbieter, um die Änderungen zu sehen.} other {Öffne diesen Pull Request beim Anbieter, um die Änderungen zu sehen.}}",
@@ -4707,6 +4714,32 @@
   "9605dc349bd2c872": "Referenz für {label} in {source}",
   "51e507aa054ee63b": "Sicher speichern",
   "4ba3eff83827c2d4": "Ablehnen",
+  "4b46098670d70460": [
+    "Führt zu",
+    " ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " ",
+    "auf",
+    " ",
+    {
+      "i": 2,
+      "k": "_gt_value_2",
+      "v": "v"
+    }
+  ],
+  "cf39d1301df07f46": [
+    "Führt zu",
+    " ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
   "1c4391ec5c411ba7": "Workflow konnte nicht gestoppt werden",
   "fece74611dcf4173": "Agent konnte nicht gestoppt werden",
   "9ce30f31a483c017": "Workflow {label} wird gestoppt",
@@ -5827,12 +5860,5 @@
   "ad208e3e32c85029": "Alle ausblenden",
   "3328503592789bed": "Zen",
   "856812e7e1fc445e": "Tool-Aufrufe im Chat",
-  "8d545d54c0a9e950": "Die Befehle, Bearbeitungen und Suchen ausblenden, die Agenten ausführen. „Erfolgreiche ausblenden“ behält Fehler. „Zen“ zeigt nur endgültige Antworten. Genehmigungen, Fragen und Fehler werden immer angezeigt.",
-  "872bf68b2e05f055": "{count, plural, one {{count} angesehene Datei ausgeblendet} other {{count} angesehene Dateien ausgeblendet}}",
-  "f538b8016f5ca2f3": "Angesehene Dateien ausblenden",
-  "be348514e8486295": "Noch keine nicht angesehenen Dateien geladen",
-  "6b7765835778dc77": "Alle Dateien sind ausgeblendet",
-  "bd2cfcb7be24cd38": "Angesehene Dateien sind in diesem Review ausgeblendet.",
-  "6ae1484aa5bd2bc8": "Angesehene Dateien anzeigen",
-  "15db3431c35d4927": "{count, plural, one {{count} angesehene ausgeblendet} other {{count} angesehene ausgeblendet}}"
+  "8d545d54c0a9e950": "Die Befehle, Bearbeitungen und Suchen ausblenden, die Agenten ausführen. „Erfolgreiche ausblenden“ behält Fehler. „Zen“ zeigt nur endgültige Antworten. Genehmigungen, Fragen und Fehler werden immer angezeigt."
 }

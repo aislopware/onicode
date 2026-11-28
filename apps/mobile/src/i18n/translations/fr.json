@@ -2261,12 +2261,12 @@
   "5957c075ecbc3906": "Échec de l’aperçu",
   "b89be031608768f7": "Trop volumineux pour être parcouru ici",
   "60966cd36b4bf51c": "Le parcours fonctionne jusqu’à {size}. Enregistrez le ZIP pour l’ouvrir dans une autre app.",
+  "e61f747e1fb31a8d": "{error} Enregistrez le ZIP pour l’ouvrir dans une autre app.",
   "14fdaffe7ede45b8": "Téléchargement annulé",
   "ebe0da8151c3ebde": "Le ZIP n’a pas été téléchargé. Réessayez pour lister ses fichiers.",
   "795a59914c41c8b2": "Impossible de télécharger ce ZIP",
   "d1662ac1c28df58e": "Vérifiez la connexion à cet environnement et réessayez.",
   "ee6bc2c56acbdebf": "Impossible de parcourir ce ZIP",
-  "e61f747e1fb31a8d": "{error} Enregistrez le ZIP pour l’ouvrir dans une autre app.",
   "f3e9200679dd916d": "Il est peut-être incomplet ou endommagé. Enregistrez le ZIP pour l’ouvrir dans une autre app.",
   "b8f98d3cb512e722": "Ce message a déjà le nombre maximal de pièces jointes.",
   "dc429ef6ac7de65e": "Impossible d’enregistrer le fichier",
@@ -2707,6 +2707,7 @@
   "4bc1f12855e979de": "Générés",
   "01656e6237ddc437": "Documentation",
   "e1d19bd1b90ef329": "{count, plural, one {{count} fichier visible} other {{count} fichiers visibles}}",
+  "872bf68b2e05f055": "{count, plural, one {{count} fichier consulté masqué} other {{count} fichiers consultés masqués}}",
   "322f9f6712e4a3a7": "{count, plural, one {{count} consulté} other {{count} consultés}}",
   "ccd5fc4db08374d7": "{count, plural, one {{count} fichier de test masqué} other {{count} fichiers de test masqués}}",
   "cb1e1e72fc3d2382": "Fichiers de test inclus",
@@ -2714,7 +2715,12 @@
   "9103c6fa7accc088": "Voir le diff de {path}, {additions, plural, =1 {{additions} ajout} other {{additions} ajouts}}, {deletions, plural, =1 {{deletions} suppression} other {{deletions} suppressions}}",
   "a52407bfe5da5df2": "Fichiers de la revue",
   "a7764874320578a8": "Masquer les fichiers de test",
+  "f538b8016f5ca2f3": "Masquer les fichiers consultés",
   "186b7ac75ed4674c": "Filtrer les fichiers de la revue",
+  "be348514e8486295": "Aucun fichier non consulté chargé pour l’instant",
+  "6b7765835778dc77": "Tous les fichiers sont masqués",
+  "bd2cfcb7be24cd38": "Les fichiers consultés sont masqués dans cette revue.",
+  "6ae1484aa5bd2bc8": "Afficher les fichiers consultés",
   "5f6124336821ef3c": "Aucun fichier hors test chargé pour l’instant",
   "6d63711bee3ce542": "Seuls des fichiers de test ont changé",
   "7cb130d96321fe5a": "Les fichiers de test sont masqués dans cette revue.",
@@ -2925,6 +2931,7 @@
   "8e5f5001f74a460f": "Ajouter un commentaire de revue",
   "8055c658cf61dd31": "Copier la ligne",
   "89a7eb448db48738": "{count, plural, one {{count} test masqué} other {{count} tests masqués}}",
+  "15db3431c35d4927": "{count, plural, one {{count} consulté masqué} other {{count} consultés masqués}}",
   "b4f58b68410c319f": "Recharger les modifications",
   "01cb0224aa3208c1": "Diff indisponible",
   "b683d10f00d06824": "Ouvrez cette {term, select, mr {merge request} cr {demande de modification} other {pull request}} chez son fournisseur pour voir les modifications.",
@@ -4702,6 +4709,32 @@
   "9605dc349bd2c872": "Référence de {label} dans {source}",
   "51e507aa054ee63b": "Enregistrer de façon sécurisée",
   "4ba3eff83827c2d4": "Refuser",
+  "4b46098670d70460": [
+    "Mène à",
+    " ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " ",
+    "sur",
+    " ",
+    {
+      "i": 2,
+      "k": "_gt_value_2",
+      "v": "v"
+    }
+  ],
+  "cf39d1301df07f46": [
+    "Mène à",
+    " ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
   "1c4391ec5c411ba7": "Impossible d’arrêter le workflow",
   "fece74611dcf4173": "Impossible d’arrêter l’agent",
   "9ce30f31a483c017": "Arrêt du workflow {label}",
@@ -5822,12 +5855,5 @@
   "ad208e3e32c85029": "Tout masquer",
   "3328503592789bed": "Zen",
   "856812e7e1fc445e": "Appels d’outils dans la discussion",
-  "8d545d54c0a9e950": "Masque les commandes, modifications et recherches lancées par les agents. Masquer les réussis garde les échecs. Zen n’affiche que les réponses finales. Les approbations, questions et erreurs s’affichent toujours.",
-  "872bf68b2e05f055": "{count, plural, one {{count} fichier consulté masqué} other {{count} fichiers consultés masqués}}",
-  "f538b8016f5ca2f3": "Masquer les fichiers consultés",
-  "be348514e8486295": "Aucun fichier non consulté chargé pour l’instant",
-  "6b7765835778dc77": "Tous les fichiers sont masqués",
-  "bd2cfcb7be24cd38": "Les fichiers consultés sont masqués dans cette revue.",
-  "6ae1484aa5bd2bc8": "Afficher les fichiers consultés",
-  "15db3431c35d4927": "{count, plural, one {{count} consulté masqué} other {{count} consultés masqués}}"
+  "8d545d54c0a9e950": "Masque les commandes, modifications et recherches lancées par les agents. Masquer les réussis garde les échecs. Zen n’affiche que les réponses finales. Les approbations, questions et erreurs s’affichent toujours."
 }

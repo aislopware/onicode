@@ -23,6 +23,8 @@ import {
 import { clampFileAttachmentUploadBytes } from "@onicode/client-runtime/state/attachments";
 import * as Option from "effect/Option";
 import { AsyncResult } from "effect/reactivity";
+import { errorDisplayMessage } from "@onicode/client-runtime/errors";
+import { scopeThreadRef } from "@onicode/client-runtime/environment";
 import * as Schema from "effect/Schema";
 import { videoMimeType } from "@onicode/shared/video";
 import {
@@ -91,8 +93,10 @@ import {
   isVideoPreviewFile,
   isZipPreviewFile,
   needsWorkspaceFileContents,
+  workspacePreviewUri,
 } from "./filePath";
 import { useWorkspaceFileAssetUrlState } from "./workspaceFileAssetUrl";
+import { WorkspaceMutationIdProvider } from "../threads/WorkspaceMutationIdProvider";
 import { MOBILE_FULL_FILE_MAX_BYTES, useFullFileText } from "./useFullFileText";
 import { ZipArchiveView } from "./ZipArchiveView";
 
@@ -123,6 +127,31 @@ function FilesBrowserHeader(props: {
   );
 }
 
+/** The split-view controls every file screen's bar carries: Return to chat and the navigator toggle. */
+function useFileHeaderChrome(fileInspectorSupported: boolean, onReturnToThread: () => void) {
+  const { toggleAuxiliaryPane } = useAdaptiveWorkspaceLayout();
+  const gt = useGT();
+  const { panes } = useWorkspacePaneState();
+  if (!fileInspectorSupported) return { backInSplitView: undefined, actions: undefined };
+  return {
+    backInSplitView: {
+      accessibilityLabel: gt("Return to chat"),
+      icon: "chevron.left",
+      onPress: onReturnToThread,
+    },
+    actions: [
+      {
+        accessibilityLabel: panes.auxiliaryPaneVisible
+          ? gt("Hide file navigator")
+          : gt("Show file navigator"),
+        icon: "sidebar.right" as const,
+        selected: panes.auxiliaryPaneVisible,
+        onPress: toggleAuxiliaryPane,
+      },
+    ],
+  };
+}
+
 function FileHeader(props: {
   readonly title: string;
   readonly subtitle: string;
@@ -135,12 +164,12 @@ function FileHeader(props: {
     readonly title: string;
     readonly icon: string;
     readonly inline: boolean;
+    readonly disabled?: boolean;
     readonly onPress: () => unknown;
   }>;
 }) {
-  const { toggleAuxiliaryPane } = useAdaptiveWorkspaceLayout();
   const gt = useGT();
-  const { panes } = useWorkspacePaneState();
+  const chrome = useFileHeaderChrome(props.fileInspectorSupported, props.onReturnToThread);
   const modes = props.actions.filter(({ inline }) => inline);
   return (
     <AppBar
@@ -148,29 +177,8 @@ function FileHeader(props: {
       subtitle={props.subtitle}
       onBack={props.onBack}
       hideBottomBorder
-      backInSplitView={
-        props.fileInspectorSupported
-          ? {
-              accessibilityLabel: gt("Return to chat"),
-              icon: "chevron.left",
-              onPress: props.onReturnToThread,
-            }
-          : undefined
-      }
-      actions={
-        props.fileInspectorSupported
-          ? [
-              {
-                accessibilityLabel: panes.auxiliaryPaneVisible
-                  ? gt("Hide file navigator")
-                  : gt("Show file navigator"),
-                icon: "sidebar.right",
-                selected: panes.auxiliaryPaneVisible,
-                onPress: toggleAuxiliaryPane,
-              },
-            ]
-          : undefined
-      }
+      backInSplitView={chrome.backInSplitView}
+      actions={chrome.actions}
       menus={[
         {
           title: gt("File actions"),
@@ -275,6 +283,7 @@ function FileContent(props: {
   /** Why a file the server would not read as text could not be decoded here either. */
   readonly binaryError: string | null;
   readonly onSave: () => void;
+  readonly saving: boolean;
   readonly onOpenInViewer: () => void;
   readonly relativePath: string;
   readonly threadId: ThreadId | null;
@@ -356,8 +365,13 @@ function FileContent(props: {
           title={gt("No preview for this file")}
           detail={props.binaryError}
           action={
-            <View className="flex-row gap-3">
-              <Button tone="primary" label={gt("Save or share")} onPress={props.onSave} />
+            <View className="flex-row flex-wrap justify-center gap-3">
+              <Button
+                tone="primary"
+                label={gt("Save or share")}
+                loading={props.saving}
+                onPress={props.onSave}
+              />
               <Button label={gt("Open in file viewer")} onPress={props.onOpenInViewer} />
             </View>
           }
@@ -388,14 +402,21 @@ function FileContent(props: {
       {props.activeMode === "preview" && delimiter ? (
         <DelimitedFilePreview table={parseDelimitedPreview(props.fileContents, delimiter)} />
       ) : props.activeMode === "preview" && isMarkdown ? (
-        <FileMarkdownPreview
-          cwd={props.cwd}
-          environmentId={props.environmentId}
-          markdown={props.fileContents}
-          relativePath={props.relativePath}
-          threadId={props.threadId}
-          onRefresh={props.onRefresh}
-        />
+        // Images the agent rewrites reload, as they do in the chat.
+        <WorkspaceMutationIdProvider
+          threadRef={
+            props.threadId === null ? null : scopeThreadRef(props.environmentId, props.threadId)
+          }
+        >
+          <FileMarkdownPreview
+            cwd={props.cwd}
+            environmentId={props.environmentId}
+            markdown={props.fileContents}
+            relativePath={props.relativePath}
+            threadId={props.threadId}
+            onRefresh={props.onRefresh}
+          />
+        </WorkspaceMutationIdProvider>
       ) : (
         <FileSourceSurface
           key={props.initialLine}
@@ -832,10 +853,15 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
     decodedText === null &&
     !AsyncResult.isFailure(decodedTextResult) &&
     !AsyncResult.isFailure(decodedTextUrlResult);
+  // Either the download URL or the download itself can fail; both leave only Save to offer.
+  const binaryFailure: { readonly cause: unknown } | null = AsyncResult.isFailure(decodedTextResult)
+    ? { cause: Option.getOrNull(AsyncResult.error(decodedTextResult)) }
+    : AsyncResult.isFailure(decodedTextUrlResult)
+      ? { cause: Option.getOrNull(AsyncResult.error(decodedTextUrlResult)) }
+      : null;
   const binaryError =
-    needsDecodedText && AsyncResult.isFailure(decodedTextResult)
-      ? (Option.getOrNull(AsyncResult.error(decodedTextResult))?.message ??
-        gt("Could not read this file."))
+    needsDecodedText && binaryFailure !== null
+      ? (errorDisplayMessage(binaryFailure.cause, messages) ?? gt("Could not read this file."))
       : null;
   // Until the full text arrives, the 1 MB preview shows with its partial-file notice.
   const fileContents = fullText ?? fileData?.contents ?? decodedText?.text ?? null;
@@ -903,10 +929,14 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
           actionsSource: mediaSource,
         }
       : null;
+  // A rewritten image keeps its URL on servers that report file revisions; the suffix reloads it.
   const previewUri =
-    assetPreviewUri === null || previewRevision === 0
-      ? assetPreviewUri
-      : `${assetPreviewUri}${assetPreviewUri.includes("?") ? "&" : "?"}revision=${previewRevision}`;
+    assetPreviewUri === null
+      ? null
+      : workspacePreviewUri(assetPreviewUri, {
+          retry: previewRevision,
+          mutationId: assetPreview.workspaceMutationId ?? null,
+        });
   // Remounting the preview after a re-mint is what makes a failed asset URL retryable.
   const handleRetryPreview = () => {
     void assetPreview.refresh().finally(() => setPreviewRevision((current) => current + 1));
@@ -1000,7 +1030,8 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
             onPress: () => setModeOverride({ path: relativePath, mode: "source" }),
           } as const)
         : null,
-      resolvedActiveMode === "source"
+      // Only text wraps; a ZIP, binary or failed file has none.
+      resolvedActiveMode === "source" && fileContents !== null
         ? ({
             id: "word-wrap",
             title: appearance.codeWordBreak ? gt("Disable word wrap") : gt("Enable word wrap"),
@@ -1027,6 +1058,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
               icon:
                 action.id === "save" ? ("square.and.arrow.up" as const) : ("doc.on.doc" as const),
               inline: false,
+              disabled: action.disabled === true,
               onPress: action.run,
             }))
         : [
@@ -1050,6 +1082,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
                     title: saveAction.title,
                     icon: "square.and.arrow.up",
                     inline: false,
+                    disabled: saveAction.disabled === true,
                     onPress: saveAction.run,
                   } as const,
                 ]
@@ -1130,6 +1163,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
     }
     handleReturnToThread();
   };
+  const fileHeaderChrome = useFileHeaderChrome(fileInspector.supported, handleReturnToThread);
 
   if (environmentId === null || (threadId !== null && selectedThread === null)) {
     return withInspector(
@@ -1220,6 +1254,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
         uri={assetPreviewUri}
         isLocal={false}
         refresh={assetPreview.refresh}
+        chrome={{ onBack: handleBack, ...fileHeaderChrome }}
         environmentId={environmentId}
         draftKey={threadId === null ? null : scopedThreadKey(environmentId, threadId)}
         maxAttachmentBytes={
@@ -1260,6 +1295,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
           fileError={decodedTextPending ? null : fileQuery.error}
           binaryError={binaryError}
           onSave={mediaActions.share}
+          saving={mediaActions.sharing}
           onOpenInViewer={openInFileViewer}
           initialLine={targetLine}
           relativePath={relativePath}

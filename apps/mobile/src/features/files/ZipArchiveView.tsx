@@ -26,6 +26,7 @@ import { Keyboard, Pressable, ScrollView, TextInput, View } from "react-native";
 
 import { PierreEntryIcon } from "../../components/PierreEntryIcon";
 import { AppBar } from "../../components/ui/AppBar";
+import type { AppBarAction, AppBarProps } from "../../components/ui/AppBar.types";
 import { useContentBottomInset, useContentTopInset } from "../../components/ui/useBarInset";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
@@ -210,6 +211,7 @@ function useZipArchive(input: {
   // The parent mints a new refresh callback on every render; it must not reload the archive.
   const refresh = useEffectEvent(input.refresh);
   // Refreshing mints a new signed URL for the same file, so only a local path names a new archive.
+  // Callers key the view by the file, so another archive remounts it.
   const source = isLocal ? input.uri : input.uri === null ? null : "remote";
   const currentUri = useEffectEvent(() => input.uri);
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- Load archive bytes and cancel the stream on cleanup.
@@ -228,7 +230,8 @@ function useZipArchive(input: {
         if ((file.size ?? 0) > ARCHIVE_MAX_BYTES) throw new ZipFailureError({ failure: TOO_LARGE });
         return openArchive(await file.arrayBuffer(), abort.signal);
       }
-      const url = (await refresh()) ?? uri;
+      // The parent just minted the first URL; a retry may outlive it.
+      const url = revision === 0 ? uri : ((await refresh()) ?? uri);
       const response = await fetch(url, { signal: abort.signal });
       if (!response.ok || !response.body) throw new ZipFailureError({ failure: NETWORK });
       const bytes = await readArchiveBody(response.body, (receivedBytes) =>
@@ -256,7 +259,6 @@ function useZipArchive(input: {
           });
       });
     return () => abort.abort();
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Retry must reload the archive.
   }, [source, isLocal, sizeBytes, revision]);
   return {
     state,
@@ -341,9 +343,17 @@ function ZipTreeRowView(props: {
   );
 }
 
+/** The bar a host screen draws around the archive, such as the Files route's split-view controls. */
+export interface ZipArchiveChrome {
+  readonly onBack: () => void;
+  readonly backInSplitView?: AppBarProps["backInSplitView"];
+  readonly actions?: ReadonlyArray<AppBarAction>;
+}
+
 function ZipArchiveHeader(props: {
   readonly name: string;
   readonly subtitle: string;
+  readonly chrome: ZipArchiveChrome | undefined;
   readonly onSave: () => void;
   readonly onRemove: (() => void) | null;
 }) {
@@ -353,10 +363,15 @@ function ZipArchiveHeader(props: {
     <AppBar
       title={props.name}
       subtitle={props.subtitle}
-      onBack={() => {
-        if (navigation.canGoBack()) navigation.goBack();
-      }}
+      onBack={
+        props.chrome?.onBack ??
+        (() => {
+          if (navigation.canGoBack()) navigation.goBack();
+        })
+      }
+      backInSplitView={props.chrome?.backInSplitView}
       actions={[
+        ...(props.chrome?.actions ?? []),
         { accessibilityLabel: gt("Save ZIP"), icon: "square.and.arrow.up", onPress: props.onSave },
         ...(props.onRemove
           ? [
@@ -432,7 +447,7 @@ function ZipArchiveFailure(props: {
             : props.failure.detail,
         )}
         action={
-          <View className="flex-row gap-3">
+          <View className="flex-row flex-wrap justify-center gap-3">
             {props.failure.retry ? (
               <Button tone="primary" label={gt("Try again")} onPress={props.onRetry} />
             ) : null}
@@ -556,6 +571,7 @@ export function ZipArchiveView(props: {
   readonly environmentId: EnvironmentId | null;
   readonly draftKey: string | null;
   readonly maxAttachmentBytes: number | undefined;
+  readonly chrome?: ZipArchiveChrome;
   readonly onSave: () => void;
   readonly onRemove: (() => void) | null;
 }) {
@@ -591,6 +607,7 @@ export function ZipArchiveView(props: {
                   })
               : props.subtitle
           }
+          chrome={props.chrome}
           onSave={props.onSave}
           onRemove={props.onRemove}
         />

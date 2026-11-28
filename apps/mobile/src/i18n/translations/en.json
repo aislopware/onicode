@@ -2261,12 +2261,12 @@
   "5957c075ecbc3906": "Preview failed",
   "b89be031608768f7": "Too large to browse here",
   "60966cd36b4bf51c": "Browsing works up to {size}. Save the ZIP to open it in another app.",
+  "e61f747e1fb31a8d": "{error} Save the ZIP to open it in another app.",
   "14fdaffe7ede45b8": "Download cancelled",
   "ebe0da8151c3ebde": "The ZIP wasn't downloaded. Try again to list its files.",
   "795a59914c41c8b2": "Couldn't download this ZIP",
   "d1662ac1c28df58e": "Check the connection to this environment and try again.",
   "ee6bc2c56acbdebf": "Couldn't browse this ZIP",
-  "e61f747e1fb31a8d": "{error} Save the ZIP to open it in another app.",
   "f3e9200679dd916d": "It may be incomplete or damaged. Save the ZIP to open it in another app.",
   "b8f98d3cb512e722": "This message already has as many attachments as it can hold.",
   "dc429ef6ac7de65e": "Could not save file",
@@ -2711,6 +2711,7 @@
   "4bc1f12855e979de": "Generated",
   "01656e6237ddc437": "Docs",
   "e1d19bd1b90ef329": "{count, plural, one {{count} visible file} other {{count} visible files}}",
+  "872bf68b2e05f055": "{count, plural, one {{count} viewed file hidden} other {{count} viewed files hidden}}",
   "322f9f6712e4a3a7": "{count, plural, one {{count} viewed} other {{count} viewed}}",
   "ccd5fc4db08374d7": "{count, plural, one {{count} test file hidden} other {{count} test files hidden}}",
   "cb1e1e72fc3d2382": "Test files included",
@@ -2718,7 +2719,12 @@
   "9103c6fa7accc088": "View diff for {path}, {additions, plural, one {{additions} addition} other {{additions} additions}}, {deletions, plural, one {{deletions} deletion} other {{deletions} deletions}}",
   "a52407bfe5da5df2": "Review files",
   "a7764874320578a8": "Hide test files",
+  "f538b8016f5ca2f3": "Hide viewed files",
   "186b7ac75ed4674c": "Filter review files",
+  "be348514e8486295": "No unviewed files loaded yet",
+  "6b7765835778dc77": "All files are hidden",
+  "bd2cfcb7be24cd38": "Viewed files are hidden from this review.",
+  "6ae1484aa5bd2bc8": "Show viewed files",
   "5f6124336821ef3c": "No non-test files loaded yet",
   "6d63711bee3ce542": "Only test files changed",
   "7cb130d96321fe5a": "Test files are hidden from this review.",
@@ -2929,6 +2935,7 @@
   "8e5f5001f74a460f": "Add review comment",
   "8055c658cf61dd31": "Copy line",
   "89a7eb448db48738": "{count, plural, one {{count} test hidden} other {{count} tests hidden}}",
+  "15db3431c35d4927": "{count, plural, one {{count} viewed hidden} other {{count} viewed hidden}}",
   "b4f58b68410c319f": "Reload changes",
   "01cb0224aa3208c1": "Diff unavailable",
   "b683d10f00d06824": "Open this {term, select, mr {merge request} cr {change request} other {pull request}} on its provider to view the changes.",
@@ -4710,6 +4717,32 @@
   "9605dc349bd2c872": "{label} reference in {source}",
   "51e507aa054ee63b": "Save securely",
   "4ba3eff83827c2d4": "Decline",
+  "4b46098670d70460": [
+    "Goes to",
+    " ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " ",
+    "on",
+    " ",
+    {
+      "i": 2,
+      "k": "_gt_value_2",
+      "v": "v"
+    }
+  ],
+  "cf39d1301df07f46": [
+    "Goes to",
+    " ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
   "1c4391ec5c411ba7": "Could not stop workflow",
   "fece74611dcf4173": "Could not stop agent",
   "9ce30f31a483c017": "Stopping workflow {label}",
@@ -5830,12 +5863,5 @@
   "ad208e3e32c85029": "Hide all",
   "3328503592789bed": "Zen",
   "856812e7e1fc445e": "Tool calls in chat",
-  "8d545d54c0a9e950": "Hide the commands, edits, and searches agents run. Hide successful keeps failures. Zen shows only final answers. Approvals, questions, and errors always show.",
-  "872bf68b2e05f055": "{count, plural, one {{count} viewed file hidden} other {{count} viewed files hidden}}",
-  "f538b8016f5ca2f3": "Hide viewed files",
-  "be348514e8486295": "No unviewed files loaded yet",
-  "6b7765835778dc77": "All files are hidden",
-  "bd2cfcb7be24cd38": "Viewed files are hidden from this review.",
-  "6ae1484aa5bd2bc8": "Show viewed files",
-  "15db3431c35d4927": "{count, plural, one {{count} viewed hidden} other {{count} viewed hidden}}"
+  "8d545d54c0a9e950": "Hide the commands, edits, and searches agents run. Hide successful keeps failures. Zen shows only final answers. Approvals, questions, and errors always show."
 }

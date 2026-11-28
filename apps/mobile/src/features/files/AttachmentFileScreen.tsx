@@ -234,6 +234,8 @@ export function AttachmentFileScreen(props: AttachmentFileScreenProps) {
         : null;
     return (
       <ZipArchiveView
+        // A refreshed URL keeps the archive; another attachment loads its own.
+        key={JSON.stringify([environmentId, params.threadId, params.attachmentId, params.name])}
         name={params.name}
         subtitle={subtitle}
         sizeBytes={sizeBytes}

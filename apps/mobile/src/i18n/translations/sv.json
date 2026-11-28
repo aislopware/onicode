@@ -2261,12 +2261,12 @@
   "5957c075ecbc3906": "Förhandsvisningen misslyckades",
   "b89be031608768f7": "För stor för att bläddra i här",
   "60966cd36b4bf51c": "Bläddring fungerar upp till {size}. Spara ZIP-filen för att öppna den i en annan app.",
+  "e61f747e1fb31a8d": "{error} Spara ZIP-filen för att öppna den i en annan app.",
   "14fdaffe7ede45b8": "Nedladdningen avbröts",
   "ebe0da8151c3ebde": "ZIP-filen laddades inte ned. Försök igen för att lista dess filer.",
   "795a59914c41c8b2": "Kunde inte ladda ned ZIP-filen",
   "d1662ac1c28df58e": "Kontrollera anslutningen till miljön och försök igen.",
   "ee6bc2c56acbdebf": "Kunde inte bläddra i ZIP-filen",
-  "e61f747e1fb31a8d": "{error} Spara ZIP-filen för att öppna den i en annan app.",
   "f3e9200679dd916d": "Den kan vara ofullständig eller skadad. Spara ZIP-filen för att öppna den i en annan app.",
   "b8f98d3cb512e722": "Meddelandet har redan så många bilagor som det rymmer.",
   "dc429ef6ac7de65e": "Kunde inte spara filen",
@@ -2711,6 +2711,7 @@
   "4bc1f12855e979de": "Genererat",
   "01656e6237ddc437": "Dokumentation",
   "e1d19bd1b90ef329": "{count, plural, one {{count} synlig fil} other {{count} synliga filer}}",
+  "872bf68b2e05f055": "{count, plural, one {{count} visad fil dold} other {{count} visade filer dolda}}",
   "322f9f6712e4a3a7": "{count, plural, one {{count} visad} other {{count} visade}}",
   "ccd5fc4db08374d7": "{count, plural, one {{count} testfil dold} other {{count} testfiler dolda}}",
   "cb1e1e72fc3d2382": "Testfiler inkluderade",
@@ -2718,7 +2719,12 @@
   "9103c6fa7accc088": "Visa diff för {path}, {additions} tillägg, {deletions, plural, one {{deletions} borttagning} other {{deletions} borttagningar}}",
   "a52407bfe5da5df2": "Granska filer",
   "a7764874320578a8": "Dölj testfiler",
+  "f538b8016f5ca2f3": "Dölj visade filer",
   "186b7ac75ed4674c": "Filtrera granskningsfiler",
+  "be348514e8486295": "Inga ovisade filer har lästs in än",
+  "6b7765835778dc77": "Alla filer är dolda",
+  "bd2cfcb7be24cd38": "Visade filer är dolda i den här granskningen.",
+  "6ae1484aa5bd2bc8": "Visa visade filer",
   "5f6124336821ef3c": "Inga filer utöver testfiler har lästs in än",
   "6d63711bee3ce542": "Endast testfiler har ändrats",
   "7cb130d96321fe5a": "Testfiler är dolda i den här granskningen.",
@@ -2929,6 +2935,7 @@
   "8e5f5001f74a460f": "Lägg till granskningskommentar",
   "8055c658cf61dd31": "Kopiera rad",
   "89a7eb448db48738": "{count, plural, one {{count} test dolt} other {{count} tester dolda}}",
+  "15db3431c35d4927": "{count, plural, one {{count} visad dold} other {{count} visade dolda}}",
   "b4f58b68410c319f": "Läs in ändringarna igen",
   "01cb0224aa3208c1": "Diffen är inte tillgänglig",
   "b683d10f00d06824": "Öppna den här {term, select, mr {merge requesten} cr {ändringsbegäran} other {pull requesten}} hos leverantören för att se ändringarna.",
@@ -4708,6 +4715,32 @@
   "9605dc349bd2c872": "Referens för {label} i {source}",
   "51e507aa054ee63b": "Spara säkert",
   "4ba3eff83827c2d4": "Avböj",
+  "4b46098670d70460": [
+    "Går till",
+    " ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " ",
+    "på",
+    " ",
+    {
+      "i": 2,
+      "k": "_gt_value_2",
+      "v": "v"
+    }
+  ],
+  "cf39d1301df07f46": [
+    "Går till",
+    " ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
   "1c4391ec5c411ba7": "Kunde inte stoppa arbetsflödet",
   "fece74611dcf4173": "Kunde inte stoppa agenten",
   "9ce30f31a483c017": "Stoppar arbetsflödet {label}",
@@ -5828,12 +5861,5 @@
   "ad208e3e32c85029": "Dölj alla",
   "3328503592789bed": "Zen",
   "856812e7e1fc445e": "Verktygsanrop i chatten",
-  "8d545d54c0a9e950": "Dölj kommandon, redigeringar och sökningar som agenter kör. Dölj lyckade behåller misslyckanden. Zen visar bara slutliga svar. Godkännanden, frågor och fel visas alltid.",
-  "872bf68b2e05f055": "{count, plural, one {{count} visad fil dold} other {{count} visade filer dolda}}",
-  "f538b8016f5ca2f3": "Dölj visade filer",
-  "be348514e8486295": "Inga ovisade filer har lästs in än",
-  "6b7765835778dc77": "Alla filer är dolda",
-  "bd2cfcb7be24cd38": "Visade filer är dolda i den här granskningen.",
-  "6ae1484aa5bd2bc8": "Visa visade filer",
-  "15db3431c35d4927": "{count, plural, one {{count} visad dold} other {{count} visade dolda}}"
+  "8d545d54c0a9e950": "Dölj kommandon, redigeringar och sökningar som agenter kör. Dölj lyckade behåller misslyckanden. Zen visar bara slutliga svar. Godkännanden, frågor och fel visas alltid."
 }

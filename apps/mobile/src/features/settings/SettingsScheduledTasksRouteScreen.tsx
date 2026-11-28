@@ -223,7 +223,14 @@ function FormField(props: {
         props.borderTop ? "gap-2 border-t border-border-subtle px-4 py-3" : "gap-2 px-4 py-3"
       }
     >
-      <Text className="text-sm text-foreground-muted">{props.label}</Text>
+      {/* The input reads its own label; this one is for sighted users. */}
+      <Text
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        className="text-sm text-foreground-muted"
+      >
+        {props.label}
+      </Text>
       <RNTextInput
         accessibilityLabel={props.label}
         value={props.value}

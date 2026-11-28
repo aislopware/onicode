@@ -8,6 +8,8 @@ import {
   resolveFileLinkPath,
   resolveMarkdownFileLinkPath,
   resolveWorkspaceRelativeFilePath,
+  tracksWorkspaceMutations,
+  workspacePreviewUri,
 } from "./filePath";
 
 describe("resolveFileLinkPath", () => {
@@ -94,5 +96,30 @@ describe("workspace preview classifiers", () => {
     ]) {
       expect(isMarkdownPreviewFile(path)).toBe(true);
     }
+  });
+});
+
+describe("workspace preview revisions", () => {
+  it.each([
+    ["logo.png", true],
+    ["/outside/logo.png", true],
+    ["clip.mp4", false],
+    ["voice.m4a", false],
+    ["notes.md", false],
+  ])("re-mints %s after a workspace change: %s", (path, expected) => {
+    expect(tracksWorkspaceMutations(path)).toBe(expected);
+  });
+
+  it.each([
+    ["https://h/a.png?sig=1", 0, null, "https://h/a.png?sig=1"],
+    ["https://h/a.png", 0, "m-2", "https://h/a.png?workspace-revision=m-2"],
+    [
+      "https://h/a.png?sig=1",
+      3,
+      "m 2",
+      "https://h/a.png?sig=1&revision=3&workspace-revision=m%202",
+    ],
+  ])("reloads %s for retry %i and change %s", (url, retry, mutationId, expected) => {
+    expect(workspacePreviewUri(url, { retry, mutationId })).toBe(expected);
   });
 });

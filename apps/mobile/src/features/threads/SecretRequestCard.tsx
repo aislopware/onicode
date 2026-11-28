@@ -26,7 +26,7 @@ import {
   type SecretProviderId,
 } from "@onicode/contracts";
 import { useAtomValue } from "@effect/atom-react";
-import { useGT, useMessages } from "gt-react-native";
+import { T, useGT, useMessages, Var } from "gt-react-native";
 import { useRef, useState } from "react";
 import { Pressable, View, type ColorValue } from "react-native";
 
@@ -241,7 +241,13 @@ function PendingSecretRequestForm(props: {
           );
           return multiple ? (
             <View key={input.key} className="gap-1.5">
-              <Text className="font-oni-medium text-sm text-foreground-muted">{input.label}</Text>
+              <Text
+                accessibilityElementsHidden
+                importantForAccessibility="no-hide-descendants"
+                className="font-oni-medium text-sm text-foreground-muted"
+              >
+                {input.label}
+              </Text>
               {field}
             </View>
           ) : (
@@ -303,16 +309,31 @@ function PendingSecretRequestForm(props: {
             />
           </View>
           <Text className="flex-1 font-sans text-xs text-foreground-muted">
-            Goes to{" "}
-            {destination.project !== null ? (
-              <Text className="font-oni-medium text-xs text-foreground">{destination.project}</Text>
-            ) : null}
-            {destination.project !== null && destination.environment !== null ? " on " : null}
-            {destination.environment !== null ? (
-              <Text className="font-oni-medium text-xs text-foreground">
-                {destination.environment}
-              </Text>
-            ) : null}
+            {destination.project !== null && destination.environment !== null ? (
+              <T>
+                Goes to{" "}
+                <Var>
+                  <Text className="font-oni-medium text-xs text-foreground">
+                    {destination.project}
+                  </Text>
+                </Var>{" "}
+                on{" "}
+                <Var>
+                  <Text className="font-oni-medium text-xs text-foreground">
+                    {destination.environment}
+                  </Text>
+                </Var>
+              </T>
+            ) : (
+              <T>
+                Goes to{" "}
+                <Var>
+                  <Text className="font-oni-medium text-xs text-foreground">
+                    {destination.project ?? destination.environment ?? ""}
+                  </Text>
+                </Var>
+              </T>
+            )}
           </Text>
         </View>
       ) : null}
