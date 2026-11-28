@@ -1754,18 +1754,34 @@ describe("pull request panel context beside a thread", () => {
     expect(pullRequestPanelContext(thread, surface(2))).toBe("page");
   });
 
-  it("falls back to the legacy fields only for a thread with no link list", () => {
+  it("falls back to the legacy fields only for a thread with no link list and matches the repository case-insensitively", () => {
     const legacy = {
       projectId: "proj-a",
       repository: "aislopware/onicode",
       number: 3,
       url: "https://github.com/aislopware/onicode/pull/3",
     };
+    const mixedCaseLegacy = {
+      ...legacy,
+      repository: "AislopWare/OniCode",
+    };
     expect(
       pullRequestPanelContext({ projectId: "proj-a", linkedPullRequest: legacy }, surface(3)),
     ).toBe("thread");
     expect(
       pullRequestPanelContext({ projectId: "proj-a", branchPullRequest: legacy }, surface(3)),
+    ).toBe("thread");
+    expect(
+      pullRequestPanelContext(
+        { projectId: "proj-a", linkedPullRequest: legacy },
+        surface(3, { repository: "AislopWare/OniCode" }),
+      ),
+    ).toBe("thread");
+    expect(
+      pullRequestPanelContext(
+        { projectId: "proj-a", branchPullRequest: mixedCaseLegacy },
+        surface(3),
+      ),
     ).toBe("thread");
     expect(pullRequestPanelContext({ projectId: "proj-a", pullRequests: [] }, surface(3))).toBe(
       "page",
