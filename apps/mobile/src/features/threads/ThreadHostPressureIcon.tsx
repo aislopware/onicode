@@ -11,7 +11,6 @@ import { Pressable } from "react-native";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import * as Dialog from "../../components/ui/Dialog";
 import { environmentPresentations } from "../../state/presentation";
-import { environmentServerConfigsAtom } from "../../state/server";
 import { hostPressureAgentUsage } from "../home/hostPressureAgentUsage";
 
 export interface ThreadHostPressureNote {
@@ -26,10 +25,10 @@ export function useThreadHostPressureNote(
 ): ThreadHostPressureNote | null {
   const gt = useGT();
   // Selects the server's own agent object and primitives, so only culprit rows re-render.
-  const agent = useAtomValue(environmentServerConfigsAtom, (configs) =>
+  const agent = useAtomValue(environmentPresentations.serverConfigsAtom, (configs) =>
     hostPressureCulprit(configs.get(environmentId)?.hostPressure, threadId),
   );
-  const rankedBy = useAtomValue(environmentServerConfigsAtom, (configs) => {
+  const rankedBy = useAtomValue(environmentPresentations.serverConfigsAtom, (configs) => {
     const pressure = configs.get(environmentId)?.hostPressure;
     return pressure === undefined ? "memory" : hostPressureRanking(pressure);
   });
