@@ -155,6 +155,17 @@ export function cancelledRosterTaskWork(task: OrchestrationV2PendingBackgroundTa
   };
 }
 
+/** The roster task that tracks this item's work, listed by its own id or the item's. */
+export function rosterTaskForTurnItem(
+  item: Pick<OrchestrationV2TurnItem, "nativeItemRef">,
+  tasks: ReadonlyArray<OrchestrationV2PendingBackgroundTask>,
+): OrchestrationV2PendingBackgroundTask | undefined {
+  const nativeId = item.nativeItemRef?.nativeId;
+  return nativeId == null
+    ? undefined
+    : tasks.find((task) => task.taskId === nativeId || task.nativeItemId === nativeId);
+}
+
 const MAX_NOTE_ENTRIES = 10;
 
 /** Why background work stopped: an Onicode server restart, or the provider process exiting under a live server. */

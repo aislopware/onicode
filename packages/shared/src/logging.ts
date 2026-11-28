@@ -207,7 +207,7 @@ export class RotatingFileSink {
       ),
     );
     if (!this.needsRecovery) this.pruneOverflowBackups();
-    this.currentSize = this.readCurrentSize();
+    this.refreshCurrentSize();
   }
 
   write(chunk: string | Buffer): void {
@@ -224,8 +224,9 @@ export class RotatingFileSink {
         this.currentSize > 0 &&
         this.currentSize + buffer.length > this.maxBytes
       ) {
-        this.runRotation(this.rotation.rotate);
-        this.refreshCurrentSize();
+        // A published rotation leaves no active file, whether or not its size can be read.
+        if (this.runRotation(this.rotation.rotate)) this.currentSize = 0;
+        else this.refreshCurrentSize();
       }
 
       NodeFS.appendFileSync(this.filePath, buffer);

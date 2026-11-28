@@ -412,21 +412,21 @@ export const resolveProject = Effect.fn("cli.thread.resolveProject")(function* (
   }
   let gitDirectory = info.type === "File" ? path.dirname(target) : target;
   let checkoutTarget = target;
+  // A registration whose own root is absent only matches by spelling.
+  const containingRootAbsent =
+    containingMatch !== undefined &&
+    !(yield* fileSystem.exists(containingMatch.root).pipe(Effect.orElseSucceed(() => true)));
   if (existing !== target) {
     if (info.type !== "Directory") return yield* projectNotFound();
     gitDirectory = yield* realPath(existing);
     checkoutTarget = path.join(gitDirectory, path.relative(existing, target));
     const canonical = containingRoots(checkoutTarget, requestedPath)[0];
     if (canonical !== undefined) {
-      // A registration whose own root is absent only matches by spelling; keep it unless the
-      // canonical match is closer.
+      // Keep a spelling-only match unless the canonical match is closer.
       const depth = (root: string, candidate: string) => {
         const relative = path.relative(root, candidate);
         return relative === "" ? 0 : relative.split(path.sep).length;
       };
-      const containingRootAbsent =
-        containingMatch !== undefined &&
-        !(yield* fileSystem.exists(containingMatch.root).pipe(Effect.orElseSucceed(() => true)));
       return containingMatch !== undefined &&
         containingRootAbsent &&
         depth(containingMatch.root, target) <= depth(canonical.root, checkoutTarget)
@@ -434,7 +434,8 @@ export const resolveProject = Effect.fn("cli.thread.resolveProject")(function* (
         : canonical.project;
     }
   }
-  if (containing !== undefined) return containing;
+  // A path leaving an existing root through a link resolves where it points, as an existing file does.
+  if (containing !== undefined && containingRootAbsent) return containing;
   const listed = yield* listGitCheckouts(gitDirectory).pipe(
     Effect.flatMap((paths) => Effect.forEach(paths, realPath)),
     Effect.provide(ProcessRunner.layer),

@@ -34,7 +34,7 @@ import {
 import * as Persistence from "../platform/persistence.ts";
 import * as EnvironmentRegistry from "./registry.ts";
 import { orchestrationProtocolCompatibilityError } from "./compatibility.ts";
-import { connectionRoutes, routeEntry, sshTargetKey } from "./routes.ts";
+import { connectionRoutes, credentialConnectionId, routeEntry, sshTargetKey } from "./routes.ts";
 
 export interface PairingConnectionInput {
   readonly pairingUrl?: string;
@@ -263,7 +263,7 @@ const updateBearerConnection = Effect.fn(
   const entry = saved === undefined || route === undefined ? saved : routeEntry(saved, route);
   const credential =
     entry?.target._tag === "BearerConnectionTarget"
-      ? yield* credentials.get(entry.target.connectionId)
+      ? yield* credentials.get(credentialConnectionId(entry.target.connectionId))
       : Option.none();
   const registration = yield* prepareBearerConnectionUpdate({
     input,
@@ -320,6 +320,7 @@ export const prepareBearerConnectionUpdate = Effect.fn(
       }),
   });
   const connectionId = entry.target.connectionId;
+  const savedProfile = entry.profile.value;
   return new BearerConnectionRegistration({
     target: new BearerConnectionTarget({
       environmentId: options.input.environmentId,
@@ -332,6 +333,11 @@ export const prepareBearerConnectionUpdate = Effect.fn(
       label,
       httpBaseUrl,
       wsBaseUrl: deriveWsBaseUrl(httpBaseUrl),
+      // A learned route still borrows its credential; a moved address may sit off the tailnet.
+      ...(savedProfile.learned === undefined ? {} : { learned: savedProfile.learned }),
+      ...(savedProfile.network === undefined || savedProfile.httpBaseUrl !== httpBaseUrl
+        ? {}
+        : { network: savedProfile.network }),
     }),
     credential: credential.value,
   });

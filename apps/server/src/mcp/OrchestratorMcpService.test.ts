@@ -928,9 +928,12 @@ describe("OrchestratorMcpService", () => {
           }) as unknown as OrchestrationV2ThreadProjection;
         const queuedRunId = RunId.make("run:mcp-orphan-queued");
         const queuedMessageId = MessageId.make("message:mcp-orphan-queued");
+        const otherTaskRunId = RunId.make("run:mcp-orphan-other-task");
+        const otherTaskMessageId = MessageId.make("message:mcp-orphan-other-task");
         const queued = childState === "a follow-up its parent queued";
         // A finished run whose binding to the follow-up was lost, or a held turn the parent
-        // queued with oni_thread_send after the task's own run was lost.
+        // queued with oni_thread_send after the task's own run was lost, beside another
+        // task's held turn the parent also sent.
         const childProjection = {
           thread: { id: childThreadId, title: "Child" },
           runs:
@@ -944,6 +947,14 @@ describe("OrchestratorMcpService", () => {
                       status: "queued",
                       queueHeld: true,
                       userMessageId: queuedMessageId,
+                    },
+                    {
+                      id: otherTaskRunId,
+                      ordinal: 2,
+                      status: "queued",
+                      queueHeld: true,
+                      userMessageId: otherTaskMessageId,
+                      delegatedTaskId: NodeId.make("node:mcp-orphan-other-task"),
                     },
                   ]
                 : [{ id: RunId.make("run:mcp-orphan-child"), ordinal: 1, status: "completed" }],
@@ -963,6 +974,13 @@ describe("OrchestratorMcpService", () => {
                   id: queuedMessageId,
                   role: "user",
                   runId: queuedRunId,
+                  createdBy: "agent",
+                  senderThreadId: parentThreadId,
+                },
+                {
+                  id: otherTaskMessageId,
+                  role: "user",
+                  runId: otherTaskRunId,
                   createdBy: "agent",
                   senderThreadId: parentThreadId,
                 },
@@ -1027,8 +1045,8 @@ describe("OrchestratorMcpService", () => {
             taskId,
             clientRequestId: "cancel-orphan-task",
           });
-          // The parent's queued turn is the task's work, so it is stopped like a running task.
-          assert.deepEqual(result, { taskId, status: queued ? "cancel_requested" : "cancelled" });
+          // The parent's queued turn goes with the task, which still ends through its parent.
+          assert.deepEqual(result, { taskId, status: "cancelled" });
           const commands = yield* Ref.get(dispatched);
           // A child whose run finished can still run another turn's work, so it is stopped too.
           assert.deepEqual(
@@ -1043,11 +1061,19 @@ describe("OrchestratorMcpService", () => {
             ),
             queued ? [queuedRunId] : [],
           );
-          const stop = commands.find((command) => command.type === "subagent.stop");
-          if (stop?.type !== "subagent.stop") return;
           assert.deepEqual(
-            { threadId: stop.threadId, runId: stop.runId, subagentId: stop.subagentId },
-            { threadId: parentThreadId, runId: parentRunId, subagentId: taskId },
+            commands.flatMap((command) =>
+              command.type === "subagent.stop"
+                ? [
+                    {
+                      threadId: command.threadId,
+                      runId: command.runId,
+                      subagentId: command.subagentId,
+                    },
+                  ]
+                : [],
+            ),
+            [{ threadId: parentThreadId, runId: parentRunId, subagentId: taskId }],
           );
         }).pipe(Effect.provide(layerOrchestratorService.pipe(Layer.provide(layerDependencies))));
       }),

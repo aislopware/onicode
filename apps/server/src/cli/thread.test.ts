@@ -1045,6 +1045,18 @@ it.live("resolves a path inside a git worktree of the project's repository to th
       yield* resolveFrom([sample], worktreeAlias, "pkg/not-created/yet.ts"),
       sample,
     );
+    // A link inside another project's folder resolves where it points, created or not.
+    const host = project("project-host", path.join(root, "host"));
+    yield* fileSystem.makeDirectory(host.workspaceRoot);
+    const hostLink = path.join(yield* fileSystem.realPath(host.workspaceRoot), "worktree-link");
+    yield* Effect.promise(() => NodeFSP.symlink(worktree, hostLink, "junction"));
+    for (const file of ["index.ts", "not-created.ts"]) {
+      assert.deepStrictEqual(
+        yield* resolveFrom([sample, host], root, path.join(hostLink, "pkg", file)),
+        sample,
+        file,
+      );
+    }
     assert.deepStrictEqual(yield* resolveFrom([featureProject], featureWorktree), featureProject);
     const ambiguous = yield* Effect.flip(resolveFrom([sample, featureProject], featureWorktree));
     assert.strictEqual(ambiguous._tag, "ThreadUsageError");

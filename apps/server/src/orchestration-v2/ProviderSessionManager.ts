@@ -69,6 +69,7 @@ import {
   cancelledTurnItemWork,
   latestStartedRun,
   mergeRestartCancelledBackgroundWork,
+  rosterTaskForTurnItem,
 } from "./RestartBackgroundNote.ts";
 import * as CommandOutputHub from "./CommandOutputHub.ts";
 import * as IdAllocator from "@onicode/provider-core/server/IdAllocator";
@@ -1453,18 +1454,36 @@ export const layerWithOptions = (
           );
           // Either this release or the run's consumer ended it; a late completion means it finished.
           const lostItemIds = new Set(lostItems.map((item) => item.id));
+          // As in restart recovery: an item notes the roster task tracking it, with its wait, and a
+          // noted subagent covers the shells it started.
+          const notedNativeIds = new Set<string>();
+          const lostItemWork = turnItems.flatMap((item) => {
+            const work = lostItemIds.has(item.id) ? cancelledTurnItemWork(item) : undefined;
+            const providerThreadId = awaitingProviderThreadId(item, runs);
+            if (work === undefined || providerThreadId == null) return [];
+            const rosterTask = rosterTaskForTurnItem(item, lostTasks);
+            const nativeId = item.nativeItemRef?.nativeId;
+            if (nativeId != null) notedNativeIds.add(nativeId);
+            if (rosterTask !== undefined) notedNativeIds.add(rosterTask.taskId);
+            return [
+              {
+                providerThreadId,
+                work: rosterTask?.awaited === true ? { ...work, awaited: true as const } : work,
+              },
+            ];
+          });
           const lost = [
-            ...lostTasks.map((task) => ({
-              providerThreadId: released.providerThreadId,
-              work: cancelledRosterTaskWork(task),
-            })),
-            ...turnItems.flatMap((item) => {
-              const work = lostItemIds.has(item.id) ? cancelledTurnItemWork(item) : undefined;
-              const providerThreadId = awaitingProviderThreadId(item, runs);
-              return work === undefined || providerThreadId == null
-                ? []
-                : [{ providerThreadId, work }];
-            }),
+            ...lostTasks
+              .filter(
+                (task) =>
+                  !notedNativeIds.has(task.taskId) &&
+                  (task.parentTaskId === undefined || !notedNativeIds.has(task.parentTaskId)),
+              )
+              .map((task) => ({
+                providerThreadId: released.providerThreadId,
+                work: cancelledRosterTaskWork(task),
+              })),
+            ...lostItemWork,
           ];
           const workByRun = new Map<RunId, { run: OrchestrationV2Run; work: Array<Work> }>();
           for (const { providerThreadId, work } of lost) {

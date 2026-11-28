@@ -254,8 +254,11 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
     // The protocol never reopens its socket, so every frame counted here came
     // from this session's one socket.
     let inboundFrames = 0;
-    // Requests that expect a reply, sent since the last frame came in.
+    // Requests that expect a reply, sent since the last frame came in. A stretch
+    // starts each time the count rises from zero, so a wait begun in a stretch
+    // that a failed send ended does not fire for the next one.
     let unansweredRequests = 0;
+    let unansweredStretches = 0;
     const replyAwaited = Latch.makeUnsafe(false);
     const countingWebSocketConstructor: typeof webSocketConstructor = (url, options) => {
       const socket = webSocketConstructor(url, options);
@@ -271,6 +274,7 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
     const sendAwaitingReply = <A, E, R>(send: Effect.Effect<A, E, R>) =>
       Effect.suspend(() => {
         const framesAtSend = inboundFrames;
+        if (unansweredRequests === 0) unansweredStretches += 1;
         unansweredRequests += 1;
         replyAwaited.openUnsafe();
         // A failed or interrupted send awaits nothing, unless a frame cleared it already.
@@ -288,8 +292,15 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
       for (;;) {
         yield* replyAwaited.await;
         const framesBefore = inboundFrames;
+        const stretch = unansweredStretches;
         yield* Effect.sleep(after);
-        if (inboundFrames === framesBefore && replyAwaited.isOpen()) return;
+        if (
+          inboundFrames === framesBefore &&
+          unansweredStretches === stretch &&
+          unansweredRequests > 0
+        ) {
+          return;
+        }
       }
     });
     const socketUrl = new URL(connection.socketUrl);

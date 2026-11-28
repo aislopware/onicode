@@ -35,6 +35,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
+import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
 import { HttpClient, HttpClientResponse } from "effect/http";
@@ -416,12 +417,11 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
 
   it.effect("rereads usage limits on a new usage grant only where the limits need it", () =>
     Effect.gen(function* () {
-      const gatedRefreshed = yield* Deferred.make<void>();
-      let ungatedRefreshes = 0;
+      // Refreshes fork in config order, so an unwanted one is taken before the expected one.
+      const refreshed = yield* Queue.unbounded<string>();
       const withUsageRefresh = (
         driverKind: ProviderDriverKind,
         limitsNeedUsageAccess: boolean,
-        refreshUsage: Effect.Effect<void>,
       ): typeof CodexDriver => ({
         ...CodexDriver,
         driverKind,
@@ -429,38 +429,39 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
         create: (input) =>
           Effect.map(CodexDriver.create(input), (instance) => ({
             ...instance,
-            snapshot: { ...instance.snapshot, refreshUsage },
+            snapshot: {
+              ...instance.snapshot,
+              refreshUsage: Queue.offer(refreshed, input.instanceId).pipe(Effect.asVoid),
+            },
           })),
       });
-      const ungated = withUsageRefresh(
-        ProviderDriverKind.make("ungatedUsage"),
-        false,
-        Effect.sync(() => {
-          ungatedRefreshes++;
-        }),
-      );
-      const gated = withUsageRefresh(
-        ProviderDriverKind.make("gatedUsage"),
-        true,
-        Deferred.succeed(gatedRefreshed, undefined).pipe(Effect.asVoid),
-      );
-      const entries = (usageAccess?: "allowed" | "denied") => {
-        const entry = (driver: typeof CodexDriver) => ({
-          driver: driver.driverKind,
-          enabled: false,
-          config: makeCodexConfig({}),
-          ...(usageAccess === undefined ? {} : { usageAccess }),
-        });
-        return { [ungated.driverKind]: entry(ungated), [gated.driverKind]: entry(gated) };
-      };
+      const ungated = withUsageRefresh(ProviderDriverKind.make("ungatedUsage"), false);
+      const gated = withUsageRefresh(ProviderDriverKind.make("gatedUsage"), true);
+      const entry = (driver: typeof CodexDriver, usageAccess?: "allowed" | "denied") => ({
+        driver: driver.driverKind,
+        enabled: false,
+        config: makeCodexConfig({}),
+        ...(usageAccess === undefined ? {} : { usageAccess }),
+      });
+      const entries = (
+        access: Partial<Record<"ungated" | "gated" | "witness", "allowed" | "denied">>,
+      ) => ({
+        [ProviderInstanceId.make("ungated")]: entry(ungated, access.ungated),
+        [ProviderInstanceId.make("gated")]: entry(gated, access.gated),
+        [ProviderInstanceId.make("witness")]: entry(gated, access.witness),
+      });
       const { mutator } = yield* makeProviderInstanceRegistry({
         drivers: [ungated, gated],
-        configMap: entries(),
+        configMap: entries({}),
       });
-      yield* mutator.reconcile(entries("denied"));
-      yield* mutator.reconcile(entries("allowed"));
-      yield* Deferred.await(gatedRefreshed);
-      expect(ungatedRefreshes).toBe(0);
+      yield* mutator.reconcile(
+        entries({ ungated: "allowed", gated: "denied", witness: "allowed" }),
+      );
+      expect(yield* Queue.take(refreshed)).toBe("witness");
+      yield* mutator.reconcile(
+        entries({ ungated: "allowed", gated: "allowed", witness: "allowed" }),
+      );
+      expect(yield* Queue.take(refreshed)).toBe("gated");
     }).pipe(withRegistryLayer),
   );
 

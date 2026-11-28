@@ -142,7 +142,9 @@ interface BoxThread {
   readonly gone: Ref.Ref<boolean>;
   readonly interrupted: Ref.Ref<number>;
   /** What each interrupt or stop there did, once per command id. */
-  readonly stops: Ref.Ref<ReadonlyArray<"interrupt" | "thread.stop" | "delegated-tasks">>;
+  readonly stops: Ref.Ref<ReadonlyArray<BoxStop>>;
+  /** The laptop parent has a message queued there, until a cancel there drops it. */
+  readonly queuedByParent: Ref.Ref<boolean>;
   /** The launch starts no run, as one recorded before its run was kept. */
   readonly runless: Ref.Ref<boolean>;
   /** Completed on the first interrupt there. */
@@ -162,6 +164,8 @@ interface BoxThread {
   /** Runs as the launch there is answered, before the laptop hears back. */
   readonly afterLaunch: Ref.Ref<Effect.Effect<void>>;
 }
+
+type BoxStop = "interrupt" | "thread.stop" | "delegated-tasks" | "queued-run.cancel";
 
 const makeBoxThread = Effect.gen(function* () {
   return {
@@ -191,7 +195,8 @@ const makeBoxThread = Effect.gen(function* () {
     nestedSettled: yield* Deferred.make<void>(),
     gone: yield* Ref.make(false),
     interrupted: yield* Ref.make(0),
-    stops: yield* Ref.make<ReadonlyArray<"interrupt" | "thread.stop" | "delegated-tasks">>([]),
+    stops: yield* Ref.make<ReadonlyArray<BoxStop>>([]),
+    queuedByParent: yield* Ref.make(false),
     runless: yield* Ref.make(false),
     interruptedOnce: yield* Deferred.make<void>(),
     finished: yield* Deferred.make<void>(),
@@ -247,6 +252,8 @@ const serveBox = (thread: BoxThread) => {
 const boxRunId = RunId.make("run:box");
 const boxLaterRunId = RunId.make("run:box-later");
 const boxQueuedRunId = RunId.make("run:box-queued");
+const boxParentQueuedRunId = RunId.make("run:box-parent-queued");
+const boxParentQueuedMessageId = MessageId.make("message:box-parent-queued");
 const continuationOf = (runId: RunId) => RunId.make(`${runId}:restarted`);
 
 const boxToolkitLayer = (thread: BoxThread) => {
@@ -281,11 +288,37 @@ const boxToolkitLayer = (thread: BoxThread) => {
       const runless = yield* Ref.get(thread.runless);
       const model = yield* Ref.get(thread.executedModel);
       const asking = yield* Ref.get(thread.asking);
+      const queuedByParent = yield* Ref.get(thread.queuedByParent);
       return shell === null
         ? (null as never)
         : {
             ...idleThreadProjection(shell),
-            runs: runless ? [] : [runOf(status)],
+            runs: [
+              ...(runless ? [] : [runOf(status)]),
+              ...(queuedByParent
+                ? [
+                    {
+                      ...runOf("queued"),
+                      id: boxParentQueuedRunId,
+                      userMessageId: boxParentQueuedMessageId,
+                    },
+                  ]
+                : []),
+            ],
+            messages: (queuedByParent
+              ? [
+                  {
+                    id: boxParentQueuedMessageId,
+                    role: "user",
+                    createdBy: "agent",
+                    linkedSender: {
+                      environmentId: laptop.environmentId,
+                      threadId: parentThreadId,
+                      title: "Laptop parent",
+                    },
+                  },
+                ]
+              : []) as never,
             runtimeRequests: (asking
               ? [{ status: "pending", responseCapability: { type: "live" } }]
               : []) as never,
@@ -295,12 +328,13 @@ const boxToolkitLayer = (thread: BoxThread) => {
           };
     });
   // One record per command id, as its receipt replays a repeat.
-  const recordStop = (commandId: string, kind: "interrupt" | "thread.stop" | "delegated-tasks") =>
+  const recordStop = (commandId: string, kind: BoxStop) =>
     Effect.gen(function* () {
       if (interrupts.has(`${kind}:${commandId}`)) return;
       interrupts.add(`${kind}:${commandId}`);
       yield* Ref.update(thread.stops, (seen) => [...seen, kind]);
-      if (kind !== "delegated-tasks") {
+      if (kind === "queued-run.cancel") yield* Ref.set(thread.queuedByParent, false);
+      else if (kind !== "delegated-tasks") {
         yield* Ref.update(thread.interrupted, (count) => count + 1);
         yield* Deferred.succeed(thread.interruptedOnce, undefined);
       }
@@ -532,7 +566,11 @@ const boxToolkitLayer = (thread: BoxThread) => {
             ),
             Effect.as({ sequence: 0, storedEvents: [] } as never),
           )
-        : Effect.die(`The box does not expect ${command.type}`),
+        : command.type === "queued-run.cancel" && command.runId === boxParentQueuedRunId
+          ? recordStop(command.commandId, "queued-run.cancel").pipe(
+              Effect.as({ sequence: 0, storedEvents: [] } as never),
+            )
+          : Effect.die(`The box does not expect ${command.type}`),
     stopDelegatedTasks: (input) => recordStop(input.commandId, "delegated-tasks"),
     sendToThread: (input) =>
       Ref.update(thread.sent, (seen) => [...seen, input.text]).pipe(
@@ -1614,6 +1652,7 @@ it.effect("fails the task when the box revokes the link, and cancel interrupts i
       yield* seedParent(a);
 
       const cancelled = yield* delegateToBox(a);
+      yield* Ref.set(thread.queuedByParent, true);
       const cancel = yield* a.call("task_cancel", {
         taskId: cancelled.taskId,
         reason: "Not needed",
@@ -1622,8 +1661,13 @@ it.effect("fails the task when the box revokes the link, and cancel interrupts i
         taskId: cancelled.taskId,
         status: "cancel_requested",
       });
-      // Cancelling stops the thread there as Stop does: its queue and its own tasks too.
-      expect(yield* Ref.get(thread.stops)).toEqual(["thread.stop", "delegated-tasks"]);
+      // Cancelling stops the thread there as Stop does, its own tasks too, and drops what the
+      // parent queued there instead of holding it.
+      expect(yield* Ref.get(thread.stops)).toEqual([
+        "thread.stop",
+        "delegated-tasks",
+        "queued-run.cancel",
+      ]);
       expect(yield* taskResult(a, cancelled.taskId)).toMatchObject({ status: "cancelled" });
 
       // Cancelling again, once the result is in, still stops what came after it there.
@@ -2382,6 +2426,7 @@ it.effect("stopping the parent stops its task there", () =>
       yield* seedParent(a);
 
       const delegated = yield* delegateToBox(a);
+      yield* Ref.set(thread.queuedByParent, true);
       // What the delegated-tasks.stop effect runs once the parent's Stop commits.
       yield* a.threads.stopDelegatedTasks({
         threadId: parentThreadId,
@@ -2395,6 +2440,9 @@ it.effect("stopping the parent stops its task there", () =>
       // The follower sees it ended here and stops it there.
       yield* Deferred.await(thread.interruptedOnce);
       expect(yield* Ref.get(thread.interrupted)).toBe(1);
+      // A Stop holds what the parent queued there, for its Resume, as Stop does here.
+      yield* stoppedThere(a, delegated.taskId, null);
+      expect(yield* Ref.get(thread.stops)).toEqual(["thread.stop", "delegated-tasks"]);
     }),
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );
@@ -3087,6 +3135,7 @@ it.effect("a task cancelled while the box is unreachable is stopped there after 
       );
       expect(yield* Ref.get(thread.interrupted)).toBe(0);
 
+      yield* Ref.set(thread.queuedByParent, true);
       yield* Ref.set(b.descriptor, box);
       const after = yield* makeLaptop(database, offers, linking);
       yield* after.remote.start();
@@ -3094,7 +3143,12 @@ it.effect("a task cancelled while the box is unreachable is stopped there after 
       // Once the stop is recorded, nothing is owed there any more.
       yield* stoppedThere(after, delegated.taskId, null);
       expect(yield* after.projections.getOpenRemoteDelegatedTasks).toEqual([]);
-      expect(yield* Ref.get(thread.stops)).toEqual(["thread.stop", "delegated-tasks"]);
+      // The late stop is still the cancel's: what the parent queued there goes too.
+      expect(yield* Ref.get(thread.stops)).toEqual([
+        "thread.stop",
+        "delegated-tasks",
+        "queued-run.cancel",
+      ]);
       // The result here is still the cancel's.
       expect(yield* taskResult(after, delegated.taskId)).toMatchObject({ status: "cancelled" });
     }),

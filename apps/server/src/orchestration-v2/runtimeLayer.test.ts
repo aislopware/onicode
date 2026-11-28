@@ -14823,6 +14823,12 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
               },
             ],
           });
+          // The report starts no run, so the session's thread stays active; a plain message
+          // would still continue the conversation's thread, so only the resumed run keeps it here.
+          assert.equal(
+            (yield* orchestrator.getThreadProjection(threadId)).thread.activeProviderThreadId,
+            source.providerThreadId,
+          );
         }
         yield* orchestrator.dispatch(resume("first"));
         const after = yield* orchestrator.getThreadProjection(threadId);

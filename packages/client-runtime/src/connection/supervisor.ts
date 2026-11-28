@@ -705,8 +705,9 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       let recheck = false;
       let longResume = isLongResume(next);
       // A busy host can hold the probe's reply behind the request that went
-      // unanswered, so even a nearby socket must stay silent as long as a remote one.
-      const quickSilence = answersQuickly(routeKind) && next._tag !== "RequestUnanswered";
+      // unanswered, so even a nearby socket must stay silent as long as a remote
+      // one. The latest signal decides, as it names why the socket is suspect.
+      let quickSilence = false;
       const startSilentSocketCheck = Effect.gen(function* () {
         silentSocket = yield* Effect.forkChild(awaitSilentSocket(lease, quickSilence, longResume));
         recheck = false;
@@ -715,6 +716,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       // and a busy host can answer a fresh request before a queued probe.
       const armSilentSocketCheck = Effect.fnUntraced(function* (signal: ConnectedLeaseSignal) {
         if (isForegroundProbe(signal)) return;
+        quickSilence = answersQuickly(routeKind) && signal._tag !== "RequestUnanswered";
         if (silentSocket !== undefined) {
           recheck = true;
           return;

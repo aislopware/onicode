@@ -265,13 +265,18 @@ effectIt.layer(NodeServices.layer)("log rotation recovery", (it) => {
         throw busy;
       });
       try {
+        // Opening reads the size too; a best-effort sink opens without it.
+        expect(() => new RotatingFileSink({ filePath, maxBytes: 9, maxFiles: 2 })).not.toThrow();
         // The rotation succeeds; reading the new active file's size fails.
         sink.write("next");
+        sink.write("ok");
       } finally {
         statSpy.mockReset();
       }
+      // The rotation emptied the active file, so the next write does not rotate again.
       expect(yield* fs.readFileString(`${filePath}.1`)).toBe("active");
-      expect(yield* fs.readFileString(filePath)).toBe("next");
+      expect(yield* fs.readFileString(filePath)).toBe("nextok");
+      expect(yield* fs.exists(`${filePath}.2`)).toBe(false);
     }),
   );
 

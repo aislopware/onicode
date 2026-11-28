@@ -4353,8 +4353,38 @@ it.effect.each(["stream failure", "detach"] as const)(
         const now = yield* DateTime.now;
         const runId = idAllocator.derive.run({ threadId, ordinal: 1 });
         const rootNodeId = idAllocator.derive.rootNode({ runId });
+        // The roster's dev-server task is this shell's own item.
+        const devServerShell = {
+          id: idAllocator.derive.turnItemFromProviderItem({
+            driver: CODEX_DRIVER,
+            nativeItemId: "dev-server",
+          }),
+          threadId,
+          runId: null,
+          nodeId: null,
+          providerThreadId: providerThreads[0]!.id,
+          providerTurnId: null,
+          nativeItemRef: { driver: CODEX_DRIVER, nativeId: "dev-server", strength: "strong" },
+          parentItemId: null,
+          ordinal: 2,
+          status: "running",
+          title: null,
+          startedAt: now,
+          completedAt: null,
+          updatedAt: now,
+          type: "command_execution",
+          input: "python3 -m http.server",
+        } satisfies OrchestrationV2TurnItem;
         yield* eventSink.write({
           events: [
+            {
+              id: yield* idAllocator.allocate.event({ threadId }),
+              type: "turn-item.updated",
+              threadId,
+              driver: CODEX_DRIVER,
+              occurredAt: now,
+              payload: devServerShell,
+            },
             {
               id: yield* idAllocator.allocate.event({ threadId }),
               type: "run.created",
@@ -4386,16 +4416,14 @@ it.effect.each(["stream failure", "detach"] as const)(
         const afterSequence = yield* eventSink.latestSequence({ threadId });
         const expectedWork: ReadonlyArray<OrchestrationV2RestartCancelledBackgroundWork> = [
           {
-            kind: "shell",
-            label: "python3 -m http.server (id dev-server)",
-            id: "dev-server",
-          },
-          {
             kind: "task",
             label: "mcp__onicode__oni_worktree_handoff",
             id: seededToolCalls.cutOff.id,
           },
+          { kind: "shell", label: "python3 -m http.server", id: devServerShell.id },
         ];
+        const byId = (work: ReadonlyArray<OrchestrationV2RestartCancelledBackgroundWork>) =>
+          [...work].sort((a, b) => String(a.id).localeCompare(String(b.id)));
         const continuation = outbox.get(`effect:restart-continuation:${runId}`);
         if (release === "detach") {
           yield* manager.detach({ providerSessionId, threadId, detail: "Workspace changed." });
@@ -4406,7 +4434,7 @@ it.effect.each(["stream failure", "detach"] as const)(
             Stream.filter(
               ({ event }) =>
                 event.type === "run.background-work-cancelled" &&
-                event.payload.restartCancelledBackgroundWork.length === expectedWork.length,
+                event.payload.restartCancelledBackgroundWork.length >= expectedWork.length,
             ),
             Stream.take(1),
             Stream.runDrain,
@@ -4418,9 +4446,10 @@ it.effect.each(["stream failure", "detach"] as const)(
           });
         }
         const { runs } = yield* projectionStore.getThreadRecords(threadId, ["runs"]);
+        const recorded = runs.find((run) => run.id === runId)?.restartCancelledBackgroundWork;
         assert.deepStrictEqual(
-          runs.find((run) => run.id === runId)?.restartCancelledBackgroundWork,
-          release === "detach" ? undefined : expectedWork,
+          recorded === undefined ? undefined : byId(recorded),
+          release === "detach" ? undefined : byId(expectedWork),
         );
       });
 

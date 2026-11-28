@@ -743,6 +743,7 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
               projectId: thread.projectId,
               worktreePath: thread.worktreePath,
               lineage: thread.lineage,
+              archivedAt: thread.archivedAt,
               settledOverride: thread.settledOverride,
               settledAt: thread.settledAt,
             }),
@@ -750,8 +751,8 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
         return Effect.succeed({
           schemaVersion: 1,
           snapshotSequence: 1,
-          threads,
-          archivedThreads: [],
+          threads: threads.filter((thread) => thread.archivedAt === null),
+          archivedThreads: threads.filter((thread) => thread.archivedAt !== null),
         });
       },
     }),
@@ -2949,31 +2950,74 @@ describe("ThreadSettlementServiceV2 terminals", () => {
       }),
   );
 
-  it.effect("skips the settle script for a thread re-engaged during the worktree check", () =>
-    Effect.gen(function* () {
-      const settled = appThread("stale-thread", "settled", "/worktrees/stale");
-      const marker = appThread("marker-thread", "settled", "/worktrees/marker");
-      const currentThreads = [settled, marker];
-      const fixture = yield* makeHarness({
-        snapshot: makeSnapshot([]),
-        currentThreads,
-        existingWorktreePaths: ["/worktrees/stale", "/worktrees/marker"],
-        onExists: (path) =>
-          Effect.sync(() => {
-            if (path === "/worktrees/stale") {
-              currentThreads[0] = { ...settled, settledOverride: "active" };
-            }
-          }),
-      });
+  it.effect.each(["the thread", "a thread sharing its worktree"] as const)(
+    "skips the settle script when %s re-engages during the worktree check",
+    (reengaged) =>
+      Effect.gen(function* () {
+        const settled = appThread("stale-thread", "settled", "/worktrees/stale");
+        const sharer = appThread("sharing-thread", "settled", "/worktrees/stale");
+        const marker = appThread("marker-thread", "settled", "/worktrees/marker");
+        const currentThreads = [settled, marker, sharer];
+        const index = reengaged === "the thread" ? 0 : 2;
+        const fixture = yield* makeHarness({
+          snapshot: makeSnapshot([]),
+          currentThreads,
+          existingWorktreePaths: ["/worktrees/stale", "/worktrees/marker"],
+          onExists: (path) =>
+            Effect.sync(() => {
+              if (path === "/worktrees/stale") {
+                currentThreads[index] = { ...currentThreads[index]!, settledOverride: "active" };
+              }
+            }),
+        });
 
-      yield* Effect.gen(function* () {
-        const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
-        yield* startHarness(service, fixture.activation, fixture.snapshotReads);
-        yield* fixture.publishEvent(settledEvent(settled));
-        yield* fixture.publishEvent(settledEvent(marker));
-        assert.strictEqual((yield* Queue.take(fixture.scriptRuns)).threadId, marker.id);
-      }).pipe(Effect.provide(fixture.layer));
-    }),
+        yield* Effect.gen(function* () {
+          const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+          yield* startHarness(service, fixture.activation, fixture.snapshotReads);
+          yield* fixture.publishEvent(settledEvent(settled));
+          yield* fixture.publishEvent(settledEvent(marker));
+          assert.strictEqual((yield* Queue.take(fixture.scriptRuns)).threadId, marker.id);
+        }).pipe(Effect.provide(fixture.layer));
+      }),
+  );
+
+  it.effect.each(["archived", "deleted"] as const)(
+    "runs a waiting settle script once the last thread sharing the worktree is %s",
+    (removal) =>
+      Effect.gen(function* () {
+        const settled = appThread("first-settled", "settled", "/worktrees/source");
+        const sharer = appThread("still-active", "active", "/worktrees/source");
+        const marker = appThread("marker-thread", "settled", "/worktrees/marker");
+        const currentThreads = [settled, sharer, marker];
+        const fixture = yield* makeHarness({
+          snapshot: makeSnapshot([]),
+          currentThreads,
+          existingWorktreePaths: ["/worktrees/source", "/worktrees/marker"],
+        });
+
+        yield* Effect.gen(function* () {
+          const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+          yield* startHarness(service, fixture.activation, fixture.snapshotReads);
+          // The sharer still works there, so the first settlement waits for it. Scripts run in
+          // order, so the marker's run means that settlement was already handled.
+          yield* fixture.publishEvent(settledEvent(settled));
+          yield* fixture.publishEvent(settledEvent(marker));
+          assert.strictEqual((yield* Queue.take(fixture.scriptRuns)).threadId, marker.id);
+          const removed =
+            removal === "archived"
+              ? { ...sharer, archivedAt: DateTime.makeUnsafe(NOW) }
+              : { ...sharer, deletedAt: DateTime.makeUnsafe(NOW) };
+          currentThreads[1] = removed;
+          yield* fixture.publishEvent({
+            type: removal === "archived" ? "thread.archived" : "thread.deleted",
+            id: EventId.make(`event:${removal}:${sharer.id}`),
+            threadId: sharer.id,
+            occurredAt: DateTime.makeUnsafe(NOW),
+            payload: removed,
+          });
+          assert.strictEqual((yield* Queue.take(fixture.scriptRuns)).threadId, settled.id);
+        }).pipe(Effect.provide(fixture.layer));
+      }),
   );
 
   it.effect("skips the settle script for a subagent in its parent's worktree", () =>

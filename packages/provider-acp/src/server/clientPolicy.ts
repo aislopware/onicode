@@ -218,9 +218,10 @@ function acpMutationStaysInWorkspace(
   changedPaths: AcpChangedPaths,
 ): boolean {
   if (changedPaths === "unknown" || changedPaths.length === 0) return false;
+  // A relative cwd would resolve against the server's own working directory.
   const cwd =
-    typeof runtimePolicy.cwd === "string" && runtimePolicy.cwd.trim().length > 0
-      ? (resolveAcpPermissionPath(runtimePolicy.cwd, process.cwd()) ?? null)
+    typeof runtimePolicy.cwd === "string" && NodePath.isAbsolute(runtimePolicy.cwd)
+      ? runtimePolicy.cwd
       : null;
   const roots: Array<string> = [];
   if (cwd !== null) {

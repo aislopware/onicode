@@ -11,6 +11,7 @@ import {
   isDelegatedAppThread,
   isOrchestrationV2WorkActive,
   type ThreadId,
+  type OrchestrationV2AppThread,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2ThreadShell,
 } from "@onicode/contracts";
@@ -861,11 +862,14 @@ export const make = Effect.gen(function* () {
       if (settleActionRunAt.get(threadId) === toMillis(queued.settledAt)) return;
       // Threads share a worktree whatever their lineage (subagents, forks, side chats, handoffs):
       // the last of them to settle runs the script once, covering the others already settled.
-      const sharing = (yield* projections.getShellSnapshot({
-        worktreePath,
-        location: "active",
-      })).threads.filter((thread) => thread.id !== threadId);
-      if (sharing.some((thread) => thread.settledOverride !== "settled")) return;
+      const readSharing = () =>
+        projections
+          .getShellSnapshot({ worktreePath, location: "active" })
+          .pipe(Effect.map(({ threads }) => threads.filter((thread) => thread.id !== threadId)));
+      const stillShared = (threads: ReadonlyArray<{ readonly settledOverride: unknown }>) =>
+        threads.some((thread) => thread.settledOverride !== "settled");
+      let sharing = yield* readSharing();
+      if (stillShared(sharing)) return;
       const coverSharing = () => {
         for (const thread of sharing) {
           const sharedSettledAtMs = toMillis(thread.settledAt);
@@ -893,6 +897,8 @@ export const make = Effect.gen(function* () {
       if (thread.worktreePath !== worktreePath) return;
       const settledAtMs = toMillis(thread.settledAt);
       if (settledAtMs === null || settleActionRunAt.get(threadId) === settledAtMs) return;
+      sharing = yield* readSharing();
+      if (stillShared(sharing)) return;
       const run = yield* projectScripts.runForThread({
         threadId,
         projectId: thread.projectId,
@@ -933,6 +939,34 @@ export const make = Effect.gen(function* () {
       ),
   );
 
+  // A thread archived or deleted unsettled no longer holds its worktree: one settled thread
+  // still there runs the script it skipped while waiting for this one.
+  const releaseSharedWorktree = Effect.fn("ThreadSettlementServiceV2.releaseSharedWorktree")(
+    function* (left: OrchestrationV2AppThread) {
+      if (left.worktreePath === null || left.settledOverride === "settled") return;
+      const { threads } = yield* projections.getShellSnapshot({
+        worktreePath: left.worktreePath,
+        location: "active",
+      });
+      const waiting = threads.find(
+        (thread) => thread.id !== left.id && thread.settledOverride === "settled",
+      );
+      if (waiting === undefined) return;
+      yield* runSettleScript(waiting.id).pipe(FiberSet.run(settleScriptRuns));
+    },
+    (effect, left) =>
+      effect.pipe(
+        Effect.catchCauseIf(
+          (cause) => !Cause.hasInterruptsOnly(cause),
+          (cause) =>
+            Effect.logWarning("releasing a shared worktree failed", {
+              threadId: left.id,
+              cause: Cause.pretty(cause),
+            }),
+        ),
+      ),
+  );
+
   const cleanUpSettledThread = Effect.fn("ThreadSettlementServiceV2.cleanUpSettledThread")(
     function* (threadId: ThreadId) {
       const settled = yield* projections.getThread(threadId);
@@ -960,7 +994,7 @@ export const make = Effect.gen(function* () {
         return cleanUpSettledThread(event.threadId).pipe(Effect.andThen(enqueueFullSweep()));
       case "thread.archived":
       case "thread.deleted":
-        return enqueueFullSweep();
+        return releaseSharedWorktree(event.payload).pipe(Effect.andThen(enqueueFullSweep()));
       case "thread.pull-request-link-updated":
       case "thread.pull-request-synced":
       case "thread.issue-synced":
