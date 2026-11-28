@@ -20,6 +20,7 @@ import {
   enrichGrokSnapshot,
 } from "./status.ts";
 import { grokUsageReader } from "./usage.ts";
+import { needsUsageAccessLimits } from "@onicode/provider-core/server/usageLimits";
 import { readGrokAccount } from "./usageLimits.ts";
 import { makeManagedServerProvider } from "@onicode/provider-core/server/managedProvider";
 import {
@@ -156,6 +157,7 @@ export const GrokDriver: ProviderDriver<GrokSettings, GrokDriverEnv, Path.Path> 
     accentColor,
     environment,
     enabled,
+    usageAccess = Effect.succeed(false),
     config,
   }) {
     const random = yield* SecureRandom.SecureRandom;
@@ -225,13 +227,18 @@ export const GrokDriver: ProviderDriver<GrokSettings, GrokDriverEnv, Path.Path> 
             snapshot.installed &&
             snapshot.auth.status === "authenticated"
           ),
+        // readGrokAccount opens Grok's auth.json, so it waits for usage access.
         (snapshot) =>
-          readGrokAccount(processEnv).pipe(
-            Effect.map(({ email, usageLimits }) => ({
-              ...snapshot,
-              auth: email ? { ...snapshot.auth, email } : snapshot.auth,
-              usageLimits,
-            })),
+          Effect.flatMap(usageAccess, (allowed) =>
+            allowed
+              ? readGrokAccount(processEnv).pipe(
+                  Effect.map(({ email, usageLimits }) => ({
+                    ...snapshot,
+                    auth: email ? { ...snapshot.auth, email } : snapshot.auth,
+                    usageLimits,
+                  })),
+                )
+              : Effect.map(needsUsageAccessLimits, (usageLimits) => ({ ...snapshot, usageLimits })),
           ),
       ),
       Effect.map(stampIdentity),
@@ -242,11 +249,17 @@ export const GrokDriver: ProviderDriver<GrokSettings, GrokDriverEnv, Path.Path> 
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
     );
 
-    const checkUsageLimits = readGrokAccount(processEnv).pipe(
-      Effect.map(({ email, usageLimits }) => ({
-        usageLimits,
-        ...(email ? { auth: { email } } : {}),
-      })),
+    // The limits-only check opens Grok's auth.json too, so it waits for usage access the same way.
+    const checkUsageLimits = Effect.flatMap(usageAccess, (allowed) =>
+      allowed
+        ? readGrokAccount(processEnv).pipe(
+            Effect.map(({ email, usageLimits }) => ({
+              usageLimits,
+              ...(email ? { auth: { email } } : {}),
+            })),
+          )
+        : Effect.map(needsUsageAccessLimits, (usageLimits) => ({ usageLimits })),
+    ).pipe(
       Effect.provideService(HttpClient.HttpClient, httpClient),
       Effect.provideService(FileSystem.FileSystem, fileSystem),
       Effect.provideService(Path.Path, path),

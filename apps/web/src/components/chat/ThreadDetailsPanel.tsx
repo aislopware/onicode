@@ -338,7 +338,9 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                 <ThreadDetailsTasks plan={props.taskList} compact={density !== "full"} />
               ) : null}
 
-              {visible.usage ? <ThreadDetailsUsage {...props.usage} /> : null}
+              {visible.usage ? (
+                <ThreadDetailsUsage {...props.usage} environmentId={props.environmentId} />
+              ) : null}
 
               {visible.context && props.usage.contextWindow ? (
                 <ThreadDetailsContext

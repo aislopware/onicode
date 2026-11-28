@@ -354,47 +354,56 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
       }).pipe(withRegistryLayer),
   );
 
-  it.effect.each([{ displayName: "Renamed" }, { accentColor: "#ff0000" }])(
-    "keeps the live instance when only %o changes",
-    (presentation) =>
-      Effect.gen(function* () {
-        let closed = 0;
-        const renames: Array<string | undefined> = [];
-        const driver: typeof CodexDriver = {
-          ...CodexDriver,
-          create: (input) =>
-            Effect.gen(function* () {
-              const instance = yield* CodexDriver.create(input);
-              yield* Effect.addFinalizer(() => Effect.sync(() => closed++));
-              return {
-                ...instance,
-                rename: (displayName: string | undefined) => {
-                  renames.push(displayName);
-                },
-              };
-            }),
-        };
-        const instanceId = ProviderInstanceId.make("account-a");
-        const entry = {
-          driver: CodexDriver.driverKind,
-          enabled: false,
-          displayName: "Account A",
-          config: makeCodexConfig({}),
-        };
-        const { registry, mutator } = yield* makeProviderInstanceRegistry({
-          drivers: [driver],
-          configMap: { [instanceId]: entry },
-        });
-        const instance = yield* registry.getInstance(instanceId);
-        const changes = yield* registry.subscribeChanges;
-        yield* mutator.reconcile({ [instanceId]: { ...entry, ...presentation } });
-        expect(closed).toBe(0);
-        expect(yield* registry.getInstance(instanceId)).toBe(instance);
-        yield* PubSub.take(changes);
+  it.effect.each([
+    { displayName: "Renamed" },
+    { accentColor: "#ff0000" },
+    { usageAccess: "allowed" as const },
+  ])("keeps the live instance when only %o changes", (presentation) =>
+    Effect.gen(function* () {
+      let closed = 0;
+      const renames: Array<string | undefined> = [];
+      let usageAccess: Effect.Effect<boolean> | undefined;
+      const driver: typeof CodexDriver = {
+        ...CodexDriver,
+        create: (input) =>
+          Effect.gen(function* () {
+            usageAccess = input.usageAccess;
+            const instance = yield* CodexDriver.create(input);
+            yield* Effect.addFinalizer(() => Effect.sync(() => closed++));
+            return {
+              ...instance,
+              rename: (displayName: string | undefined) => {
+                renames.push(displayName);
+              },
+            };
+          }),
+      };
+      const instanceId = ProviderInstanceId.make("account-a");
+      const entry = {
+        driver: CodexDriver.driverKind,
+        enabled: false,
+        displayName: "Account A",
+        config: makeCodexConfig({}),
+      };
+      const { registry, mutator } = yield* makeProviderInstanceRegistry({
+        drivers: [driver],
+        configMap: { [instanceId]: entry },
+      });
+      const instance = yield* registry.getInstance(instanceId);
+      const changes = yield* registry.subscribeChanges;
+      yield* mutator.reconcile({ [instanceId]: { ...entry, ...presentation } });
+      expect(closed).toBe(0);
+      expect(yield* registry.getInstance(instanceId)).toBe(instance);
+      yield* PubSub.take(changes);
+      if ("usageAccess" in presentation) {
+        // Drivers read the grant live, so the running instance sees it.
+        expect(yield* usageAccess!).toBe(true);
+      } else {
         expect(yield* instance!.snapshot.getSnapshot).toMatchObject(presentation);
-        // The instance hears of a new name only.
-        expect(renames).toEqual("displayName" in presentation ? ["Renamed"] : []);
-      }).pipe(withRegistryLayer),
+      }
+      // The instance hears of a new name only.
+      expect(renames).toEqual("displayName" in presentation ? ["Renamed"] : []);
+    }).pipe(withRegistryLayer),
   );
 
   it.effect("restores the default Pi name after clearing a saved custom label", () =>

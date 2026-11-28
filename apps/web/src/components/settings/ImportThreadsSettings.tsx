@@ -31,7 +31,7 @@ const NOTHING_SELECTED: WelcomeImportSelection = { knownKeys: [], keys: [], opte
 /** Imports agent history into projects after setup, from the same scan as the Welcome page. */
 export function ImportThreadsRow({ environmentId }: { readonly environmentId: EnvironmentId }) {
   const setting = useSearchableSetting();
-  const importSourcesLabel = useImportSourcesLabel();
+  const { label: importSourcesLabel } = useImportSourcesLabel(environmentId);
   const [open, setOpen] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   return (
@@ -88,7 +88,7 @@ function ImportThreadsDialogBody({
 }) {
   const gt = useGT();
   const m = useMessages();
-  const importSourcesLabel = useImportSourcesLabel();
+  const { label: importSourcesLabel } = useImportSourcesLabel(environmentId);
   const scans = useProjectScans([environmentId]);
   const scan = scans[0];
   const [importSelection, setImportSelection] = useState(NOTHING_SELECTED);

@@ -45,6 +45,8 @@ export const ServerProviderUsageLimits = Schema.Struct({
       url: TrimmedNonEmptyString,
     }),
   ),
+  /** Limits need Onicode to read the provider's sign-in, and the user has not allowed usage access yet. */
+  needsUsageAccess: Schema.optional(Schema.Literal(true)),
   unavailable: Schema.optional(
     Schema.Struct({
       reason: Schema.Literals(["unsupported", "probeFailed"]),
