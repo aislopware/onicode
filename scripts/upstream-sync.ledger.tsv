@@ -4948,3 +4948,4 @@ fe78a9f07e	take	taken as is
 ac2c28bc76	take	taken; hosted-link alternatives dropped (hosted web links removed in Onicode)
 a505181812	take	taken as is; fixes Claude restart continuation for awaited shells
 7d31551cfd	take	documentTextWorker repeat counts; bumped DocumentText VERSION 26->27 since extractor output changes
+a5eb0ec0e8	take	taken as is
