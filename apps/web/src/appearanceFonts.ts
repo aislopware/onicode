@@ -18,6 +18,9 @@ export const DEFAULT_SANS_FONT_STACK = `"Inter Variable", ${SYSTEM_SANS_FONT_STA
 export const DEFAULT_CODE_FONT_STACK =
   '"SF Mono", "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace';
 
+/** The terminal's default face, bundled with the app so prompt glyphs render everywhere. */
+export const BUNDLED_TERMINAL_FONT_FAMILY = "JetBrainsMono Nerd Font Mono";
+
 export const TYPOGRAPHY_ADVANCED_STORAGE_KEY = "onicode:typography-advanced";
 
 export function resolveTerminalFontPreference(input: {

@@ -35,11 +35,11 @@ export function TextAppearancePreview(props: { readonly fontSize: number }) {
 }
 
 export function TerminalAppearancePreview(props: { readonly fontSize: number }) {
-  const { themeAppearance: scheme, monoFontFamily } = useAppearancePreferences();
+  const { themeAppearance: scheme, terminalFontFamily } = useAppearancePreferences();
   const theme = getMobileTerminalTheme(scheme);
   const lineHeight = Math.round(props.fontSize * 1.6);
   const lineStyle = {
-    fontFamily: monoFontFamily,
+    fontFamily: terminalFontFamily,
     fontSize: props.fontSize,
     lineHeight,
   } as const;

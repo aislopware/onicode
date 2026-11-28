@@ -11,15 +11,14 @@ test(
     await onicode.open(thread);
 
     await browser.evaluate(() => {
-      const load = FontFace.prototype.load;
+      const load = document.fonts.load.bind(document.fonts);
       const ready = new Promise<void>((resolve) => {
         window.addEventListener("release-terminal-font", () => resolve(), { once: true });
       });
-      FontFace.prototype.load = function () {
-        return this.family.includes("Symbols Nerd Font Mono")
-          ? ready.then(() => load.call(this))
-          : load.call(this);
-      };
+      document.fonts.load = (font, text) =>
+        font.includes("JetBrainsMono Nerd Font Mono")
+          ? ready.then(() => load(font, text))
+          : load(font, text);
       return null;
     });
 

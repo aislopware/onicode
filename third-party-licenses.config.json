@@ -165,6 +165,21 @@
       ]
     },
     {
+      "bundles": ["android", "assets", "ios", "mobile", "web"],
+      "license": "OFL-1.1",
+      "name": "JetBrainsMono Nerd Font Mono",
+      "sourceUrl": "https://github.com/ryanoasis/nerd-fonts",
+      "generatedNotices": [
+        {
+          "licenseId": "OFL-1.1",
+          "copyrights": [
+            "Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono)"
+          ],
+          "preamble": ["JetBrains Mono patched with Nerd Fonts glyphs (Nerd Fonts v3.5.1)."]
+        }
+      ]
+    },
+    {
       "bundles": ["mobile"],
       "license": "MIT",
       "name": "react-native-uitextview",

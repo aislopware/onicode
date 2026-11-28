@@ -20,6 +20,7 @@ import {
 import {
   MOBILE_FONT_FAMILIES,
   MOBILE_MONO_FONT_FAMILIES,
+  resolveTerminalFontFamily,
   resolveMobileFontId,
   resolveMobileMonoFontId,
   type MobileFontFamilies,
@@ -81,6 +82,7 @@ interface AppearancePreferencesContextValue {
   readonly setFontId: (value: MobileFontId) => void;
   readonly monoFontId: MobileMonoFontId;
   readonly monoFontFamily: string;
+  readonly terminalFontFamily: string;
   readonly setMonoFontId: (value: MobileMonoFontId) => void;
   readonly setTerminalFontSize: (value: number | null) => void;
   readonly setCodeFontSize: (value: number | null) => void;
@@ -349,6 +351,7 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
       setFontId,
       monoFontId,
       monoFontFamily: MOBILE_MONO_FONT_FAMILIES[monoFontId],
+      terminalFontFamily: resolveTerminalFontFamily(monoFontId),
       setMonoFontId,
       setTerminalFontSize,
       setCodeFontSize,

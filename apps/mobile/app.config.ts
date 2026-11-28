@@ -148,6 +148,11 @@ const mesloFonts = {
   bold: "./assets/fonts/MesloLGS-NF-Bold.ttf",
 } as const;
 
+const terminalFonts = {
+  regular: "./assets/fonts/JetBrainsMonoNerdFontMono-Regular.ttf",
+  bold: "./assets/fonts/JetBrainsMonoNerdFontMono-Bold.ttf",
+} as const;
+
 const widgetsPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
   "expo-widgets",
   {
@@ -348,6 +353,8 @@ const config: ExpoConfig = {
             dmSansFonts.bold,
             mesloFonts.regular,
             mesloFonts.bold,
+            terminalFonts.regular,
+            terminalFonts.bold,
           ],
         },
         android: {
@@ -375,6 +382,13 @@ const config: ExpoConfig = {
               fontDefinitions: [
                 { path: mesloFonts.regular, weight: 400 },
                 { path: mesloFonts.bold, weight: 700 },
+              ],
+            },
+            {
+              fontFamily: "JetBrainsMonoNFM-Regular",
+              fontDefinitions: [
+                { path: terminalFonts.regular, weight: 400 },
+                { path: terminalFonts.bold, weight: 700 },
               ],
             },
           ],

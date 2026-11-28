@@ -20,7 +20,11 @@ import {
   type GhosttyCellMetrics,
 } from "./renderer";
 import symbolsFontUrl from "./fonts/SymbolsNerdFontMono-Regular.woff2?url";
-import { isMonospaceFamily } from "../../appearanceFonts";
+import jetBrainsMonoRegularUrl from "./fonts/JetBrainsMonoNerdFontMono-Regular.woff2?url";
+import jetBrainsMonoBoldUrl from "./fonts/JetBrainsMonoNerdFontMono-Bold.woff2?url";
+import jetBrainsMonoItalicUrl from "./fonts/JetBrainsMonoNerdFontMono-Italic.woff2?url";
+import jetBrainsMonoBoldItalicUrl from "./fonts/JetBrainsMonoNerdFontMono-BoldItalic.woff2?url";
+import { BUNDLED_TERMINAL_FONT_FAMILY, isMonospaceFamily } from "../../appearanceFonts";
 import { observeResize } from "../../lib/observeResize";
 import { msg } from "gt-react";
 import { m } from "../../i18n/messages";
@@ -33,11 +37,17 @@ const TERMINAL_GLYPH_FALLBACKS =
   '"Symbols Nerd Font Mono", "Symbols Nerd Font", "JetBrainsMono Nerd Font", ' +
   '"JetBrainsMono NF", "FiraCode Nerd Font", "Hack Nerd Font", "MesloLGS NF", ' +
   '"CaskaydiaCove Nerd Font", "PowerlineSymbols", monospace';
-// The platform's own monospace faces; concrete names only, because an
-// unknown keyword (like ui-monospace) makes canvas font shorthand parsing
-// reject the whole string.
+const BUNDLED_TERMINAL_FONT_FACES = [
+  { url: jetBrainsMonoRegularUrl, weight: "400", style: "normal" },
+  { url: jetBrainsMonoBoldUrl, weight: "700", style: "normal" },
+  { url: jetBrainsMonoItalicUrl, weight: "400", style: "italic" },
+  { url: jetBrainsMonoBoldItalicUrl, weight: "700", style: "italic" },
+] as const;
+// Concrete names only: an unknown keyword (like ui-monospace) makes canvas
+// font shorthand parsing reject the whole string.
 const DEFAULT_TERMINAL_FONT_FAMILY =
-  '"SF Mono", "SFMono-Regular", Menlo, Consolas, "Liberation Mono", ' + TERMINAL_GLYPH_FALLBACKS;
+  `"${BUNDLED_TERMINAL_FONT_FAMILY}", "SF Mono", "SFMono-Regular", Menlo, Consolas, ` +
+  `"Liberation Mono", ${TERMINAL_GLYPH_FALLBACKS}`;
 const CONTENT_PADDING = 4;
 const MIN_SCROLLBAR_THUMB_HEIGHT = 18;
 const CURSOR_BLINK_INTERVAL_MS = 500;
@@ -57,7 +67,21 @@ export interface GhosttyTerminalFont {
   readonly size?: number;
 }
 
+let bundledTerminalFontRegistered = false;
 let symbolsFontLoad: Promise<void> | null = null;
+
+/** Registers the faces unloaded; the font loads below fetch only the ones a terminal uses. */
+function registerBundledTerminalFont(): void {
+  if (bundledTerminalFontRegistered) return;
+  bundledTerminalFontRegistered = true;
+  try {
+    for (const { url, weight, style } of BUNDLED_TERMINAL_FONT_FACES) {
+      document.fonts.add(
+        new FontFace(BUNDLED_TERMINAL_FONT_FAMILY, `url(${url})`, { weight, style }),
+      );
+    }
+  } catch {}
+}
 
 function ensureTerminalSymbolsFont(): Promise<void> {
   if (symbolsFontLoad !== null) return symbolsFontLoad;
@@ -108,6 +132,10 @@ async function loadTerminalFontFamily(
     readonly resolve: (family: string | undefined) => string;
   },
 ): Promise<string> {
+  registerBundledTerminalFont();
+  // The bundled face carries Nerd Font glyphs; a custom one needs the symbols fallback
+  // loaded before measuring, since canvas draws an unloaded fallback as tofu.
+  if (family !== undefined && family.trim().length > 0) await ensureTerminalSymbolsFont();
   const candidate = uncheckedTerminalFontFamily(family);
   const load =
     environment?.load ?? ((font: string, text: string) => document.fonts.load(font, text));
@@ -760,10 +788,7 @@ export class GhosttyTerminalSurface {
     const stopObservingI18n = subscribeI18n(updateAccessibleNames);
     try {
       const fontSize = terminalFontSize(options.font?.size);
-      try {
-        // Load bundled fonts before measuring; fallback metrics would size the wrong grid.
-        await ensureTerminalSymbolsFont();
-      } catch {}
+      // Load bundled fonts before measuring; fallback metrics would size the wrong grid.
       const fontFamily = await loadTerminalFontFamily(options.font?.family, fontSize);
       const metrics = measureGhosttyCell(context, fontSize, fontFamily);
       const grid = terminalGridSize(
