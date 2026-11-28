@@ -27,6 +27,10 @@ export class PairingQrPayloadEmptyError extends Schema.TaggedError<PairingQrPayl
   override get message(): string {
     return m(msg("Scanned QR code did not contain a pairing URL."));
   }
+
+  get i18nMessage(): ReadonlyArray<string> {
+    return [msg("Scanned QR code did not contain a pairing URL.")];
+  }
 }
 
 export function buildPairingUrl(host: string, code: string): string {

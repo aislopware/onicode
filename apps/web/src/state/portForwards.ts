@@ -78,6 +78,10 @@ class PortForwardLocalityError extends Schema.TaggedError<PortForwardLocalityErr
   override get message(): string {
     return m(msg("Could not tell whether this environment runs on this computer."));
   }
+
+  get i18nMessage(): ReadonlyArray<string> {
+    return [msg("Could not tell whether this environment runs on this computer.")];
+  }
 }
 
 // A probe can fail while the environment is briefly unreachable (a reconnect race); retry it.

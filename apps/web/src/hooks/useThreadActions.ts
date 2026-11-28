@@ -75,6 +75,10 @@ export class ThreadArchiveBlockedError extends Schema.TaggedError<ThreadArchiveB
   override get message(): string {
     return m(msg("Cannot archive while the provider is active."));
   }
+
+  get i18nMessage(): ReadonlyArray<string> {
+    return [msg("Cannot archive while the provider is active.")];
+  }
 }
 
 export class ThreadSettlementUnsupportedError extends Schema.TaggedError<ThreadSettlementUnsupportedError>()(
@@ -187,6 +191,10 @@ export class ThreadActiveReorderUnsupportedError extends Schema.TaggedError<Thre
 ) {
   override get message(): string {
     return m(msg("Update this environment's server to reorder active threads."));
+  }
+
+  get i18nMessage(): ReadonlyArray<string> {
+    return [msg("Update this environment's server to reorder active threads.")];
   }
 }
 

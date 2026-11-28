@@ -28,6 +28,10 @@ export class PrimaryEnvironmentDisabledError extends Schema.TaggedError<PrimaryE
   override get message(): string {
     return m(msg("The local environment is disabled."));
   }
+
+  get i18nMessage(): ReadonlyArray<string> {
+    return [msg("The local environment is disabled.")];
+  }
 }
 
 export interface PrimaryEnvironmentTarget {
