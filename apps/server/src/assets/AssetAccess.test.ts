@@ -539,7 +539,7 @@ describe("AssetAccess", () => {
       }).pipe(Effect.provide(layerTest)),
   );
 
-  it.effect.skipIf(!symlinksSupported || HostProcess.Platform.defaultValue() === "win32")(
+  it.effect.runIf(symlinksSupported && HostProcess.Platform.defaultValue() === "win32")(
     "never resolves through a workspace link onto a network path",
     () =>
       Effect.gen(function* () {
@@ -547,13 +547,12 @@ describe("AssetAccess", () => {
         const path = yield* Path.Path;
         const directory = yield* fs.makeTempDirectoryScoped({ prefix: "oni-network-link-" });
         const root = path.join(directory, "workspace");
-        const outside = path.join(directory, "files");
         yield* fs.makeDirectory(root);
-        yield* fs.makeDirectory(outside);
-        yield* fs.writeFileString(path.join(outside, "diagram.png"), "png bytes");
         yield* fs.writeFileString(path.join(root, "page.html"), '<img src="nas/diagram.png">');
-        // Names a share, though POSIX resolves the leading `//` as `/`.
-        yield* fs.symlink(`/${yield* fs.realPath(outside)}`, path.join(root, "nas"));
+        // A typed link is made without reading its target, and `.invalid` never resolves.
+        yield* Effect.promise(() =>
+          NodeFSP.symlink("\\\\attacker.invalid\\share", path.join(root, "nas"), "dir"),
+        );
         const resolved: Array<string> = [];
         const recordingFileSystem = FileSystem.FileSystem.of({
           ...fs,

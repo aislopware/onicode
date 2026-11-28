@@ -1390,9 +1390,13 @@ function parseCommandProgramName(
     }
     const lowerTokenProgram = tokenProgram?.toLowerCase();
     if (lowerTokenProgram && WINDOWS_SHELL_PROGRAMS.has(lowerTokenProgram)) {
+      // Windows shells read their own arguments, so backslashes stay literal.
+      const windowsTokens = tokenizeShellCommand(commandSplit.firstCommand, true);
+      const sameShell =
+        windowsTokens?.[index]?.split(/[\\/]/u).at(-1)?.toLowerCase() === lowerTokenProgram;
       const payload = windowsShellPayloadProgramName(
         lowerTokenProgram,
-        tokens,
+        windowsTokens && sameShell ? windowsTokens : tokens,
         index + 1,
         depth,
         commandSplit.remainingCommand,

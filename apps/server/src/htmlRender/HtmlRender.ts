@@ -38,6 +38,7 @@ import * as ServerConfig from "../config.ts";
 import * as HeadlessChrome from "./headlessChrome.ts";
 import * as PreviewBrowser from "../preview/PreviewBrowser.ts";
 import * as PreviewBrowserHost from "../preview/PreviewBrowserHost.ts";
+import { networkPathReachedBy } from "../workspace/networkLinks.ts";
 
 const MIB = 1024 * 1024;
 const MAX_IMAGE_BYTES = 10 * MIB;
@@ -481,6 +482,10 @@ const make = Effect.gen(function* () {
   const readPageFile = Effect.fn("HtmlRender.readPageFile")(function* (filePath: string) {
     const unreadable = new HtmlRenderFileError({ path: filePath });
     if (!path.isAbsolute(filePath) || isNetworkPath(filePath)) return yield* unreadable;
+    // realpath through a link onto a share would sign in to it first.
+    if ((yield* Effect.promise(() => networkPathReachedBy(path, filePath))) !== null) {
+      return yield* unreadable;
+    }
     // Check the resolved file, so a symlink named .html cannot reach another file.
     const realPath = yield* fileSystem
       .realPath(filePath)

@@ -12,6 +12,7 @@ describe("commandProgramName", () => {
     ['fish -c -- "printf ok"', "--"],
     ["zsh -lc 'CI=1 env -u DEBUG sudo -u root vp test run'", "vp"],
     ['"C:\\Program Files\\Git\\bin\\bash.exe" -lc "git status"', "git"],
+    ["pwsh -File \\\\server\\share\\deploy.ps1", "deploy.ps1"],
     // regression: #9371 a multiline script whose later line re-quotes must still label its first program
     ["/bin/zsh -lc 'git status\nsed -n '\"'1,20p' apps/web/src/components/DiffPanel.tsx\"", "git"],
     ["bash -c $'ls\\nnpm test'", "ls"],

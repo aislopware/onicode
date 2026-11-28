@@ -257,10 +257,29 @@ function decodeRelativePath(value: string): string | null {
   }
 }
 
-export const readMcpAppHtml = Effect.fn("AssetAccess.readMcpAppHtml")(function* (filePath: string) {
+export const readMcpAppHtml = Effect.fn("AssetAccess.readMcpAppHtml")(function* (
+  filePath: string,
+  /** The file the grant opened and checked; reading the path again could follow a swapped link. */
+  file?: OpenMediaFile,
+) {
   const fileSystem = yield* FileSystem.FileSystem;
   // Allow space for stored CSP tags, but bound reads if the attachment grows after minting.
   const limit = MCP_APP_MAX_HTML_BYTES + 128 * 1024;
+  if (file !== undefined) {
+    const buffer = new Uint8Array(limit + 1);
+    // An unreadable page is served as is, like one too large to buffer.
+    const size = yield* Effect.promise(async () => {
+      let read = 0;
+      while (read < buffer.byteLength) {
+        // Positional reads leave the handle's offset where the response stream expects it.
+        const { bytesRead } = await file.handle.read(buffer, read, buffer.byteLength - read, read);
+        if (bytesRead === 0) break;
+        read += bytesRead;
+      }
+      return read;
+    }).pipe(Effect.catchDefect(() => Effect.succeed(limit + 1)));
+    return size > limit ? null : buffer.subarray(0, size);
+  }
   const chunks = yield* Stream.runCollect(fileSystem.stream(filePath, { bytesToRead: limit + 1 }));
   const size = chunks.reduce((total, chunk) => total + chunk.byteLength, 0);
   if (size > limit) return null;
@@ -1166,6 +1185,10 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
   const path = yield* Path.Path;
   if (claims.kind === "media-file-exact") {
     if (decodedPath !== path.basename(claims.filePath)) return null;
+    // A folder on the path can become a link onto a share after the URL was issued.
+    if ((yield* Effect.promise(() => networkPathReachedBy(path, claims.filePath))) !== null) {
+      return null;
+    }
     const canonicalFile = yield* resolveCanonicalFile(claims.filePath).pipe(
       Effect.tapError((cause) =>
         Effect.logError("Failed to resolve canonical media path.", {

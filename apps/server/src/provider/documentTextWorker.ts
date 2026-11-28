@@ -328,10 +328,9 @@ function xml(
       attrs: Object.fromEntries(
         Object.entries(tag.attributes).flatMap(([key, value]) => {
           const local = key.split(":").at(-1)!;
-          // A foreign attribute must not shadow an XHTML table span or a namespace declaration.
-          return (extension === ".epub" &&
-            (local === "colspan" || local === "rowspan" || local === "xmlns")) ||
-            ((odf || wordStyles !== undefined) && local === "xmlns")
+          // A foreign attribute must not shadow a namespace declaration or an XHTML table span.
+          return local === "xmlns" ||
+            (extension === ".epub" && (local === "colspan" || local === "rowspan"))
             ? [[key, String(value)]]
             : [
                 [key, String(value)],
@@ -510,6 +509,11 @@ function xml(
       node.markupCompatibility &&
       parent.name === "AlternateContent" &&
       parent.markupCompatibility;
+    // A frame holds only elements, so whitespace between them is not text either.
+    if (odf && node.name === "frame" && namespaceOf(tag.name, [...stack, node]) === ODF_DRAW_NS)
+      node.children = node.children.filter(
+        (child) => typeof child !== "string" || /[^\t\n\r ]/u.test(child),
+      );
     if (node.odfInlineParagraphs) dropOdfBlockWhitespace(node);
     if (odf && (node.name === "p" || node.name === "h")) collapseOdfWhitespace(node);
     // Hidden spans may contain a nested style that explicitly makes its text visible.
@@ -567,9 +571,12 @@ function xml(
       if (body?.hasText) {
         body.odfInlineParagraphs = true;
         dropOdfBlockWhitespace(body);
-        node.children = citation?.hasText
-          ? ["[", citation, ": ", body, "]"]
-          : ["[Note: ", body, "]"];
+        // A citation holds only text, which the document shows without surrounding whitespace.
+        const label = citation?.children
+          .filter((part) => typeof part === "string")
+          .join("")
+          .trim();
+        node.children = label ? ["[", label, ": ", body, "]"] : ["[Note: ", body, "]"];
       }
     }
     if (isOdfHiddenText && !node.odfSpanHidden) {

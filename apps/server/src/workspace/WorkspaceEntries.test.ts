@@ -15,6 +15,7 @@ import { vi } from "vite-plus/test";
 
 import * as ServerConfig from "../config.ts";
 import * as HostProcess from "@onicode/shared/HostProcess";
+import { symlinksSupported } from "@onicode/shared/testing/symlinks";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as WorkspaceEntries from "./WorkspaceEntries.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
@@ -173,9 +174,6 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceEntries", (it) => {
         yield* fileSystem.symlink("real.txt", path.join(cwd, "link.txt"));
         yield* fileSystem.symlink("realdir", path.join(cwd, "linkdir"));
         yield* fileSystem.symlink(outside, path.join(cwd, "outside-link"));
-        // Names a share, though POSIX resolves the leading `//` as `/`.
-        const share = `/${yield* fileSystem.realPath(outside)}`;
-        yield* fileSystem.symlink(share, path.join(cwd, "nas"));
         yield* fileSystem.symlink(".git", path.join(cwd, "git-link"));
         yield* fileSystem.symlink("missing", path.join(cwd, "dangling"));
 
@@ -197,6 +195,33 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceEntries", (it) => {
           truncated: false,
         });
       }),
+    );
+
+    it.effect.runIf(symlinksSupported && HostProcess.Platform.defaultValue() === "win32")(
+      "never touches the target of a link onto a network share",
+      () =>
+        Effect.gen(function* () {
+          const cwd = yield* makeTempDir({ git: true });
+          const path = yield* Path.Path;
+          yield* writeTextFile(cwd, "real.txt");
+          // A typed link is made without reading its target, and `.invalid` never resolves.
+          yield* Effect.promise(() =>
+            NodeFSP.symlink("\\\\attacker.invalid\\share", path.join(cwd, "nas"), "dir"),
+          );
+          const stat = vi.mocked(NodeFSP.stat).mockClear();
+          const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
+
+          const root = yield* workspaceEntries.list({ cwd, directoryPath: "" });
+          expect(root.entries.map((entry) => entry.path)).toEqual(["real.txt"]);
+          const error = yield* workspaceEntries
+            .list({ cwd, directoryPath: "nas" })
+            .pipe(Effect.flip);
+          expect(error._tag).toBe("WorkspaceEntriesReadDirectoryError");
+          const browsed = yield* workspaceEntries.browse({ partialPath: `${cwd}${path.sep}` });
+          expect(browsed.entries.map((entry) => entry.name)).not.toContain("nas");
+          const touched = stat.mock.calls.map(([target]) => String(target));
+          expect(touched.filter((target) => target.split(path.sep).includes("nas"))).toEqual([]);
+        }),
     );
 
     it.effect("hides folder links that lead back to a folder on the listed path", () =>
@@ -428,8 +453,6 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceEntries", (it) => {
         const platform = yield* HostProcess.Platform;
         if (platform !== "win32") {
           yield* fileSystem.symlink(path.join(outside, "repo/.git"), path.join(cwd, "external"));
-          const share = `/${yield* fileSystem.realPath(outside)}`;
-          yield* fileSystem.symlink(share, path.join(cwd, "nas"));
         }
         const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
         for (const directoryPath of [
@@ -437,7 +460,7 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceEntries", (it) => {
           outside,
           ".git",
           "missing",
-          ...(platform !== "win32" ? ["external", "nas"] : []),
+          ...(platform !== "win32" ? ["external"] : []),
         ]) {
           const error = yield* workspaceEntries.list({ cwd, directoryPath }).pipe(Effect.flip);
           expect(error._tag).toBe("WorkspaceEntriesReadDirectoryError");

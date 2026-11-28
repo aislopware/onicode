@@ -1437,6 +1437,19 @@ describe("question answer paths", () => {
           exact: "次は東京(とうきょう)から京都まで。",
         })),
         {
+          ext: "docx",
+          parts: {
+            "word/document.xml":
+              '<document xmlns="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:meta="urn:example:metadata"><body><p>' +
+              "<r><t>次は</t></r>" +
+              '<r><ruby xmlns="http://schemas.openxmlformats.org/wordprocessingml/2006/main" meta:xmlns="urn:example:metadata"><rt><r><t>とうきょう</t></r></rt>' +
+              "<rubyBase><r><t>東京</t></r></rubyBase></ruby></r>" +
+              "<r><t>まで。</t></r></p></body></document>",
+          },
+          expected: [],
+          exact: "次は東京(とうきょう)まで。",
+        },
+        {
           ext: "odt",
           parts: {
             "content.xml":
@@ -1995,10 +2008,11 @@ describe("question answer paths", () => {
               '<t:p>Prices fell<t:note t:id="ftn3" t:note-class="footnote"><t:note-citation/><t:note-body><t:p>Estimated.</t:p></t:note-body></t:note> in June.</t:p>' +
               '<t:p>Two checks<t:note t:id="ftn4" t:note-class="footnote"><t:note-citation>3</t:note-citation><t:note-body><t:list><t:list-item><t:p>Seals.</t:p></t:list-item><t:list-item><t:p>Weight.</t:p></t:list-item></t:list></t:note-body></t:note> passed.</t:p>' +
               '<t:p>Totals<t:note t:id="ftn5" t:note-class="footnote">\n  <t:note-citation>4</t:note-citation>\n  <t:note-body>\n    <t:p>Gross.</t:p>\n    <t:list>\n      <t:list-item>\n        <t:p>Net.</t:p>\n      </t:list-item>\n    </t:list>\n  </t:note-body>\n</t:note> follow.</t:p>' +
+              '<t:p>Costs<t:note t:id="ftn6" t:note-class="footnote"><t:note-citation>\n    5\n  </t:note-citation><t:note-body><t:p>Estimated.</t:p></t:note-body></t:note> rose.</t:p>' +
               "</office:text></office:body></office:document-content>",
           },
           expected: [
-            "The shipment left.[1: Inspect the seals before departure.] Finance booked revenue.\nThe ledger lists Tokyo[2: Includes freight.\nDuties excluded.] and Osaka.\nRates rose[Note: See the annex.] in May.\nPrices fell[Note: Estimated.] in June.\nTwo checks[3: Seals.\nWeight.] passed.\nTotals[4: Gross.\nNet.] follow.",
+            "The shipment left.[1: Inspect the seals before departure.] Finance booked revenue.\nThe ledger lists Tokyo[2: Includes freight.\nDuties excluded.] and Osaka.\nRates rose[Note: See the annex.] in May.\nPrices fell[Note: Estimated.] in June.\nTwo checks[3: Seals.\nWeight.] passed.\nTotals[4: Gross.\nNet.] follow.\nCosts[5: Estimated.] rose.",
           ],
         },
         {
@@ -2225,16 +2239,22 @@ describe("question answer paths", () => {
             "ppt/_rels/presentation.xml.rels":
               '<Relationships><Relationship Id="a" Target="slides/a.xml"/></Relationships>',
             "ppt/slides/a.xml":
-              '<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">' +
+              '<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:meta="urn:example:metadata">' +
               '<p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>' +
               '<p:sp><p:nvSpPr><p:cNvPr id="2" name="Visible" hidden="0"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:p><a:r><a:t>Harbor briefing</a:t></a:r></a:p></p:txBody></p:sp>' +
               '<p:sp><p:nvSpPr><p:cNvPr id="3" name="Hidden" hidden="1"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:p><a:r><a:t>Unshown draft</a:t></a:r></a:p></p:txBody></p:sp>' +
+              '<p:sp><p:nvSpPr><cNvPr xmlns="http://schemas.openxmlformats.org/presentationml/2006/main" meta:xmlns="urn:example:metadata" id="6" name="Tagged" hidden="1"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:p><a:r><a:t>Unshown tagged draft</a:t></a:r></a:p></p:txBody></p:sp>' +
               '<p:grpSp><p:nvGrpSpPr><p:cNvPr id="4" name="Hidden group" hidden="true"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>' +
               '<p:sp><p:nvSpPr><p:cNvPr id="5" name="Group member"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:p><a:r><a:t>Unshown group draft</a:t></a:r></a:p></p:txBody></p:sp>' +
               "</p:grpSp></p:spTree></p:cSld></p:sld>",
           },
           expected: ["## Slide 1", "Harbor briefing"],
-          absent: ["Unshown draft", "Unshown group draft", "[Skipped document part"],
+          absent: [
+            "Unshown draft",
+            "Unshown tagged draft",
+            "Unshown group draft",
+            "[Skipped document part",
+          ],
         },
         {
           ext: "pptx",
@@ -2350,11 +2370,12 @@ describe("question answer paths", () => {
               '<text:p><draw:frame text:anchor-type="as-char"><draw:text-box><text:p>North loading dock</text:p><text:p>South loading dock</text:p></draw:text-box></draw:frame></text:p>' +
               '<text:p>Meeting point: <draw:frame text:anchor-type="as-char"><draw:text-box><text:p>Gate 4</text:p></draw:text-box></draw:frame> at noon</text:p>' +
               '<text:p>Escort: <draw:frame text:anchor-type="as-char"><draw:text-box>\n  <text:p>Ana</text:p>\n  <text:p>Ben</text:p>\n</draw:text-box></draw:frame> on duty</text:p>' +
+              '<text:p>Pallet <draw:frame text:anchor-type="as-char">\n  <draw:text-box><text:p>A</text:p></draw:text-box>\n</draw:frame>, row 3</text:p>' +
               "<text:p>End <other:text-box>of <text:span>route</text:span>.</other:text-box></text:p>" +
               "</office:text></office:body></office:document-content>",
           },
           expected: [
-            "Inspection route\nNorth loading dock\nSouth loading dock\nMeeting point: Gate 4 at noon\nEscort: Ana\nBen on duty\nEnd of route.",
+            "Inspection route\nNorth loading dock\nSouth loading dock\nMeeting point: Gate 4 at noon\nEscort: Ana\nBen on duty\nPallet A, row 3\nEnd of route.",
           ],
         },
         {

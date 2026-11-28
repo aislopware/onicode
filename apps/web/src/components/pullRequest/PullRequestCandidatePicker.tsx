@@ -31,6 +31,7 @@ export function PullRequestCandidatePicker<T>({
   errorLabel,
   truncated,
   truncatedLabel,
+  truncatedAction,
   candidateKey,
   onSelect,
   children,
@@ -52,6 +53,7 @@ export function PullRequestCandidatePicker<T>({
   errorLabel: string;
   truncated: boolean;
   truncatedLabel: string;
+  truncatedAction?: ReactNode;
   candidateKey: (candidate: T) => string;
   onSelect: (candidate: T) => void;
   children: (candidate: T) => ReactNode;
@@ -126,7 +128,10 @@ export function PullRequestCandidatePicker<T>({
             ))
           )}
           {truncated ? (
-            <p className="px-2 py-1.5 text-xs text-muted-foreground">{truncatedLabel}</p>
+            <div className="flex items-center gap-2 px-2 py-1.5">
+              <p className="min-w-0 flex-1 text-xs text-muted-foreground">{truncatedLabel}</p>
+              {truncatedAction}
+            </div>
           ) : null}
         </ComboboxList>
       </ComboboxPopup>

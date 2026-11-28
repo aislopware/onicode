@@ -189,7 +189,7 @@ const folderProbes = Effect.gen(function* () {
   // A link to a stalled network mount would hang every probe below it and hold libuv's workers.
   // One that does not answer in time is left out of this scan; a later scan finds it again.
   const linksToFolder = (target: string) =>
-    resolveLinkTarget(target, { link: true }).pipe(
+    resolveLinkTarget(target, { link: true, within: { path, root: path.dirname(target) } }).pipe(
       Effect.map((linked) => linked?.kind === "directory"),
     );
 

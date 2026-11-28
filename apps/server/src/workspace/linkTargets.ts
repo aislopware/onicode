@@ -4,6 +4,10 @@ import * as NodePath from "node:path";
 
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import type * as Path from "effect/Path";
+
+import { isWithinRoot } from "./KnownWorkspaces.ts";
+import { networkPathReachedBy } from "./networkLinks.ts";
 
 // A link to an unresponsive network share must not hold up the local entries beside it.
 const LINK_TARGET_TIMEOUT = Duration.seconds(1);
@@ -163,7 +167,30 @@ const firstHopTarget = (fullPath: string, link: boolean, signal: AbortSignal) =>
 interface LinkTargetOptions {
   /** A symlink listed in a folder already read, whose first hop can key the probe. */
   readonly link?: boolean;
+  /** A target on a network share outside `root` resolves to null, before anything touches it. */
+  readonly within?: { readonly path: Path.Path; readonly root: string };
 }
+
+// Undefined once aborted.
+const reachesNetworkPath = (
+  fullPath: string,
+  within: LinkTargetOptions["within"],
+  signal: AbortSignal,
+) =>
+  within === undefined
+    ? Promise.resolve(false)
+    : new Promise<boolean | undefined>((resolve) => {
+        signal.addEventListener("abort", () => resolve(undefined), { once: true });
+        const inside = isWithinRoot(within.path, fullPath, within.root);
+        void networkPathReachedBy(
+          within.path,
+          inside ? within.path.relative(within.root, fullPath) : fullPath,
+          inside ? { from: within.root, allowedRoot: within.root } : { allowedRoot: within.root },
+        ).then(
+          (reached) => resolve(reached !== null),
+          () => resolve(true),
+        );
+      });
 
 /**
  * Like `resolveLinkTarget`, but a caller whose time ran out while it only waited behind probes
@@ -173,10 +200,16 @@ export const resolveLinkTargetOrCrowded = (fullPath: string, options?: LinkTarge
   Effect.suspend(() => {
     const caller = new AbortController();
     // Every wait inside settles once the caller aborts, so the timeout can read the answer.
-    const answer = firstHopTarget(fullPath, options?.link === true, caller.signal).then((target) =>
-      target === undefined || caller.signal.aborted
+    const answer = reachesNetworkPath(fullPath, options?.within, caller.signal).then((refused) =>
+      refused === undefined
         ? undefined
-        : probeLinkTarget(fullPath, caller.signal, target),
+        : refused
+          ? null
+          : firstHopTarget(fullPath, options?.link === true, caller.signal).then((target) =>
+              target === undefined || caller.signal.aborted
+                ? undefined
+                : probeLinkTarget(fullPath, caller.signal, target),
+            ),
     );
     return Effect.promise(() => answer).pipe(
       Effect.timeoutOrElse({

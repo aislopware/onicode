@@ -480,7 +480,11 @@ const scanDirectory = Effect.fn("WorkspaceSearchIndex.scanDirectory")(function* 
   // Concurrent, so a link on a stalled mount holds up its siblings for one timeout, not each.
   const targets = yield* Effect.forEach(
     linkPaths,
-    (entryPath) => resolveLinkTargetOrCrowded(path.join(cwd, entryPath), { link: true }),
+    (entryPath) =>
+      resolveLinkTargetOrCrowded(path.join(cwd, entryPath), {
+        link: true,
+        within: { path, root },
+      }),
     { concurrency: MAX_PENDING_LINK_TARGET_PROBES },
   );
   const linksAnswered = targets.every((target) => target !== undefined);

@@ -600,6 +600,21 @@ describe("IssueService", () => {
       );
       expect(reaction._tag).toBe("IssueOperationError");
       expect(calls).toBe(1);
+
+      // An internal note on a tracker without them says so, unless it has no comments at all.
+      const internal = { ...ref, body: "Note", audience: "internal" as const };
+      expect(yield* Effect.flip(service.comment(internal))).toMatchObject({
+        detail: expect.stringContaining("This tracker has no internal notes"),
+      });
+      const commentless = yield* makeService({
+        projects: [project({ id: "web", repository: "acme/web" })],
+        trackers: [
+          fakeTracker({ capabilities: { ...fakeTracker().capabilities, comment: false } }),
+        ],
+      });
+      expect(yield* Effect.flip(commentless.comment(internal))).toMatchObject({
+        detail: "This tracker does not support comments.",
+      });
     }),
   );
 
@@ -836,6 +851,12 @@ describe("IssueService with a standalone tracker", () => {
               Effect.map(inOwnWorkspace(input.workspace), ({ account }) => {
                 commentedAs.push(account);
               }),
+            listCandidates: (input) =>
+              Effect.map(inOwnWorkspace(input.workspace), ({ account }) => ({
+                labels: [{ name: account, color: null, description: null }],
+                assignees: [],
+                truncated: false,
+              })),
           }),
         ],
         accounts: [{ tracker: LINEAR, accountId: IssueTrackerAccountId.make("second") }],
@@ -852,6 +873,48 @@ describe("IssueService with a standalone tracker", () => {
       });
       yield* unbound.comment({ ...unboundLink, body: "Follow-up" });
       expect(commentedAs).toEqual(["second"]);
+      // Its pickers read the same account's team, not the first account's team of the same key.
+      expect(yield* unbound.candidates(unboundLink)).toMatchObject({
+        labels: [{ name: "second" }],
+      });
+
+      // A refusal on the exact team's account is why the link failed; a miss tries only the rest.
+      const reads: string[] = [];
+      const exactTeam = (failure: (account: string) => IssueTrackerError | null) =>
+        makeService({
+          projects: [project({ id: "notes" }), project({ id: "home" })],
+          trackers: [
+            fakeStandaloneTracker({
+              getIssue: (input) =>
+                Effect.flatMap(asWhom, (account) => {
+                  reads.push(account);
+                  const refused = failure(account);
+                  return refused === null ? readInOwnWorkspace(input) : Effect.fail(refused);
+                }),
+            }),
+          ],
+          bindings: {
+            home: {
+              tracker: LINEAR,
+              accountId: IssueTrackerAccountId.make("second"),
+              scope: "ENG",
+            },
+          },
+          accounts: [{ tracker: LINEAR, accountId: IssueTrackerAccountId.make("second") }],
+        });
+      const otherLink = "https://linear.app/other-workspace/issue/ENG-1/old-title";
+      const rateLimited = yield* exactTeam((account) =>
+        account === "second" ? fail("rate-limited", 60) : null,
+      );
+      expect(
+        yield* Effect.flip(rateLimited.resolveUrl(otherLink, "notes" as ProjectId)),
+      ).toMatchObject({ reason: "rate-limited", retryAt: 60 });
+      expect(reads).toEqual(["second"]);
+      reads.length = 0;
+      const missing = yield* exactTeam(() => fail("not-found"));
+      const missed = yield* Effect.flip(missing.resolveUrl(otherLink, "notes" as ProjectId));
+      expect(missed).toMatchObject({ reason: "not-found" });
+      expect(reads).toEqual(["second", "first"]);
 
       // One refused key leaves the group usable, even on a continuation that skips the other.
       const refusing = (refused: ReadonlyArray<string>) =>

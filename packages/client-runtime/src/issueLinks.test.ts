@@ -182,10 +182,11 @@ describe("resolveIssueLinkTarget", () => {
     // A second account reaches its own workspace, through only the projects bound with it.
     const accountId = IssueTrackerAccountId.make("second");
     const [p1, p2] = [ProjectId.make("p1"), ProjectId.make("p2")];
-    const both = (url: string) =>
+    const both = (url: string, preferredProjectId?: string) =>
       resolveIssueLinkTarget({
         url,
         projects,
+        preferredProjectId,
         trackers: {
           ...trackers,
           accounts: [{ ...trackers.trackers[0]!, accountId, workspace: "othercorp" }],
@@ -197,6 +198,8 @@ describe("resolveIssueLinkTarget", () => {
       both("https://linear.app/othercorp/issue/WEB-17"),
       both("https://linear.app/acme/issue/WEB-17"),
     ]).toEqual(["p2", "p1"]);
+    // A project bound under the other account is not unbound: its account cannot read the link.
+    expect(both("https://linear.app/acme/issue/OPS-3", "p2")).toBe("p1");
   });
 
   it("reads a Jira link through the account connected to the site it names", () => {

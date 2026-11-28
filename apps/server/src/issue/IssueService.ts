@@ -36,6 +36,7 @@ import {
   type IssueSetStateInput,
   type IssueSummary,
   type IssueTemplateList,
+  type IssueTemplatesInput,
   type IssueTrackerSummary,
   type IssueTrackerProjectBinding,
   issueTrackerBindingScopes,
@@ -165,7 +166,7 @@ function asFirstReachingAccount(
   api: IssueTrackerApi,
   accountIds: ReadonlyArray<IssueTrackerAccountId | null>,
 ): IssueTrackerApi {
-  if (accountIds.length < 2) return asIssueTrackerAccount(api, accountIds[0] ?? null);
+  if (accountIds.length === 1) return asIssueTrackerAccount(api, accountIds[0] ?? null);
   // Untraced: each tracker call already opens its own span.
   const reaching = Effect.fnUntraced(function* <A>(effect: Effect.Effect<A, IssueTrackerError>) {
     let miss: IssueTrackerError | null = null;
@@ -279,7 +280,9 @@ export class IssueService extends Context.Service<
     readonly comments: (
       input: IssueCommentsPageInput,
     ) => Effect.Effect<IssueCommentsPage, IssueError>;
-    readonly templates: (input: IssueScopeRef) => Effect.Effect<IssueTemplateList, IssueError>;
+    readonly templates: (
+      input: IssueTemplatesInput,
+    ) => Effect.Effect<IssueTemplateList, IssueError>;
     readonly candidates: (
       input: IssueCandidatesInput,
     ) => Effect.Effect<IssueCandidates, IssueError>;
@@ -461,6 +464,8 @@ const make = Effect.gen(function* () {
   const requireStandaloneProject = (
     ref: IssueScopeRef,
     api: StandaloneIssueTrackerApi,
+    /** Accounts already known not to reach the reference. */
+    skip: ReadonlySet<IssueTrackerAccountId | null> = new Set(),
   ): Effect.Effect<SupportedProject & { readonly writable: boolean }, IssueError> => {
     const host = ref.host?.trim().toLowerCase();
     if (host !== undefined && host !== api.standalone.host) {
@@ -494,12 +499,15 @@ const make = Effect.gen(function* () {
           onSome: (project) =>
             Effect.succeed({
               project,
-              api: asFirstReachingAccount(api, [
-                null,
-                ...added
-                  .filter((account) => account.tracker === api.kind)
-                  .map((account) => account.accountId),
-              ]),
+              api: asFirstReachingAccount(
+                api,
+                [
+                  null,
+                  ...added
+                    .filter((account) => account.tracker === api.kind)
+                    .map((account) => account.accountId),
+                ].filter((accountId) => !skip.has(accountId)),
+              ),
               accountId: null,
               tracker: ref.tracker,
               host: api.standalone.host,
@@ -830,6 +838,7 @@ const make = Effect.gen(function* () {
                 cwd: project.project.workspaceRoot,
                 host: project.host,
                 scope: project.scope,
+                workspace: input.workspace,
               })
               .pipe(Effect.mapError(toIssueError("templates"))),
       ),
@@ -846,6 +855,7 @@ const make = Effect.gen(function* () {
                 cwd: project.project.workspaceRoot,
                 host: project.host,
                 scope: project.scope,
+                workspace: input.workspace,
                 ...(input.query?.trim() ? { query: input.query.trim() } : {}),
               })
               .pipe(Effect.mapError(toIssueError("candidates"))),
@@ -1126,9 +1136,11 @@ const make = Effect.gen(function* () {
         });
       }
       let failure: IssueError | null = null;
+      const tried = new Set<IssueTrackerAccountId | null>();
       for (const accountId of accounts) {
         const found = serve(lenders.filter((project) => project.accountId === accountId));
         if (found === null) continue;
+        tried.add(accountId);
         const read = yield* found.lender.api
           .getIssue({
             cwd: found.lender.project.workspaceRoot,
@@ -1151,10 +1163,15 @@ const make = Effect.gen(function* () {
           issue: toDetail(found.served, read.success),
         };
       }
-      if (callerUnbound) {
+      // Only a miss sends the link to the caller's other accounts: a refusal such as a rate limit
+      // is why it failed.
+      const missed =
+        failure === null || isNotFound(failure) || failure._tag === "IssueUnavailableError";
+      if (callerUnbound && missed) {
         const served = yield* requireStandaloneProject(
           { projectId: preferredProjectId, tracker, scope: link.scope },
           standalone.api,
+          tried,
         );
         const issue = yield* served.api
           .getIssue({

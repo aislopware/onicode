@@ -202,14 +202,18 @@ export interface IssueTrackerApi {
     },
   ) => Effect.Effect<void, IssueTrackerError>;
 
-  /** Only called when `capabilities.templates` is true. */
+  /**
+   * Only called when `capabilities.templates` is true. A `workspace` the credential is not in is
+   * refused as `not-found`, as `getIssue` does: its team of the same key is another team.
+   */
   readonly listTemplates?: (
-    input: IssueScopeTarget,
+    input: IssueScopeTarget & Pick<IssueTarget, "workspace">,
   ) => Effect.Effect<IssueTemplateList, IssueTrackerError>;
 
-  /** Only called when `capabilities.labels` or `capabilities.assignees` is true. */
+  /** Only called when `capabilities.labels` or `capabilities.assignees` is true; `workspace` as above. */
   readonly listCandidates?: (
-    input: IssueScopeTarget & { readonly query?: string | undefined },
+    input: IssueScopeTarget &
+      Pick<IssueTarget, "workspace"> & { readonly query?: string | undefined },
   ) => Effect.Effect<IssueCandidates, IssueTrackerError>;
 }
 

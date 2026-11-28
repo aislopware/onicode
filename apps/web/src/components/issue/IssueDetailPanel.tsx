@@ -355,6 +355,13 @@ function IssueAssigneePicker({
             )
           : gt("More people exist than are listed here.")
       }
+      truncatedAction={
+        searchFailed ? (
+          <Button size="xs" variant="ghost-muted" onClick={search.refresh}>
+            {gt("Retry")}
+          </Button>
+        ) : null
+      }
       candidateKey={(candidate) => candidate.id}
       onSelect={(candidate) =>
         setPicks({

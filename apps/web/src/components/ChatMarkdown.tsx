@@ -181,7 +181,6 @@ import {
 import { resolvePullRequestPreviewTarget } from "@onicode/client-runtime/change-request-links";
 import {
   createIssueLinkResolver,
-  isStandaloneIssueLink,
   mayContainStandaloneIssueLink,
 } from "@onicode/client-runtime/issue-links";
 import { sourceControlClients } from "@onicode/client-runtime/source-control-clients";
@@ -1462,9 +1461,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
           ? resolveIssueLink(
               href,
               // A thread's project never changes, so a read here cannot go stale.
-              threadRef && isStandaloneIssueLink(href)
-                ? readThreadShell(threadRef)?.projectId
-                : undefined,
+              threadRef ? readThreadShell(threadRef)?.projectId : undefined,
             )
           : null;
       const issuePreviewTarget =

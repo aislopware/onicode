@@ -332,6 +332,14 @@ const notFound = (operation: string) =>
 const failed = (operation: string, detail: string) =>
   new IssueTrackerError({ tracker: LinearApi.KIND, operation, reason: "failed", detail });
 
+const otherWorkspace = (operation: string) =>
+  new IssueTrackerError({
+    tracker: LinearApi.KIND,
+    operation,
+    reason: "not-found",
+    detail: "This issue link names another Linear workspace than the connected one.",
+  });
+
 function workspaceOfIssueUrl(url: string): string | undefined {
   try {
     return parseLinearIssueUrl(new URL(url))?.workspace;
@@ -364,13 +372,20 @@ export const make: Effect.Effect<StandaloneIssueTrackerApi, never, LinearApi.Lin
       ) {
         return;
       }
-      return yield* new IssueTrackerError({
-        tracker: LinearApi.KIND,
-        operation,
-        reason: "not-found",
-        detail: "This issue link names another Linear workspace than the connected one.",
-      });
+      return yield* otherWorkspace(operation);
     });
+
+    /** Team keys repeat across workspaces too: another workspace's team is not this one. */
+    const requireConnectedWorkspace = Effect.fn("LinearIssueTracker.requireConnectedWorkspace")(
+      function* (operation: string, workspace: string | undefined) {
+        if (workspace === undefined) return;
+        const wanted = workspace.toLowerCase();
+        const connected = yield* linear.workspace();
+        if ([connected.current, ...connected.previous].some((key) => key.toLowerCase() === wanted))
+          return;
+        return yield* otherWorkspace(operation);
+      },
+    );
 
     const requireIdentifier = (operation: string, key: string) => {
       const identifier = parseIdentifier(key);
@@ -665,7 +680,8 @@ export const make: Effect.Effect<StandaloneIssueTrackerApi, never, LinearApi.Lin
       }),
 
       listTemplates: (input) =>
-        requireTeam("listTemplates", input.scope).pipe(
+        requireConnectedWorkspace("listTemplates", input.workspace).pipe(
+          Effect.andThen(requireTeam("listTemplates", input.scope)),
           Effect.map((scope) => {
             const labelNames = new Map(
               [...scope.team.labels.nodes, ...scope.workspaceLabels].map((label) => [
@@ -686,7 +702,8 @@ export const make: Effect.Effect<StandaloneIssueTrackerApi, never, LinearApi.Lin
         ),
 
       listCandidates: (input) =>
-        requireTeam("listCandidates", input.scope).pipe(
+        requireConnectedWorkspace("listCandidates", input.workspace).pipe(
+          Effect.andThen(requireTeam("listCandidates", input.scope)),
           Effect.map((scope) => ({
             labels: [...scope.team.labels.nodes, ...scope.workspaceLabels].map((label) => ({
               name: label.name,

@@ -396,6 +396,12 @@ describe("JiraIssueTracker", () => {
           })
           .pipe(Effect.flip)).detail,
       ).toBe(elsewhere);
+      // Project keys repeat across sites too, so its people are not this project's.
+      expect(
+        (yield* api.listCandidates!({ ...target, workspace: "other-corp.atlassian.net" }).pipe(
+          Effect.flip,
+        )).reason,
+      ).toBe("not-found");
       expect(requests).toHaveLength(before);
       yield* api.setState({
         ...target,

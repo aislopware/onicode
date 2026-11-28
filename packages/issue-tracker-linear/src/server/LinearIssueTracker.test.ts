@@ -676,6 +676,14 @@ describe("LinearIssueTracker", () => {
         live.setState({ ...target, key: "ENG-1", state: "Done", workspace: "othercorp" }),
       );
       expect(elsewhere.reason).toBe("not-found");
+      // And a team's people: another workspace's team of the same key is another team.
+      const peopleElsewhere = yield* Effect.flip(
+        live.listCandidates({ ...target, workspace: "othercorp" }),
+      );
+      expect(peopleElsewhere.reason).toBe("not-found");
+      expect(yield* live.listCandidates({ ...target, workspace: "Acme" })).toMatchObject({
+        assignees: [],
+      });
       // A move names one of the team's own states; nothing is asked for as "open" or "closed".
       yield* live.setState({ ...target, key: "ENG-1", state: "Canceled" });
       yield* live.setState({ ...target, key: "ENG-1", state: "Todo" });

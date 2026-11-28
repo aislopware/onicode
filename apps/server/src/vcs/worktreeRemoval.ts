@@ -245,7 +245,7 @@ export const removeLinkedWorktree = Effect.fn("WorktreeRemoval.removeLinkedWorkt
       .pipe(Effect.mapError(failedToDelete));
   }
   yield* fileSystem.remove(gitFile).pipe(Effect.mapError(failedToDelete));
-  yield* fileSystem.remove(worktreePath, { recursive: true }).pipe(
+  yield* fileSystem.remove(worktreePath, { recursive: true, force: true }).pipe(
     Effect.tapError(() => fileSystem.writeFileString(gitFile, gitFileContents).pipe(Effect.ignore)),
     Effect.mapError(failedToDelete),
   );

@@ -270,9 +270,10 @@ export const make = Effect.gen(function* () {
         const resolvedSymlinks = yield* Effect.forEach(
           symlinkCandidates,
           (candidate) =>
-            resolveLinkTarget(candidate.fullPath, { link: true }).pipe(
-              Effect.map((target) => (target?.kind === "directory" ? candidate : null)),
-            ),
+            resolveLinkTarget(candidate.fullPath, {
+              link: true,
+              within: { path, root: parentPath },
+            }).pipe(Effect.map((target) => (target?.kind === "directory" ? candidate : null))),
           { concurrency: MAX_PENDING_LINK_TARGET_PROBES },
         );
         for (const candidate of resolvedSymlinks) {
@@ -375,9 +376,9 @@ export const make = Effect.gen(function* () {
       worktreeRoots,
       (relativeRoot) => {
         const candidate = `${relativeRoot}/${relativePath}`;
-        return resolveLinkTarget(path.join(realCwd, candidate)).pipe(
-          Effect.map((target) => (target?.kind === "file" ? candidate : null)),
-        );
+        return resolveLinkTarget(path.join(realCwd, candidate), {
+          within: { path, root: realCwd },
+        }).pipe(Effect.map((target) => (target?.kind === "file" ? candidate : null)));
       },
       { concurrency: MAX_PENDING_LINK_TARGET_PROBES },
     );
@@ -472,12 +473,9 @@ export const make = Effect.gen(function* () {
             children.filter((child) => child.name !== ".git" && child.isSymbolicLink()),
             (child) =>
               Effect.gen(function* () {
-                const reached = yield* Effect.promise(() =>
-                  networkPathReachedBy(path, child.name, { from: directory, allowedRoot: root }),
-                );
-                if (reached !== null) return undefined;
                 const linkTarget = yield* resolveLinkTarget(path.join(directory, child.name), {
                   link: true,
+                  within: { path, root },
                 });
                 const realPath = linkTarget?.realPath;
                 if (!linkTarget || realPath === undefined || !isListable(root, realPath)) {
