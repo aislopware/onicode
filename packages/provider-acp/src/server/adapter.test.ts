@@ -19,6 +19,12 @@ describe("acpUnnamedTextEndsInsideCode", () => {
     // Inside a fence, list and quote markers are code, not the end of the fence.
     expect(acpUnnamedTextEndsInsideCode("- Run:\n\n  ```md\n  - ```\n  still code\n")).toBe(true);
     expect(acpUnnamedTextEndsInsideCode("```md\n> ```\nstill code\n")).toBe(true);
+    // Containers nest, and a tab indents to the next multiple of 4 columns.
+    expect(acpUnnamedTextEndsInsideCode("- > ```\n  > code\n  >\n  > more\n")).toBe(true);
+    expect(
+      acpUnnamedTextEndsInsideCode("10. Outer\n    - Inner\n    ```js\n    code\n\n    more\n"),
+    ).toBe(true);
+    expect(acpUnnamedTextEndsInsideCode("- ```\n\tcode\n")).toBe(true);
   });
 
   it("treats closed code and plain text as safe to split", () => {
@@ -35,6 +41,8 @@ describe("acpUnnamedTextEndsInsideCode", () => {
     expect(acpUnnamedTextEndsInsideCode("Example:\n\n    ~~~\n    code\n\nDone.")).toBe(false);
     expect(acpUnnamedTextEndsInsideCode("> ~~~\n> ls\n\nOutside the quote.")).toBe(false);
     expect(acpUnnamedTextEndsInsideCode("- ~~~\n  ls\nOutside the list.")).toBe(false);
+    expect(acpUnnamedTextEndsInsideCode("- > ```\n  > code\n  > ```\n")).toBe(false);
+    expect(acpUnnamedTextEndsInsideCode("- ```\n\tcode\n\t```\n")).toBe(false);
     expect(acpUnnamedTextEndsInsideCode("I'll search **/*.ts for usages.")).toBe(false);
     expect(acpUnnamedTextEndsInsideCode("Checking")).toBe(false);
     expect(acpUnnamedTextEndsInsideCode("")).toBe(false);

@@ -7016,6 +7016,134 @@ describe("orchestration v2 provider switching", () => {
     }),
   );
 
+  it.live.each(["completion", "question"] as const)(
+    "hands a scheduled fresh session's history to the new provider for a %s queued after a /clear",
+    (notice) =>
+      Effect.gen(function* () {
+        const key = `side-session-queued-${notice}-after-clear`;
+        const cwd = yield* checkpointWorkspace(key);
+        const capturedTurns = yield* Ref.make<ReadonlyArray<CapturedTurn>>([]);
+        const started = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        const layerRegistry = ProviderAdapterRegistry.layerFromAdapters([
+          makeTestAdapter({
+            instanceId: CLAUDE_MODEL_SELECTION.instanceId,
+            driver: CLAUDE_DRIVER,
+            capabilities: ClaudeProviderCapabilitiesV2,
+            modelSelection: CLAUDE_MODEL_SELECTION,
+            responseByRunOrdinal: { 2: "Side session report" },
+            capturedTurns,
+            nativeThreadGeneration: yield* Ref.make(0),
+          }),
+          makeTestAdapter({
+            instanceId: CODEX_MODEL_SELECTION.instanceId,
+            driver: CODEX_DRIVER,
+            capabilities: CodexProviderCapabilitiesV2,
+            modelSelection: CODEX_MODEL_SELECTION,
+            responseByRunOrdinal: {},
+            capturedTurns,
+            nativeThreadGeneration: yield* Ref.make(0),
+            holdFirstTurn: started,
+            releaseFirstTurn: release,
+            holdRunOrdinal: 4,
+          }),
+        ]);
+        const threadId = ThreadId.make(`thread:${key}`);
+        yield* Effect.gen(function* () {
+          const orchestrator = yield* Orchestrator.OrchestratorV2;
+          const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+          const settle = Effect.gen(function* () {
+            yield* worker.drain();
+            yield* waitForIdle(threadId);
+            // A run awaiting its capture still holds the queue; the next message must start.
+            yield* worker.drain();
+          });
+          const send = (
+            name: string,
+            modelSelection: ModelSelection,
+            start: "message" | "scheduled" | "clear",
+          ) =>
+            orchestrator.dispatch({
+              type: "message.dispatch",
+              createdBy: "user",
+              creationSource: "web",
+              commandId: CommandId.make(`command:${key}:${name}`),
+              threadId,
+              messageId: MessageId.make(`message:${key}:${name}`),
+              text: name,
+              attachments: [],
+              modelSelection,
+              dispatchMode: { type: "queue_after_active" },
+              ...(start === "scheduled"
+                ? { scheduledTaskId: ScheduledTaskId.make(key), freshContext: true }
+                : start === "clear"
+                  ? { freshContext: true }
+                  : {}),
+            });
+          yield* orchestrator.dispatch({
+            type: "thread.create",
+            createdBy: "user",
+            creationSource: "web",
+            commandId: CommandId.make(`command:${key}:create`),
+            threadId,
+            projectId: ProjectId.make(`project:${key}`),
+            title: "Fresh-session schedule whose task reports after a /clear and a switch",
+            modelSelection: CLAUDE_MODEL_SELECTION,
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: cwd,
+          });
+          yield* send("user-first", CLAUDE_MODEL_SELECTION, "message");
+          yield* settle;
+          yield* send("side-run", CLAUDE_MODEL_SELECTION, "scheduled");
+          yield* settle;
+          const sideRun = (yield* orchestrator.getThreadProjection(threadId)).runs.at(-1)!;
+          const { taskId, dispatchWake, askQuestion } = yield* completeDelegatedTask(
+            threadId,
+            sideRun.id,
+            key,
+            notice === "question",
+          );
+          yield* send("user-clear", CLAUDE_MODEL_SELECTION, "clear");
+          yield* settle;
+          // The cleared conversation moves to Codex; the task reports while that turn runs.
+          yield* send("user-codex", CODEX_MODEL_SELECTION, "message");
+          yield* Deferred.await(started);
+          yield* notice === "completion" ? dispatchWake : askQuestion;
+          yield* Deferred.succeed(release, undefined);
+          yield* settle;
+          const turns = yield* Ref.get(capturedTurns);
+          const userTurn = turns.find((turn) => turn.text.endsWith("user-codex"))!;
+          const wake = turns.find((turn) => turn.text.includes(`Delegated task ${taskId}`))!;
+          assert.equal(wake.driver, CODEX_DRIVER);
+          assert.notEqual(wake.providerThreadId, userTurn.providerThreadId);
+          // The session's own Claude turn comes along; the main conversation's does not.
+          assert.include(wake.text, "Side session report");
+          assert.notInclude(wake.text, "user-first");
+          assert.notInclude(wake.text, "user-clear");
+        }).pipe(
+          Effect.provide(
+            ProviderReplayHarness.layerWithRegistry(
+              {
+                name: key,
+                runtimePolicyOverride: {
+                  cwd,
+                  approvalPolicy: "never",
+                  sandboxPolicy: {
+                    type: "readOnly",
+                    access: { type: "fullAccess" },
+                    networkAccess: false,
+                  },
+                },
+              },
+              layerRegistry,
+            ),
+          ),
+        );
+      }),
+  );
+
   it.live.each(["immediately", "behind the scheduled run"] as const)(
     "hands the user's conversation to the provider a scheduled fresh run used, %s",
     (variant) =>

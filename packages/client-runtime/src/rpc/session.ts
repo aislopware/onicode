@@ -254,53 +254,47 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
     // The protocol never reopens its socket, so every frame counted here came
     // from this session's one socket.
     let inboundFrames = 0;
-    // Requests that expect a reply, sent since the last frame came in. A stretch
-    // starts each time the count rises from zero, so a wait begun in a stretch
-    // that a failed send ended does not fire for the next one.
-    let unansweredRequests = 0;
-    let unansweredStretches = 0;
+    // Send times of requests that expect a reply and no frame has followed, oldest first.
+    const unansweredSince: Array<number> = [];
     const replyAwaited = Latch.makeUnsafe(false);
     const countingWebSocketConstructor: typeof webSocketConstructor = (url, options) => {
       const socket = webSocketConstructor(url, options);
       socket.addEventListener("message", () => {
         inboundFrames += 1;
-        if (unansweredRequests > 0) {
-          unansweredRequests = 0;
+        if (unansweredSince.length > 0) {
+          unansweredSince.length = 0;
           replyAwaited.closeUnsafe();
         }
       });
       return socket;
     };
     const sendAwaitingReply = <A, E, R>(send: Effect.Effect<A, E, R>) =>
-      Effect.suspend(() => {
+      Effect.flatMap(Clock.currentTimeMillis, (sentAt) => {
         const framesAtSend = inboundFrames;
-        if (unansweredRequests === 0) unansweredStretches += 1;
-        unansweredRequests += 1;
+        unansweredSince.push(sentAt);
         replyAwaited.openUnsafe();
         // A failed or interrupted send awaits nothing, unless a frame cleared it already.
         return Effect.onError(send, () =>
           Effect.sync(() => {
             if (inboundFrames !== framesAtSend) return;
-            unansweredRequests -= 1;
-            if (unansweredRequests === 0) replyAwaited.closeUnsafe();
+            unansweredSince.splice(unansweredSince.indexOf(sentAt), 1);
+            if (unansweredSince.length === 0) replyAwaited.closeUnsafe();
           }),
         );
       });
     // Sleeps only while a request awaits its reply, so an idle socket keeps no
-    // timer. Untraced: the supervisor restarts it on every signal it handles.
+    // timer, and always until the oldest one still waiting is `after` old.
+    // Untraced: the supervisor restarts it on every signal it handles.
     const requestUnanswered = Effect.fnUntraced(function* (after: Duration.Input) {
+      const afterMillis = Duration.toMillis(after);
       for (;;) {
         yield* replyAwaited.await;
         const framesBefore = inboundFrames;
-        const stretch = unansweredStretches;
-        yield* Effect.sleep(after);
-        if (
-          inboundFrames === framesBefore &&
-          unansweredStretches === stretch &&
-          unansweredRequests > 0
-        ) {
-          return;
-        }
+        const now = yield* Clock.currentTimeMillis;
+        const oldest = unansweredSince[0] ?? now;
+        const remaining = oldest + afterMillis - now;
+        if (remaining > 0) yield* Effect.sleep(Duration.millis(remaining));
+        if (inboundFrames === framesBefore && unansweredSince[0] === oldest) return;
       }
     });
     const socketUrl = new URL(connection.socketUrl);

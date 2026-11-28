@@ -20,6 +20,7 @@ import {
   BearerConnectionRegistration,
   type ConnectionCatalogEntry,
   type ConnectionCredential,
+  type ConnectionRoute,
   SshConnectionProfile,
   SshConnectionRegistration,
 } from "./catalog.ts";
@@ -34,7 +35,15 @@ import {
 import * as Persistence from "../platform/persistence.ts";
 import * as EnvironmentRegistry from "./registry.ts";
 import { orchestrationProtocolCompatibilityError } from "./compatibility.ts";
-import { connectionRoutes, credentialConnectionId, routeEntry, sshTargetKey } from "./routes.ts";
+import {
+  connectionRouteId,
+  connectionRoutes,
+  credentialConnectionId,
+  isLearned,
+  routeEntry,
+  routeHttpBaseUrl,
+  sshTargetKey,
+} from "./routes.ts";
 
 export interface PairingConnectionInput {
   readonly pairingUrl?: string;
@@ -248,25 +257,45 @@ const reachesEnvironment = Effect.fn("clientRuntime.connection.onboarding.reache
 );
 const isBearerProfile = Schema.is(BearerConnectionProfile);
 
+function sameHttpBaseUrl(route: ConnectionRoute, input: BearerConnectionUpdateInput): boolean {
+  try {
+    return normalizeHttpBaseUrl(input.httpBaseUrl) === routeHttpBaseUrl(route);
+  } catch {
+    return false;
+  }
+}
+
 const updateBearerConnection = Effect.fn(
   "clientRuntime.connection.onboarding.updateBearerConnection",
 )(function* (input: BearerConnectionUpdateInput) {
   const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
   const credentials = yield* ConnectionCredentialStore.ConnectionCredentialStore;
   const saved = (yield* SubscriptionRef.get(registry.entries)).get(input.environmentId);
-  const route =
-    saved === undefined
-      ? undefined
-      : connectionRoutes(saved).find(
-          (candidate) => candidate.target._tag === "BearerConnectionTarget",
+  const routes = saved === undefined ? [] : connectionRoutes(saved);
+  const shown = routes.find((candidate) => candidate.target._tag === "BearerConnectionTarget");
+  // A learned route borrows the credential of the route it was learned over and
+  // is replaced whenever the server reports again, so the edit lands on the owner.
+  const owner =
+    shown === undefined || !isLearned(shown)
+      ? shown
+      : routes.find(
+          (candidate) =>
+            connectionRouteId(candidate.target) ===
+            credentialConnectionId(connectionRouteId(shown.target)),
         );
-  const entry = saved === undefined || route === undefined ? saved : routeEntry(saved, route);
+  const entry = saved === undefined || owner === undefined ? saved : routeEntry(saved, owner);
   const credential =
     entry?.target._tag === "BearerConnectionTarget"
-      ? yield* credentials.get(credentialConnectionId(entry.target.connectionId))
+      ? yield* credentials.get(entry.target.connectionId)
       : Option.none();
+  // Leaving the shown learned address as it was renames without moving the owner.
+  const ownerUrl = owner === undefined ? null : routeHttpBaseUrl(owner);
+  const edit =
+    shown !== undefined && shown !== owner && ownerUrl !== null && sameHttpBaseUrl(shown, input)
+      ? { ...input, httpBaseUrl: ownerUrl }
+      : input;
   const registration = yield* prepareBearerConnectionUpdate({
-    input,
+    input: edit,
     entry: Option.fromUndefinedOr(entry),
     credential,
   });
@@ -333,8 +362,7 @@ export const prepareBearerConnectionUpdate = Effect.fn(
       label,
       httpBaseUrl,
       wsBaseUrl: deriveWsBaseUrl(httpBaseUrl),
-      // A learned route still borrows its credential; a moved address may sit off the tailnet.
-      ...(savedProfile.learned === undefined ? {} : { learned: savedProfile.learned }),
+      // A moved address may sit off the tailnet.
       ...(savedProfile.network === undefined || savedProfile.httpBaseUrl !== httpBaseUrl
         ? {}
         : { network: savedProfile.network }),

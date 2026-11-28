@@ -673,6 +673,25 @@ const make = Effect.gen(function* () {
   });
 
   /**
+   * Whether a cancel of `task` may drop what the parent queued on its thread there: not while
+   * another open task shares that thread, as its queued turn is the parent's too.
+   */
+  const dropsQueuedThere = (parentThreadId: ThreadId, task: OrchestrationV2Subagent) =>
+    threads.getThreadRecords(parentThreadId, ["subagents"]).pipe(
+      Effect.map(
+        ({ subagents }) =>
+          !subagents.some(
+            (other) =>
+              other.id !== task.id &&
+              other.result === null &&
+              other.remoteChild?.environmentId === task.remoteChild?.environmentId &&
+              other.remoteChild?.threadId === task.remoteChild?.threadId,
+          ),
+      ),
+      Effect.orElseSucceed(() => false),
+    );
+
+  /**
    * Stops the task's own thread there as its Stop button does: its running turn, queued
    * messages, pull request watches and delegated tasks. `key` names the stop (the follower
    * sends one, each cancel its own), and each is recorded there once however often it is sent.
@@ -914,7 +933,9 @@ const make = Effect.gen(function* () {
         const count = remote.stopCount === undefined ? "stop" : `stop-${remote.stopCount}`;
         // Named for its run too: a follow-up task shares the thread there and counts its own stops.
         const key = remote.runId === undefined ? count : `${count}:${remote.runId}`;
-        yield* stopThere(scope, remote, key, undefined, task.status === "cancelled").pipe(
+        const cancelQueued =
+          task.status === "cancelled" && (yield* dropsQueuedThere(parentThreadId, task));
+        yield* stopThere(scope, remote, key, undefined, cancelQueued).pipe(
           // Its thread there now runs above what this side may touch, say
           // because the parent here was lowered since; no retry changes that.
           Effect.catchIf(isModeRefusal, (error) =>
@@ -1088,9 +1109,10 @@ const make = Effect.gen(function* () {
       const key = `cancel:${encodeURIComponent(scope.requestNamespace)}:${
         input.clientRequestId ?? (yield* random.uuidV4())
       }`;
+      const cancelQueued = yield* dropsQueuedThere(task.threadId, task);
       if (task.result !== null) {
         // Best effort: the result stands whether or not the stop gets there.
-        yield* stopThere(there, remote, key, reason, true).pipe(
+        yield* stopThere(there, remote, key, reason, cancelQueued).pipe(
           Effect.andThen(
             complete(
               task.threadId,
@@ -1113,7 +1135,7 @@ const make = Effect.gen(function* () {
       }
       // A link that is gone or a machine that is down still cancels the task
       // here; its follower keeps trying to stop it there, across restarts.
-      const unstopped = yield* stopThere(there, remote, key, reason, true).pipe(
+      const unstopped = yield* stopThere(there, remote, key, reason, cancelQueued).pipe(
         Effect.as(undefined),
         Effect.catch((error) => Effect.succeed(error.message)),
       );

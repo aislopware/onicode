@@ -2761,6 +2761,41 @@ it.effect("stopping the parent stops follow-up work on a task there that has its
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );
 
+it.effect("a cancel holds what the parent queued on a thread there another task shares", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const thread = yield* makeBoxThread;
+      const b = yield* serveBox(thread);
+      const offers = yield* SubscriptionRef.make<
+        ReadonlyArray<ProviderContinuationRequests.ProviderContinuationRequest>
+      >([]);
+      const database = yield* SqlitePersistence.layerMemory.pipe(Layer.build);
+      const a = yield* makeLaptop(database, offers);
+      yield* a.remote.start();
+      yield* linkTo(a.links, b, "full-access");
+      yield* seedParent(a);
+      const delegated = yield* delegateToBox(a);
+      yield* Ref.set(thread.reply, "All green.");
+      yield* Ref.set(thread.status, "completed");
+      yield* Deferred.succeed(thread.finished, undefined);
+      yield* taskResult(a, delegated.taskId);
+      // A follow-up there is a task of its own, whose turn the parent queued there.
+      const sent = yield* a.call("oni_thread_send", {
+        environmentId: box.environmentId,
+        threadId: delegated.remoteChild.threadId,
+        message: "Now run the slow suite too.",
+      });
+      expect(sent.isError, JSON.stringify(sent.content)).toBe(false);
+      yield* Ref.set(thread.queuedByParent, true);
+
+      const cancel = yield* a.call("task_cancel", { taskId: delegated.taskId });
+      expect(cancel.structuredContent).toEqual({ taskId: delegated.taskId, status: "completed" });
+      expect(yield* Ref.get(thread.stops)).toEqual(["thread.stop", "delegated-tasks"]);
+      expect(yield* Ref.get(thread.queuedByParent)).toBe(true);
+    }),
+  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+);
+
 it.effect.each([
   { order: "sent", queuedFirst: false },
   // Concurrent sends may be recorded here in the opposite order they run there.

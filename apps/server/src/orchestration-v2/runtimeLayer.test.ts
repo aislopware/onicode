@@ -14805,7 +14805,8 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
           creationSource: "web" as const,
         });
         if (scheduled) {
-          // The conversation's session reports last, as a process exit or recovery would.
+          // A run on the conversation would leave the limited run unresumable, so the stored
+          // active thread names the conversation's directly; the resume keeps to its own session.
           const current = yield* orchestrator.getThreadProjection(threadId);
           const conversationThread = current.providerThreads.find(
             (candidate) => candidate.id !== source.providerThreadId,
@@ -14813,21 +14814,17 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
           yield* events.write({
             events: [
               {
-                id: EventId.make(`manual-resume:conversation-updated:${reason}`),
-                type: "provider-thread.updated",
+                id: EventId.make(`manual-resume:conversation-active:${reason}`),
+                type: "thread.metadata-updated",
                 threadId,
-                driver: conversationThread.driver,
-                providerInstanceId: conversationThread.providerInstanceId,
                 occurredAt: now,
-                payload: { ...conversationThread, updatedAt: now },
+                payload: { ...current.thread, activeProviderThreadId: conversationThread.id },
               },
             ],
           });
-          // The report starts no run, so the session's thread stays active; a plain message
-          // would still continue the conversation's thread, so only the resumed run keeps it here.
           assert.equal(
             (yield* orchestrator.getThreadProjection(threadId)).thread.activeProviderThreadId,
-            source.providerThreadId,
+            conversationThread.id,
           );
         }
         yield* orchestrator.dispatch(resume("first"));

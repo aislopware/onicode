@@ -9,12 +9,23 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import * as RpcHttp from "../rpc/http.ts";
 import * as ClientCapabilities from "../platform/capabilities.ts";
 import * as Persistence from "../platform/persistence.ts";
+import {
+  type ConnectionCatalogDocument,
+  EMPTY_CONNECTION_CATALOG_DOCUMENT,
+  registerConnectionInCatalog,
+  removeCatalogValue,
+  removeConnectionFromCatalog,
+  replaceCatalogValue,
+  setConnectionEnabledInCatalog,
+  setRoutesInCatalog,
+} from "../platform/storageDocument.ts";
 import { fetchRemoteSessionState } from "../authorization/remote.ts";
 import {
   BearerConnectionCredential,
@@ -156,35 +167,126 @@ function layerPairingHttp(
   return RpcHttp.layerRemoteHttpClient(fetchFn);
 }
 
+// The document the platforms persist, so dropped routes take their records with them.
+function layerCatalogStores(catalog: Ref.Ref<ConnectionCatalogDocument>) {
+  const update = (change: (document: ConnectionCatalogDocument) => ConnectionCatalogDocument) =>
+    Ref.update(catalog, change);
+  const read = Ref.get(catalog);
+  return Layer.mergeAll(
+    Layer.succeed(
+      Persistence.ConnectionTargetStore,
+      Persistence.ConnectionTargetStore.of({
+        list: read.pipe(Effect.map((document) => document.targets)),
+        listDisabled: read.pipe(Effect.map((document) => document.disabledEnvironmentIds)),
+      }),
+    ),
+    Layer.succeed(
+      Persistence.ConnectionRegistrationStore,
+      Persistence.ConnectionRegistrationStore.of({
+        register: (registration, routes) =>
+          update((document) => registerConnectionInCatalog(document, registration, routes)),
+        setRoutes: (environmentId, routes) =>
+          update((document) => setRoutesInCatalog(document, environmentId, routes)),
+        remove: (environmentId) =>
+          update((document) => removeConnectionFromCatalog(document, environmentId)),
+        setEnabled: (environmentId, enabled) =>
+          update((document) => setConnectionEnabledInCatalog(document, environmentId, enabled)),
+      }),
+    ),
+    Layer.succeed(
+      ConnectionProfileStore.ConnectionProfileStore,
+      ConnectionProfileStore.make({
+        get: (connectionId) =>
+          read.pipe(
+            Effect.map((document) =>
+              Option.fromUndefinedOr(
+                document.profiles.find((profile) => profile.connectionId === connectionId),
+              ),
+            ),
+          ),
+        put: (profile) =>
+          update((document) => ({
+            ...document,
+            profiles: replaceCatalogValue(
+              document.profiles,
+              (value) => value.connectionId,
+              profile,
+            ),
+          })),
+        remove: (connectionId) =>
+          update((document) => ({
+            ...document,
+            profiles: removeCatalogValue(
+              document.profiles,
+              (value) => value.connectionId,
+              connectionId,
+            ),
+          })),
+      }),
+    ),
+    Layer.succeed(
+      ConnectionCredentialStore.ConnectionCredentialStore,
+      ConnectionCredentialStore.make({
+        get: (connectionId) =>
+          read.pipe(
+            Effect.map((document) =>
+              Option.fromUndefinedOr(
+                document.credentials.find((stored) => stored.connectionId === connectionId)
+                  ?.credential,
+              ),
+            ),
+          ),
+        put: (connectionId, credential) =>
+          update((document) => ({
+            ...document,
+            credentials: replaceCatalogValue(document.credentials, (value) => value.connectionId, {
+              connectionId,
+              credential,
+            }),
+          })),
+        remove: (connectionId) =>
+          update((document) => ({
+            ...document,
+            credentials: removeCatalogValue(
+              document.credentials,
+              (value) => value.connectionId,
+              connectionId,
+            ),
+          })),
+      }),
+    ),
+  );
+}
+
 function layerPairingOnboarding(
   options?: Parameters<typeof layerPairingHttp>[1],
   calls: Array<{ readonly url: string; readonly init: RequestInit }> = [],
   provision?: ClientCapabilities.SshEnvironmentGateway["Service"]["provision"],
-  savedCredential?: BearerConnectionCredential,
+  catalog?: Ref.Ref<ConnectionCatalogDocument>,
 ) {
+  const stores =
+    catalog === undefined
+      ? Layer.mergeAll(
+          Layer.mock(Persistence.ConnectionTargetStore)({
+            list: Effect.succeed([]),
+            listDisabled: Effect.succeed([]),
+          }),
+          Layer.mock(Persistence.ConnectionRegistrationStore)({
+            register: () => Effect.void,
+            setEnabled: () => Effect.void,
+          }),
+          Layer.mock(ConnectionProfileStore.ConnectionProfileStore)({}),
+          Layer.mock(ConnectionCredentialStore.ConnectionCredentialStore)({
+            get: () => Effect.succeedNone,
+            put: () => Effect.void,
+          }),
+        )
+      : layerCatalogStores(catalog);
   const dependencies = Layer.mergeAll(
     layerClientPresentation,
     layerPairingHttp(calls, options),
-    Layer.mock(Persistence.ConnectionTargetStore)({
-      list: Effect.succeed([]),
-      listDisabled: Effect.succeed([]),
-    }),
-    Layer.mock(Persistence.ConnectionRegistrationStore)({
-      register: () => Effect.void,
-      setEnabled: () => Effect.void,
-    }),
+    stores,
     Layer.mock(Persistence.EnvironmentCacheStore)({}),
-    Layer.mock(ConnectionProfileStore.ConnectionProfileStore)({}),
-    Layer.mock(ConnectionCredentialStore.ConnectionCredentialStore)({
-      // Saved only for the paired route; learned routes borrow it.
-      get: (connectionId) =>
-        Effect.succeed(
-          connectionId === PAIRED_PROFILE.connectionId
-            ? Option.fromUndefinedOr(savedCredential)
-            : Option.none(),
-        ),
-      put: () => Effect.void,
-    }),
     Layer.mock(ClientCapabilities.SshEnvironmentGateway)(provision ? { provision } : {}),
     Layer.succeed(
       Connectivity.Connectivity,
@@ -209,6 +311,27 @@ const PAIRED_PROFILE = new BearerConnectionProfile({
   label: "Paired environment",
   httpBaseUrl: "https://remote.example.test/",
   wsBaseUrl: "wss://remote.example.test/",
+});
+const PAIRED_TARGET = new BearerConnectionTarget({
+  environmentId: PAIRED_ENVIRONMENT_ID,
+  connectionId: PAIRED_PROFILE.connectionId,
+  label: "Old label",
+});
+const PAIRED_CREDENTIAL = new BearerConnectionCredential({ token: "paired-token" });
+const LEARNED_ORIGIN = "http://100.100.1.2:3773";
+const LEARNED_PROFILE = new BearerConnectionProfile({
+  connectionId: `learned:${PAIRED_ENVIRONMENT_ID}:${LEARNED_ORIGIN}@${PAIRED_PROFILE.connectionId}`,
+  environmentId: PAIRED_ENVIRONMENT_ID,
+  label: "Old label",
+  httpBaseUrl: `${LEARNED_ORIGIN}/`,
+  wsBaseUrl: "ws://100.100.1.2:3773/",
+  learned: true,
+  network: "tailscale",
+});
+const LEARNED_TARGET = new BearerConnectionTarget({
+  environmentId: PAIRED_ENVIRONMENT_ID,
+  connectionId: LEARNED_PROFILE.connectionId,
+  label: "Old label",
 });
 const UNSUPPORTED_ERROR = new ConnectionBlockedError({
   reason: "unsupported",
@@ -398,8 +521,9 @@ describe("connection onboarding", () => {
     }).pipe(Effect.provide(layerPairingOnboarding({ exchangeGate })));
   });
 
-  it.effect("an edited label replaces the saved one", () =>
-    Effect.gen(function* () {
+  it.effect("an edited label replaces the saved one", () => {
+    const catalog = Ref.makeUnsafe(EMPTY_CONNECTION_CATALOG_DOCUMENT);
+    return Effect.gen(function* () {
       const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
       const onboarding = yield* Onboarding.ConnectionOnboarding;
       yield* registerSwitchedOffEnvironment;
@@ -414,72 +538,69 @@ describe("connection onboarding", () => {
       expect(entry === undefined ? [] : connectionRoutes(entry).map((r) => r.target.label)).toEqual(
         ["Studio"],
       );
-    }).pipe(
-      Effect.provide(
-        layerPairingOnboarding(
-          undefined,
-          [],
-          undefined,
-          new BearerConnectionCredential({ token: "old-token" }),
-        ),
-      ),
-    ),
-  );
+    }).pipe(Effect.provide(layerPairingOnboarding(undefined, [], undefined, catalog)));
+  });
 
-  it.effect("renames through a learned route that borrows the paired credential", () =>
-    Effect.gen(function* () {
+  // A learned tailnet route ranks ahead of the paired one, so the edit form shows its address.
+  it.effect.each([
+    {
+      edit: "a rename",
+      httpBaseUrl: LEARNED_PROFILE.httpBaseUrl,
+      pairedUrl: PAIRED_PROFILE.httpBaseUrl,
+    },
+    {
+      edit: "an edit to the paired address",
+      httpBaseUrl: PAIRED_PROFILE.httpBaseUrl,
+      pairedUrl: PAIRED_PROFILE.httpBaseUrl,
+    },
+    {
+      edit: "an edit to another host",
+      httpBaseUrl: "https://studio.example.test",
+      pairedUrl: "https://studio.example.test/",
+    },
+  ])("$edit through a learned route keeps the paired route and its one credential", (testCase) => {
+    const catalog = Ref.makeUnsafe<ConnectionCatalogDocument>({
+      ...EMPTY_CONNECTION_CATALOG_DOCUMENT,
+      targets: [LEARNED_TARGET, PAIRED_TARGET],
+      profiles: [
+        LEARNED_PROFILE,
+        new BearerConnectionProfile({ ...PAIRED_PROFILE, label: "Old label" }),
+      ],
+      credentials: [{ connectionId: PAIRED_PROFILE.connectionId, credential: PAIRED_CREDENTIAL }],
+    });
+    return Effect.gen(function* () {
       const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
       const onboarding = yield* Onboarding.ConnectionOnboarding;
-      yield* registerSwitchedOffEnvironment;
-      const learnedOrigin = "http://100.100.1.2:3773";
-      const learnedId = `learned:${PAIRED_ENVIRONMENT_ID}:${learnedOrigin}@${PAIRED_PROFILE.connectionId}`;
-      const learnedProfile = new BearerConnectionProfile({
-        connectionId: learnedId,
-        environmentId: PAIRED_ENVIRONMENT_ID,
-        label: "Old label",
-        httpBaseUrl: `${learnedOrigin}/`,
-        wsBaseUrl: "ws://100.100.1.2:3773/",
-        learned: true,
-        network: "tailscale",
-      });
-      yield* registry.register(
-        new BearerConnectionRegistration({
-          target: new BearerConnectionTarget({
-            environmentId: PAIRED_ENVIRONMENT_ID,
-            connectionId: learnedId,
-            label: "Old label",
-          }),
-          profile: learnedProfile,
-          credential: new BearerConnectionCredential({ token: "old-token" }),
-        }),
-      );
 
-      // The tailnet route comes first, so it is the one the edit form shows.
       yield* onboarding.updateBearer({
         environmentId: PAIRED_ENVIRONMENT_ID,
         label: "Studio",
-        httpBaseUrl: learnedProfile.httpBaseUrl,
+        httpBaseUrl: testCase.httpBaseUrl,
       });
 
       const entry = (yield* SubscriptionRef.get(registry.entries)).get(PAIRED_ENVIRONMENT_ID);
       const routes = entry === undefined ? [] : connectionRoutes(entry);
-      expect(routes.map((route) => [route.target.label, routeHttpBaseUrl(route)])).toEqual([
-        ["Studio", learnedProfile.httpBaseUrl],
-        ["Studio", PAIRED_PROFILE.httpBaseUrl],
+      expect(
+        routes.map((route) => [
+          route.target.label,
+          routeHttpBaseUrl(route),
+          isLearned(route),
+          route.target._tag === "BearerConnectionTarget" ? route.target.connectionId : null,
+        ]),
+      ).toEqual([
+        ["Studio", LEARNED_PROFILE.httpBaseUrl, true, LEARNED_PROFILE.connectionId],
+        ["Studio", testCase.pairedUrl, false, PAIRED_PROFILE.connectionId],
       ]);
-      expect(routes.map(isLearned)).toEqual([true, false]);
       expect(Option.getOrUndefined(routes[0]!.profile)).toMatchObject({ network: "tailscale" });
-    }).pipe(
-      Effect.provide(
-        layerPairingOnboarding(
-          undefined,
-          [],
-          undefined,
-          new BearerConnectionCredential({ token: "old-token" }),
-        ),
-      ),
-    ),
-  );
+      const document = yield* Ref.get(catalog);
+      expect(document.credentials).toEqual([
+        { connectionId: PAIRED_PROFILE.connectionId, credential: PAIRED_CREDENTIAL },
+      ]);
+      expect(
+        document.profiles.find((profile) => profile.connectionId === PAIRED_PROFILE.connectionId),
+      ).toMatchObject({ httpBaseUrl: testCase.pairedUrl });
+    }).pipe(Effect.provide(layerPairingOnboarding(undefined, [], undefined, catalog)));
+  });
 
   it.effect("adds a new address as a route when pairing targets that environment", () =>
     Effect.gen(function* () {

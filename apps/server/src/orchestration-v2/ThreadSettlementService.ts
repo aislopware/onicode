@@ -3,6 +3,7 @@ import {
   isPullRequestWatchTask,
   turnItemUpdateCanEndBackgroundWork,
 } from "@onicode/shared/orchestrationV2PendingBackgroundWork";
+import { normalizeProjectPathForComparison } from "@onicode/shared/path";
 import { resolveProjectScripts, settleProjectScript } from "@onicode/shared/projectScripts";
 import { resolveProjectSettings } from "@onicode/shared/projectSettings";
 import { visibleThreadPullRequests } from "@onicode/shared/threadPullRequests";
@@ -11,7 +12,6 @@ import {
   isDelegatedAppThread,
   isOrchestrationV2WorkActive,
   type ThreadId,
-  type OrchestrationV2AppThread,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2ThreadShell,
 } from "@onicode/contracts";
@@ -850,10 +850,16 @@ export const make = Effect.gen(function* () {
   const settleScriptRuns = yield* FiberSet.make<void>();
   const settleScriptSlot = yield* Semaphore.make(1);
   const pendingSettleScripts = yield* PendingSettleScripts.PendingSettleScripts;
+  // Settled threads whose script waits for the threads still working in their worktree.
+  const waitingScripts = new Map<
+    ThreadId,
+    { readonly worktreePath: string; readonly blockers: ReadonlySet<ThreadId> }
+  >();
 
   // Skip settle scripts in shared checkouts where other threads may still work.
   const runSettleScript = Effect.fn("ThreadSettlementServiceV2.runSettleScript")(
     function* (threadId: ThreadId) {
+      waitingScripts.delete(threadId);
       // Read the thread once the slot is held: it may have re-engaged, moved or gone while queued.
       const queued = yield* projections.getThread(threadId);
       if (queued.deletedAt !== null || queued.settledOverride !== "settled") return;
@@ -866,12 +872,22 @@ export const make = Effect.gen(function* () {
         projections
           .getShellSnapshot({ worktreePath, location: "active" })
           .pipe(Effect.map(({ threads }) => threads.filter((thread) => thread.id !== threadId)));
-      const stillShared = (threads: ReadonlyArray<{ readonly settledOverride: unknown }>) =>
-        threads.some((thread) => thread.settledOverride !== "settled");
+      const waitsForSharing = (
+        threads: ReadonlyArray<{ readonly id: ThreadId; readonly settledOverride: unknown }>,
+      ) => {
+        const blockers = threads.filter((thread) => thread.settledOverride !== "settled");
+        if (blockers.length === 0) return false;
+        waitingScripts.set(threadId, {
+          worktreePath,
+          blockers: new Set(blockers.map((thread) => thread.id)),
+        });
+        return true;
+      };
       let sharing = yield* readSharing();
-      if (stillShared(sharing)) return;
+      if (waitsForSharing(sharing)) return;
       const coverSharing = () => {
         for (const thread of sharing) {
+          waitingScripts.delete(thread.id);
           const sharedSettledAtMs = toMillis(thread.settledAt);
           if (sharedSettledAtMs !== null) settleActionRunAt.set(thread.id, sharedSettledAtMs);
         }
@@ -898,7 +914,7 @@ export const make = Effect.gen(function* () {
       const settledAtMs = toMillis(thread.settledAt);
       if (settledAtMs === null || settleActionRunAt.get(threadId) === settledAtMs) return;
       sharing = yield* readSharing();
-      if (stillShared(sharing)) return;
+      if (waitsForSharing(sharing)) return;
       const run = yield* projectScripts.runForThread({
         threadId,
         projectId: thread.projectId,
@@ -939,32 +955,21 @@ export const make = Effect.gen(function* () {
       ),
   );
 
-  // A thread archived or deleted unsettled no longer holds its worktree: one settled thread
-  // still there runs the script it skipped while waiting for this one.
-  const releaseSharedWorktree = Effect.fn("ThreadSettlementServiceV2.releaseSharedWorktree")(
-    function* (left: OrchestrationV2AppThread) {
-      if (left.worktreePath === null || left.settledOverride === "settled") return;
-      const { threads } = yield* projections.getShellSnapshot({
-        worktreePath: left.worktreePath,
-        location: "active",
-      });
-      const waiting = threads.find(
-        (thread) => thread.id !== left.id && thread.settledOverride === "settled",
+  // A thread that leaves its worktree (archived, deleted or moved) may be what a settled
+  // thread's script waits for, or that waiting thread itself; `stillAt` is where it works now.
+  const releaseWaitingScripts = Effect.fn("ThreadSettlementServiceV2.releaseWaitingScripts")(
+    function* (left: ThreadId, stillAt: string | null) {
+      const released = [...waitingScripts].filter(
+        ([waiter, waiting]) =>
+          (waiter === left || waiting.blockers.has(left)) &&
+          (stillAt === null ||
+            normalizeProjectPathForComparison(stillAt) !==
+              normalizeProjectPathForComparison(waiting.worktreePath)),
       );
-      if (waiting === undefined) return;
-      yield* runSettleScript(waiting.id).pipe(FiberSet.run(settleScriptRuns));
+      for (const [waiter] of released) {
+        yield* runSettleScript(waiter).pipe(FiberSet.run(settleScriptRuns));
+      }
     },
-    (effect, left) =>
-      effect.pipe(
-        Effect.catchCauseIf(
-          (cause) => !Cause.hasInterruptsOnly(cause),
-          (cause) =>
-            Effect.logWarning("releasing a shared worktree failed", {
-              threadId: left.id,
-              cause: Cause.pretty(cause),
-            }),
-        ),
-      ),
   );
 
   const cleanUpSettledThread = Effect.fn("ThreadSettlementServiceV2.cleanUpSettledThread")(
@@ -994,7 +999,9 @@ export const make = Effect.gen(function* () {
         return cleanUpSettledThread(event.threadId).pipe(Effect.andThen(enqueueFullSweep()));
       case "thread.archived":
       case "thread.deleted":
-        return releaseSharedWorktree(event.payload).pipe(Effect.andThen(enqueueFullSweep()));
+        return releaseWaitingScripts(event.threadId, null).pipe(Effect.andThen(enqueueFullSweep()));
+      case "thread.metadata-updated":
+        return releaseWaitingScripts(event.threadId, event.payload.worktreePath);
       case "thread.pull-request-link-updated":
       case "thread.pull-request-synced":
       case "thread.issue-synced":

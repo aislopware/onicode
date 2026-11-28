@@ -3558,7 +3558,16 @@ const make = Effect.gen(function* () {
           yield* stopWithinLimit;
           const cancelled = yield* cancelOrphan;
           yield* disposeCompletionDelivery;
-          return { taskId: input.taskId, status: cancelled ? "cancelled" : "cancel_requested" };
+          if (cancelled) return { taskId: input.taskId, status: "cancelled" };
+          // Nothing is left running to end the task, so report where it stands now.
+          const after = yield* readTask(scope, input.taskId);
+          if (isTerminalTaskStatus(after.status)) {
+            return { taskId: input.taskId, status: after.status };
+          }
+          return yield* failure(
+            "task_not_cancellable",
+            `Delegated task ${input.taskId} has no interruptible child run; its queued follow-ups were cancelled.`,
+          );
         }
         if (yield* cancelOrphan) return { taskId: input.taskId, status: "cancelled" };
         return yield* failure(
@@ -4185,7 +4194,13 @@ const make = Effect.gen(function* () {
               .map((message) => message.id),
           );
           for (const run of records.runs) {
-            if (run.status !== "queued" || !callerMessageIds.has(run.userMessageId)) continue;
+            // Another task's queued turn stays: only that task's cancel takes it.
+            if (
+              run.status !== "queued" ||
+              run.delegatedTaskId !== undefined ||
+              !callerMessageIds.has(run.userMessageId)
+            )
+              continue;
             yield* threadManagement
               .dispatch({
                 type: "queued-run.cancel",

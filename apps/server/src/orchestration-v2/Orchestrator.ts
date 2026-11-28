@@ -3428,7 +3428,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           ? []
           : conversationHandoffRuns.filter(
               (run) =>
-                run.ordinal >= contextBoundary &&
+                run.ordinal >= (sessionStart ?? contextBoundary) &&
                 run.ordinal > (targetLastCompletedRun?.ordinal ?? 0) &&
                 run.ordinal <= latestHandoffRun.ordinal,
             );

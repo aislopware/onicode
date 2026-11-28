@@ -506,15 +506,45 @@ describe("RpcSessionFactory", () => {
       yield* TestClock.adjust("2 seconds");
       expect(unanswered.pollUnsafe()).toBeUndefined();
 
-      // The wait the failed send began must not count toward the next request.
+      // The wait the failed send began neither counts toward the next request
+      // nor holds it back: that one is reported a second after it went out.
       yield* failedSend;
       yield* TestClock.adjust("990 millis");
       yield* Effect.forkChild(session.probe);
       yield* awaitRequest(socket, 1);
       yield* TestClock.adjust("10 millis");
       expect(unanswered.pollUnsafe()).toBeUndefined();
+      yield* TestClock.adjust("989 millis");
+      expect(unanswered.pollUnsafe()).toBeUndefined();
 
-      yield* TestClock.adjust("1 second");
+      yield* TestClock.adjust("1 millis");
+      expect(unanswered.pollUnsafe()?._tag).toBe("Success");
+    }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("a request outlived by one sent before it gets its own full wait", () =>
+    Effect.gen(function* () {
+      const { factory, sockets } = yield* makeFactory();
+      const session = yield* factory.connect(PREPARED);
+      const socket = yield* awaitSocket(sockets);
+      const unanswered = yield* Effect.forkChild(session.requestUnanswered("1 second"));
+      // Sends wait for the socket to open, so the first can end while the second waits too.
+      const first = yield* session.client[WS_METHODS.serverProbe]({}).pipe(
+        Effect.forkChild({ startImmediately: true }),
+      );
+      yield* TestClock.adjust("500 millis");
+      yield* session.client[WS_METHODS.serverProbe]({}).pipe(
+        Effect.forkChild({ startImmediately: true }),
+      );
+      // Not awaited: the interrupt it sends also waits for the socket.
+      yield* Effect.forkChild(Fiber.interrupt(first));
+      yield* TestClock.adjust("100 millis");
+      socket.open();
+
+      yield* TestClock.adjust("899 millis");
+      expect(unanswered.pollUnsafe()).toBeUndefined();
+
+      yield* TestClock.adjust("1 millis");
       expect(unanswered.pollUnsafe()?._tag).toBe("Success");
     }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),
   );

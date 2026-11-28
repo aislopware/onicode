@@ -1938,58 +1938,68 @@ function selectAutoApprovedPermissionOption(
   );
 }
 
-const ACP_FENCE_OPEN_RE = /^[ ]{0,3}(`{3,}|~{3,})(.*)$/;
-const ACP_FENCE_CLOSE_RE = /^[ ]{0,3}(`{3,}|~{3,})[ \t]*$/;
-const ACP_QUOTE_MARKER_RE = /^[ ]{0,3}>[ ]?/;
-const ACP_LIST_MARKER_RE = /^[ ]{0,3}(?:[-*+]|\d{1,9}[.)])(?:[ ]+|$)/;
+const ACP_FENCE_OPEN_RE = /^(`{3,}|~{3,})(.*)$/;
+const ACP_FENCE_CLOSE_RE = /^(`{3,}|~{3,})[ ]*$/;
+const ACP_LIST_MARKER_RE = /^(?:[-*+]|\d{1,9}[.)])(?= |$)/;
 
-function stripAcpQuoteMarkers(line: string, limit: number) {
-  let rest = line;
-  let depth = 0;
-  for (let marker = ACP_QUOTE_MARKER_RE.exec(rest); marker !== null && depth < limit;) {
-    rest = rest.slice(marker[0].length);
-    depth += 1;
-    marker = ACP_QUOTE_MARKER_RE.exec(rest);
-  }
-  return { depth, rest };
+// CommonMark tab stops are 4 columns; only indentation reads them, so expanding all is safe.
+function expandAcpTabs(line: string) {
+  if (!line.includes("\t")) return line;
+  let expanded = "";
+  for (const ch of line) expanded += ch === "\t" ? " ".repeat(4 - (expanded.length % 4)) : ch;
+  return expanded;
 }
 
-const leadingSpaceCount = (text: string) => text.length - text.trimStart().length;
+const spacesFrom = (line: string, column: number) => {
+  let end = column;
+  while (line[end] === " ") end += 1;
+  return end - column;
+};
+
+type AcpMarkdownContainer =
+  | { readonly kind: "quote" }
+  | { readonly kind: "list"; readonly contentColumn: number };
 
 /**
  * Returns true when unnamed streaming ACP text ends inside an unclosed code fence or inline code
  * span, where splitting the message before a new tool call would break the Markdown.
  */
 export function acpUnnamedTextEndsInsideCode(text: string): boolean {
-  // A fence in a quote or list item ends with it; `indent` is where that item's content starts.
+  // Open block quotes and list items, outermost first. A fence ends with the one it opened in.
+  let containers: Array<AcpMarkdownContainer> = [];
   let fence: {
-    readonly char: "`" | "~";
+    readonly char: string;
     readonly length: number;
-    readonly quoteDepth: number;
-    readonly indent: number;
+    readonly depth: number;
   } | null = null;
-  let quoteDepth = 0;
-  // Content column of the list item the previous line belongs to.
-  let listIndent: number | null = null;
   let inlineCodeTicks = 0;
 
   const lines = text.split(/\r?\n/);
   // A trailing newline starts a line that has not streamed yet, so it ends no container.
   if (lines.at(-1) === "") lines.pop();
-  for (const line of lines) {
+  for (const rawLine of lines) {
+    const line = expandAcpTabs(rawLine);
+    let column = 0;
+    let matched = 0;
+    for (const container of containers) {
+      const indent = spacesFrom(line, column);
+      if (container.kind === "quote") {
+        if (indent > 3 || line[column + indent] !== ">") break;
+        column += indent + 1;
+        if (line[column] === " ") column += 1;
+      } else {
+        // A blank line continues the item; text must reach its content column.
+        if (column + indent < line.length && column + indent < container.contentColumn) break;
+        column = Math.min(container.contentColumn, line.length);
+      }
+      matched += 1;
+    }
+
     if (fence !== null) {
-      const quoted = stripAcpQuoteMarkers(line, fence.quoteDepth);
-      const indent = leadingSpaceCount(quoted.rest);
-      const blank = quoted.rest.trim().length === 0;
-      if (quoted.depth === fence.quoteDepth && (blank || indent >= fence.indent)) {
-        const closeMatch = ACP_FENCE_CLOSE_RE.exec(
-          quoted.rest.slice(Math.min(indent, fence.indent)),
-        );
-        if (
-          closeMatch !== null &&
-          closeMatch[1]![0] === fence.char &&
-          closeMatch[1]!.length >= fence.length
-        ) {
+      if (matched >= fence.depth) {
+        const indent = spacesFrom(line, column);
+        const close = indent > 3 ? null : ACP_FENCE_CLOSE_RE.exec(line.slice(column + indent));
+        if (close !== null && close[1]![0] === fence.char && close[1]!.length >= fence.length) {
           fence = null;
           inlineCodeTicks = 0;
         }
@@ -1998,34 +2008,36 @@ export function acpUnnamedTextEndsInsideCode(text: string): boolean {
       fence = null;
     }
 
-    const quoted = stripAcpQuoteMarkers(line, Number.POSITIVE_INFINITY);
-    if (quoted.depth !== quoteDepth) listIndent = null;
-    quoteDepth = quoted.depth;
-    const rest = quoted.rest;
-    if (rest.trim().length === 0) {
+    containers = containers.slice(0, matched);
+    while (true) {
+      const start = column + spacesFrom(line, column);
+      if (start - column > 3) break;
+      if (line[start] === ">") {
+        containers.push({ kind: "quote" });
+        column = start + 1;
+        if (line[column] === " ") column += 1;
+        continue;
+      }
+      const marker = ACP_LIST_MARKER_RE.exec(line.slice(start));
+      if (marker === null) break;
+      const markerEnd = start + marker[0].length;
+      const gap = spacesFrom(line, markerEnd);
+      // An empty item, or one whose text is indented code, starts one column after its marker.
+      const contentColumn = markerEnd + (gap > 4 || markerEnd + gap === line.length ? 1 : gap);
+      containers.push({ kind: "list", contentColumn });
+      column = Math.min(contentColumn, line.length);
+    }
+
+    const indent = spacesFrom(line, column);
+    if (column + indent === line.length) {
       inlineCodeTicks = 0;
       continue;
     }
-    if (listIndent !== null && leadingSpaceCount(rest) < listIndent) listIndent = null;
-    let column: number = listIndent ?? 0;
-    for (
-      let marker = ACP_LIST_MARKER_RE.exec(rest.slice(column));
-      marker !== null;
-      marker = ACP_LIST_MARKER_RE.exec(rest.slice(column))
-    ) {
-      column += marker[0].length;
-      listIndent = column;
-    }
-
-    const openMatch = ACP_FENCE_OPEN_RE.exec(rest.slice(column));
-    if (openMatch !== null) {
-      const marker = openMatch[1]!;
-      const info = openMatch[2] ?? "";
-      if (marker[0] === "~" || !info.includes("`")) {
-        fence = { char: marker[0] as "`" | "~", length: marker.length, quoteDepth, indent: column };
-        inlineCodeTicks = 0;
-        continue;
-      }
+    const open = indent > 3 ? null : ACP_FENCE_OPEN_RE.exec(line.slice(column + indent));
+    if (open !== null && (open[1]![0] === "~" || !open[2]!.includes("`"))) {
+      fence = { char: open[1]![0]!, length: open[1]!.length, depth: containers.length };
+      inlineCodeTicks = 0;
+      continue;
     }
 
     for (let index = 0; index < line.length;) {
@@ -2160,6 +2172,8 @@ interface ActiveAcpTurn {
   interrupted: boolean;
   finalized: boolean;
   finalizedStatus: "completed" | "interrupted" | "failed" | "cancelled" | null;
+  /** Agent exits counted at the finalization claim; a later one means it exited mid-finish. */
+  finalizedAtRuntimeExit: number | null;
   promptSettled: boolean;
   promptSettledStatus: "completed" | "interrupted" | "failed" | "cancelled" | null;
   workAccepted: boolean;
@@ -3584,7 +3598,13 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
         let reportStartupPhase: (phase: string | undefined) => Effect.Effect<void> = () =>
           Effect.void;
         let reportRuntimeGone: Effect.Effect<void> = Effect.void;
+        // Counts restart requirements, so a relaunch that started clears only its own.
+        let runtimeRestartEpoch = 0;
+        let relaunchRestartEpoch: number | undefined;
+        // Counts agent exits, so a turn finished outside the callback permit sees one it missed.
+        let runtimeExits = 0;
         const requireRuntimeRestart = Effect.gen(function* () {
+          runtimeRestartEpoch += 1;
           yield* Ref.set(runtimeRestartRequired, true);
           yield* reportRuntimeGone;
         });
@@ -3649,10 +3669,93 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               yield* emitTool(owner, { ...tool, status: "failed" }, "failed");
           }
         });
+        // Ends the work an exited agent left behind, reporting it lost when no turn would.
+        const settleWorkLostWithAgent = Effect.fnUntraced(function* (reportLost: boolean) {
+          const carryover = yield* Ref.getAndSet(carryoverSubagents, null);
+          if (carryover !== null) {
+            yield* Effect.forEach(carryover.subagents, stopSubagentTranscriptFollower, {
+              discard: true,
+            });
+          }
+          const detached = yield* Ref.getAndSet(detachedBackgroundCommands, new Map());
+          const runningIds = yield* Ref.getAndSet(runningBackgroundTaskIds, new Set());
+          const lostTasks: Array<OrchestrationV2PendingBackgroundTask> = [];
+          const seenTaskIds = new Set<string>();
+          const seenTools = new Set<string>();
+          const addLostTask = (task: OrchestrationV2PendingBackgroundTask) => {
+            if (task.taskId.length === 0 || seenTaskIds.has(task.taskId)) return;
+            seenTaskIds.add(task.taskId);
+            lostTasks.push(task);
+          };
+          if (carryover !== null) {
+            for (const subagent of carryover.subagents) {
+              if (acpSubagentStatusBlocksTurnSettlement(subagent.task.status)) {
+                const taskId = (
+                  subagent.task.nativeTaskRef?.nativeId ?? String(subagent.task.id)
+                ).trim();
+                const description = (subagent.task.title ?? subagent.task.prompt ?? "").trim();
+                addLostTask({
+                  taskId,
+                  kind: "subagent",
+                  ...(description.length > 0 ? { description } : {}),
+                  providerInstanceId: subagent.task.providerInstanceId,
+                  childThreadId: subagent.childThreadId,
+                });
+              }
+            }
+            yield* terminalizeCarryoverSubagents(carryover, "failed");
+          }
+          for (const [taskId, owner] of detached) {
+            const toolCallId = owner.toolCallIdsByBackgroundTaskId.get(taskId);
+            const tool = toolCallId === undefined ? undefined : owner.tools.get(toolCallId);
+            if (tool === undefined) continue;
+            const status = toolStatus(tool.status);
+            if (status !== "pending" && status !== "running" && status !== "waiting") {
+              continue;
+            }
+            const toolKey = `${owner.providerTurnId}:${tool.toolCallId}`;
+            if (!seenTools.has(toolKey)) {
+              seenTools.add(toolKey);
+              yield* emitTool(owner, { ...tool, status: "failed" }, "failed");
+            }
+            const description = (tool.command ?? tool.title ?? "").trim();
+            addLostTask({
+              taskId: taskId.trim(),
+              kind: "command",
+              ...(description.length > 0 ? { description } : {}),
+              ...(tool.command ? { command: tool.command } : {}),
+            });
+          }
+          for (const taskId of runningIds) {
+            addLostTask({ taskId: taskId.trim(), kind: "background_task" });
+          }
+          yield* Ref.set(wakeBuffer, []);
+          yield* Ref.set(wakeReports, noWakeReports);
+          yield* Ref.set(continuationRequested, false);
+          yield* Ref.set(midTurnUnreportedCompletedTaskIds, new Set());
+          yield* Ref.set(handledBackgroundTaskIdsInActiveTurn, new Set());
+          if (reportLost && lostTasks.length > 0) {
+            const sessionId = yield* Ref.get(activeSessionId);
+            const providerThread =
+              sessionId === null
+                ? undefined
+                : (yield* Ref.get(providerThreadByNativeSessionId)).get(sessionId);
+            if (providerThread !== undefined) {
+              yield* emitProviderEvent({
+                type: "background_work.lost",
+                driver,
+                threadId: input.threadId,
+                providerThreadId: providerThread.id,
+                tasks: lostTasks,
+              });
+            }
+          }
+        });
         const handleRuntimeTerminationAtGeneration = (runtimeGeneration: number) =>
           runRuntimeCallbackAtGeneration(
             runtimeGeneration,
             Effect.gen(function* () {
+              runtimeExits += 1;
               yield* requireRuntimeRestart;
               yield* failReleasedTools();
               if (!followsAgentWorkState) {
@@ -3716,89 +3819,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                     makeProviderFailure({ class: "transport_error" }),
                   );
                 }
-                const carryover = yield* Ref.getAndSet(carryoverSubagents, null);
-                if (carryover !== null) {
-                  yield* Effect.forEach(carryover.subagents, stopSubagentTranscriptFollower, {
-                    discard: true,
-                  });
-                }
-                const detached = yield* Ref.getAndSet(detachedBackgroundCommands, new Map());
-                const runningIds = yield* Ref.getAndSet(runningBackgroundTaskIds, new Set());
-                const lostTasks: Array<OrchestrationV2PendingBackgroundTask> = [];
-                const seenTaskIds = new Set<string>();
-                const seenTools = new Set<string>();
-                const addLostTask = (task: OrchestrationV2PendingBackgroundTask) => {
-                  if (task.taskId.length === 0 || seenTaskIds.has(task.taskId)) return;
-                  seenTaskIds.add(task.taskId);
-                  lostTasks.push(task);
-                };
-                if (carryover !== null) {
-                  for (const subagent of carryover.subagents) {
-                    if (acpSubagentStatusBlocksTurnSettlement(subagent.task.status)) {
-                      const taskId = (
-                        subagent.task.nativeTaskRef?.nativeId ?? String(subagent.task.id)
-                      ).trim();
-                      const description = (
-                        subagent.task.title ??
-                        subagent.task.prompt ??
-                        ""
-                      ).trim();
-                      addLostTask({
-                        taskId,
-                        kind: "subagent",
-                        ...(description.length > 0 ? { description } : {}),
-                        providerInstanceId: subagent.task.providerInstanceId,
-                        childThreadId: subagent.childThreadId,
-                      });
-                    }
-                  }
-                  yield* terminalizeCarryoverSubagents(carryover, "failed");
-                }
-                for (const [taskId, owner] of detached) {
-                  const toolCallId = owner.toolCallIdsByBackgroundTaskId.get(taskId);
-                  const tool = toolCallId === undefined ? undefined : owner.tools.get(toolCallId);
-                  if (tool === undefined) continue;
-                  const status = toolStatus(tool.status);
-                  if (status !== "pending" && status !== "running" && status !== "waiting") {
-                    continue;
-                  }
-                  const toolKey = `${owner.providerTurnId}:${tool.toolCallId}`;
-                  if (!seenTools.has(toolKey)) {
-                    seenTools.add(toolKey);
-                    yield* emitTool(owner, { ...tool, status: "failed" }, "failed");
-                  }
-                  const description = (tool.command ?? tool.title ?? "").trim();
-                  addLostTask({
-                    taskId: taskId.trim(),
-                    kind: "command",
-                    ...(description.length > 0 ? { description } : {}),
-                    ...(tool.command ? { command: tool.command } : {}),
-                  });
-                }
-                for (const taskId of runningIds) {
-                  addLostTask({ taskId: taskId.trim(), kind: "background_task" });
-                }
-                yield* Ref.set(wakeBuffer, []);
-                yield* Ref.set(wakeReports, noWakeReports);
-                yield* Ref.set(continuationRequested, false);
-                yield* Ref.set(midTurnUnreportedCompletedTaskIds, new Set());
-                yield* Ref.set(handledBackgroundTaskIdsInActiveTurn, new Set());
-                if (exitedBetweenTurns && lostTasks.length > 0) {
-                  const sessionId = yield* Ref.get(activeSessionId);
-                  const providerThread =
-                    sessionId === null
-                      ? undefined
-                      : (yield* Ref.get(providerThreadByNativeSessionId)).get(sessionId);
-                  if (providerThread !== undefined) {
-                    yield* emitProviderEvent({
-                      type: "background_work.lost",
-                      driver,
-                      threadId: input.threadId,
-                      providerThreadId: providerThread.id,
-                      tasks: lostTasks,
-                    });
-                  }
-                }
+                yield* settleWorkLostWithAgent(exitedBetweenTurns);
                 return;
               }
               agentWork = { sessionUpdate: "state_update", state: "idle", stopReason: "error" };
@@ -9802,7 +9823,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             // A runtime spawned for this session opens it at startup instead of an empty session/new.
             if (spawnedForSession) {
               const started = yield* runtime.start();
-              yield* Ref.set(runtimeRestartRequired, false);
+              yield* runtimeStartedAfterRestart;
               return started;
             }
             if (canLoadSession || canResumeSession) yield* reportStartupPhase("resume");
@@ -10466,6 +10487,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           if (context.finalized) return undefined;
           const settledStatus = context.interrupted ? "interrupted" : status;
           context.finalizedStatus = settledStatus;
+          context.finalizedAtRuntimeExit = runtimeExits;
           context.finalized = true;
           return settledStatus;
         };
@@ -10648,26 +10670,41 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           const subagentsRequiringCarryover = [...context.subagents.values()].filter(
             acpSubagentHasPendingBackgroundWork,
           );
-          if (subagentsRequiringCarryover.length > 0 && !directStopQuarantine) {
-            const sessionId = yield* Ref.get(activeSessionId);
-            if (sessionId !== null) {
-              yield* Ref.set(carryoverSubagents, {
-                sessionId,
-                projectsLateTerminals: settledStatus === "completed" || childTurnsContinue,
-                subagents: subagentsRequiringCarryover,
-              });
-            }
+          // A Stop can quarantine the run while a timer finishes it; what it cleared stays gone.
+          const stoppedMidFinish = !directStopQuarantine && (yield* Ref.get(stoppedRunQuarantine));
+          const handsOffWork = !directStopQuarantine && !stoppedMidFinish;
+          const carryoverSessionId = yield* Ref.get(activeSessionId);
+          const carryover: AcpCarryoverSubagents | null =
+            subagentsRequiringCarryover.length > 0 && carryoverSessionId !== null
+              ? {
+                  sessionId: carryoverSessionId,
+                  projectsLateTerminals: settledStatus === "completed" || childTurnsContinue,
+                  subagents: subagentsRequiringCarryover,
+                }
+              : null;
+          if (handsOffWork) {
+            if (carryover !== null) yield* Ref.set(carryoverSubagents, carryover);
+          } else if (stoppedMidFinish && carryover !== null) {
+            yield* Effect.forEach(carryover.subagents, stopSubagentTranscriptFollower, {
+              discard: true,
+            });
+            yield* terminalizeCarryoverSubagents(carryover);
           }
           yield* Ref.set(activeTurn, null);
           yield* reportRuntimeGone;
-          if ((settledStatus === "completed" || childTurnsContinue) && !directStopQuarantine) {
+          if ((settledStatus === "completed" || childTurnsContinue) && handsOffWork) {
             yield* detachBackgroundCommands(context);
+          }
+          // An agent that exited mid-finish found this turn finalized and nothing handed off yet.
+          if (context.finalizedAtRuntimeExit !== runtimeExits) {
+            yield* failReleasedTools();
+            yield* settleWorkLostWithAgent(true);
           }
           steerInjections.clear();
           if (
             postSettleContinuationEnabled &&
             settledStatus === "completed" &&
-            !directStopQuarantine &&
+            handsOffWork &&
             (yield* Ref.get(runningBackgroundTaskIds)).size === 0 &&
             (yield* Ref.get(wakeBuffer)).some((notification) =>
               acpPostSettleContinuationOfferEvidence(notification, flavor),
@@ -10744,7 +10781,8 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             let quietSince = yield* Clock.currentTimeMillis;
             // Armed even without a command yet: a pending reply can still start one.
             yield* Effect.gen(function* () {
-              while (!context.finalized) {
+              // An interrupted turn is finalized by its interrupt, after the Stop quarantines it.
+              while (!context.finalized && !context.interrupted) {
                 quietSince = Math.max(quietSince, context.lastProgressAt);
                 const now = yield* Clock.currentTimeMillis;
                 const remaining = quietSince + timeoutMillis - now;
@@ -10757,6 +10795,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                 // outside it, so updates in the finalization window still land.
                 const outcome = yield* runtimeCallbackPermit.withPermit(
                   Effect.sync(() => {
+                    if (context.interrupted) return { _tag: "ended", claimed: undefined } as const;
                     if (context.lastProgressAt > quietSince) return { _tag: "progressed" } as const;
                     if (
                       !context.finalized &&
@@ -11107,6 +11146,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           yield* restartAcpRuntime(threadId, resumeSessionId).pipe(
             Effect.onError(() => reportStartupPhase(undefined)),
           );
+          relaunchRestartEpoch = runtimeRestartEpoch;
           // Still required until the new agent starts (`runtimeStartedAfterRestart`): start is
           // lazy, so a failure or stop before then must relaunch again.
           yield* Ref.set(activeSessionId, null);
@@ -11123,8 +11163,15 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           yield* Ref.set(snapshot, emptySnapshotState());
           return true;
         });
+        // An agent that answered and then exited has required another restart since its launch.
+        // The epoch is read inside the update, so that exit cannot land between check and clear.
         const runtimeStartedAfterRestart = Effect.gen(function* () {
-          yield* Ref.set(runtimeRestartRequired, false);
+          const launchedAt = relaunchRestartEpoch;
+          relaunchRestartEpoch = undefined;
+          yield* Ref.update(
+            runtimeRestartRequired,
+            (required) => required && launchedAt !== runtimeRestartEpoch,
+          );
           yield* reportStartupPhase(undefined);
         });
 
@@ -11702,6 +11749,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               interrupted: false,
               finalized: false,
               finalizedStatus: null,
+              finalizedAtRuntimeExit: null,
               promptSettled: false,
               promptSettledStatus: null,
               workAccepted: false,
