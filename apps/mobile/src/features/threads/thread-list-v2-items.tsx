@@ -101,6 +101,16 @@ interface StatusLabel {
   readonly className: string;
   readonly iconTintClassName: string;
 }
+// A module function, not an inline find callback, so rows allocate no closure per render.
+function providerIconUrlFor(
+  providers: ReadonlyArray<ThreadListProvider> | undefined,
+  instanceId: string,
+): string | undefined {
+  for (const provider of providers ?? [])
+    if (provider.instanceId === instanceId) return provider.iconUrl;
+  return undefined;
+}
+
 const STATUS_LABEL_BY_STATUS: Partial<Record<ThreadListV2Status, StatusLabel>> = {
   approval: {
     label: msg("Approval", { $context: "thread status, waiting for approval" }),
@@ -823,11 +833,10 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const dormant = useSwipeRowDormant(props.activationKey);
 
   const selectThread = () => onSelectThread(thread);
-  const providerIconUrl = props.providers?.find(
-    (candidate) =>
-      candidate.instanceId ===
-      (thread.runtime?.providerInstanceId ?? thread.modelSelection.instanceId),
-  )?.iconUrl;
+  const providerIconUrl = providerIconUrlFor(
+    props.providers,
+    thread.runtime?.providerInstanceId ?? thread.modelSelection.instanceId,
+  );
 
   const providerInstance = props.providerInstance;
   const providerNameLabel = providerInstance
