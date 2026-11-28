@@ -480,6 +480,7 @@ const makeProviderAdapter = Effect.fnUntraced(function* (
     readonly normalizeThreadLoadModelSelection?: (selection: ModelSelection) => ModelSelection;
     readonly capabilities?: OrchestrationV2ProviderCapabilities;
     readonly extensionStatuses?: OrchestrationV2ProviderSession["extensionStatuses"];
+    readonly startupPhase?: string;
     readonly mcpConfigs?: Ref.Ref<
       ReadonlyArray<McpProviderSession.McpProviderSessionConfig | undefined>
     >;
@@ -553,6 +554,7 @@ const makeProviderAdapter = Effect.fnUntraced(function* (
           ...(options.extensionStatuses === undefined
             ? {}
             : { extensionStatuses: options.extensionStatuses }),
+          ...(options.startupPhase === undefined ? {} : { startupPhase: options.startupPhase }),
         };
         yield* Ref.update(state, (current) => {
           const eventQueues = new Map(current.eventQueues);
@@ -665,6 +667,7 @@ function layerTest(input: {
   readonly normalizeThreadLoadModelSelection?: (selection: ModelSelection) => ModelSelection;
   readonly capabilities?: OrchestrationV2ProviderCapabilities;
   readonly extensionStatuses?: OrchestrationV2ProviderSession["extensionStatuses"];
+  readonly startupPhase?: string;
   readonly mcpConfigs?: Ref.Ref<
     ReadonlyArray<McpProviderSession.McpProviderSessionConfig | undefined>
   >;
@@ -727,6 +730,7 @@ function layerTest(input: {
       ...(input.extensionStatuses === undefined
         ? {}
         : { extensionStatuses: input.extensionStatuses }),
+      ...(input.startupPhase === undefined ? {} : { startupPhase: input.startupPhase }),
       ...(input.mcpConfigs === undefined ? {} : { mcpConfigs: input.mcpConfigs }),
       ...(input.beforeOpen === undefined ? {} : { beforeOpen: input.beforeOpen }),
       ...(input.hasPendingBackgroundWork === undefined
@@ -4691,6 +4695,8 @@ it.effect("ProviderSessionManagerV2 releases sessions when provider event stream
         projection.providerSessions.at(-1)?.lastError,
         "The provider event stream closed unexpectedly. Retry the turn; if it keeps failing, check the provider and server logs.",
       );
+      // The step the session was starting on ended with it.
+      assert.isUndefined(projection.providerSessions.at(-1)?.startupPhase);
     });
 
     yield* effect.pipe(
@@ -4699,6 +4705,7 @@ it.effect("ProviderSessionManagerV2 releases sessions when provider event stream
           state,
           idleTimeoutMs: 1000,
           failEventStream: true,
+          startupPhase: "launch",
           releaseRecorded,
         }),
       ),
