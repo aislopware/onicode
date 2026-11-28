@@ -1,4 +1,4 @@
-import type { ScopedThreadRef } from "@onicode/contracts";
+import type { EnvironmentId, ScopedThreadRef } from "@onicode/contracts";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -64,16 +64,10 @@ export function useOpenLink(threadRef: ScopedThreadRef | null | undefined): (
     };
     if (target === "app" && targetThreadRef && (await openInApp(targetThreadRef))) return;
     try {
-      if (targetThreadRef && targetThreadRef.environmentId !== threadRef?.environmentId) {
-        // The forward belongs to this hook's environment; another one gets only a direct address.
-        const externalUrl = resolveExternalLinkUrl(targetThreadRef.environmentId, url);
-        if (externalUrl === null) throw new LoopbackUnreachableError({ message: url });
-        const api = readLocalApi();
-        if (!api) throw new Error(m(msg("Link opening is unavailable.")));
-        await api.shell.openExternal(externalUrl);
-        return;
-      }
-      await openInSystemBrowser(url);
+      // The forward belongs to this hook's environment; another one gets only a direct address.
+      await (targetThreadRef && targetThreadRef.environmentId !== threadRef?.environmentId
+        ? openAtDirectAddress(targetThreadRef.environmentId, url)
+        : openInSystemBrowser(url));
     } catch (error) {
       // Without a forward or a direct address, the in-app preview still reaches the server.
       if (
@@ -86,6 +80,14 @@ export function useOpenLink(threadRef: ScopedThreadRef | null | undefined): (
       }
     }
   };
+}
+
+async function openAtDirectAddress(environmentId: EnvironmentId, url: string): Promise<void> {
+  const externalUrl = resolveExternalLinkUrl(environmentId, url);
+  if (externalUrl === null) throw new LoopbackUnreachableError({ message: url });
+  const api = readLocalApi();
+  if (!api) throw new Error(m(msg("Link opening is unavailable.")));
+  await api.shell.openExternal(externalUrl);
 }
 
 /** Click handlers for an anchor that keeps its href for copying but opens as Settings → "Open links in" says. */
