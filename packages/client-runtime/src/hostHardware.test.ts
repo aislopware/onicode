@@ -1,13 +1,7 @@
-import { EnvironmentId, type HostHardwareSnapshot } from "@onicode/contracts";
+import type { HostHardwareSnapshot } from "@onicode/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import {
-  describeHostHardware,
-  findHostHardwareAlert,
-  formatCapacity,
-  hostHardwareAlertDescription,
-  hostHardwareAlertTitle,
-} from "./hostHardware.ts";
+import { describeHostHardware, formatCapacity } from "./hostHardware.ts";
 
 const GiB = 1024 ** 3;
 
@@ -69,7 +63,6 @@ describe("describeHostHardware", () => {
           value: "23% in use",
           fraction: 0.234,
           level: "normal",
-          warning: null,
         },
         {
           kind: "memory",
@@ -79,7 +72,6 @@ describe("describeHostHardware", () => {
           value: "16.8 GB available",
           fraction: expect.closeTo(0.65, 9),
           level: "normal",
-          warning: null,
         },
         {
           kind: "storage",
@@ -89,7 +81,6 @@ describe("describeHostHardware", () => {
           value: "175 GB available",
           fraction: expect.closeTo(1 - 175 / 926, 9),
           level: "normal",
-          warning: null,
         },
       ],
     });
@@ -154,17 +145,12 @@ describe("describeHostHardware", () => {
       },
     ]);
   });
-});
 
-describe("findHostHardwareAlert", () => {
-  const studio = EnvironmentId.make("studio");
-  const runner = EnvironmentId.make("runner");
   const withFree = (memoryGiB: number, storageGiB: number): HostHardwareSnapshot => ({
     ...mac,
     volumes: [{ ...mac.volumes[0]!, availableBytes: storageGiB * GiB }],
     usage: { ...mac.usage, availableMemoryBytes: memoryGiB * GiB },
   });
-
   const withLoad = (
     hardware: HostHardwareSnapshot,
     oneMinute: number,
@@ -174,110 +160,21 @@ describe("findHostHardwareAlert", () => {
     usage: { ...hardware.usage, loadAverage: { oneMinute, fiveMinutes } },
   });
 
+  // Levels of the processor, memory, and storage gauges, in that order.
   it.each([
-    // 94% of a 926 GB disk is used, yet 60 GB is plenty; a saturated processor is no warning.
-    [withFree(16, 60), null],
-    [{ ...withFree(16, 60), usage: { ...mac.usage, cpuUtilization: 1 } }, null],
+    // 94% of a 926 GB disk is used, yet 60 GB is plenty; a saturated processor is not strained.
     [
-      withFree(16, 24),
-      {
-        level: "high",
-        kind: "storage",
-        title: "Low storage on Studio",
-        description: "24 GB available of 926 GB storage",
-      },
+      { ...withFree(16, 60), usage: { ...mac.usage, cpuUtilization: 1 } },
+      ["normal", "normal", "normal"],
     ],
-    [
-      withFree(3.5, 60),
-      {
-        level: "high",
-        kind: "memory",
-        title: "Low memory on Studio",
-        description: "3.5 GB available of 48 GB memory",
-      },
-    ],
-    [
-      withFree(1.5, 24),
-      {
-        level: "critical",
-        kind: "memory",
-        title: "Memory almost full and low storage on Studio",
-        description: "1.5 GB available of 48 GB memory\n24 GB available of 926 GB storage",
-      },
-    ],
-    // A minute-long burst over 14 CPUs is no warning; the 5-minute average has to agree.
-    [withLoad(withFree(16, 60), 60, 18), null],
-    [
-      withLoad(withFree(16, 60), 46.28, 37.06),
-      {
-        level: "high",
-        kind: "cpu",
-        title: "Heavy processor load on Studio",
-        description: "Load 37 on 14 CPUs",
-      },
-    ],
-    [
-      withLoad(withFree(3.5, 60), 45, 50),
-      {
-        level: "critical",
-        kind: "cpu",
-        title: "Low memory and processor overloaded on Studio",
-        description: "Load 45 on 14 CPUs\n3.5 GB available of 48 GB memory",
-      },
-    ],
-    [
-      withLoad(withFree(1.5, 9), 46.28, 37.06),
-      {
-        level: "critical",
-        kind: "memory",
-        title: "Memory almost full, storage almost full, and heavy processor load on Studio",
-        description:
-          "1.5 GB available of 48 GB memory\n9 GB available of 926 GB storage\nLoad 37 on 14 CPUs",
-      },
-    ],
-  ])(
-    "warns when memory or storage runs out or work queues for the processor (%#)",
-    (hardware, expected) => {
-      const alert = findHostHardwareAlert([{ environmentId: studio, label: "Studio", hardware }]);
-      expect(
-        alert && {
-          level: alert.level,
-          kind: alert.kind,
-          title: hostHardwareAlertTitle(alert),
-          description: hostHardwareAlertDescription(alert),
-        },
-      ).toEqual(expected);
-    },
-  );
-
-  it("leads to the machine in the worst state and keys on what is low", () => {
-    const machines = [
-      { environmentId: studio, label: "Studio", hardware: withFree(16, 24) },
-      { environmentId: runner, label: "Runner", hardware: withFree(16, 9) },
-    ];
-
-    const alert = findHostHardwareAlert(machines);
-    expect(
-      alert && {
-        key: alert.key,
-        level: alert.level,
-        kind: alert.kind,
-        title: hostHardwareAlertTitle(alert),
-        description: hostHardwareAlertDescription(alert),
-        environmentId: alert.environmentId,
-      },
-    ).toEqual({
-      key: "runner:storage:/:critical|studio:storage:/:high",
-      level: "critical",
-      kind: "storage",
-      title: "Storage almost full on 2 machines",
-      description:
-        "Runner: 9 GB available of 926 GB storage\nStudio: 24 GB available of 926 GB storage",
-      environmentId: runner,
-    });
-    // Free space moving within the same level is the same warning.
-    expect(
-      findHostHardwareAlert([machines[0]!, { ...machines[1]!, hardware: withFree(16, 7) }])?.key,
-    ).toBe("runner:storage:/:critical|studio:storage:/:high");
+    [withFree(16, 24), ["normal", "normal", "high"]],
+    [withFree(3.5, 60), ["normal", "high", "normal"]],
+    [withFree(1.5, 9), ["normal", "critical", "critical"]],
+    // A minute-long burst over 14 CPUs is not strained; the 5-minute average has to agree.
+    [withLoad(withFree(16, 60), 60, 18), ["normal", "normal", "normal"]],
+    [withLoad(withFree(16, 60), 46.28, 37.06), ["high", "normal", "normal"]],
+    [withLoad(withFree(16, 60), 45, 50), ["critical", "normal", "normal"]],
+  ])("levels each gauge by how close it is to running out (%#)", (hardware, levels) => {
+    expect(describeHostHardware(hardware).gauges.map((gauge) => gauge.level)).toEqual(levels);
   });
 });

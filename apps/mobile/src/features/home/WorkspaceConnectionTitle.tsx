@@ -1,21 +1,17 @@
 import { useAtomValue } from "@effect/atom-react";
-import {
-  hostHardwareAlertTitle,
-  type HostHardwareAlert,
-} from "@onicode/client-runtime/hostHardware";
 import type { EnvironmentId } from "@onicode/contracts";
 import { createContext, use, useEffect, useState, type ReactNode } from "react";
 import { Animated, Platform, Pressable, View } from "react-native";
-import { useGT, useLocale, useMessages } from "gt-react-native";
+import { useGT, useMessages } from "gt-react-native";
 
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { useAndroidControlSizing } from "../../components/ui/useAndroidControlSizing";
-import { cn } from "../../lib/cn";
 import { useDeadlinePassed } from "../../lib/clock";
-import { hostHardwareAlertAtom } from "../../state/presentation";
+import { type HostPressureAlert, hostPressureAlertAtom } from "../../state/presentation";
 import { useWorkspaceState } from "../../state/workspace";
+import { hostPressureAlertKind, hostPressureAlertTitle } from "./HostPressureBanner";
 import {
   workspaceConnectionStatusPresentation,
   type WorkspaceConnectionStatusPresentation,
@@ -29,11 +25,11 @@ type ConnectionStatus = WorkspaceConnectionStatusPresentation & {
   readonly fadeIn: boolean;
 };
 
-const ALERT_SYMBOLS = { cpu: "cpu", memory: "memorychip", storage: "internaldrive" } as const;
+const ALERT_SYMBOLS = { cpu: "cpu", memory: "memorychip", disk: "internaldrive" } as const;
 
 const ConnectionStatusContext = createContext<ConnectionStatus | null>(null);
-/** Set while a connected machine is short of memory, storage, or CPU. */
-const HardwareAlertContext = createContext<HostHardwareAlert | null>(null);
+/** Set while a connected machine is short of memory or disk, or overloaded. */
+const HostPressureAlertContext = createContext<HostPressureAlert | null>(null);
 
 /**
  * The delay hides brief reconnects, so it is the workspace's, not each header's: every header
@@ -58,7 +54,7 @@ export function WorkspaceConnectionStatusProvider(props: { readonly children: Re
     since === null ? null : since + STATUS_SHOW_DELAY_MS + FADE_IN_MS,
   );
 
-  const hardwareAlert = useAtomValue(hostHardwareAlertAtom);
+  const hostPressureAlert = useAtomValue(hostPressureAlertAtom);
   const label = presentation?.label;
   const showsProgress = presentation?.showsProgress ?? false;
   const status =
@@ -67,7 +63,9 @@ export function WorkspaceConnectionStatusProvider(props: { readonly children: Re
       : { label, showsProgress, fadeIn: !fadeEnded };
   return (
     <ConnectionStatusContext value={status}>
-      <HardwareAlertContext value={hardwareAlert}>{props.children}</HardwareAlertContext>
+      <HostPressureAlertContext value={hostPressureAlert}>
+        {props.children}
+      </HostPressureAlertContext>
     </ConnectionStatusContext>
   );
 }
@@ -113,7 +111,7 @@ function StatusFadeIn(props: {
 
 export function WorkspaceConnectionTitle(props: {
   readonly brand: ReactNode;
-  /** Called with the machine a hardware warning is about, and with nothing for a connection status. */
+  /** Called with the machine a host warning is about, and with nothing for a connection status. */
   readonly onPress?: (environmentId?: EnvironmentId) => void;
   readonly grow?: boolean;
   readonly size?: "navbar" | "pageTitle";
@@ -121,16 +119,13 @@ export function WorkspaceConnectionTitle(props: {
   readonly maxWidth?: number;
 }) {
   const status = use(ConnectionStatusContext);
-  const hardwareAlert = use(HardwareAlertContext);
+  const hostPressureAlert = use(HostPressureAlertContext);
   const gt = useGT();
-  const messages = useMessages();
-  const locale = useLocale();
   const size = props.size ?? "navbar";
   const { scale } = useAndroidControlSizing();
 
   if (status === null) {
-    if (hardwareAlert !== null) {
-      const critical = hardwareAlert.level === "critical";
+    if (hostPressureAlert !== null) {
       return (
         <View
           style={[
@@ -142,23 +137,18 @@ export function WorkspaceConnectionTitle(props: {
           <View style={{ flexShrink: 1, minWidth: 0 }}>{props.brand}</View>
           <Pressable
             accessibilityHint={gt("Opens environment settings")}
-            accessibilityLabel={hostHardwareAlertTitle(hardwareAlert, messages, locale)}
+            accessibilityLabel={hostPressureAlertTitle(gt, hostPressureAlert)}
             accessibilityRole="button"
             disabled={props.onPress === undefined}
             hitSlop={10}
-            onPress={() => props.onPress?.(hardwareAlert.environmentId)}
-            className={cn(
-              "items-center justify-center rounded-full",
-              critical ? "bg-danger" : "bg-warning",
-            )}
+            onPress={() => props.onPress?.(hostPressureAlert.strained[0]!.environmentId)}
+            className="items-center justify-center rounded-full bg-warning"
             style={{ height: 26 * scale, width: 26 * scale }}
           >
             <SymbolView
-              name={ALERT_SYMBOLS[hardwareAlert.kind]}
+              name={ALERT_SYMBOLS[hostPressureAlertKind(hostPressureAlert)]}
               size={Math.round(15 * scale)}
-              tintColorClassName={
-                critical ? "accent-danger-foreground" : "accent-warning-foreground"
-              }
+              tintColorClassName="accent-warning-foreground"
               type="monochrome"
             />
           </Pressable>
