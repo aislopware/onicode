@@ -1,5 +1,6 @@
 import { useLocale, useMessages } from "gt-react";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
+import { getI18nSnapshot, subscribeI18n } from "../../i18n/runtime";
 import {
   computeStableMessagesTimelineRows,
   handoffRunsSignature,
@@ -44,16 +45,20 @@ export function useIncrementalTimelineRows(
   identity: string,
   input: MessagesTimelineRowsInput,
 ): MessagesTimelineRow[] {
-  // Keyed on the locale: without a GTProvider, useMessages() returns a new function every render.
+  // Keyed on the locale and catalog: without a GTProvider, useMessages() returns a new function
+  // every render.
   const locale = useLocale();
+  const catalog = useSyncExternalStore(subscribeI18n, getI18nSnapshot);
   const resolve = useMessages();
   const [state, setState] = useState(() => ({
     identity,
     input,
     locale,
+    catalog,
     projection: deriveMessagesTimelineRowsWithState(input, null, resolve),
   }));
-  const reusable = state.identity === identity && state.locale === locale;
+  const reusable =
+    state.identity === identity && state.locale === locale && state.catalog === catalog;
   if (reusable && sameRowsInput(state.input, input)) {
     return state.projection.rows;
   }
@@ -62,7 +67,7 @@ export function useIncrementalTimelineRows(
     reusable ? state.projection : null,
     resolve,
   );
-  setState({ identity, input, locale, projection });
+  setState({ identity, input, locale, catalog, projection });
   return projection.rows;
 }
 

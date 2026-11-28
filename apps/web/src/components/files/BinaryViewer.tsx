@@ -6,6 +6,7 @@ import { ChevronLeftIcon, ChevronRightIcon, FileIcon, FolderIcon } from "lucide-
 import { msg, T, useGT, useMessages } from "gt-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { m } from "~/i18n/messages";
+import { cn } from "~/lib/utils";
 
 import {
   Select,
@@ -339,7 +340,12 @@ export default function BinaryViewer(props: {
           <ArchiveFile key={entry.path} path={entry.path} bytes={entry.bytes} />
         ) : null
       ) : archive ? (
-        <div className="scrollbar-gutter-both min-h-0 flex-1 overflow-auto">
+        <div
+          className={cn(
+            "scrollbar-gutter-both min-h-0 flex-1 overflow-auto",
+            children.size === 0 && "flex flex-col",
+          )}
+        >
           <table
             aria-label={gt("Archive entries")}
             className="w-full border-separate border-spacing-0 text-xs"
@@ -395,13 +401,18 @@ export default function BinaryViewer(props: {
             </tbody>
           </table>
           {children.size === 0 ? (
-            <p className="p-6 text-xs text-muted-foreground">
+            <p className="flex flex-1 items-center justify-center p-6 text-xs text-muted-foreground">
               <T>This folder is empty.</T>
             </p>
           ) : null}
         </div>
       ) : rows ? (
-        <div className="scrollbar-gutter-both min-h-0 flex-1 overflow-auto">
+        <div
+          className={cn(
+            "scrollbar-gutter-both min-h-0 flex-1 overflow-auto",
+            rows.rows.length === 0 && "flex flex-col",
+          )}
+        >
           <table
             aria-label={`${props.name}: ${rows.table}`}
             className="min-w-full border-separate border-spacing-0 text-xs"
@@ -435,13 +446,13 @@ export default function BinaryViewer(props: {
             </tbody>
           </table>
           {rows.rows.length === 0 ? (
-            <p className="p-6 text-xs text-muted-foreground">
+            <p className="flex flex-1 items-center justify-center p-6 text-xs text-muted-foreground">
               <T>This table is empty.</T>
             </p>
           ) : null}
         </div>
       ) : (
-        <p className="p-6 text-xs text-muted-foreground">
+        <p className="flex flex-1 items-center justify-center p-6 text-xs text-muted-foreground">
           <T>This database has no readable tables.</T>
         </p>
       )}

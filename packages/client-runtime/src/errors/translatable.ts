@@ -23,6 +23,24 @@ export function resolveMarkedText(text: MarkedText, resolve: MFunctionType = mFa
   return text.map((sentence) => resolve(sentence)).join(" ");
 }
 
+/** Resolves a string a resolver left marked, including marked variables inside it. */
+export function resolveMarkedString(marked: string, resolve: MFunctionType = mFallback): string {
+  const options = decodeOptions(marked);
+  if (typeof options?.$_source !== "string") return marked;
+  const { $_source: source, ...variables } = options;
+  return resolve(
+    source,
+    Object.fromEntries(
+      Object.entries(variables).map(([key, value]) => [
+        key,
+        typeof value === "string" && !key.startsWith("$")
+          ? resolveMarkedString(value, resolve)
+          : value,
+      ]),
+    ),
+  );
+}
+
 /** `detail` in English plus the marked text, for errors whose `message` reads `detail`. */
 export function translatableDetail(...text: MarkedText): {
   readonly detail: string;

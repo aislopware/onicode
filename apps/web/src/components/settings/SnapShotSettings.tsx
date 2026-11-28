@@ -97,7 +97,10 @@ export function SnapShotSettings() {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const bridge = getDesktopSnapShotBridge();
   const registry = useContext(RegistryContext);
-  const { state, refreshError } = useAtomValue(desktopSnapShotAtom);
+  const { state, refreshError: refreshFailure } = useAtomValue(desktopSnapShotAtom);
+  const refreshError =
+    refreshFailure &&
+    snapShotSetupError(gt("Couldn't check capture setup"), refreshFailure.cause, messages);
   const [setupBusy, setSetupBusy] = useState(false);
   const [setupError, setSetupError] = useState<SnapShotSetupError | null>(null);
   // macOS can quit the app from a permission prompt; until the user opens or closes the wizard

@@ -40,7 +40,7 @@ export function OutdatedServerUpdateSection({
   const checking = checkResult.waiting;
   // Starting an update replaces a failed check's message with the update's own state.
   const [checkErrorDismissed, setCheckErrorDismissed] = useState(false);
-  const error = checkErrorDismissed ? null : releaseCheckError(checkResult);
+  const error = checkErrorDismissed ? null : releaseCheckError(checkResult, messages);
   const busy = checking || state.status === "running";
 
   function check() {

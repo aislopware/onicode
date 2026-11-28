@@ -712,7 +712,7 @@ export default function PdfViewer(props: {
       >
         {error || incorrectPassword !== null || !pdf ? (
           // The scroll region is a block, so a centered state needs a column that fills it.
-          <div className="flex h-full flex-col">
+          <div className="flex min-h-full flex-col">
             {error ? (
               <FileSurfaceFailure
                 message={error}

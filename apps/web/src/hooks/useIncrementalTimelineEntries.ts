@@ -1,5 +1,7 @@
 import { useLocale, useMessages } from "gt-react";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
+
+import { getI18nSnapshot, subscribeI18n } from "../i18n/runtime";
 import {
   deriveTimelineEntriesFromVisibleTurnItemsWithState,
   type TimelineEntriesInput,
@@ -22,16 +24,20 @@ export function useIncrementalTimelineEntries(
   threadKey: string | null,
   timelineInput: TimelineEntriesInput,
 ): TimelineEntriesProjection["entries"] {
-  // Keyed on the locale: without a GTProvider, useMessages() returns a new function every render.
+  // Keyed on the locale and catalog: without a GTProvider, useMessages() returns a new function
+  // every render.
   const locale = useLocale();
+  const catalog = useSyncExternalStore(subscribeI18n, getI18nSnapshot);
   const resolve = useMessages();
   const input = { ...timelineInput, resolve: timelineInput.resolve ?? resolve };
   const [state, setState] = useState(() => ({
     threadKey,
     locale,
+    catalog,
     projection: deriveTimelineEntriesFromVisibleTurnItemsWithState(input),
   }));
-  const reusable = state.threadKey === threadKey && state.locale === locale;
+  const reusable =
+    state.threadKey === threadKey && state.locale === locale && state.catalog === catalog;
   if (reusable && sameInput(state.projection.input, input)) {
     return state.projection.entries;
   }
@@ -39,6 +45,6 @@ export function useIncrementalTimelineEntries(
     input,
     reusable ? state.projection : null,
   );
-  setState({ threadKey, locale, projection });
+  setState({ threadKey, locale, catalog, projection });
   return projection.entries;
 }

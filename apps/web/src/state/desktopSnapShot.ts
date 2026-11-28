@@ -4,7 +4,7 @@ import * as Option from "effect/Option";
 import { Atom, type AtomRegistry } from "effect/reactivity";
 import { msg } from "gt-react";
 
-import { m } from "../i18n/messages";
+import { m, type MessageResolver } from "../i18n/messages";
 import { getDesktopSnapShotBridge } from "../lib/desktopSnapShot";
 
 export interface SnapShotSetupError {
@@ -12,14 +12,18 @@ export interface SnapShotSetupError {
   readonly message: string;
 }
 
-export function snapShotSetupError(title: string, error: unknown): SnapShotSetupError {
-  return { title, message: thrownErrorMessage(error, m) ?? m(msg("Try again.")) };
+export function snapShotSetupError(
+  title: string,
+  error: unknown,
+  resolve: MessageResolver = m,
+): SnapShotSetupError {
+  return { title, message: thrownErrorMessage(error, resolve) ?? resolve(msg("Try again.")) };
 }
 
 export interface DesktopSnapShotLoad {
   readonly state: DesktopSnapShotState | null;
   /** Why the last background read (load, focus, shortcut change) failed; a later success clears it. */
-  readonly refreshError: SnapShotSetupError | null;
+  readonly refreshError: { readonly cause: unknown } | null;
 }
 
 const EMPTY_LOAD: DesktopSnapShotLoad = { state: null, refreshError: null };
@@ -43,7 +47,7 @@ export const desktopSnapShotAtom = Atom.writable(
       void refreshDesktopSnapShotState(get.registry, (error) => {
         get.setSelf({
           ...Option.getOrElse(get.self<DesktopSnapShotLoad>(), () => EMPTY_LOAD),
-          refreshError: snapShotSetupError(m(msg("Couldn't check capture setup")), error),
+          refreshError: { cause: error },
         });
       });
     window.addEventListener("focus", refresh);

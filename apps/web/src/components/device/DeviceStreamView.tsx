@@ -1,13 +1,14 @@
 import type { DevicePlatform, EnvironmentId } from "@onicode/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { AsyncResult, Atom } from "effect/reactivity";
-import { T, useGT } from "gt-react";
+import { T, useGT, useMessages } from "gt-react";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import { cn } from "~/lib/utils";
 import { Button } from "~/components/ui/button";
 import { renewDeviceHubAccess, useDeviceHubAccess } from "~/state/device";
 import { resolveDeviceShape } from "@onicode/client-runtime/device/shape-profile";
+import { resolveMarkedString } from "@onicode/client-runtime/errors";
 import { deviceKeyboard, deviceModel } from "./deviceModels";
 import { fitDeviceFrame } from "./deviceFrameLayout";
 import { DeviceDuoViewport } from "./DeviceDuoViewport";
@@ -101,6 +102,7 @@ export function DeviceStreamView(props: {
   const model = deviceModel(props.platform, props.deviceName ?? "");
   const isDuo = model?.id === "iphone-duo";
   const gt = useGT();
+  const messages = useMessages();
   // The Duo's fold and stand controls exist only in 3D view, so it still opens there.
   const [presentation, setPresentation] = useState<"phone" | "flat">(isDuo ? "phone" : "flat");
   const [keyboardAttached, setKeyboardAttached] = useState(false);
@@ -484,7 +486,9 @@ export function DeviceStreamView(props: {
           <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-2">
             <span className="rounded-md bg-background/85 px-2 py-1 text-xs text-muted-foreground">
               {inputState.detail
-                ? gt("Input disconnected ({detail}), reconnecting…", { detail: inputState.detail })
+                ? gt("Input disconnected ({detail}), reconnecting…", {
+                    detail: resolveMarkedString(inputState.detail, messages),
+                  })
                 : gt("Input disconnected, reconnecting…")}
             </span>
           </div>
@@ -504,7 +508,11 @@ export function DeviceStreamView(props: {
               description={props.deviceDescription ?? ""}
               stage="stream"
               message={
-                status === "error" ? (detail ?? gt("Stream failed.")) : gt("Connecting video…")
+                status === "error"
+                  ? detail === undefined
+                    ? gt("Stream failed.")
+                    : resolveMarkedString(detail, messages)
+                  : gt("Connecting video…")
               }
               error={status === "error"}
             >

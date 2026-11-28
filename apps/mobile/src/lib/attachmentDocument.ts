@@ -1,5 +1,11 @@
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
-import { errorDisplayMessage } from "@onicode/client-runtime/errors";
+import {
+  errorDisplayMessage,
+  MarkedText,
+  messageFromError,
+  translatableError,
+  translatableMessage,
+} from "@onicode/client-runtime/errors";
 import { Atom, AsyncResult } from "effect/reactivity";
 import { settlePromise, squashAtomCommandFailure } from "@onicode/client-runtime/state/runtime";
 import * as Dialog from "../components/ui/Dialog";
@@ -48,7 +54,7 @@ async function readAttachmentText(key: AttachmentTextKey, signal: AbortSignal) {
       key.environmentId === null
         ? null
         : await refreshAssetUrl(key.environmentId, key.resource, signal).catch(() => null);
-    if (!refreshed) throw new Error(m(msg("Reconnect to this environment and try again.")));
+    if (!refreshed) throw translatableError(msg("Reconnect to this environment and try again."));
     target = refreshed;
   }
   const response = await fetch(target, {
@@ -65,6 +71,7 @@ class AttachmentTextReadError extends Schema.TaggedError<AttachmentTextReadError
   "AttachmentTextReadError",
   {
     message: Schema.String,
+    i18nMessage: Schema.optionalKey(MarkedText),
     cause: Schema.Defect(),
   },
 ) {}
@@ -77,7 +84,9 @@ export const attachmentTextAtom = Atom.family((key: AttachmentTextKey) =>
       try: (signal) => readAttachmentText(key, signal),
       catch: (cause) =>
         new AttachmentTextReadError({
-          message: errorDisplayMessage(cause, m) ?? m(msg("Could not read this file.")),
+          ...(cause instanceof Error && cause.message.trim().length > 0
+            ? messageFromError(cause)
+            : translatableMessage(msg("Could not read this file."))),
           cause,
         }),
     }),
@@ -137,7 +146,7 @@ export function useAttachmentDocument(input: {
   );
   const content = AsyncResult.isSuccess(text) ? text.value : null;
   const contentError = AsyncResult.isFailure(text)
-    ? (Option.getOrNull(AsyncResult.error(text))?.message ??
+    ? (errorDisplayMessage(Option.getOrNull(AsyncResult.error(text)), resolve) ??
       resolve(msg("Could not read this file.")))
     : null;
   const table = content && delimiter ? parseDelimitedPreview(content.text, delimiter) : null;
@@ -149,7 +158,8 @@ export function useAttachmentDocument(input: {
   });
   const error = attachment
     ? localPreview.error &&
-      (localPreview.error.message || resolve(msg("The local file is unavailable.")))
+      (errorDisplayMessage(localPreview.error, resolve) ??
+        resolve(msg("The local file is unavailable.")))
     : AsyncResult.isFailure(remote)
       ? (Option.getOrNull(AsyncResult.error(remote))?.message ??
         resolve(msg("The attachment is unavailable.")))

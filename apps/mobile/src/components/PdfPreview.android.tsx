@@ -4,14 +4,13 @@ import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { Atom, AsyncResult } from "effect/reactivity";
-import { msg, useGT } from "gt-react-native";
+import { useGT, useMessages } from "gt-react-native";
 import { useState } from "react";
 import { View } from "react-native";
 import Pdf from "react-native-pdf-jsi";
 
 import { FilePreviewLoading, FilePreviewNotice } from "../features/files/FilePreviewFeedback";
 import { pdfInitialPage, pdfLinkUrl, preparePdfPreview } from "../lib/pdfPreview";
-import { m } from "../i18n/messages";
 import { tryOpenExternalUrl } from "../lib/openExternalUrl";
 import { ControlPill } from "./ui/ControlPill";
 
@@ -33,10 +32,8 @@ const preparedPdfAtom = Atom.family((uri: string) =>
           });
           return prepared;
         },
-        catch: (cause) =>
-          cause instanceof Error
-            ? (errorDisplayMessage(cause, m) ?? cause.message)
-            : m(msg("The PDF could not be loaded.")),
+        // Resolved where it renders, so it follows a language switch.
+        catch: (cause) => (cause instanceof Error ? cause : null),
       }).pipe(
         Effect.filterOrElse(
           (file) => file !== null,
@@ -55,6 +52,7 @@ export function PdfPreview(props: { readonly uri: string }) {
 
 function PdfPreviewSession(props: { readonly uri: string }) {
   const gt = useGT();
+  const messages = useMessages();
   const atom = preparedPdfAtom(props.uri);
   const prepared = useAtomValue(atom);
   const refresh = useAtomRefresh(atom);
@@ -69,7 +67,8 @@ function PdfPreviewSession(props: { readonly uri: string }) {
     file !== null && unrenderable === file
       ? gt("The PDF could not be rendered. It may be damaged.")
       : prepared._tag === "Failure" && !prepared.waiting
-        ? Option.getOrElse(AsyncResult.error(prepared), () => gt("The PDF could not be loaded."))
+        ? (errorDisplayMessage(Option.getOrNull(AsyncResult.error(prepared)), messages) ??
+          gt("The PDF could not be loaded."))
         : null;
   const localUri = file?.uri ?? null;
 

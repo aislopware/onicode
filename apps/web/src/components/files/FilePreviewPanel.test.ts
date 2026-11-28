@@ -1122,6 +1122,8 @@ Third}`;
         `<smil xmlns="http://www.w3.org/ns/SMIL"><body><seq>
           <par><text src="../book/chapter.xhtml#line%2D1"/><audio src="../read.mp3" clipBegin="npt=2s" clipEnd="00:03.250"/></par>
           <par><text src="../book/other.xhtml#skip"/><audio src="../read.mp3"/></par>
+          <par><text src="../book/chapter.xhtml#line-1"/><audio src="../read.mp3" clipBegin="soon" clipEnd="4s"/></par>
+          <par><text src="../book/chapter.xhtml#line-1"/><audio src="../read.mp3" clipBegin="5s" clipEnd="later"/></par>
           <par><text src="../book/chapter.xhtml#line-1"/><audio src="https://example.test/remote.mp3"/></par>
         </seq></body></smil>`,
       )

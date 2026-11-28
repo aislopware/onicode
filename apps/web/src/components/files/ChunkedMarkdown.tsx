@@ -97,7 +97,7 @@ export function ChunkedMarkdown(props: {
     props.relativePath,
   );
   // A linked heading in a piece the list has not mounted, revealed once it mounts. It belongs to
-  // the thread it was clicked in, since the panel keeps this mounted across threads.
+  // the file and thread it was clicked in, which a caller may swap without remounting it.
   const [pendingLink, setPendingLink] = useState<{
     readonly positionKey: string;
     readonly target: HeadingTarget;
@@ -214,7 +214,7 @@ export function ChunkedMarkdown(props: {
       }}
     >
       <LegendList<ChunkItem>
-        // The panel keeps this mounted across threads; the initial index only applies on mount.
+        // The initial index only applies on mount, so another file or thread needs a new list.
         key={positionKey}
         ref={listRef}
         data={items}

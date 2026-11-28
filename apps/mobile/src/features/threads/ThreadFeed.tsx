@@ -1110,6 +1110,7 @@ function UserMessageVideo(props: {
   readonly onPlaybackStart: () => void;
 }) {
   const sourceIdentifier = useId();
+  const messages = useMessages();
   const preview = useLocalAttachmentPreview(props.local);
   const current: MediaVideoPreviewSource | null =
     props.local !== null && preview.uri !== null
@@ -1145,7 +1146,9 @@ function UserMessageVideo(props: {
     return (
       <View className="aspect-video items-center justify-center bg-black">
         {preview.error ? (
-          <Text className="p-3 text-center text-xs text-white/70">{preview.error.message}</Text>
+          <Text className="p-3 text-center text-xs text-white/70">
+            {errorDisplayMessage(preview.error, messages)}
+          </Text>
         ) : (
           <AppActivityIndicator />
         )}

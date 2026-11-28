@@ -355,7 +355,7 @@ function ExtendedOfficeViewer(props: {
               : gt("Cell values only. Charts, images, and formatting are not shown.")}
           </FileSurfaceNotice>
           {sheet.rowCount === 0 ? (
-            <p className="p-6 text-xs text-muted-foreground">
+            <p className="flex flex-1 items-center justify-center p-6 text-xs text-muted-foreground">
               <T>This sheet is empty.</T>
             </p>
           ) : (

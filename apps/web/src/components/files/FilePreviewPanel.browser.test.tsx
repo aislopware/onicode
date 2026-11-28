@@ -1176,6 +1176,26 @@ describe("open file in preview browser", () => {
       state.openedBrowserUrls[0],
     );
   });
+
+  it("loads the page signed for the open thread when the same file stays open across threads", async () => {
+    await using _settings = setup();
+    const page = (thread: string) => {
+      state.assetUrl = {
+        _tag: "Success",
+        url: `about:blank#${thread}`,
+        expiresAt: Number.MAX_SAFE_INTEGER,
+      };
+      return filePreview("page.html", null, threadRef, null, {
+        environmentId,
+        threadId: ThreadId.make(thread),
+      });
+    };
+    await using screen = await render(page("first"));
+    const frame = () => screen.container.querySelector("iframe")?.getAttribute("src");
+    await vi.waitFor(() => expect(frame()).toBe("about:blank#first"));
+    await screen.rerender(page("second"));
+    await vi.waitFor(() => expect(frame()).toBe("about:blank#second"));
+  });
 });
 
 describe("save file", () => {

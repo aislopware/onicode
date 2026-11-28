@@ -1,12 +1,17 @@
+import { isHostPath } from "@onicode/shared/path";
 import { createContext } from "react";
 
 /** Names the open workspace file per environment and thread, so viewers outlive remounts. */
 export const PreviewPositionKey = createContext<string | null>(null);
 
+/** A host file is the same file in every checkout, so its key leaves the checkout out. */
 export function previewPositionKey(
-  ...parts: readonly [environmentId: string, threadId: string, cwd: string, path: string]
+  environmentId: string,
+  threadId: string,
+  cwd: string,
+  path: string,
 ): string {
-  return JSON.stringify(parts);
+  return JSON.stringify([environmentId, threadId, isHostPath(path) ? "" : cwd, path]);
 }
 
 /** Reading positions outlive the preview, which unmounts when the file or thread changes. */

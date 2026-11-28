@@ -11,7 +11,7 @@ import {
 import { refreshUsage, usageSummaryInput } from "@onicode/client-runtime/state/usage";
 import { resolveUsageAccess } from "@onicode/client-runtime/state/usage-access";
 import { AsyncResult, Atom } from "effect/reactivity";
-import { msg, useLocale, useMessages } from "gt-react";
+import { msg, useMessages } from "gt-react";
 import { useState } from "react";
 
 import { mergeUsage, type EnvironmentUsage, type MergedUsage } from "@onicode/shared/usageMerge";
@@ -19,7 +19,7 @@ import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentPresentations } from "./presentation";
 import { serverEnvironment } from "./server";
 import { environmentSession, readEnvironmentScope } from "./session";
-import { keepMarked, type MessageResolver } from "../i18n/messages";
+import { keepMarked } from "../i18n/messages";
 
 export interface EnvironmentUsageStatus {
   readonly environmentId: EnvironmentId;
@@ -139,30 +139,27 @@ function withoutProviders(
   );
 }
 
+function selectEnvironments(
+  environments: readonly EnvironmentUsageStatus[],
+  selectedEnvironmentIds: ReadonlySet<EnvironmentId> | null,
+) {
+  return selectedEnvironmentIds === null
+    ? environments
+    : environments.filter((environment) => selectedEnvironmentIds.has(environment.environmentId));
+}
+
 function deriveSelection(
   marked: readonly EnvironmentUsageStatus[],
-  locale: string,
-  messages: MessageResolver,
   selectedEnvironmentIds: ReadonlySet<EnvironmentId> | null,
   hiddenProviders: ReadonlySet<UsageProviderKind>,
 ) {
-  const environments = marked.map((environment) =>
-    environment.error === null
-      ? environment
-      : { ...environment, error: messages(environment.error) },
-  );
-  const selectedEnvironments =
-    selectedEnvironmentIds === null
-      ? environments
-      : environments.filter((environment) => selectedEnvironmentIds.has(environment.environmentId));
   return {
     marked,
-    locale,
-    environments,
     selectedEnvironmentIds,
     hiddenProviders,
-    selectedEnvironments,
-    merged: mergeAnsweredUsage(withoutProviders(selectedEnvironments, hiddenProviders)),
+    merged: mergeAnsweredUsage(
+      withoutProviders(selectEnvironments(marked, selectedEnvironmentIds), hiddenProviders),
+    ),
   };
 }
 
@@ -181,23 +178,27 @@ export function useUsage(
   });
   const atom = usageByWindowAtom(windowKey);
   const marked = useAtomValue(atom);
-  const locale = useLocale();
   const messages = useMessages();
   // Identity-based render sync needs a derivation retained by inputs across renders.
   const [derived, setDerived] = useState(() =>
-    deriveSelection(marked, locale, messages, selectedEnvironmentIds, hiddenProviders),
+    deriveSelection(marked, selectedEnvironmentIds, hiddenProviders),
   );
   let current = derived;
   if (
     derived.marked !== marked ||
-    derived.locale !== locale ||
     derived.selectedEnvironmentIds !== selectedEnvironmentIds ||
     derived.hiddenProviders !== hiddenProviders
   ) {
-    current = deriveSelection(marked, locale, messages, selectedEnvironmentIds, hiddenProviders);
+    current = deriveSelection(marked, selectedEnvironmentIds, hiddenProviders);
     setDerived(current);
   }
-  const { environments, selectedEnvironments, merged } = current;
+  const { merged } = current;
+  const environments = marked.map((environment) =>
+    environment.error === null
+      ? environment
+      : { ...environment, error: messages(environment.error) },
+  );
+  const selectedEnvironments = selectEnvironments(environments, selectedEnvironmentIds);
 
   const refresh = (nextInput?: UsageSummaryInput) =>
     refreshUsage({

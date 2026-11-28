@@ -10,7 +10,7 @@ import type { DeviceHubAccess } from "@onicode/client-runtime/state/deviceHubAcc
 import type { DevicePlatform, EnvironmentId } from "@onicode/contracts";
 import { Atom } from "effect/reactivity";
 
-import { m } from "~/i18n/messages";
+import { keepMarked } from "~/i18n/messages";
 import { refreshDeviceHubAccess } from "~/state/device";
 
 export interface DeviceStreamState {
@@ -119,7 +119,8 @@ export const deviceStreamSessionAtom = Atom.family((key: DeviceStreamKey) =>
         onInputConnected: (connected, detail) =>
           update({ input: { connected, ...(detail ? { detail } : {}) } }),
       },
-      m,
+      // Details stay marked so the view shows them in the current language.
+      keepMarked,
     );
     session = {
       stream: client,
