@@ -12628,7 +12628,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           ) {
             const now = yield* DateTime.now;
             // Claude ended its native turn on this reply; the run continues only for the hook.
+            // Cleared once published, so a later segment never republishes or cuts it off.
             const answer = context.assistant.lastReply;
+            context.assistant.lastReply = null;
             if (answer !== null) {
               yield* publishAssistantArtifacts({
                 context,

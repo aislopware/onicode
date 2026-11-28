@@ -857,26 +857,37 @@ it("recognizes only a validation refusal of beforePosition", () => {
   }
 });
 
-it.effect("launches with the given title when the peer refuses generateTitle", () =>
+it.effect.each([
+  {
+    tool: "oni_thread_launch",
+    argument: "generateTitle",
+    retry: PeerForwarding.launchOrRetryWithoutGeneratedTitle,
+    without: { message: "Fix the build", title: "Fix build" },
+  },
+  {
+    tool: "oni_thread_interrupt",
+    argument: "cancelQueued",
+    retry: PeerForwarding.interruptOrRetryWithoutCancelQueued,
+    without: { threadId: "thread:box", stop: true },
+  },
+])("$tool goes without $argument when the peer refuses it", ({ tool, argument, retry, without }) =>
   Effect.gen(function* () {
     const sent: Array<unknown> = [];
     const olderPeer = (args: unknown): Effect.Effect<string, OrchestratorMcpFailure> => {
       sent.push(args);
-      return "generateTitle" in (args as object)
+      return argument in (args as object)
         ? Effect.fail(
             new OrchestratorMcpFailure({
               code: "invalid_request",
-              message: `Invalid parameters for tool 'oni_thread_launch': Unknown argument "generateTitle". Accepted arguments: message, title.`,
+              message: `Invalid parameters for tool '${tool}': Unknown argument "${argument}". Accepted arguments: message, title.`,
             }),
           )
-        : Effect.succeed("launched");
+        : Effect.succeed("sent");
     };
-    const params = { message: "Fix the build", title: "Fix build", generateTitle: true };
+    const params = { ...without, [argument]: true };
 
-    const launched = yield* PeerForwarding.launchOrRetryWithoutGeneratedTitle(olderPeer, params);
-
-    expect(launched).toBe("launched");
-    expect(sent).toEqual([params, { message: "Fix the build", title: "Fix build" }]);
+    expect(yield* retry(olderPeer, params)).toBe("sent");
+    expect(sent).toEqual([params, without]);
   }),
 );
 

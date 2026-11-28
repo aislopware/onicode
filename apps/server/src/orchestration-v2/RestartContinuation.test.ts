@@ -678,6 +678,44 @@ const awaitedTaskBuild = {
   ],
 };
 
+const awaitedMonitor = {
+  turnItem: {
+    id: "turn-item:awaited-monitor",
+    runId,
+    nodeId: null,
+    providerThreadId,
+    providerInstanceId: instanceId,
+    type: "dynamic_tool",
+    toolName: "Monitor",
+    title: "Watch the deploy",
+    input: { persistent: true },
+    status: "running",
+    nativeItemRef: { driver, nativeId: "toolu_monitor", strength: "strong" },
+  },
+  pendingBackgroundTasks: [
+    { taskId: "toolu_monitor", kind: "monitor", description: "Watch the deploy", awaited: true },
+  ],
+  work: {
+    kind: "monitor" as const,
+    label: "Watch the deploy",
+    id: "turn-item:awaited-monitor",
+    awaited: true as const,
+  },
+};
+// Claude's Monitor roster entry has its own task id and names the tool call as nativeItemId.
+const awaitedTaskMonitor = {
+  ...awaitedMonitor,
+  pendingBackgroundTasks: [
+    {
+      taskId: "task-monitor",
+      nativeItemId: "toolu_monitor",
+      kind: "monitor",
+      description: "Watch the deploy",
+      awaited: true,
+    },
+  ],
+};
+
 const unacceptedFollowUp = {
   id: RunId.make("run:follow-up"),
   ordinal: 2,
@@ -694,6 +732,8 @@ it.effect.each([
   ["waiting", scratchProjectId, devServer, false, ""],
   ["completed", ProjectId.make("restart-project"), awaitedBuild, true, ""],
   ["completed", ProjectId.make("restart-project"), awaitedTaskBuild, true, ""],
+  ["completed", ProjectId.make("restart-project"), awaitedMonitor, true, ""],
+  ["completed", ProjectId.make("restart-project"), awaitedTaskMonitor, true, ""],
   [
     "completed",
     ProjectId.make("restart-project"),

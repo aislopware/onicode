@@ -265,6 +265,7 @@ export const OpenCodeDriver: ProviderDriver<
   metadata: {
     displayName: "OpenCode",
     supportsMultipleInstances: true,
+    limitsNeedUsageAccess: true,
   },
   configSchema: OpenCodeSettings,
   defaultConfig: (): OpenCodeSettings => decodeOpenCodeSettings({}),

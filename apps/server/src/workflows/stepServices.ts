@@ -16,12 +16,13 @@ import { type StepReferences, stepReferences } from "./runReferences.ts";
 import type { WorkflowDefinition } from "./workflow.ts";
 import { type SubjectInput, subjectReference, WorkflowForge } from "./WorkflowForge.ts";
 import type { WorkflowError, WorkflowInputError } from "./Workflows.ts";
-import type {
-  ReferenceInput,
-  RunParent,
-  SignalAddress,
-  WorkflowRunStatus,
-  WorkflowStore,
+import {
+  prefixUpperBound,
+  type ReferenceInput,
+  type RunParent,
+  type SignalAddress,
+  type WorkflowRunStatus,
+  type WorkflowStore,
 } from "./WorkflowStore.ts";
 
 /** The shared store as rows of JSON text. `store` puts schemas on top. */
@@ -289,8 +290,6 @@ export const layerKeyValues = Layer.effect(
   KeyValues,
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
-    // LIKE would read `%` and `_` in a prefix as patterns; a range does not.
-    const after = (prefix: string) => `${prefix}\u{10FFFF}`;
     return KeyValues.of({
       get: Effect.fn("KeyValues.get")(function* (key) {
         const rows = yield* sql<{ value_json: string }>`
@@ -311,9 +310,11 @@ export const layerKeyValues = Layer.effect(
         yield* sql`DELETE FROM workflow_store WHERE key = ${key}`.pipe(Effect.orDie);
       }),
       list: Effect.fn("KeyValues.list")(function* (prefix) {
+        const end = prefixUpperBound(prefix);
+        // A range, not LIKE, which would read `%` and `_` in a prefix as patterns.
         const rows = yield* sql<{ key: string; value_json: string }>`
           SELECT key, value_json FROM workflow_store
-          WHERE key >= ${prefix} AND key < ${after(prefix)} ORDER BY key
+          WHERE key >= ${prefix}${end === null ? sql`` : sql` AND key < ${end}`} ORDER BY key
         `.pipe(Effect.orDie);
         return rows.map((row) => ({ key: row.key, valueJson: row.value_json }));
       }),

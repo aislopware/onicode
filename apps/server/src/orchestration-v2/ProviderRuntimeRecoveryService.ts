@@ -372,9 +372,9 @@ export const make = Effect.gen(function* () {
         );
         if (work === undefined) return;
         const nativeId = item.nativeItemRef?.nativeId;
-        // The roster lists this shell too, by its own id or the item's: record it once, keeping its wait.
+        // The roster lists this work too, by its own id or the item's: record it once, keeping its wait.
         const rosterTask =
-          item.type === "command_execution" && nativeId != null
+          nativeId != null
             ? projection.providerThreads
                 ?.find((candidate) => candidate.id === awaitingId)
                 ?.pendingBackgroundTasks?.find(

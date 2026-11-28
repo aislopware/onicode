@@ -20,6 +20,7 @@ import WorkflowRunTagsMigration from "../persistence/Migrations/124_WorkflowRunT
 import WorkflowMailSenderMigration from "../persistence/Migrations/126_WorkflowMailSender.ts";
 import WorkflowPoolsMigration from "../persistence/Migrations/127_WorkflowPools.ts";
 import WorkflowRunSubjectMigration from "../persistence/Migrations/128_WorkflowRunSubject.ts";
+import { KeyValues, layerKeyValues } from "./stepServices.ts";
 import * as WorkflowStore from "./WorkflowStore.ts";
 
 const sender = { answeredBy: "onicode CLI", answeredAt: "2026-01-01T00:00:00.000Z" };
@@ -945,6 +946,23 @@ it.effect("runsWhere keyPrefix matches keys whose next character is the highest 
       assert.deepStrictEqual(yield* ids(maxScalar), ["max-hit"]);
       assert.deepStrictEqual(yield* ids("a\uD7FF"), ["bmp-hit"]);
     }),
+  ),
+);
+
+it.effect("KeyValues.list matches keys whose next character is the highest code point", () =>
+  withStore(
+    Effect.gen(function* () {
+      const keyValues = yield* KeyValues;
+      const maxScalar = String.fromCodePoint(0x10ffff);
+      for (const key of ["case/abc", `case/${maxScalar}tail`, "case0", `${maxScalar}x`]) {
+        yield* keyValues.set(key, "1");
+      }
+      const keys = (prefix: string) =>
+        Effect.map(keyValues.list(prefix), (rows) => rows.map((row) => row.key));
+
+      assert.deepStrictEqual(yield* keys("case/"), ["case/abc", `case/${maxScalar}tail`]);
+      assert.deepStrictEqual(yield* keys(maxScalar), [`${maxScalar}x`]);
+    }).pipe(Effect.provide(layerKeyValues)),
   ),
 );
 

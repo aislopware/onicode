@@ -858,17 +858,22 @@ export const make = Effect.gen(function* () {
       if (queued.deletedAt !== null || queued.settledOverride !== "settled") return;
       const worktreePath = queued.worktreePath;
       if (worktreePath === null) return;
-      // The parent's worktree belongs to the parent; shared-worktree children
-      // (subagents, forks, side chats) skip duplicate cleanup there.
-      if (queued.lineage.parentThreadId !== null) {
-        const parent = yield* projections.getThread(queued.lineage.parentThreadId).pipe(
-          Effect.catchTags({
-            ProjectionStoreThreadNotFoundError: () => Effect.succeed(null),
-          }),
-        );
-        if (parent?.worktreePath === worktreePath) return;
-      }
+      if (settleActionRunAt.get(threadId) === toMillis(queued.settledAt)) return;
+      // Threads share a worktree whatever their lineage (subagents, forks, side chats, handoffs):
+      // the last of them to settle runs the script once, covering the others already settled.
+      const sharing = (yield* projections.getShellSnapshot({
+        worktreePath,
+        location: "active",
+      })).threads.filter((thread) => thread.id !== threadId);
+      if (sharing.some((thread) => thread.settledOverride !== "settled")) return;
+      const coverSharing = () => {
+        for (const thread of sharing) {
+          const sharedSettledAtMs = toMillis(thread.settledAt);
+          if (sharedSettledAtMs !== null) settleActionRunAt.set(thread.id, sharedSettledAtMs);
+        }
+      };
       if (!(yield* fileSystem.exists(worktreePath))) {
+        coverSharing();
         // A settle script that tears something down would otherwise be skipped with no trace.
         const project = Option.getOrUndefined(yield* projectStore.getShell(queued.projectId));
         if (
@@ -896,6 +901,7 @@ export const make = Effect.gen(function* () {
         observeCompletion: {},
       });
       settleActionRunAt.set(threadId, settledAtMs);
+      coverSharing();
       if (run.status === "started" && run.completion) {
         // Interrupting the completion closes the script's terminal, so only the wait is bounded:
         // a script that never finishes keeps running but stops holding back later settlements.

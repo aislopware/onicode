@@ -175,7 +175,7 @@ const makeSupervisor = Effect.fn("CommandPerformance.makeSupervisor")(function* 
     ready: Effect.void,
     probe: Effect.void,
     inboundFrames: Effect.succeed(0),
-    awaitingReply: Effect.succeed(false),
+    requestUnanswered: () => Effect.never,
     closed: Effect.never,
   };
   return EnvironmentSupervisor.EnvironmentSupervisor.of({

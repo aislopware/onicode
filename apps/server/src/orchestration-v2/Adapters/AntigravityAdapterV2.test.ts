@@ -1840,6 +1840,8 @@ const openSessionWithRunningCommand = Effect.fn("openSessionWithRunningCommand")
     readonly initialToolCalls?: ReadonlyArray<EffectAcpSchema.SessionUpdate>;
     readonly isRuntimeOutdated?: AntigravityAdapterV2Options["isRuntimeOutdated"];
     readonly promptCapabilities?: EffectAcpSchema.AgentCapabilities["promptCapabilities"];
+    /** The host offers no continuation runs, so post-settle wakes are off. */
+    readonly withoutContinuation?: boolean;
     /** Finalization pauses here between marking the turn finalized and clearing it. */
     readonly finalizeGate?: {
       readonly reached: Deferred.Deferred<void>;
@@ -1888,7 +1890,14 @@ const openSessionWithRunningCommand = Effect.fn("openSessionWithRunningCommand")
   const adapterOptions: AntigravityAdapterV2Options = {
     instanceId,
     selfInvocation,
-    continuationRequests: { offer: (request) => Effect.sync(() => void offers.push(request)) },
+    ...(options?.withoutContinuation === true
+      ? {}
+      : {
+          continuationRequests: {
+            offer: (request: ProviderContinuationRequests.ProviderContinuationRequest) =>
+              Effect.sync(() => void offers.push(request)),
+          },
+        }),
     makeRuntime: (input) => {
       terminate = input.onTermination;
       return makeAntigravityAcpRuntime({
@@ -2816,6 +2825,73 @@ describe("AntigravityAdapterV2 work after the prompt ends", () => {
     }).pipe(Effect.provide(layerSession)),
   );
 
+  it.effect("updates a released command's row after its run when continuation is off", () =>
+    Effect.gen(function* () {
+      const { session, providerThread, command, send, startTurn, ...run } =
+        yield* openSessionWithRunningCommand({ WaitMsBeforeAsync: 10000 }, undefined, undefined, {
+          withoutContinuation: true,
+        });
+      yield* startTurn(1, false);
+      yield* run.throughPromptSettled;
+      yield* session.awaitBackgroundTasks!({
+        providerThread,
+        taskIds: ["mock-session-1/task-2"],
+        awaited: false,
+      });
+      yield* TestClock.adjust("5 seconds");
+      yield* run.throughTerminal;
+      yield* send({
+        sessionUpdate: "tool_call_update",
+        ...command,
+        status: "completed",
+        rawOutput: { output: "Command exited with code 0.", exit_code: 0 },
+      });
+      // The exit fails the row if it is still running, so its next status shows what landed.
+      yield* run.runtimeDies;
+      const ended = (yield* run.until(
+        (event) =>
+          event.type === "turn_item.updated" &&
+          event.turnItem.nativeItemRef?.nativeId === command.toolCallId &&
+          (event.turnItem.status === "completed" || event.turnItem.status === "failed"),
+      )).at(-1);
+      assert.equal(ended?.type === "turn_item.updated" && ended.turnItem.status, "completed");
+    }).pipe(Effect.provide(layerSession)),
+  );
+
+  it.effect("fails a released command's row once when its agent exits mid-run", () =>
+    Effect.gen(function* () {
+      const { session, providerThread, command, send, startTurn, ...run } =
+        yield* openSessionWithRunningCommand({ WaitMsBeforeAsync: 10000 });
+      yield* startTurn(1, false);
+      yield* run.throughPromptSettled;
+      yield* session.awaitBackgroundTasks!({
+        providerThread,
+        taskIds: ["mock-session-1/task-2"],
+        awaited: false,
+      });
+      // A command the run still waits on keeps it open until the exit.
+      yield* send({
+        sessionUpdate: "tool_call",
+        toolCallId: "call_build",
+        kind: "execute",
+        title: "npm run build",
+        rawInput: { CommandLine: "npm run build", WaitMsBeforeAsync: 10000 },
+        status: "in_progress",
+      });
+      yield* run.runtimeDies;
+      const events = yield* run.throughTerminal;
+      const terminal = events.at(-1);
+      assert.equal(terminal?.type === "turn.terminal" && terminal.status, "failed");
+      const failedRows = events.filter(
+        (event) =>
+          event.type === "turn_item.updated" &&
+          event.turnItem.nativeItemRef?.nativeId === command.toolCallId &&
+          event.turnItem.status === "failed",
+      );
+      assert.lengthOf(failedRows, 1);
+    }).pipe(Effect.provide(layerSession)),
+  );
+
   // agy 1.5.11 reads a prompt sent mid-turn as a steer: it answers the running prompt end_turn
   // and goes on under the new one. session/cancel would end its running commands and subagents.
   it.effect("steers a running prompt with the next one and leaves its work running", () =>
@@ -3706,6 +3782,32 @@ describe("AntigravityAdapterV2 work after the prompt ends", () => {
         yield* throughTerminal;
         assert.lengthOf(spawnedRuntimes, 2);
       }).pipe(Effect.provide(layerSession)),
+  );
+
+  it.effect("completes a settled run when its agent exits before the run finalizes", () =>
+    Effect.gen(function* () {
+      const opened = yield* openSessionWithRunningCommand(
+        { WaitMsBeforeAsync: 10000 },
+        undefined,
+        undefined,
+        {},
+      );
+      yield* opened.startTurn(1, false);
+      yield* opened.throughPromptSettled;
+      yield* opened.send({
+        sessionUpdate: "tool_call_update",
+        ...opened.command,
+        status: "completed",
+        rawOutput: { output: "Command exited with code 0.", exit_code: 0 },
+      });
+      // The usage update ends the agent's reply to the command.
+      yield* opened.send(opened.usage);
+      assert.equal((yield* Queue.takeAll(opened.scheduledFinalizes)).at(-1), "3000 millis");
+      // Nothing was left to wait on, so the exit inside the finalize debounce fails nothing.
+      yield* opened.runtimeDies;
+      const terminal = (yield* opened.throughTerminal).at(-1);
+      assert.equal(terminal?.type === "turn.terminal" && terminal.status, "completed");
+    }).pipe(Effect.provide(layerSession)),
   );
 
   it.effect(

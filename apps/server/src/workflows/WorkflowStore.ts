@@ -187,7 +187,7 @@ const mailAddress = (address: SignalAddress) =>
       : ["key", address.workflow, address.channel],
   );
 // Smallest string above every key starting with `prefix` in SQLite's UTF-8 byte order, or null when none exists.
-const prefixUpperBound = (prefix: string): string | null => {
+export const prefixUpperBound = (prefix: string): string | null => {
   const normalized = prefix.toWellFormed();
   for (let i = normalized.length; i > 0;) {
     const prev = normalized.charCodeAt(i - 1);

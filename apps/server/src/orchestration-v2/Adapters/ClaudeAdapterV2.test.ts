@@ -30302,6 +30302,8 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             ...(activeGoal ? [syntheticFrame("goal-set", "Goal set: all tests pass")] : []),
             makeAssistantTextFrame({ uuid: "answer", text: "Here is the answer." }),
             stopHookFeedback("stop-hook", "./check.sh", "Run the formatter before finishing."),
+            // A second blocking hook answers the same native stop.
+            stopHookFeedback("stop-hook-docs", "./docs.sh", "Update the changelog."),
             makeAssistantTextFrame({ uuid: "reply", text: "The formatter has run." }),
             // The SDK types a user frame's uuid as optional.
             stopHookFeedback(undefined, "./check.sh", "Run the linter."),
@@ -30316,11 +30318,23 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           assert.deepEqual(stopHookEffects(harness.events), [
             "final answer: Here is the answer.",
             "Stop hook asked Claude to continue: [./check.sh]: Run the formatter before finishing.",
+            "Stop hook asked Claude to continue: [./docs.sh]: Update the changelog.",
             "final answer: The formatter has run.",
             "Stop hook asked Claude to continue: [./check.sh]: Run the linter.",
             "final answer: The linter has run.",
             "Stop hook asked Claude to continue: [./check.sh]: Run the tests.",
           ]);
+          // Each reply is published as the final answer once, not again by a later hook frame.
+          assert.equal(
+            harness.events.filter(
+              (event) =>
+                event.type === "turn_item.updated" &&
+                event.turnItem.type === "assistant_message" &&
+                event.turnItem.phase === "final_answer" &&
+                event.turnItem.text === "Here is the answer.",
+            ).length,
+            1,
+          );
         }).pipe(
           Effect.scoped,
           Effect.provide(

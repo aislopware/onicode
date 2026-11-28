@@ -31,7 +31,7 @@ const resolveClientFilePath = Effect.fn("AntigravityClientFiles.resolveClientFil
     let resolved: string;
     if (path.isAbsolute(input.requestPath)) {
       resolved = path.resolve(input.requestPath);
-    } else if (input.cwd !== null && input.cwd !== undefined) {
+    } else if (input.cwd !== null && input.cwd !== undefined && path.isAbsolute(input.cwd)) {
       resolved = path.resolve(input.cwd, input.requestPath);
     } else {
       return yield* outside;
@@ -57,8 +57,10 @@ const resolveClientFilePath = Effect.fn("AntigravityClientFiles.resolveClientFil
       missingSuffix.unshift(path.basename(candidate));
       candidate = parent;
     }
-    const roots = yield* Effect.forEach(input.allowedRoots, (root) =>
-      input.fileSystem.realPath(root).pipe(Effect.orElseSucceed(() => root)),
+    // An empty or relative root would resolve against the server's own cwd.
+    const roots = yield* Effect.forEach(
+      input.allowedRoots.filter((root) => path.isAbsolute(root)),
+      (root) => input.fileSystem.realPath(root).pipe(Effect.orElseSucceed(() => root)),
     );
     if (!roots.some((root) => isInsideRoot(path, root, real))) {
       return yield* outside;

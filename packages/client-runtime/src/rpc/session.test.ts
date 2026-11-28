@@ -449,7 +449,7 @@ describe("RpcSessionFactory", () => {
     }),
   );
 
-  it.effect("awaits a reply from a request until the next inbound frame", () =>
+  it.effect("reports a request no frame follows, but not a quiet stream or an answered one", () =>
     Effect.gen(function* () {
       const { factory, sockets } = yield* makeFactory();
       const session = yield* factory.connect(PREPARED);
@@ -458,15 +458,27 @@ describe("RpcSessionFactory", () => {
       socket.open();
       yield* completeInitialConfig(socket);
       yield* Fiber.join(readyFiber);
-      expect(yield* session.awaitingReply).toBe(false);
+      const unanswered = yield* Effect.forkChild(session.requestUnanswered("1 second"));
+
+      yield* Effect.forkChild(
+        session.client[WS_METHODS.subscribeServerLifecycle]({}).pipe(Stream.runDrain),
+      );
+      yield* awaitRequest(socket, 1);
+      yield* TestClock.adjust("2 seconds");
+      expect(unanswered.pollUnsafe()).toBeUndefined();
 
       yield* Effect.forkChild(session.probe);
-      yield* awaitRequest(socket, 1);
-      expect(yield* session.awaitingReply).toBe(true);
-
+      yield* awaitRequest(socket, 2);
+      yield* TestClock.adjust("999 millis");
       socket.serverMessage(encodeJson({ _tag: "Pong" }));
-      expect(yield* session.awaitingReply).toBe(false);
-    }),
+      yield* TestClock.adjust("2 seconds");
+      expect(unanswered.pollUnsafe()).toBeUndefined();
+
+      yield* Effect.forkChild(session.probe);
+      yield* awaitRequest(socket, 3);
+      yield* TestClock.adjust("1 second");
+      expect(unanswered.pollUnsafe()?._tag).toBe("Success");
+    }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),
   );
 
   it.effect("closes the websocket when the session scope is released", () =>

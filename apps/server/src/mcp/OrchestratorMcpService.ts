@@ -3413,6 +3413,23 @@ const make = Effect.gen(function* () {
                   ),
                 ),
               );
+      // The task's queued turns in its child, including the follow-ups its parent queued there.
+      const queuedTaskRuns = (
+        child: Pick<OrchestrationV2ThreadProjection, "runs" | "messages">,
+      ) => {
+        const parentMessageIds = new Set(
+          child.messages
+            .filter((message) => message.senderThreadId === scope.thread.threadId)
+            .map((message) => message.id),
+        );
+        return child.runs.filter(
+          (run) =>
+            run.status === "queued" &&
+            (run.delegatedTaskId === input.taskId ||
+              run.id === current.childRunId ||
+              parentMessageIds.has(run.userMessageId)),
+        );
+      };
       const stopChild = Effect.gen(function* () {
         const commandId = stableCommandId({ scope, requestKey: key, operation: "cancel-task" });
         const reason = agentStopReason(input.reason);
@@ -3447,19 +3464,7 @@ const make = Effect.gen(function* () {
         const stopped = yield* threadManagement
           .getThreadRecords(childThreadId, ["runs", "messages"], { messageRoles: ["user"] })
           .pipe(Effect.mapError(threadManagementFailure));
-        const parentMessageIds = new Set(
-          stopped.messages
-            .filter((message) => message.senderThreadId === scope.thread.threadId)
-            .map((message) => message.id),
-        );
-        for (const run of stopped.runs) {
-          if (
-            run.status !== "queued" ||
-            (run.delegatedTaskId !== input.taskId &&
-              run.id !== current.childRunId &&
-              !parentMessageIds.has(run.userMessageId))
-          )
-            continue;
+        for (const run of queuedTaskRuns(stopped)) {
           // Stop preserves the queue for Resume. Cancelling a task must also
           // remove its queued turns, including the parent's follow-ups and held ones.
           yield* threadManagement
@@ -3533,15 +3538,13 @@ const make = Effect.gen(function* () {
           status: cancelled ? "cancelled" : current.status,
         } satisfies OrchestratorMcpTaskCancelResult;
       }
-      const child = yield* loadThreadRecords(childThreadId, ["runs"]);
+      const child = yield* loadThreadRecords(childThreadId, ["runs", "messages"], {
+        messageRoles: ["user"],
+      });
       if (
         current.workState !== "waiting_for_children" &&
         ThreadManagementService.latestActiveRun(child) === undefined &&
-        !child.runs.some(
-          (run) =>
-            run.status === "queued" &&
-            (run.delegatedTaskId === input.taskId || run.id === current.childRunId),
-        ) &&
+        queuedTaskRuns(child).length === 0 &&
         !(yield* threadManagement
           .delegatedTaskAwaitsCapture(childThreadId, input.taskId)
           .pipe(Effect.mapError(threadManagementFailure)))
@@ -4151,6 +4154,41 @@ const make = Effect.gen(function* () {
         yield* threadManagement
           .stopDelegatedTasks({ threadId: input.threadId, commandId, reason })
           .pipe(Effect.catch(stopFailed));
+        if (input.cancelQueued === true) {
+          // Stop holds the queue for Resume; the caller's own queued messages go instead.
+          const linkedSender = parent === undefined ? scope.client?.senderThread : undefined;
+          const records = yield* threadManagement
+            .getThreadRecords(input.threadId, ["runs", "messages"], { messageRoles: ["user"] })
+            .pipe(Effect.catch(stopFailed));
+          const callerMessageIds = new Set(
+            records.messages
+              .filter(
+                (message) =>
+                  message.createdBy === "agent" &&
+                  (parent !== undefined
+                    ? message.senderThreadId === parent.thread.id
+                    : linkedSender !== undefined &&
+                      message.linkedSender?.environmentId === linkedSender.environmentId &&
+                      message.linkedSender.threadId === linkedSender.threadId),
+              )
+              .map((message) => message.id),
+          );
+          for (const run of records.runs) {
+            if (run.status !== "queued" || !callerMessageIds.has(run.userMessageId)) continue;
+            yield* threadManagement
+              .dispatch({
+                type: "queued-run.cancel",
+                commandId: stableCommandId({
+                  scope,
+                  requestKey: key,
+                  operation: `thread-stop-queued-run:${run.id}`,
+                }),
+                threadId: input.threadId,
+                runId: run.id,
+              })
+              .pipe(Effect.catch(stopFailed));
+          }
+        }
         // The run this stop interrupted, from its own events, so a retry
         // reports the same run even if another has started since. Stop also
         // holds queued runs and marks runs it could not interrupt, with no

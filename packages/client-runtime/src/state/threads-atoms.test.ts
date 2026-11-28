@@ -109,7 +109,7 @@ const makeHarness = Effect.fn("TestThreadAtoms.makeHarness")(function* (options?
     ready: Effect.void,
     probe: Effect.void,
     inboundFrames: Effect.succeed(0),
-    awaitingReply: Effect.succeed(false),
+    requestUnanswered: () => Effect.never,
     closed: Effect.never,
   };
   const supervisor = EnvironmentSupervisor.EnvironmentSupervisor.of({

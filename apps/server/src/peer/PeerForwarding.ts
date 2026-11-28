@@ -104,6 +104,7 @@ const refusesArgument = (toolName: string, argument: string) => {
 };
 export const refusesBeforePosition = refusesArgument("oni_thread_read", "beforePosition");
 const refusesGenerateTitle = refusesArgument("oni_thread_launch", "generateTitle");
+const refusesCancelQueued = refusesArgument("oni_thread_interrupt", "cancelQueued");
 
 /** A launch asking for a generated title, retried with its given title on a peer without the option. */
 export const launchOrRetryWithoutGeneratedTitle = Effect.fn(
@@ -117,6 +118,20 @@ export const launchOrRetryWithoutGeneratedTitle = Effect.fn(
   }
   const { generateTitle: _generateTitle, ...withGivenTitle } = params;
   return yield* read(params).pipe(Effect.catchIf(refusesGenerateTitle, () => read(withGivenTitle)));
+});
+
+/** A Stop that cancels the caller's queued messages, retried as a plain Stop on an older peer. */
+export const interruptOrRetryWithoutCancelQueued = Effect.fn(
+  "PeerForwarding.interruptOrRetryWithoutCancelQueued",
+)(function* <A>(
+  read: (args: unknown) => Effect.Effect<A, OrchestratorMcpFailure>,
+  params: unknown,
+) {
+  if (typeof params !== "object" || params === null || !("cancelQueued" in params)) {
+    return yield* read(params);
+  }
+  const { cancelQueued: _cancelQueued, ...holdingQueue } = params;
+  return yield* read(params).pipe(Effect.catchIf(refusesCancelQueued, () => read(holdingQueue)));
 });
 
 /** A newest-page read, retried as the peer always served it when the peer refuses the cursor. */
@@ -267,12 +282,16 @@ const make = Effect.gen(function* () {
     environmentId,
     input,
   ) =>
-    forward<OrchestratorMcpThreadInterruptResult>(
-      scope,
-      "oni_thread_interrupt",
-      OrchestratorMcpThreadInterruptInput,
-      OrchestratorMcpThreadInterruptResult,
-      environmentId,
+    interruptOrRetryWithoutCancelQueued(
+      (args) =>
+        forward<OrchestratorMcpThreadInterruptResult>(
+          scope,
+          "oni_thread_interrupt",
+          OrchestratorMcpThreadInterruptInput,
+          OrchestratorMcpThreadInterruptResult,
+          environmentId,
+          args,
+        ),
       input,
     );
 
@@ -319,7 +338,9 @@ const make = Effect.gen(function* () {
           ? readFromStartOrRetry(forwardTool, params as OrchestratorMcpThreadReadInput)
           : tool.name === "oni_thread_launch"
             ? launchOrRetryWithoutGeneratedTitle(forwardTool, params)
-            : forwardTool(params);
+            : tool.name === "oni_thread_interrupt"
+              ? interruptOrRetryWithoutCancelQueued(forwardTool, params)
+              : forwardTool(params);
     return Effect.andThen(requireEnabled, forwarded);
   };
 

@@ -3,6 +3,7 @@ import { translatableDetail } from "../errors/translatable.ts";
 import {
   type ServerConfig,
   type ServerConfigStreamEvent,
+  WsRpcGroup,
   WsSubscribeServerConfigRpc,
   WS_METHODS,
 } from "@onicode/contracts";
@@ -19,6 +20,7 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
 import * as Exit from "effect/Exit";
+import * as Latch from "effect/Latch";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
@@ -31,6 +33,7 @@ import * as Stream from "effect/Stream";
 import type * as Rpc from "effect/rpc/Rpc";
 import * as RpcClient from "effect/rpc/RpcClient";
 import * as RpcClientError from "effect/rpc/RpcClientError";
+import * as RpcSchema from "effect/rpc/RpcSchema";
 import * as RpcSerialization from "effect/rpc/RpcSerialization";
 import * as Socket from "effect/socket/Socket";
 
@@ -54,6 +57,13 @@ import { environmentMismatchError } from "../connection/errors.ts";
 import { onServerClockRaised, recordServerClock } from "../clock.ts";
 
 const SOCKET_OPEN_TIMEOUT = "15 seconds";
+// A stream sends nothing until it has something to say, so its request is no
+// sign of a stalled socket.
+const STREAM_RPC_TAGS: ReadonlySet<string> = new Set(
+  Array.from(WsRpcGroup.requests.values())
+    .filter((rpc) => RpcSchema.isStreamSchema(rpc.successSchema))
+    .map((rpc) => rpc._tag),
+);
 
 export interface RpcSession {
   readonly client: WsRpcProtocolClient;
@@ -65,8 +75,8 @@ export interface RpcSession {
   readonly probe: Effect.Effect<void, ConnectionAttemptError>;
   /** Frames received so far: proof the socket is alive that needs no reply. */
   readonly inboundFrames: Effect.Effect<number>;
-  /** Whether a request went out after the last frame came in. */
-  readonly awaitingReply: Effect.Effect<boolean>;
+  /** Completes once a request that expects a reply has gone `after` with no frame in. */
+  readonly requestUnanswered: (after: Duration.Input) => Effect.Effect<void>;
   readonly closed: Effect.Effect<never, ConnectionAttemptError>;
 }
 
@@ -244,15 +254,44 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
     // The protocol never reopens its socket, so every frame counted here came
     // from this session's one socket.
     let inboundFrames = 0;
-    let awaitingReply = false;
+    // Requests that expect a reply, sent since the last frame came in.
+    let unansweredRequests = 0;
+    const replyAwaited = Latch.makeUnsafe(false);
     const countingWebSocketConstructor: typeof webSocketConstructor = (url, options) => {
       const socket = webSocketConstructor(url, options);
       socket.addEventListener("message", () => {
         inboundFrames += 1;
-        awaitingReply = false;
+        if (unansweredRequests > 0) {
+          unansweredRequests = 0;
+          replyAwaited.closeUnsafe();
+        }
       });
       return socket;
     };
+    const sendAwaitingReply = <A, E, R>(send: Effect.Effect<A, E, R>) =>
+      Effect.suspend(() => {
+        const framesAtSend = inboundFrames;
+        unansweredRequests += 1;
+        replyAwaited.openUnsafe();
+        // A failed or interrupted send awaits nothing, unless a frame cleared it already.
+        return Effect.onError(send, () =>
+          Effect.sync(() => {
+            if (inboundFrames !== framesAtSend) return;
+            unansweredRequests -= 1;
+            if (unansweredRequests === 0) replyAwaited.closeUnsafe();
+          }),
+        );
+      });
+    // Sleeps only while a request awaits its reply, so an idle socket keeps no
+    // timer. Untraced: the supervisor restarts it on every signal it handles.
+    const requestUnanswered = Effect.fnUntraced(function* (after: Duration.Input) {
+      for (;;) {
+        yield* replyAwaited.await;
+        const framesBefore = inboundFrames;
+        yield* Effect.sleep(after);
+        if (inboundFrames === framesBefore && replyAwaited.isOpen()) return;
+      }
+    });
     const socketUrl = new URL(connection.socketUrl);
     socketUrl.searchParams.set(SOCKET_FRAME_PARTS_QUERY_PARAM, "1");
     // The desktop's own server shares its machine, so deflate would only spend CPU on both ends.
@@ -288,13 +327,13 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
         Effect.map((protocol) => ({
           ...protocol,
           send: (clientId, request, transferables) =>
-            request._tag === "Request"
-              ? Effect.sync(() => {
-                  awaitingReply = true;
-                }).pipe(Effect.andThen(protocol.send(clientId, request, transferables)))
-              : Deferred.isDoneUnsafe(disconnected)
+            request._tag !== "Request"
+              ? Deferred.isDoneUnsafe(disconnected)
                 ? Effect.void
-                : protocol.send(clientId, request, transferables),
+                : protocol.send(clientId, request, transferables)
+              : request.isNotification === true || STREAM_RPC_TAGS.has(request.tag)
+                ? protocol.send(clientId, request, transferables)
+                : sendAwaitingReply(protocol.send(clientId, request, transferables)),
         })),
       ),
     ).pipe(
@@ -559,7 +598,7 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
       ready: initialConfig.pipe(Effect.asVoid),
       probe,
       inboundFrames: Effect.sync(() => inboundFrames),
-      awaitingReply: Effect.sync(() => awaitingReply),
+      requestUnanswered,
       // The config stream also fails on disconnect, and only it can report a decode failure.
       closed: Deferred.await(configSubscriptionClosed),
     } satisfies RpcSession;

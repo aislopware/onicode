@@ -1445,6 +1445,25 @@ export function isQueuedProviderThreadPlaceholder(
   );
 }
 
+/**
+ * Whether an update makes its provider thread the app thread's active one: a new thread, or one a
+ * run starts on or a rollback rewinds. A thread the conversation left that reports its background
+ * work settling stays left.
+ */
+export function providerThreadUpdateActivates(
+  activeProviderThreadId: OrchestrationV2ProviderThread["id"] | null,
+  previous: Pick<OrchestrationV2ProviderThread, "firstRunOrdinal" | "lastRunOrdinal"> | undefined,
+  next: OrchestrationV2ProviderThread,
+): boolean {
+  return (
+    !isQueuedProviderThreadPlaceholder(next) &&
+    (activeProviderThreadId === null ||
+      previous === undefined ||
+      previous.firstRunOrdinal !== next.firstRunOrdinal ||
+      previous.lastRunOrdinal !== next.lastRunOrdinal)
+  );
+}
+
 export const OrchestrationV2RuntimeRequest = Schema.Struct({
   id: RuntimeRequestId,
   nodeId: NodeId,

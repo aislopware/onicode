@@ -398,7 +398,7 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
           ready: Effect.void,
           probe: Effect.void,
           inboundFrames: Effect.succeed(0),
-          awaitingReply: Effect.succeed(false),
+          requestUnanswered: () => Effect.never,
           closed: Deferred.await(closed),
         } satisfies RpcSession.RpcSession),
         () => Ref.update(releasedSessions, (count) => count + 1),
@@ -2021,6 +2021,42 @@ describe("EnvironmentRegistry routes", () => {
             (target) => target.label,
           ),
         ).toEqual(["Studio", "Studio"]);
+        expect(
+          (yield* SubscriptionRef.get(registry.entries)).get(environmentId)?.target.label,
+        ).toBe("Studio");
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
+  // Mobile renames through the bearer edit, and the edited route need not be first.
+  it.effect("an edited label renames every route and outlives the edited route", () =>
+    Effect.gen(function* () {
+      const environmentId = LAN_TARGET.environmentId;
+      const harness = yield* makeHarness(
+        [REMOTE_TARGET, LAN_TARGET],
+        [LAN_PROFILE],
+        [[LAN_TARGET.connectionId, BEARER_CREDENTIAL]],
+      );
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        yield* registry.register(
+          lanRegistration(
+            new BearerConnectionTarget({ ...LAN_TARGET, label: "Studio" }),
+            new BearerConnectionProfile({ ...LAN_PROFILE, label: "Studio" }),
+          ),
+          { useRegistrationLabel: true },
+        );
+
+        expect(
+          routesOf(yield* Ref.get(harness.storedTargets), environmentId).map(
+            (target) => target.label,
+          ),
+        ).toEqual(["Studio", "Studio"]);
+        expect(
+          (yield* SubscriptionRef.get(registry.entries)).get(environmentId)?.target.label,
+        ).toBe("Studio");
+
+        yield* registry.removeRoute(environmentId, LAN_TARGET.connectionId);
         expect(
           (yield* SubscriptionRef.get(registry.entries)).get(environmentId)?.target.label,
         ).toBe("Studio");

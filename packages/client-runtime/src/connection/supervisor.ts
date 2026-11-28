@@ -61,7 +61,7 @@ const SILENT_SOCKET_RECHECK_EVERY = "1 second";
 const FRAME_CHECK_EVERY = "100 millis";
 // A request no frame has followed for this long checks the socket, which the
 // ping timeout would otherwise leave stalled for 15 seconds or more.
-const UNANSWERED_REQUEST_CHECK_EVERY = "1 second";
+const UNANSWERED_REQUEST_AFTER = "1 second";
 // Off the LAN one lost packet can stall a live socket for a second, so a remote
 // socket must stay silent this long, except after a long resume. It must end
 // before QUICK_CONNECTION_PROBE_TIMEOUT so a resume replaces a silent socket
@@ -605,7 +605,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
   // unreachable host never ends it.
   const awaitSilentSocket = Effect.fn("EnvironmentSupervisor.awaitSilentSocket")(function* (
     lease: ConnectedLease,
-    routeKind: ConnectionRouteKind | undefined,
+    quickSilence: boolean,
     longResume: boolean,
   ) {
     const startedAt = yield* Clock.monotonicTimeNanos;
@@ -633,7 +633,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       while ((yield* driver.checkHost(lease.prepared)) !== "answered") {
         yield* Effect.sleep(SILENT_SOCKET_RECHECK_EVERY);
       }
-      if (!answersQuickly(routeKind) && !longResume) {
+      if (!quickSilence && !longResume) {
         const silentFor = (yield* Clock.monotonicTimeNanos) - startedAt;
         const remaining = Duration.toNanosUnsafe(REMOTE_SILENT_SOCKET_AFTER) - silentFor;
         if (remaining > 0n) yield* Effect.sleep(Duration.nanos(remaining));
@@ -663,19 +663,9 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       Effect.forkScoped,
     );
     const routeKind = yield* leaseRouteKind(lease);
-    // Ends once a request sent before one check still has no frame after the
-    // next, so an idle socket is never checked.
-    const requestUnanswered = Effect.gen(function* () {
-      let awaitingAtFrames: number | undefined;
-      for (;;) {
-        yield* Effect.sleep(UNANSWERED_REQUEST_CHECK_EVERY);
-        const frames = yield* lease.session.inboundFrames;
-        if (awaitingAtFrames === frames) {
-          return { _tag: "RequestUnanswered" } as const;
-        }
-        awaitingAtFrames = (yield* lease.session.awaitingReply) ? frames : undefined;
-      }
-    });
+    const requestUnanswered = lease.session
+      .requestUnanswered(UNANSWERED_REQUEST_AFTER)
+      .pipe(Effect.as({ _tag: "RequestUnanswered" } as const));
     for (;;) {
       const next: ConnectedLeaseSignal = yield* Effect.raceFirst(takeSignal, requestUnanswered);
       const end = yield* connectedLeaseEnd(next);
@@ -714,8 +704,11 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       // the socket, needs a fresh check only if the running one sees a frame.
       let recheck = false;
       let longResume = isLongResume(next);
+      // A busy host can hold the probe's reply behind the request that went
+      // unanswered, so even a nearby socket must stay silent as long as a remote one.
+      const quickSilence = answersQuickly(routeKind) && next._tag !== "RequestUnanswered";
       const startSilentSocketCheck = Effect.gen(function* () {
-        silentSocket = yield* Effect.forkChild(awaitSilentSocket(lease, routeKind, longResume));
+        silentSocket = yield* Effect.forkChild(awaitSilentSocket(lease, quickSilence, longResume));
         recheck = false;
       });
       // The web and desktop foreground probe allows a busy host 15 seconds,

@@ -118,11 +118,17 @@ function makeRotation<E>(fs: RotationFileSystem<E>, filePath: string, maxFiles: 
     }
   });
 
+  // A failed publication puts the backups it shifted back right away.
+  const rollBack = (andThen: Effect.Effect<void, E>) =>
+    Effect.andThen(settle, Effect.andThen(fs.remove(draft), andThen)).pipe(Effect.ignore);
+
   const recover = Effect.gen(function* () {
     if (!(yield* settle)) return false;
     if (!(yield* fs.exists(staged))) return true;
     yield* fs.remove(draft);
-    if (yield* fs.exists(filePath)) return yield* publish;
+    if (yield* fs.exists(filePath)) {
+      return yield* publish.pipe(Effect.tapError(() => rollBack(Effect.void)));
+    }
     yield* restoreActive;
     return true;
   });
@@ -131,11 +137,7 @@ function makeRotation<E>(fs: RotationFileSystem<E>, filePath: string, maxFiles: 
     if (!(yield* fs.exists(filePath))) return true;
     // A denied active-file rename must leave the backups untouched.
     yield* fs.rename(filePath, staged);
-    return yield* publish.pipe(
-      Effect.tapError(() =>
-        Effect.andThen(settle, Effect.andThen(fs.remove(draft), restoreActive)).pipe(Effect.ignore),
-      ),
-    );
+    return yield* publish.pipe(Effect.tapError(() => rollBack(restoreActive)));
   });
 
   return { recover, rotate };
@@ -215,7 +217,7 @@ export class RotatingFileSink {
     try {
       if (this.needsRecovery) {
         if (this.runRotation(this.rotation.recover)) this.pruneOverflowBackups();
-        this.currentSize = this.readCurrentSize();
+        this.refreshCurrentSize();
       }
       if (
         !this.needsRecovery &&
@@ -223,7 +225,7 @@ export class RotatingFileSink {
         this.currentSize + buffer.length > this.maxBytes
       ) {
         this.runRotation(this.rotation.rotate);
-        this.currentSize = this.readCurrentSize();
+        this.refreshCurrentSize();
       }
 
       NodeFS.appendFileSync(this.filePath, buffer);
@@ -239,7 +241,16 @@ export class RotatingFileSink {
           cause,
         });
       }
+      this.refreshCurrentSize();
+    }
+  }
+
+  // A best-effort sink keeps its last known size when the active file cannot be read.
+  private refreshCurrentSize(): void {
+    try {
       this.currentSize = this.readCurrentSize();
+    } catch (cause) {
+      if (this.throwOnError) throw cause;
     }
   }
 

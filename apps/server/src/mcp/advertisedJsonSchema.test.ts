@@ -187,7 +187,7 @@ it("advertises target.options and modelSelection.options as an object map, not a
   ]);
   expect(delegate).toEqual({
     description:
-      "Ids vary by provider; see `orchestrator_capabilities`. Given values override inherited. [] or {} clears.",
+      "Ids vary by provider; see `orchestrator_capabilities`. Given values override inherited. {} clears.",
     ...optionObjectMap,
   });
   expect(delegate).not.toHaveProperty("anyOf");

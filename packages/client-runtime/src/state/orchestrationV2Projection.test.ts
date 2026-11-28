@@ -970,6 +970,18 @@ describe("provider-thread.updated", () => {
       payload: providerThread("provider-thread-next"),
     } as OrchestrationV2DomainEvent);
     expect(next?.thread.activeProviderThreadId).toBe(ProviderThreadId.make("provider-thread-next"));
+
+    // The old thread's background work settling does not take the conversation back.
+    const settled = applyOrchestrationV2ProjectionEvent(next, {
+      id: "event-previous-thread-settled",
+      type: "provider-thread.updated",
+      threadId,
+      occurredAt: now,
+      payload: providerThread("provider-thread-previous", { status: "idle" }),
+    } as OrchestrationV2DomainEvent);
+    expect(settled?.thread.activeProviderThreadId).toBe(
+      ProviderThreadId.make("provider-thread-next"),
+    );
   });
 
   it("keeps the active provider thread for queued placeholders and other threads", () => {
