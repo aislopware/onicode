@@ -4859,3 +4859,4 @@ d700fc25bb	take	conflict: upstream's search over ready then warning instances, p
 99bd2dd2a1	take	extractor output changed, so DocumentText VERSION 25→26 (also covers 76b2d92ddd)
 d588352064	take	taken as is
 7cce01a1ca	take	taken as is (translations already in every locale); mobile has no markdown fence preview
+1d2248cf01	take	adapted: marketing catalog dropped (removed); pl catalogs pruned to Onicode's keys; Onicode-only keys translated in a follow-up commit; polyfill conflict kept Onicode's .js imports plus pl
