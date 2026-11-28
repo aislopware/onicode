@@ -696,6 +696,10 @@ export interface ProjectionStoreV2Shape {
   readonly getThreadShell: (
     threadId: ThreadId,
   ) => Effect.Effect<OrchestrationV2ThreadShell | null, ProjectionStoreV2Error>;
+  readonly hasProviderThread: (
+    threadId: ThreadId,
+    providerThreadId: ProviderThreadId,
+  ) => Effect.Effect<boolean, ProjectionStoreV2Error>;
   readonly getThread: (
     threadId: ThreadId,
   ) => Effect.Effect<OrchestrationV2AppThread, ProjectionStoreV2Error>;
@@ -6240,6 +6244,18 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, ProjectionStoreService
       "ProjectionStore.findThread",
     )(selectThread);
 
+    const hasProviderThread: ProjectionStoreV2Shape["hasProviderThread"] = Effect.fn(
+      "ProjectionStore.hasProviderThread",
+    )((threadId, providerThreadId) =>
+      sql`
+        SELECT 1 FROM orchestration_v2_projection_provider_threads
+        WHERE provider_thread_id = ${providerThreadId}
+      `.pipe(
+        Effect.map((rows) => rows.length > 0),
+        Effect.mapError((cause) => new ProjectionStoreReadError({ threadId, cause })),
+      ),
+    );
+
     const requireThread = Effect.fn("ProjectionStore.requireThread")(function* (
       threadId: ThreadId,
     ) {
@@ -10371,6 +10387,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, ProjectionStoreService
       readShellSnapshot: readOnReader(readShellSnapshot),
       listOlderSettledThreads: readOnReader(listOlderSettledThreads),
       getThreadShell: readOnReader(getThreadShell),
+      hasProviderThread: readOnReader(hasProviderThread),
       getThread: readOnReader(getThread),
       findThread: readOnReader(findThread),
       getSettlementCandidates: readOnReader(getSettlementCandidates),

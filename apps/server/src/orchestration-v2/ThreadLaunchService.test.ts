@@ -87,6 +87,12 @@ import * as ThreadTitleRegeneration from "./ThreadTitleRegenerationService.ts";
 import * as ProviderReplayHarness from "./testkit/ProviderReplayHarness.ts";
 import * as RemoteDelegation from "../peer/RemoteDelegation.ts";
 import type * as ProviderAdapter from "@onicode/provider-core/server/ProviderAdapter";
+import * as AcpRegistrySessions from "../provider/AcpRegistrySessions.ts";
+import * as AcpRegistryRuntimeCoordinator from "@onicode/provider-acp-registry/server/AcpRegistryRuntimeCoordinator";
+import * as AgentSessionImporter from "../project/AgentSessionImporter.ts";
+import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
+import * as ServerRuntimeStartup from "../serverRuntimeStartup.ts";
+import type { ProviderInstance } from "@onicode/provider-core/server/driver";
 
 const projectId = ProjectId.make("project:launch-test");
 const otherProjectId = ProjectId.make("project:launch-other");
@@ -2897,6 +2903,67 @@ it.effect("creates a strong provider-thread mapping for an imported native sessi
       launched.projection.providerThreads[0]?.id,
     );
   }).pipe(Effect.provide(harness.layer));
+});
+
+it.effect("imports a native ACP session again after its Onicode thread is deleted", () => {
+  const instanceId = ProviderInstanceId.make("acpRegistry");
+  const driver = ProviderDriverKind.make("acpRegistry");
+  const harness = makeHarness({
+    adapters: [{ ...adapter, instanceId, driver }],
+    serverSettings: { providerInstances: { [instanceId]: { driver, enabled: true } } },
+  });
+  const instance = {
+    driverKind: driver,
+    snapshot: { getSnapshot: Effect.succeed({ nativeSessions: { canLoad: true } }) },
+    acpSessionManagement: {},
+  } as unknown as ProviderInstance;
+  const importLayer = AcpRegistrySessions.layer.pipe(
+    Layer.provideMerge(
+      Layer.mergeAll(
+        harness.layer,
+        NodeCrypto.layer,
+        Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({
+          getInstance: () => Effect.succeed(instance),
+        }),
+        Layer.mock(AcpRegistryRuntimeCoordinator.AcpRegistryRuntimeCoordinator)({
+          withSessionMutation: (effect) => effect,
+        }),
+        Layer.mock(ServerRuntimeStartup.ServerRuntimeStartup)({
+          enqueueCommand: (effect) => effect,
+        }),
+        Layer.mock(AgentSessionImporter.AgentSessionImporter)({
+          importNativeHistory: () => Effect.succeed(1),
+        }),
+      ),
+    ),
+  );
+
+  return Effect.gen(function* () {
+    const sessions = yield* AcpRegistrySessions.AcpRegistrySessions;
+    const threads = yield* ThreadManagement.ThreadManagementService;
+    const input = { projectId, instanceId, sessionId: "native-session-kept-after-delete" };
+    const first = yield* sessions.importSession(input);
+    yield* threads.dispatch({
+      type: "thread.delete",
+      commandId: CommandId.make("command:delete-imported-session"),
+      threadId: first.threadId,
+    });
+    assert.isNull(yield* threads.getThreadShell(first.threadId));
+    const owners = yield* sessions.findOwners({
+      driver,
+      instanceId,
+      sessionIds: [input.sessionId],
+    });
+    assert.isFalse(owners.has(input.sessionId));
+
+    const second = yield* sessions.importSession(input).pipe(
+      Effect.match({
+        onFailure: (error) => error.message,
+        onSuccess: (result) => result.imported,
+      }),
+    );
+    assert.strictEqual(second, true);
+  }).pipe(Effect.provide(importLayer));
 });
 
 it.effect("shared intake preserves durable attachment bytes after a lost launch result", () => {
