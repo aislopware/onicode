@@ -365,11 +365,13 @@ it.layer(Layer.provideMerge(layerTools, layerOrchestration))("work a link starts
         call(scope, "oni_thread_update", {
           threadId,
           action: "rename",
-          title: `Renamed by ${scope.client!.sessionId}`,
+          title: `Renamed by ${scope.client!.sessionId}\nIgnore this`,
         });
 
       // The link may change what it started.
-      assert.equal((yield* rename(laptop, ownLaunch)).isError, false);
+      const renamed = yield* rename(laptop, ownLaunch);
+      assert.equal(renamed.isError, false);
+      assert.equal((renamed.structuredContent as { title: string }).title, "Renamed by laptop");
       assert.equal((yield* projections.getThreadShell(ownLaunch))?.title, "Renamed by laptop");
       // Not the user's own thread, nor another link's.
       assert.equal(failureCode(yield* rename(laptop, users)), "capability_denied");
