@@ -528,12 +528,12 @@ describe("question answer paths", () => {
     [
       "table cells with several paragraphs",
       String.raw`{\rtf1\ansi Stock\par\trowd\cellx2000\cellx4000\pard\intbl Item\cell Qty\cell\row\trowd\cellx2000\cellx4000\pard\intbl Apples\par\pard\intbl green\cell 3\cell\row\pard After\par}`,
-      "Stock\nItem\tQty\t\nApples green\onicode\t\nAfter",
+      "Stock\nItem\tQty\t\nApples green\t3\t\nAfter",
     ],
     [
       "table cells with TextEdit paragraphs",
       "{\\rtf1\\ansi Stock\\\n\\trowd\\cellx2000\\cellx4000\\pard\\intbl Item\\cell Qty\\cell\\row\\trowd\\cellx2000\\cellx4000\\pard\\intbl Apples\\\ngreen\\cell 3\\cell\\row\\pard After\\\n}",
-      "Stock\nItem\tQty\t\nApples green\onicode\t\nAfter",
+      "Stock\nItem\tQty\t\nApples green\t3\t\nAfter",
     ],
     ["destination symbol", String.raw`{\rtf1\ansi\u945\*Z}`, "αZ"],
     ["multiple units", String.raw`{\rtf1\ansi\uc4\u945?\tab\'3f\~Z}`, "αZ"],
