@@ -4752,3 +4752,4 @@ ce36269560	take	taken as is (VERSION bump in 84f4fad02b covers it)
 bf6c5dfd55	take	taken as is
 13f9213cff	take	taken as is (other forge)
 728f9072da	take	merged with Onicode's ESCAPE and PARAGRAPH_END tokens (quote-only lines end paragraphs); upstream's code-span skip and fenced-code blanking added
+5f435d1457	take	taken as is (shared sessions are Codex/ACP-style; Claude is single-thread)
