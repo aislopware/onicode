@@ -4970,3 +4970,4 @@ e5168b099d	take	taken as is
 901a17c1a8	take	taken as is
 981aeb510a	take	taken as is
 0eeb7d10c8	take	conflict; kept Onicode's namespace-declaration guard (every format, xmlns: prefixes), a superset of upstream's odf widening
+e08c2e0df7	take	conflict; dropped upstream's telemetry env names (removed in Onicode), contract fields optional
