@@ -79,9 +79,23 @@ export type EnvironmentPullRequestListEntry = PullRequestListEntry & {
 export const scopedPullRequestListKey = (entry: EnvironmentPullRequestListEntry) =>
   `${entry.environmentId}:${pullRequestListKey(entry)}`;
 
-export const pullRequestStatKey = (
-  row: Pick<PullRequestDiffStat, "projectId" | "repository" | "number">,
-) => `${row.projectId}:${row.repository}:${row.number}`;
+interface PullRequestStatRow {
+  readonly projectId: string;
+  readonly host?: string | undefined;
+  readonly repository: string;
+  readonly number: number;
+}
+
+const pullRequestStatKey = (row: PullRequestStatRow) =>
+  `${row.projectId}:${row.host?.toLowerCase() ?? ""}:${row.repository.toLowerCase()}:${row.number}`;
+
+/** Older servers send counts without a host; those stand for the repository on any host. */
+export const readPullRequestStat = <Stat>(
+  statsByRow: ReadonlyMap<string, Stat>,
+  row: PullRequestStatRow,
+) =>
+  statsByRow.get(pullRequestStatKey(row)) ??
+  statsByRow.get(pullRequestStatKey({ ...row, host: undefined }));
 
 /**
  * Diff stats an environment has answered, the stats query that answered each, and each row's
@@ -109,7 +123,7 @@ export function withListedPullRequests(
   cache: PullRequestStatsCache,
   entries: readonly Pick<
     PullRequestListEntry,
-    "projectId" | "repository" | "number" | "updatedAt"
+    "projectId" | "host" | "repository" | "number" | "updatedAt"
   >[],
 ): {
   readonly cache: PullRequestStatsCache;
@@ -125,10 +139,12 @@ export function withListedPullRequests(
   const refresh = new Set<PullRequestListStatsInput>();
   for (const entry of moved) {
     const key = pullRequestStatKey(entry);
-    const query = answeredBy.get(key);
-    if (query) refresh.add(query);
-    stats.delete(key);
-    answeredBy.delete(key);
+    for (const answered of [key, pullRequestStatKey({ ...entry, host: undefined })]) {
+      const query = answeredBy.get(answered);
+      if (query) refresh.add(query);
+      stats.delete(answered);
+      answeredBy.delete(answered);
+    }
     updatedAt.set(key, entry.updatedAt);
   }
   return { cache: { stats, answeredBy, updatedAt }, refresh: [...refresh] };
@@ -159,15 +175,18 @@ export function withShownPullRequestStats(
     readonly stats: readonly PullRequestDiffStat[];
   }[],
 ): readonly EnvironmentPullRequestListEntry[] {
-  const shown = new Map(
-    answers.flatMap(({ environmentId, stats }) =>
-      stats.map((row) => [`${environmentId}:${pullRequestStatKey(row)}`, row] as const),
-    ),
-  );
+  const shown = new Map<EnvironmentId, Map<string, PullRequestDiffStat>>();
+  for (const { environmentId, stats } of answers) {
+    if (!stats.length) continue;
+    const byRow = shown.get(environmentId) ?? new Map<string, PullRequestDiffStat>();
+    for (const row of stats) byRow.set(pullRequestStatKey(row), row);
+    shown.set(environmentId, byRow);
+  }
   if (!shown.size) return entries;
   let changed = false;
   const next = entries.map((entry) => {
-    const stat = shown.get(`${entry.environmentId}:${pullRequestStatKey(entry)}`);
+    const byRow = shown.get(entry.environmentId);
+    const stat = byRow && readPullRequestStat(byRow, entry);
     if (!stat || entry.additions + entry.deletions !== 0) return entry;
     if (stat.additions + stat.deletions === 0) return entry;
     changed = true;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 
 import {
+  issueAssigneeSearchView,
   issueAssigneesAfterPicks,
   issueLabelsAfterPicks,
   issuePicksAfterFailedWrite,
@@ -91,5 +92,25 @@ describe("issue picker picks", () => {
 
     const rewritten = { ...later, written: ["bug", "docs", "ui"] };
     expect(issuePicksAfterFailedWrite(rewritten, sent)).toBe(rewritten);
+  });
+});
+
+describe("issue assignee search", () => {
+  it("reports a failed search beside loaded matches and the search's own truncation", () => {
+    const loaded = { assignees: [person("julius", "u1"), person("julia", "u2")], truncated: true };
+    const view = (data: typeof loaded | null, error: string | null = null) =>
+      issueAssigneeSearchView({
+        loaded,
+        searchable: true,
+        query: "juli",
+        debouncedQuery: "juli",
+        search: { data, isPending: false, error },
+      });
+
+    const failed = view(null, "Rate limited");
+    expect(failed.candidates).toHaveLength(2);
+    expect(failed).toMatchObject({ pending: false, error: "Rate limited", truncated: false });
+    expect(view({ assignees: [person("julius", "u1")], truncated: false }).truncated).toBe(false);
+    expect(view({ assignees: [person("julian", "u3")], truncated: true }).truncated).toBe(true);
   });
 });

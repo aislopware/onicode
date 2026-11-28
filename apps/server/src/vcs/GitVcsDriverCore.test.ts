@@ -9670,6 +9670,44 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         }),
     );
 
+    it.effect("removes a worktree when a build deletes one of its entries during the delete", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const { initialBranch } = yield* initRepoWithCommit(cwd);
+        const pathService = yield* Path.Path;
+        const worktreePath = pathService.join(yield* makeTmpDir("git-worktrees-"), "racing");
+        yield* (yield* GitVcsDriver.GitVcsDriver).createWorktree({
+          cwd,
+          path: worktreePath,
+          refName: initialBranch,
+          newRefName: "feature/racing",
+        });
+        yield* writeTextFile(worktreePath, "build/out.txt", "output\n");
+        const fileSystem = yield* FileSystem.FileSystem;
+        // The folder is listed, then the build cleans `build` before the delete reaches it.
+        const driver = yield* makeGitVcsDriverCore().pipe(
+          Effect.provideService(FileSystem.FileSystem, {
+            ...fileSystem,
+            readDirectory: (target, options) =>
+              fileSystem
+                .readDirectory(target, options)
+                .pipe(
+                  Effect.tap((names) =>
+                    names.includes("build")
+                      ? fileSystem.remove(pathService.join(target, "build"), { recursive: true })
+                      : Effect.void,
+                  ),
+                ),
+          }),
+        );
+
+        yield* driver.removeWorktree({ cwd, path: worktreePath, force: true });
+
+        assert.isFalse(NodeFS.existsSync(worktreePath));
+        assert.notInclude(yield* git(cwd, ["worktree", "list", "--porcelain"]), worktreePath);
+      }),
+    );
+
     it.effect("removes a worktree when called from inside it", () =>
       Effect.gen(function* () {
         const cwd = yield* makeTmpDir();

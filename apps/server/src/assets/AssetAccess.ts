@@ -60,6 +60,7 @@ import * as ProjectFaviconResolver from "../project/ProjectFaviconResolver.ts";
 import { isWithinRoot } from "../workspace/KnownWorkspaces.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import { toHostDrivePath } from "../workspace/hostDrivePath.ts";
+import { networkPathReachedBy } from "../workspace/networkLinks.ts";
 import * as NativeAppIconResolver from "./NativeAppIconResolver.ts";
 import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
 import { extractIcnsPng } from "./icns.ts";
@@ -361,13 +362,23 @@ const resolveCanonicalWorkspaceFile = Effect.fn("AssetAccess.resolveCanonicalWor
     );
     if (Option.isNone(resolved)) return null;
 
-    const [canonicalRoot, canonicalFile] = yield* Effect.all([
-      ProjectFaviconResolver.optionOnNotFound(fileSystem.realPath(input.workspaceRoot)),
-      ProjectFaviconResolver.optionOnNotFound(fileSystem.realPath(resolved.value.absolutePath)),
-    ]);
-    if (Option.isNone(canonicalRoot) || Option.isNone(canonicalFile)) return null;
-
     const path = yield* Path.Path;
+    const canonicalRoot = yield* ProjectFaviconResolver.optionOnNotFound(
+      fileSystem.realPath(input.workspaceRoot),
+    );
+    if (Option.isNone(canonicalRoot)) return null;
+    const reached = yield* Effect.promise(() =>
+      networkPathReachedBy(path, resolved.value.relativePath, {
+        from: canonicalRoot.value,
+        allowedRoot: canonicalRoot.value,
+      }),
+    );
+    if (reached !== null) return null;
+    const canonicalFile = yield* ProjectFaviconResolver.optionOnNotFound(
+      fileSystem.realPath(resolved.value.absolutePath),
+    );
+    if (Option.isNone(canonicalFile)) return null;
+
     const relative = path.relative(canonicalRoot.value, canonicalFile.value);
     if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) return null;
 
@@ -449,9 +460,12 @@ const finalizeAbsoluteMediaFileAsset = Effect.fn("AssetAccess.finalizeAbsoluteMe
     // the resolved path this check approved.
     const requestedPath = path.resolve(input.requestedPath);
     if (
-      isNetworkPath(input.requestedPath) &&
-      (input.workspaceRoot === undefined ||
-        !isWithinRoot(path, requestedPath, path.resolve(input.workspaceRoot)))
+      (isNetworkPath(input.requestedPath) &&
+        (input.workspaceRoot === undefined ||
+          !isWithinRoot(path, requestedPath, path.resolve(input.workspaceRoot)))) ||
+      (yield* Effect.promise(() =>
+        networkPathReachedBy(path, requestedPath, { allowedRoot: input.workspaceRoot }),
+      )) !== null
     ) {
       return yield* new AssetWorkspaceAssetNotFoundError({
         resource: input.resource,
@@ -571,11 +585,18 @@ const finalizeWorkspaceFileAsset = Effect.fn("AssetAccess.finalizeWorkspaceFileA
     );
     if (!canonicalFile) {
       // A link out of the root gets the single-file grant an absolute path would.
-      const linkedFile = yield* resolveCanonicalFile(resolved.absolutePath).pipe(
-        Effect.mapError(
-          (cause) => new AssetWorkspaceAssetInspectionError({ resource: input.resource, cause }),
-        ),
+      const reached = yield* Effect.promise(() =>
+        networkPathReachedBy(path, resolved.absolutePath, { allowedRoot: input.workspaceRoot }),
       );
+      const linkedFile =
+        reached === null
+          ? yield* resolveCanonicalFile(resolved.absolutePath).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new AssetWorkspaceAssetInspectionError({ resource: input.resource, cause }),
+              ),
+            )
+          : null;
       if (linkedFile) {
         return yield* finalizeAbsoluteMediaFileAsset({
           ...input,
@@ -1171,7 +1192,11 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
           path: canonicalFile,
           mimeType,
           file,
-          ...(claims.download ? { download: true, fileName: path.basename(canonicalFile) } : {}),
+          ...(claims.download
+            ? { download: true, fileName: path.basename(canonicalFile) }
+            : mimeType === "text/html"
+              ? { renderIntent: "file-preview" as const }
+              : {}),
         } satisfies ResolvedAsset)
       : null;
   }

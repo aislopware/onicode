@@ -53,7 +53,10 @@ import {
   type TrackerIssueDetail,
   type TrackerIssueSummary,
 } from "@onicode/source-control-core/server/IssueTracker";
-import { asIssueTrackerAccount } from "@onicode/source-control-core/server/IssueTrackerHost";
+import {
+  asIssueTrackerAccount,
+  IssueTrackerAccount,
+} from "@onicode/source-control-core/server/IssueTrackerHost";
 import { parseUrl } from "@onicode/shared/url";
 
 import * as IssueTrackerBindings from "../persistence/IssueTrackerBindings.ts";
@@ -149,6 +152,75 @@ function findStandaloneIssueUrl(trackers: ReadonlyArray<StandaloneIssueTrackerAp
   return null;
 }
 
+/** A failure that wrote nothing: the account does not reach the issue, or has no credential. */
+const isAccountMiss = (error: IssueTrackerError) =>
+  error.reason === "not-found" || error.reason === "unauthenticated";
+
+/**
+ * The tracker with each call made as the first of the accounts that reaches the issue, for a
+ * reference no binding names an account for: keys repeat across workspaces, and each account
+ * reaches one.
+ */
+function asFirstReachingAccount(
+  api: IssueTrackerApi,
+  accountIds: ReadonlyArray<IssueTrackerAccountId | null>,
+): IssueTrackerApi {
+  if (accountIds.length < 2) return asIssueTrackerAccount(api, accountIds[0] ?? null);
+  // Untraced: each tracker call already opens its own span.
+  const reaching = Effect.fnUntraced(function* <A>(effect: Effect.Effect<A, IssueTrackerError>) {
+    let miss: IssueTrackerError | null = null;
+    for (const accountId of accountIds) {
+      const result = yield* Effect.result(
+        Effect.provideService(effect, IssueTrackerAccount, accountId),
+      );
+      if (result._tag === "Success") return result.success;
+      if (!isAccountMiss(result.failure)) return yield* result.failure;
+      // An account that lacks the issue says more than one that is signed out.
+      if (miss === null || miss.reason === "unauthenticated") miss = result.failure;
+    }
+    return yield* (
+      miss ??
+      new IssueTrackerError({
+        tracker: api.kind,
+        operation: "read",
+        reason: "not-found",
+        detail: "No connected account reaches this issue.",
+      })
+    );
+  });
+  const {
+    getIssueSummary,
+    create,
+    comment,
+    update,
+    setState,
+    setReaction,
+    listTemplates,
+    listCandidates,
+  } = api;
+  // Every key is required here, so a method added to IssueTrackerApi fails to compile until it
+  // is wrapped instead of silently running as the first account.
+  const wrapped: { readonly [K in keyof IssueTrackerApi]-?: IssueTrackerApi[K] | undefined } = {
+    kind: api.kind,
+    capabilities: api.capabilities,
+    getViewer: (input) => reaching(api.getViewer(input)),
+    listIssues: (input) => reaching(api.listIssues(input)),
+    getIssue: (input) => reaching(api.getIssue(input)),
+    getComments: (input) => reaching(api.getComments(input)),
+    getIssueSummary: getIssueSummary && ((input) => reaching(getIssueSummary(input))),
+    create: create && ((input) => reaching(create(input))),
+    comment: comment && ((input) => reaching(comment(input))),
+    update: update && ((input) => reaching(update(input))),
+    setState: setState && ((input) => reaching(setState(input))),
+    setReaction: setReaction && ((input) => reaching(setReaction(input))),
+    listTemplates: listTemplates && ((input) => reaching(listTemplates(input))),
+    listCandidates: listCandidates && ((input) => reaching(listCandidates(input))),
+  };
+  return Object.fromEntries(
+    Object.entries(wrapped).filter(([, value]) => value !== undefined),
+  ) as unknown as IssueTrackerApi;
+}
+
 /** Lower case, so a scope keeps its cursor whichever project's spelling is read. Clients group by the leading host. */
 function listCursorKey(project: ProjectTrackerBinding): string {
   const scope = project.scope.toLowerCase();
@@ -226,9 +298,8 @@ export class IssueService extends Context.Service<
     ) => Effect.Effect<IssueScopeRef & { readonly host: string }, IssueError>;
     /**
      * Resolve through a matching project, preferring `preferredProjectId`; other scopes are read-only.
-     * A standalone link with no project bound to its tracker resolves through `preferredProjectId`,
-     * and must match the workspace in the issue's canonical URL from the connected tracker; that
-     * read comes back as `issue`, so callers need not read it again.
+     * An unbound `preferredProjectId` serves a standalone link no project binds the team of, if
+     * the issue's canonical URL names the link's workspace; that read comes back as `issue`.
      */
     readonly resolveUrl: (
       url: string,
@@ -384,7 +455,8 @@ const make = Effect.gen(function* () {
 
   /**
    * A project with no binding for a standalone tracker, the No project included, serves its
-   * references with the environment's credential. The tracker decides what the account may change.
+   * references with the environment's credentials, as the first account that reaches the issue.
+   * The tracker decides what the account may change.
    */
   const requireStandaloneProject = (
     ref: IssueScopeRef,
@@ -394,23 +466,40 @@ const make = Effect.gen(function* () {
     if (host !== undefined && host !== api.standalone.host) {
       return Effect.fail(new IssueUnavailableError({ reason: "tracker-unsupported" }));
     }
-    return projects.getShell(ref.projectId).pipe(
-      Effect.mapError(
-        (cause) =>
-          new IssueOperationError({
-            operation: "listProjects",
-            detail: "The project list could not be read.",
-            cause,
-          }),
+    return Effect.all([
+      projects.getShell(ref.projectId).pipe(
+        Effect.mapError(
+          (cause) =>
+            new IssueOperationError({
+              operation: "listProjects",
+              detail: "The project list could not be read.",
+              cause,
+            }),
+        ),
       ),
-      Effect.flatMap(
-        Option.match({
+      bindings.listAccounts.pipe(
+        Effect.mapError(
+          (cause) =>
+            new IssueOperationError({
+              operation: "listProjects",
+              detail: "The issue tracker accounts could not be read.",
+              cause,
+            }),
+        ),
+      ),
+    ]).pipe(
+      Effect.flatMap(([shell, added]) =>
+        Option.match(shell, {
           onNone: () => Effect.fail(new IssueUnavailableError({ reason: "tracker-unsupported" })),
           onSome: (project) =>
             Effect.succeed({
               project,
-              api,
-              // No binding names an account, so the tracker's first one serves.
+              api: asFirstReachingAccount(api, [
+                null,
+                ...added
+                  .filter((account) => account.tracker === api.kind)
+                  .map((account) => account.accountId),
+              ]),
               accountId: null,
               tracker: ref.tracker,
               host: api.standalone.host,
@@ -790,21 +879,28 @@ const make = Effect.gen(function* () {
             new IssueOperationError({ operation: "comment", detail: "A comment needs some text." }),
           );
         }
-        if (input.audience === "internal" && project.api.capabilities.internalComments !== true) {
-          return Effect.fail(unsupported("comment", "internal notes"));
+        if (project.api.comment === undefined || !project.api.capabilities.comment) {
+          return Effect.fail(unsupported("comment", "comments"));
         }
-        return project.api.comment === undefined || !project.api.capabilities.comment
-          ? Effect.fail(unsupported("comment", "comments"))
-          : project.api
-              .comment({
-                ...issueTarget(project, input),
-                body: input.body,
-                audience: input.audience,
-              })
-              .pipe(
-                Effect.mapError(toIssueError("comment")),
-                Effect.ensuring(invalidateDetail(project, input)),
-              );
+        if (input.audience === "internal" && project.api.capabilities.internalComments !== true) {
+          return Effect.fail(
+            new IssueOperationError({
+              operation: "comment",
+              detail:
+                "This tracker has no internal notes: everyone who can see the issue sees its comments. Leave the audience out to post one.",
+            }),
+          );
+        }
+        return project.api
+          .comment({
+            ...issueTarget(project, input),
+            body: input.body,
+            audience: input.audience,
+          })
+          .pipe(
+            Effect.mapError(toIssueError("comment")),
+            Effect.ensuring(invalidateDetail(project, input)),
+          );
       }),
     );
 
@@ -1014,18 +1110,48 @@ const make = Effect.gen(function* () {
         ...projects.filter((project) => project.project.id === preferredProjectId),
         ...projects,
       ];
-      const ordered = [...preferred(exact), ...preferred(onTracker)];
+      // A bound project lends the tracker read-only for its other teams; a caller with no binding,
+      // the No project included, serves them itself, so only an exact team's binding goes first.
+      const callerUnbound =
+        preferredProjectId !== undefined &&
+        !onTracker.some((project) => project.project.id === preferredProjectId);
+      const lenders = callerUnbound ? exact : onTracker;
+      const ordered = [...preferred(exact), ...preferred(lenders)];
       const accounts = [...new Set(ordered.map((project) => project.accountId))];
-      if (accounts.length === 0) {
+      if (accounts.length === 0 && preferredProjectId === undefined) {
         const { displayName, scopeNoun } = standalone.api.standalone;
-        if (preferredProjectId === undefined) {
-          return yield* new IssueOperationError({
-            operation: "resolveUrl",
-            detail: `No project in Onicode reads ${displayName} issues. Connect a ${displayName} account in Settings and bind a project to one of its ${scopeNoun}s to read this issue.`,
-          });
+        return yield* new IssueOperationError({
+          operation: "resolveUrl",
+          detail: `No project in Onicode reads ${displayName} issues. Connect a ${displayName} account in Settings and bind a project to one of its ${scopeNoun}s to read this issue.`,
+        });
+      }
+      let failure: IssueError | null = null;
+      for (const accountId of accounts) {
+        const found = serve(lenders.filter((project) => project.accountId === accountId));
+        if (found === null) continue;
+        const read = yield* found.lender.api
+          .getIssue({
+            cwd: found.lender.project.workspaceRoot,
+            host: found.lender.host,
+            scope: link.scope,
+            key: link.key,
+            workspace: standalone.link.workspace,
+          })
+          .pipe(Effect.mapError(toIssueError("resolveUrl")), Effect.result);
+        if (read._tag === "Failure") {
+          // Another workspace's account not having the key is a miss, not why the link failed.
+          if (failure === null || isNotFound(failure)) failure = read.failure;
+          continue;
         }
-        // No project is bound to the tracker: the caller's project, the No project included,
-        // reads the link with the environment's credential, which refuses another workspace.
+        const canonicalUrl = parseUrl(read.success.url);
+        const canonical = canonicalUrl === null ? null : standalone.api.parseIssueUrl(canonicalUrl);
+        return {
+          ...found.resolved,
+          workspace: (canonical?.workspace ?? standalone.link.workspace).toLowerCase(),
+          issue: toDetail(found.served, read.success),
+        };
+      }
+      if (callerUnbound) {
         const served = yield* requireStandaloneProject(
           { projectId: preferredProjectId, tracker, scope: link.scope },
           standalone.api,
@@ -1050,32 +1176,6 @@ const make = Effect.gen(function* () {
           writable: served.writable,
           workspace: (canonical?.workspace ?? standalone.link.workspace).toLowerCase(),
           issue: toDetail(served, issue),
-        };
-      }
-      let failure: IssueError | null = null;
-      for (const accountId of accounts) {
-        const found = serve(onTracker.filter((project) => project.accountId === accountId));
-        if (found === null) continue;
-        const read = yield* found.lender.api
-          .getIssue({
-            cwd: found.lender.project.workspaceRoot,
-            host: found.lender.host,
-            scope: link.scope,
-            key: link.key,
-            workspace: standalone.link.workspace,
-          })
-          .pipe(Effect.mapError(toIssueError("resolveUrl")), Effect.result);
-        if (read._tag === "Failure") {
-          // Another workspace's account not having the key is a miss, not why the link failed.
-          if (failure === null || isNotFound(failure)) failure = read.failure;
-          continue;
-        }
-        const canonicalUrl = parseUrl(read.success.url);
-        const canonical = canonicalUrl === null ? null : standalone.api.parseIssueUrl(canonicalUrl);
-        return {
-          ...found.resolved,
-          workspace: (canonical?.workspace ?? standalone.link.workspace).toLowerCase(),
-          issue: toDetail(found.served, read.success),
         };
       }
       return yield* (

@@ -28,6 +28,7 @@ import * as WorkspaceEntries from "./WorkspaceEntries.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
 import { fileHeaderMimeType } from "./fileHeaderMimeType.ts";
 import { toHostDrivePath } from "./hostDrivePath.ts";
+import { networkPathReachedBy } from "./networkLinks.ts";
 
 const PROJECT_READ_FILE_MAX_BYTES = 1024 * 1024;
 
@@ -179,6 +180,8 @@ export const make = Effect.gen(function* () {
     // Chips ask as soon as an agent's message renders, and touching a network
     // path makes Windows sign in to its host with the user's NTLM credentials.
     if (!path.isAbsolute(expandedPath) || isNetworkPath(expandedPath)) return null;
+    const reached = yield* Effect.promise(() => networkPathReachedBy(path, expandedPath));
+    if (reached !== null) return null;
     const stat = yield* fileSystem.stat(expandedPath).pipe(Effect.option);
     // Server state files answer like missing paths, as readFile refuses them.
     if (stat._tag === "None" || (yield* isServerInternalPath(expandedPath))) return null;
@@ -278,6 +281,15 @@ export const make = Effect.gen(function* () {
       // so a network path must be the resolved one the check above approved.
       // Others keep POSIX `link/..` semantics, which resolving first would change.
       const absolutePath = isNetworkPath(hostPath) ? path.resolve(hostPath) : hostPath;
+      const reached = yield* Effect.promise(() =>
+        networkPathReachedBy(path, absolutePath, { allowedRoot: input.cwd }),
+      );
+      if (reached !== null) {
+        return yield* new WorkspacePaths.WorkspacePathOutsideRootError({
+          workspaceRoot: input.cwd,
+          relativePath: input.relativePath,
+        });
+      }
       const realTargetPath = yield* Effect.tryPromise({
         try: () => NodeFSP.realpath(absolutePath),
         catch: (cause) =>
@@ -326,6 +338,20 @@ export const make = Effect.gen(function* () {
     if (realWorkspaceRoot === null) {
       return { relativePath: target.relativePath, realTargetPath: null, outsideRoot: false };
     }
+    const reached = yield* Effect.promise(() =>
+      networkPathReachedBy(path, path.relative(input.cwd, target.absolutePath), {
+        from: realWorkspaceRoot,
+        allowedRoot: realWorkspaceRoot,
+      }),
+    );
+    if (reached !== null) {
+      return yield* new WorkspaceFilePathEscapeError({
+        workspaceRoot: input.cwd,
+        relativePath: input.relativePath,
+        resolvedWorkspaceRoot: realWorkspaceRoot,
+        resolvedPath: reached,
+      });
+    }
     const resolved = yield* Effect.tryPromise({
       try: async () => {
         let candidate = target.absolutePath;
@@ -368,14 +394,6 @@ export const make = Effect.gen(function* () {
     });
     // A link out of the workspace reads like an absolute path would; writes still refuse it.
     const outsideRoot = !isInsideRealRoot(realWorkspaceRoot, resolved.realTargetPath);
-    if (outsideRoot && isNetworkPath(resolved.realTargetPath)) {
-      return yield* new WorkspaceFilePathEscapeError({
-        workspaceRoot: input.cwd,
-        relativePath: input.relativePath,
-        resolvedWorkspaceRoot: realWorkspaceRoot,
-        resolvedPath: resolved.realTargetPath,
-      });
-    }
     return {
       relativePath: target.relativePath,
       realTargetPath: resolved.exists ? resolved.realTargetPath : null,
@@ -535,6 +553,20 @@ export const make = Effect.gen(function* () {
 
     // Split the host path, not the display relativePath: on POSIX `\` is a file name character.
     const segments = path.relative(input.cwd, target.absolutePath).split(path.sep);
+    const reached = yield* Effect.promise(() =>
+      networkPathReachedBy(path, segments.join(path.sep), {
+        from: realWorkspaceRoot,
+        allowedRoot: realWorkspaceRoot,
+      }),
+    );
+    if (reached !== null) {
+      return yield* new WorkspaceFilePathEscapeError({
+        workspaceRoot: input.cwd,
+        relativePath: input.relativePath,
+        resolvedWorkspaceRoot: realWorkspaceRoot,
+        resolvedPath: reached,
+      });
+    }
     const realTargetPath = yield* Effect.tryPromise({
       try: async () => {
         for (let depth = segments.length; depth > 0; depth--) {

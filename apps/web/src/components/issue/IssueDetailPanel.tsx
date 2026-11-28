@@ -263,6 +263,7 @@ function IssueAssigneePicker({
   disabledReason: string;
 }) {
   const gt = useGT();
+  const resolve = useMessages();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [picks, setPicks] = useState(noIssuePicks<IssueAssigneeCandidate>);
@@ -281,7 +282,7 @@ function IssueAssigneePicker({
       : null,
   );
   const view = issueAssigneeSearchView({
-    loaded: candidatesQuery.data?.assignees ?? [],
+    loaded: candidatesQuery.data,
     searchable,
     query,
     debouncedQuery,
@@ -289,6 +290,7 @@ function IssueAssigneePicker({
   });
   const update = useAtomCommand(issueEnvironment.update, { reportFailure: false });
   const candidates = view.candidates;
+  const searchFailed = view.error !== null && candidates.length > 0;
   const onOpenChange = (nextOpen: boolean) => {
     setOpen(nextOpen);
     if (nextOpen) {
@@ -332,13 +334,27 @@ function IssueAssigneePicker({
       onQueryChange={setQuery}
       searchLabel={gt("Search people")}
       isPending={(candidatesQuery.isPending && candidatesQuery.data === null) || view.pending}
-      error={candidatesQuery.data === null ? candidatesQuery.error : view.error}
+      error={
+        candidatesQuery.data === null
+          ? candidatesQuery.error
+          : candidates.length === 0
+            ? view.error
+            : null
+      }
       candidates={candidates}
       emptyLabel={gt("Nobody can be assigned here.")}
       noMatchLabel={gt("Nobody matches that.")}
       errorLabel={gt("The people could not be read.")}
-      truncated={candidatesQuery.data?.truncated === true}
-      truncatedLabel={gt("More people exist than are listed here.")}
+      truncated={searchFailed || view.truncated}
+      truncatedLabel={
+        searchFailed
+          ? resolve(
+              msg("Only the people already listed are matched: the host search failed. {error}", {
+                error: view.error ?? "",
+              }),
+            )
+          : gt("More people exist than are listed here.")
+      }
       candidateKey={(candidate) => candidate.id}
       onSelect={(candidate) =>
         setPicks({

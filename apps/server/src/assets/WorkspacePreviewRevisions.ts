@@ -5,6 +5,7 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Semaphore from "effect/Semaphore";
 
+import { networkPathReachedBy } from "../workspace/networkLinks.ts";
 import { readFileRevision } from "./MediaFile.ts";
 
 const MAX_TRACKED_DOCUMENTS = 64;
@@ -53,6 +54,21 @@ const make = Effect.gen(function* () {
   const documentKey = (document: PreviewDocument) =>
     JSON.stringify([document.workspaceRoot, document.entryRelativePath]);
 
+  // A file behind a link onto a network share reads as missing; following it would sign in there.
+  const fileRevision = (document: PreviewDocument, relativePath: string) =>
+    Effect.promise(() =>
+      networkPathReachedBy(path, relativePath, {
+        from: document.workspaceRoot,
+        allowedRoot: document.workspaceRoot,
+      }),
+    ).pipe(
+      Effect.flatMap((reached) =>
+        reached === null
+          ? readFileRevision(path.join(document.workspaceRoot, relativePath))
+          : Effect.succeed(null),
+      ),
+    );
+
   const record = (state: DocumentState, relativePath: string, revision: string | null) => {
     if (state.overflowed) return;
     if (!state.files.has(relativePath)) {
@@ -96,7 +112,7 @@ const make = Effect.gen(function* () {
         const relativePaths = [...new Set([document.entryRelativePath, ...state.files.keys()])];
         const revisions = yield* Effect.forEach(
           relativePaths,
-          (relativePath) => readFileRevision(path.join(document.workspaceRoot, relativePath)),
+          (relativePath) => fileRevision(document, relativePath),
           { concurrency: REVISION_READ_CONCURRENCY },
         );
         for (const [index, relativePath] of relativePaths.entries()) {
@@ -115,7 +131,7 @@ const make = Effect.gen(function* () {
     const state = documents.get(documentKey(document));
     if (state === undefined || state.overflowed) return;
     yield* state.comparing.withPermits(1)(
-      Effect.map(readFileRevision(path.join(document.workspaceRoot, relativePath)), (revision) =>
+      Effect.map(fileRevision(document, relativePath), (revision) =>
         record(state, relativePath, revision),
       ),
     );

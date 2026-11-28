@@ -156,6 +156,28 @@ describe("resolveIssueLinkTarget", () => {
     expect(
       resolveIssueLinkTarget({ url: "https://linear.app/acme/issue/WEB-17", projects }),
     ).toBeNull();
+    // A project bound to no team serves another team's link itself, writable, as the server does.
+    const notes = project("notes", "acme/notes");
+    const fromNotes = (url: string) =>
+      resolveIssueLinkTarget({
+        url,
+        projects: [...projects, notes],
+        preferredProjectId: "notes",
+        trackers,
+      })?.ref;
+    expect(fromNotes("https://linear.app/acme/issue/OPS-3")).toMatchObject({
+      projectId: "notes",
+      scope: "OPS",
+    });
+    expect(fromNotes("https://linear.app/acme/issue/WEB-17")).toMatchObject({ projectId: "p2" });
+    expect(
+      resolveIssueLinkTarget({
+        url: "https://linear.app/acme/issue/OPS-3",
+        projects: [notes],
+        preferredProjectId: "notes",
+        trackers: { ...trackers, bindings: {} },
+      })?.ref,
+    ).toMatchObject({ projectId: "notes", scope: "OPS", workspace: "acme" });
 
     // A second account reaches its own workspace, through only the projects bound with it.
     const accountId = IssueTrackerAccountId.make("second");

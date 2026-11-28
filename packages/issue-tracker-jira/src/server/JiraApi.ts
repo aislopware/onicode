@@ -501,7 +501,7 @@ export const make = Effect.gen(function* () {
         return yield* fail(
           "addComment",
           "failed",
-          `${key} is not in a Service Management project, so it has no internal notes.`,
+          `${key} is not in a Service Management project, so it has no internal notes: everyone who can see the issue sees its comments. Leave the audience out to post one.`,
         );
       }
       // A service desk comment is a reply the customer sees unless marked internal.

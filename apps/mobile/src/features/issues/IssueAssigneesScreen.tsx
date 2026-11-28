@@ -44,7 +44,7 @@ export function IssueAssigneesScreen({ route }: StaticScreenProps<IssueParams>) 
       : issueEnvironment.candidates({ ...target, input: { ...target.input, query: hostQuery } }),
   );
   const view = issueAssigneeSearchView({
-    loaded: result.data?.assignees ?? [],
+    loaded: result.data,
     searchable,
     query,
     debouncedQuery,
@@ -106,12 +106,16 @@ export function IssueAssigneesScreen({ route }: StaticScreenProps<IssueParams>) 
       notice={
         detail && !allowed
           ? (access?.blocked ?? gt("Changing assignees needs triage access on this tracker."))
-          : null
+          : view.error !== null && candidates.length > 0
+            ? gt("Only the people already listed are matched: the host search failed. {error}", {
+                error: view.error,
+              })
+            : null
       }
       pending={(result.isPending && !result.data) || view.pending}
       loadError={result.data ? view.error : result.error}
       onRetry={hostQuery === null ? result.refresh : search.refresh}
-      truncated={result.data?.truncated === true}
+      truncated={view.truncated}
       onToggle={(id) => {
         const candidate = candidates.find((entry) => entry.id === id);
         if (candidate) {

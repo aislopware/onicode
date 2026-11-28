@@ -175,6 +175,11 @@ function makeService(input: {
   readonly readBindings?: ReturnType<
     IssueTrackerBindings.IssueTrackerBindingsRepository["Service"]["list"]
   >;
+  /** Accounts added beside each tracker's first. */
+  readonly accounts?: ReadonlyArray<{
+    readonly tracker: IssueTrackerKind;
+    readonly accountId: IssueTrackerAccountId;
+  }>;
 }) {
   return IssueService.IssueService.pipe(
     Effect.provide(
@@ -192,6 +197,7 @@ function makeService(input: {
                     ]),
                   ),
                 ),
+              listAccounts: Effect.succeed(input.accounts ?? []),
             }),
             Layer.succeed(
               IssueTrackerRegistry.IssueTrackerRegistry,
@@ -773,6 +779,20 @@ describe("IssueService with a standalone tracker", () => {
             },
           },
         });
+      // As Linear does, each account refuses an issue outside its own workspace.
+      const inOwnWorkspace = (workspace: string | undefined) =>
+        Effect.flatMap(asWhom, (account) => {
+          const own = account === "first" ? "acme" : "other-workspace";
+          return workspace !== undefined && workspace.toLowerCase() !== own
+            ? Effect.fail(fail("not-found"))
+            : Effect.succeed({ account, workspace: own });
+        });
+      const readInOwnWorkspace: IssueTrackerApi["getIssue"] = (input) =>
+        Effect.map(inOwnWorkspace(input.workspace), ({ account, workspace }) => ({
+          ...issue(input.key),
+          title: account,
+          url: `https://linear.app/${workspace}/issue/${input.key}/canonical-title`,
+        }));
       const calls: string[] = [];
       const service = yield* twoAccounts({
         getViewer: () => Effect.map(asWhom, (account) => `viewer-${account}`),
@@ -781,18 +801,7 @@ describe("IssueService with a standalone tracker", () => {
             calls.push(`${account} ${input.cursor ?? ""}`);
             return { items: [issue("ENG-1")], nextCursor: `${account}-next` };
           }),
-        // As Linear does, each account refuses an issue outside its own workspace.
-        getIssue: (input) =>
-          Effect.flatMap(asWhom, (account) => {
-            const workspace = account === "first" ? "acme" : "other-workspace";
-            return input.workspace !== undefined && input.workspace.toLowerCase() !== workspace
-              ? Effect.fail(fail("not-found"))
-              : Effect.succeed({
-                  ...issue(input.key),
-                  title: account,
-                  url: `https://linear.app/${workspace}/issue/${input.key}/canonical-title`,
-                });
-          }),
+        getIssue: readInOwnWorkspace,
       });
 
       // The same team key on two accounts is two scopes, each with its own cursor and viewer.
@@ -815,6 +824,34 @@ describe("IssueService with a standalone tracker", () => {
           "work" as ProjectId,
         ),
       ).toMatchObject({ projectId: "home", issue: { title: "second" } });
+
+      // Unbound, a link reads and writes as whichever connected account reaches its workspace.
+      const commentedAs: string[] = [];
+      const unbound = yield* makeService({
+        projects: [project({ id: "notes" })],
+        trackers: [
+          fakeStandaloneTracker({
+            getIssue: readInOwnWorkspace,
+            comment: (input) =>
+              Effect.map(inOwnWorkspace(input.workspace), ({ account }) => {
+                commentedAs.push(account);
+              }),
+          }),
+        ],
+        accounts: [{ tracker: LINEAR, accountId: IssueTrackerAccountId.make("second") }],
+      });
+      const unboundLink = yield* unbound.resolveUrl(
+        "https://linear.app/other-workspace/issue/ENG-1/old-title",
+        "notes" as ProjectId,
+      );
+      expect(unboundLink).toMatchObject({
+        projectId: "notes",
+        writable: true,
+        workspace: "other-workspace",
+        issue: { title: "second" },
+      });
+      yield* unbound.comment({ ...unboundLink, body: "Follow-up" });
+      expect(commentedAs).toEqual(["second"]);
 
       // One refused key leaves the group usable, even on a continuation that skips the other.
       const refusing = (refused: ReadonlyArray<string>) =>
@@ -1102,6 +1139,18 @@ describe("IssueService with a standalone tracker", () => {
       expect(
         yield* Effect.flip(unbound.detail({ ...noProjectRef, host: "linear.example" })),
       ).toMatchObject({ _tag: "IssueUnavailableError", reason: "tracker-unsupported" });
+      // Another project's team does not make a No project link read-only through that project.
+      const boundElsewhere = yield* makeService({
+        projects,
+        trackers,
+        bindings: { ["web" as ProjectId]: { tracker: LINEAR, scope: "OPS" } },
+      });
+      const elsewhereLink = yield* boundElsewhere.resolveUrl(
+        "https://linear.app/acme/issue/ENG-1/issue-title",
+        "notes" as ProjectId,
+      );
+      expect(elsewhereLink).toMatchObject({ projectId: "notes", scope: "ENG", writable: true });
+      yield* boundElsewhere.comment({ ...elsewhereLink, body: "Follow-up" });
 
       // A project with no remote at all can still be bound, and then has only the standalone one.
       const standaloneOnly = yield* makeService({
