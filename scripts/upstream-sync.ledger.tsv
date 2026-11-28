@@ -4820,3 +4820,4 @@ b1f3fbfcf7	take	taken as is (other forge)
 3f57af3728	take	CONFLICT: Onicode moved the detach unload loop into unloadDetachedThreads; applied upstream's archive-a-delivered-child (with plain-unload fallback) there
 54140c6f17	take	risky (mobile): taken as is, native editor files are Onicode's OniComposerEditor; mobile typecheck and chip test pass
 5beea72eba	take	conflict: kept Onicode's contextBoundary param and side-conversation helpers; upstream routing uses it
+95c949c963	take	conflicts resolved (kept Onicode's turn-item-attempt import and context-breakdown selector); desktop only, mobile counterpart noted as follow-up
