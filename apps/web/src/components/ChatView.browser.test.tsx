@@ -8,16 +8,23 @@ import {
   EnvironmentId,
   IssueTrackerKind,
   ORCHESTRATION_V2_WS_METHODS,
+  ProviderDriverKind,
+  ProviderInstanceId,
+  ProviderThreadId,
+  ProviderUploadFeedbackError,
   RunId,
   ThreadId,
   WS_METHODS,
   type IssueDetail,
   type IssueSummary,
   type IssueRef,
+  type OrchestrationV2ProviderThread,
+  type ProviderUploadFeedbackInput,
   type ThreadIssueLink,
 } from "@onicode/contracts";
 import { DEFAULT_CLIENT_SETTINGS } from "@onicode/contracts/settings";
 import type * as Context from "effect/Context";
+import * as DateTime from "effect/DateTime";
 import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
 import { runAtomCommand } from "@onicode/client-runtime/state/runtime";
@@ -1364,6 +1371,78 @@ it("a subagent tab shows its read-only bar under no header of its own", async ()
   await expect
     .element(screen.getByRole("textbox", { name: `Message ${parent.title}`, exact: true }))
     .toBeVisible();
+});
+
+it("/feedback with a pending reply runs as feedback and keeps the reply when the upload fails", async () => {
+  const history = threadWithHistory("feedback-reply", 1);
+  const at = DateTime.makeUnsafe("2026-03-17T19:12:28.000Z");
+  // Without an active provider thread, `/feedback` asks for a first message instead.
+  const providerThread: OrchestrationV2ProviderThread = {
+    id: ProviderThreadId.make("provider-thread-feedback"),
+    driver: ProviderDriverKind.make("codex"),
+    providerInstanceId: ProviderInstanceId.make("codex"),
+    providerSessionId: null,
+    appThreadId: history.id,
+    ownerNodeId: null,
+    nativeThreadRef: null,
+    nativeConversationHeadRef: null,
+    status: "idle",
+    firstRunOrdinal: 1,
+    lastRunOrdinal: 1,
+    handoffIds: [],
+    forkedFrom: null,
+    pendingBackgroundTasks: [],
+    contextUsage: null,
+    nativeMetadata: null,
+    goal: null,
+    createdAt: at,
+    updatedAt: at,
+  };
+  const thread = { ...history, providerThreads: [providerThread] };
+  // The upload queues behind the thread's visit command, which must be answered.
+  using _environment = installFakeEnvironment([thread], { acceptCommands: true });
+  const uploads: ProviderUploadFeedbackInput[] = [];
+  using _upload = answerRpc(
+    WS_METHODS.providerUploadFeedback,
+    (input: ProviderUploadFeedbackInput) => {
+      uploads.push(input);
+      return Effect.fail(new ProviderUploadFeedbackError({ threadId: input.threadId }));
+    },
+  );
+  __setClientSettingsForTests({
+    ...DEFAULT_CLIENT_SETTINGS,
+    onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
+  });
+  await page.viewport(1400, 900);
+  const router = getRouter(
+    createMemoryHistory({ initialEntries: [`/${ENVIRONMENT_ID}/${thread.id}`] }),
+  );
+  await router.load();
+  await using _app = await render(<AppRoot router={router} />, {
+    // AppRoot brings its own router.
+    router: false,
+  });
+  await expect.element(page.getByText(`Answer 0 for ${thread.id}.`)).toBeVisible();
+  await page.getByRole("button", { name: "Reply to this response" }).first().click();
+  const replyBar = page.getByText("Replying to", { exact: true });
+  await expect.element(replyBar).toBeVisible();
+  const running = { ...thread.runs[0]!, status: "running" as const, completedAt: null };
+  await act(() => emitThreadEvent(thread.id, { type: "run.updated", payload: running }));
+  await expect.element(page.getByRole("button", { name: "Stop generation" })).toBeVisible();
+
+  const editor = page.getByTestId("composer-editor");
+  await userEvent.click(editor);
+  await insertText("/feedback slow");
+  // Pressing it runs feedback, so it does not offer to steer the running turn.
+  await expect.element(page.getByRole("button", { name: "Submit message" })).toBeVisible();
+  await userEvent.keyboard("{Enter}");
+
+  await vi.waitFor(() => expect(uploads).toEqual([{ threadId: thread.id, reason: "slow" }]));
+  await expect
+    .element(page.getByText("Could not send feedback to OpenAI", { exact: false }).first())
+    .toBeVisible();
+  await expect.element(replyBar).toBeVisible();
+  expect(editor.element().textContent).toBe("");
 });
 
 // What the /side tests share: a thread with a reply, another thread to leave to, and uploads and
