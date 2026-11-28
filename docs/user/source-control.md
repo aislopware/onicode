@@ -439,7 +439,9 @@ same place; each project reads its teams through the account you picked them und
 linked by its full URL needs no team picked: a thread whose project has no team picked, No project
 threads included, can open and change an issue from any connected workspace, as far as your
 Linear account allows. In a project with teams picked, an issue from a team no project has picked
-opens read-only.
+opens read-only, if some project picked its teams under the account that reaches the issue's
+workspace; open an issue from a workspace no project uses in a thread whose project has no team
+picked.
 
 Jira Cloud works the same way with projects in place of teams: connect your site
 (`yourteam.atlassian.net`), your account email, and an

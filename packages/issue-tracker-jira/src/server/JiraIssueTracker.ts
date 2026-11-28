@@ -557,19 +557,22 @@ export const make: Effect.Effect<StandaloneIssueTrackerApi, never, JiraApi.JiraA
       }),
 
       listCandidates: (input) =>
-        Effect.all(
-          [
-            // A person search does not need the label catalogue.
-            input.query === undefined
-              ? jira.labels
-              : Effect.succeed({ names: [], truncated: false }),
-            jira.assignable(
-              projectKey(input.scope),
-              input.query === undefined ? undefined : { query: input.query },
+        requireSite("listCandidates", input.workspace).pipe(
+          Effect.andThen(
+            Effect.all(
+              [
+                // A person search does not need the label catalogue.
+                input.query === undefined
+                  ? jira.labels
+                  : Effect.succeed({ names: [], truncated: false }),
+                jira.assignable(
+                  projectKey(input.scope),
+                  input.query === undefined ? undefined : { query: input.query },
+                ),
+              ],
+              { concurrency: 2 },
             ),
-          ],
-          { concurrency: 2 },
-        ).pipe(
+          ),
           Effect.map(([labels, people]) => ({
             labels: labels.names.flatMap((name) =>
               name.trim() ? [{ name, color: null, description: null }] : [],

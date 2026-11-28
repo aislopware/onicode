@@ -219,7 +219,7 @@ export const assetFileResponse = Effect.fn("assetFileResponse")(function* (
     !asset.download &&
     headers["Content-Type"] === "text/html; charset=utf-8"
   ) {
-    const bytes = yield* readMcpAppHtml(asset.path);
+    const bytes = yield* readMcpAppHtml(asset.path, asset.file);
     // A page too large to buffer is served as is, without scroll restoration.
     if (bytes !== null) {
       const script = new TextEncoder().encode(FILE_PREVIEW_SCROLL_SCRIPT);

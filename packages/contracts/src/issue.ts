@@ -108,8 +108,15 @@ export const IssueScopeRef = Schema.Struct({
 });
 export type IssueScopeRef = typeof IssueScopeRef.Type;
 
-export const IssueCandidatesInput = Schema.Struct({
+/** A scope read for an issue: a standalone tracker's team key repeats across `workspace`s. */
+export const IssueTemplatesInput = Schema.Struct({
   ...IssueScopeRef.fields,
+  workspace: IssueRef.fields.workspace,
+});
+export type IssueTemplatesInput = typeof IssueTemplatesInput.Type;
+
+export const IssueCandidatesInput = Schema.Struct({
+  ...IssueTemplatesInput.fields,
   /** A name or email to search people for, where the candidates offer `assigneeSearch`. */
   query: Schema.optional(Schema.String.check(Schema.isMaxLength(320))),
 });

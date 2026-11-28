@@ -566,20 +566,16 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
         }),
     );
 
-    it.effect.skipIf(!symlinksSupported || HostProcess.Platform.defaultValue() === "win32")(
+    it.effect.runIf(symlinksSupported && HostProcess.Platform.defaultValue() === "win32")(
       "refuses a link onto a network path before resolving through it",
       () =>
         Effect.gen(function* () {
           const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
-          const fileSystem = yield* FileSystem.FileSystem;
           const path = yield* Path.Path;
           const cwd = yield* makeTempDir;
-          const outsideDir = yield* makeTempDir;
-          yield* writeTextFile(outsideDir, "a.md", "outside\n");
-          // Names a share, though POSIX resolves the leading `//` as `/`.
-          yield* fileSystem.symlink(
-            `/${yield* fileSystem.realPath(outsideDir)}`,
-            path.join(cwd, "nas"),
+          // A typed link is made without reading its target, and `.invalid` never resolves.
+          yield* Effect.promise(() =>
+            NodeFSP.symlink("\\\\attacker.invalid\\share", path.join(cwd, "nas"), "dir"),
           );
           const realpath = vi.mocked(NodeFSP.realpath).mockClear();
 

@@ -65,6 +65,11 @@ export function IssueAssigneesScreen({ route }: StaticScreenProps<IssueParams>) 
   const held = (candidate: IssueAssigneeCandidate) =>
     detail ? issueAssigneeHeld(detail, candidate) : false;
   const candidates = view.candidates;
+  const blocked =
+    detail && !allowed
+      ? (access?.blocked ?? gt("Changing assignees needs triage access on this tracker."))
+      : null;
+  const searchFailed = view.error !== null && candidates.length > 0;
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- picks are sent when the sheet leaves the navigation stack, however it is dismissed
   useEffect(
     () =>
@@ -104,16 +109,16 @@ export function IssueAssigneesScreen({ route }: StaticScreenProps<IssueParams>) 
       }))}
       allowed={allowed}
       notice={
-        detail && !allowed
-          ? (access?.blocked ?? gt("Changing assignees needs triage access on this tracker."))
-          : view.error !== null && candidates.length > 0
-            ? gt("Only the people already listed are matched: the host search failed. {error}", {
-                error: view.error,
-              })
-            : null
+        blocked ??
+        (searchFailed
+          ? gt("Only the people already listed are matched: the host search failed. {error}", {
+              error: view.error ?? "",
+            })
+          : null)
       }
       pending={(result.isPending && !result.data) || view.pending}
-      loadError={result.data ? view.error : result.error}
+      // Under the access notice a failed search with matches shown offers no Retry.
+      loadError={!result.data ? result.error : blocked !== null && searchFailed ? null : view.error}
       onRetry={hostQuery === null ? result.refresh : search.refresh}
       truncated={view.truncated}
       onToggle={(id) => {

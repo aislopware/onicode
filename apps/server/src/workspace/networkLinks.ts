@@ -6,13 +6,13 @@ import type * as Path from "effect/Path";
 
 import { isWithinRoot } from "./KnownWorkspaces.ts";
 
+// Real link chains are short; a longer one is refused rather than followed.
 const MAX_LINK_HOPS = 40;
 
 /**
- * The network path outside `allowedRoot` that resolving `filePath` would touch, found by reading
- * links rather than following them, or null. Windows signs in to a share with the user's NTLM
- * credentials as soon as realpath, stat or open reaches it, so this runs before any of them.
- * A relative `filePath` resolves below `from`, a real directory.
+ * The network path outside `allowedRoot` that resolving `filePath` (below `from` when relative)
+ * would touch, read from links without following them. Windows signs in to a share with NTLM as
+ * soon as realpath, stat or open reaches it. POSIX reads `//` as `/`, so only Windows walks.
  */
 export async function networkPathReachedBy(
   path: Path.Path,
@@ -21,21 +21,29 @@ export async function networkPathReachedBy(
 ): Promise<string | null> {
   const separators = path.sep === "\\" ? /[\\/]+/ : /\/+/;
   const segments = (value: string) => value.split(separators).filter(Boolean).reverse();
-  const refused = (candidate: string) =>
-    options.allowedRoot === undefined ||
-    !isWithinRoot(path, path.resolve(candidate), path.resolve(options.allowedRoot));
+  const allowedRoot = options.allowedRoot;
+  let canonicalRoot: Promise<string> | undefined;
+  const refused = async (candidate: string) => {
+    if (allowedRoot === undefined) return true;
+    const target = path.resolve(candidate);
+    if (isWithinRoot(path, target, path.resolve(allowedRoot))) return false;
+    // A root that is itself a link to a share still allows that share.
+    canonicalRoot ??= NodeFSP.realpath(allowedRoot).catch(() => path.resolve(allowedRoot));
+    return !isWithinRoot(path, target, await canonicalRoot);
+  };
   let current: string;
   const pending: Array<string> = [];
   if (options.from === undefined) {
-    // An allowed share is the caller's own project, so nothing on it is walked.
-    if (isNetworkPath(filePath)) return refused(filePath) ? filePath : null;
-    // Windows collapses `..` before it follows links; POSIX follows the link first.
-    const absolute = path.sep === "\\" ? path.resolve(filePath) : filePath;
+    if (isNetworkPath(filePath) && (await refused(filePath))) return filePath;
+    if (path.sep !== "\\") return null;
+    // Windows collapses `..` before it follows links, in paths and in link targets alike.
+    const absolute = path.resolve(filePath);
     current = path.parse(absolute).root;
     pending.push(...segments(absolute.slice(current.length)));
   } else {
+    if (path.sep !== "\\") return null;
     current = options.from;
-    pending.push(...segments(filePath));
+    pending.push(...segments(path.normalize(filePath)));
   }
   for (let hops = 0; ;) {
     const name = pending.pop();
@@ -56,13 +64,16 @@ export async function networkPathReachedBy(
       current = next;
       continue;
     }
-    if (isNetworkPath(link)) {
-      return refused(link) ? [link, ...pending.toReversed()].join(path.sep) : null;
+    // A link on an allowed share is walked on: it may point at another share.
+    if (isNetworkPath(link) && (await refused(link))) {
+      return [link, ...pending.toReversed()].join(path.sep);
     }
-    // Leave a link loop for realpath to report.
-    if (++hops > MAX_LINK_HOPS) return null;
+    // Past this, or through a drive-relative target that follows another drive's working
+    // directory, the walk cannot tell where the link leads, so it refuses.
+    if (++hops > MAX_LINK_HOPS || /^[A-Za-z]:(?![\\/])/.test(link)) return next;
     const root = path.isAbsolute(link) ? path.parse(link).root : "";
-    if (root !== "") current = root;
-    pending.push(...segments(link.slice(root.length)));
+    // A root-relative target such as `\dir` stays on the link's own drive or share.
+    if (root !== "") current = /^[\\/]$/.test(root) ? path.parse(current).root : root;
+    pending.push(...segments(path.normalize(link.slice(root.length))));
   }
 }

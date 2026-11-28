@@ -394,6 +394,15 @@ export const make = Effect.gen(function* () {
     });
     // A link out of the workspace reads like an absolute path would; writes still refuse it.
     const outsideRoot = !isInsideRealRoot(realWorkspaceRoot, resolved.realTargetPath);
+    // A link to a mapped drive resolves to its share only here, past the link walk.
+    if (outsideRoot && isNetworkPath(resolved.realTargetPath)) {
+      return yield* new WorkspaceFilePathEscapeError({
+        workspaceRoot: input.cwd,
+        relativePath: input.relativePath,
+        resolvedWorkspaceRoot: realWorkspaceRoot,
+        resolvedPath: resolved.realTargetPath,
+      });
+    }
     return {
       relativePath: target.relativePath,
       realTargetPath: resolved.exists ? resolved.realTargetPath : null,
