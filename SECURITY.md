@@ -120,7 +120,7 @@ revocation and ceilings hold, not what a full-scope session can do once issued.
 ## Where enforcement lives
 
 - Session issuance, pairing, token exchange: [`auth/http.ts`](apps/server/src/auth/http.ts), [`auth/EnvironmentAuth.ts`](apps/server/src/auth/EnvironmentAuth.ts)
-- Per-RPC scopes: [`auth/RpcAuthorization.ts`](apps/server/src/auth/RpcAuthorization.ts). [`clientRpcPermissions.ts`](packages/contracts/src/clientRpcPermissions.ts) only drives client UI and is never the boundary.
+- Per-RPC scopes: [`auth/RpcAuthorization.ts`](apps/server/src/auth/RpcAuthorization.ts). It also enforces the scopes [`clientRpcPermissions.ts`](packages/contracts/src/clientRpcPermissions.ts) declares for client UI.
 - Public access (Tailscale Funnel): [`publicAccess/PublicAccess.ts`](apps/server/src/publicAccess/PublicAccess.ts), [`publicAccess/publicRequest.ts`](apps/server/src/publicAccess/publicRequest.ts)
 - MCP and outside agents: [`auth/McpOAuth.ts`](apps/server/src/auth/McpOAuth.ts), [`auth/mcpOAuthHttp.ts`](apps/server/src/auth/mcpOAuthHttp.ts), [`auth/mcpOAuthHtml.ts`](apps/server/src/auth/mcpOAuthHtml.ts), [`mcp/McpHttpServer.ts`](apps/server/src/mcp/McpHttpServer.ts), [`mcp/McpToolAccess.ts`](apps/server/src/mcp/McpToolAccess.ts), [`mcp/threadAccess.ts`](apps/server/src/mcp/threadAccess.ts), [`mcp/linkOrigin.ts`](apps/server/src/mcp/linkOrigin.ts)
 - Webhooks: [`scheduledTasks/webhookRoute.ts`](apps/server/src/scheduledTasks/webhookRoute.ts), [`scheduledTasks/webhookVerification.ts`](apps/server/src/scheduledTasks/webhookVerification.ts), [`scheduledTasks/webhookTemplate.ts`](apps/server/src/scheduledTasks/webhookTemplate.ts)

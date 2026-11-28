@@ -4871,3 +4871,4 @@ e0b50e2775	take	taken as is
 f72dbd46e9	take	taken as is
 76b2d92ddd	take	taken as is
 eda8fe8380	take	taken as is (pl key translated with the Polish follow-up)
+2551da47d2	take	conflicts: guest share scope dropped (removed); SECURITY.md adopts upstream's wording that RpcAuthorization enforces clientRpcPermissions scopes (Onicode's line said the opposite, wrongly), Onicode's other enforcement lines kept
