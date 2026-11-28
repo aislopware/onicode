@@ -87,11 +87,12 @@ export const definition = defineSourceControl({
   changeRequestUrl: ({ host, repository, number, remoteUrl, webUrl }) => {
     if (!Number.isSafeInteger(number) || number < 1) return null;
     if (webUrl) return changeRequestUrlBelow(webUrl, `-/merge_requests/${number}`);
-    if (!isProjectPath(repository, host)) return null;
+    const web = webHost(host);
+    if (!isProjectPath(repository, web)) return null;
     try {
       return new URL(
         `/${repository}/-/merge_requests/${number}`,
-        remoteWebOrigin(webHost(host), remoteUrl),
+        remoteWebOrigin(web, remoteUrl),
       ).toString();
     } catch {
       return null;
