@@ -4886,3 +4886,4 @@ b334a34594	take	conflict: kept Onicode's validated changeRequestUrl (safe number
 6bc099829a	take	taken as is
 1b0a149b83	take	taken as is
 00394b3ae3	take	taken as is
+ee961f64c8	take	adapted: kept Onicode's controlled ZoomableImage and bottom media toolbar; overlay prop added to it, Draw button sits in the media toolbar; test caption uses Onicode's counter
