@@ -53,6 +53,9 @@ describe("thread link destinations", () => {
     expect(guessThreadLinkRef(there, [ref("elsewhere", "a%3A1"), ref("elsewhere", "a:1")])).toBe(
       null,
     );
+    // A v3 link's ids are exact, so a thread whose id decodes once more never stands in.
+    const exact = parseThreadLinkHref("oni-thread://v3/there/work%2520item")!;
+    expect(threadLinkCandidates(exact, local)).toEqual([ref("there", "work%20item")]);
   });
 
   it("leaves ambiguous or missing destinations unresolved", () => {
@@ -455,6 +458,9 @@ describe("thread links", () => {
         local,
       ),
     ).toEqual([ref("there", "t1"), ref("local", "t%3A2"), ref("local", "t:2")]);
+    expect(
+      threadLinkRefs("<oni-thread://v3/team%2Fa/b> <oni-thread://v3/team/a%2Fb>", local),
+    ).toEqual([ref("team/a", "b"), ref("team", "a/b")]);
   });
 
   it("lists a message's thread links on runtimes whose matchAll omits named groups, such as Hermes", () => {
@@ -479,6 +485,14 @@ describe("thread links", () => {
     expect(parseThreadLinkHref(link.slice(1, -1))).toEqual(
       ref("env-1", "thread:delegated-task:mcp%3A1"),
     );
+    // Older clients read no v3, so only an environment a v2 link cannot name is written in it.
+    expect(formatThreadLink(ref("env-1", "work item"))).toBe("<oni-thread://v2/env-1/work%20item>");
+    const slashed = ref("team/a b", "t:1");
+    expect(formatThreadLink(slashed)).toBe("<oni-thread://v3/team%2Fa%20b/t%3A1>");
+    expect(parseThreadLinkHref("oni-thread://v3/team%2Fa%20b/t%3A1")).toEqual({
+      ...slashed,
+      exact: true,
+    });
   });
 
   it("formats a label that would otherwise break the Markdown link", () => {
@@ -521,7 +535,12 @@ describe("thread links", () => {
       for (const title of [() => "Demo", () => undefined]) {
         expect(relabelThreadLinks(markdown, local, title)).toBe(markdown);
       }
+      // The definition still makes a clickable link, so its thread is read.
+      expect(threadLinkRefs(markdown, local)).toEqual([ref("local", "demo")]);
     }
+    expect(threadLinkRefs("[Review][t]\n\n[t]: oni-thread://v2/remote-env/demo", local)).toEqual([
+      ref("remote-env", "demo"),
+    ]);
 
     const withLiveAfter = `[Review][thread]\n\n[thread]: ${link}\n\nSee <${link}>`;
     expect(relabelThreadLinks(withLiveAfter, local, () => "Demo")).toBe(
@@ -546,6 +565,12 @@ describe("thread links", () => {
     const relabeled = relabelThreadLinks(formatThreadLink(thread), local, titles);
     expect(linkUrl(relabeled)).toBe("oni-thread://v2/local/work%20item");
     expect(threadLinkRefs(relabeled, local)).toContainEqual(thread);
+
+    const exact = "[old](oni-thread://v3/local/work%2520item)";
+    const exactTitles = titlesIn({ local: { "work%20item": "Review" } });
+    expect(linkUrl(relabelThreadLinks(exact, local, exactTitles))).toBe(
+      "oni-thread://v3/local/work%2520item",
+    );
 
     const v1Relabeled = relabelThreadLinks("[old](oni-thread://v1/work%20item)", local, titles);
     expect(linkUrl(v1Relabeled)).toBe("oni-thread://v1/work%20item");

@@ -1088,6 +1088,15 @@ it.each([
     expect(links("Use <textarea><a></textarea> and /Users/me/app.ts:42")).toEqual([
       "/Users/me/app.ts:42",
     ]);
+    expect(links('Use <noscript><a href="x"></noscript> and /Users/me/app.ts:42')).toEqual([
+      "/Users/me/app.ts:42",
+    ]);
+    expect(links('<!--> <a href="x">\n/Users/me/a.ts</a> /Users/me/b.ts')).toEqual([
+      "/Users/me/b.ts",
+    ]);
+    expect(links(`<div title=it's><a href="x">'>\n\n/Users/me/a.ts</a> /Users/me/b.ts`)).toEqual([
+      "/Users/me/b.ts",
+    ]);
     expect(links('[<a href="x">label](https://example.com) /Users/me/app.ts:42')).toEqual([
       "https://example.com",
       "/Users/me/app.ts:42",

@@ -8,6 +8,7 @@ import {
   type PullRequestFilterOptionKind,
   type PullRequestFilterOptionsInput,
 } from "@onicode/contracts";
+import { boundedPullRequestHostSearch } from "@onicode/shared/pullRequestComposerTrigger";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { useGT } from "gt-react-native";
@@ -64,7 +65,7 @@ export function PullRequestFilterSearchScreen({
   const listControls = usePullRequestListControls();
   const controls = listControls.controlsFor(environmentId);
   const [query, setQuery] = useState("");
-  const typed = query.trim().slice(0, 100);
+  const typed = boundedPullRequestHostSearch(query.trim());
   const sent = useDebouncedValue(typed, 250);
   // Until the search catches up with the typing, the host's answers are for older text.
   const settled = sent === typed;

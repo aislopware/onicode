@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  boundedPullRequestHostSearch,
   debouncedPullRequestCompletionSearch,
   detectPullRequestComposerTrigger,
   insertPullRequestCompletion,
@@ -98,6 +99,13 @@ describe("pullRequestCompletionKey", () => {
   it("keeps a surrogate pair that ends at the 100-unit cap", () => {
     const prefix = `${"界".repeat(98)}𠀀`;
     expect(pullRequestCompletionKey({ sigil: "!", query: `${prefix}界` })).toBe(`!${prefix}`);
+  });
+});
+
+describe("boundedPullRequestHostSearch", () => {
+  it("keeps label and author searches from ending on half a surrogate pair", () => {
+    expect(boundedPullRequestHostSearch(`${"界".repeat(99)}😀`)).toBe("界".repeat(99));
+    expect(boundedPullRequestHostSearch("a".repeat(120))).toBe("a".repeat(100));
   });
 });
 

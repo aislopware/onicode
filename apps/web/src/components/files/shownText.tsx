@@ -102,6 +102,7 @@ function joinParts(
   parts: ReadonlyArray<ShownPart>,
   more: (count: number) => string,
 ): string {
+  const insideFence = fenceTracker(text);
   return parts
     .map((part) => {
       if (part.cut === 0) return part.text;
@@ -110,16 +111,45 @@ function joinParts(
       const closesComment =
         part.text.lastIndexOf("<!--") > part.text.lastIndexOf("-->") &&
         text.slice(Math.max(part.at, end - 2), end + part.cut).includes("-->") &&
-        !insideFence(text, end);
+        !insideFence(end);
       return part.text + (closesComment ? " -->" : "") + cutSuffix(part.cut, more);
     })
     .join("");
 }
 
-/** Whether `at` is inside a fenced code block, where `<!--` is literal text. */
-function insideFence(text: string, at: number): boolean {
-  const before = text.slice(0, text.lastIndexOf("\n", at - 1) + 1);
-  return (before.match(/^ {0,3}(?:```|~~~)/gm)?.length ?? 0) % 2 === 1;
+const FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/u;
+const COMMENT_BLOCK = /^ {0,3}<!--/u;
+
+/**
+ * Whether each `at`, asked in increasing order, is inside a fenced code block, where `<!--` is
+ * text. As in CommonMark, only a line starting with `<!--` opens a comment that hides fences, and
+ * it ends on the first line holding `-->`; a fence closes on its own character, at least as long.
+ */
+function fenceTracker(text: string): (at: number) => boolean {
+  let fence: string | null = null;
+  let comment = false;
+  let from = 0;
+  return (at) => {
+    const lineStart = text.lastIndexOf("\n", at - 1) + 1;
+    while (from < lineStart) {
+      const newline = text.indexOf("\n", from);
+      const line = text.slice(from, newline);
+      from = newline + 1;
+      const match = FENCE.exec(line);
+      if (fence !== null) {
+        if (match?.[1]!.startsWith(fence) && match[2]!.trim() === "") fence = null;
+      } else if (comment) {
+        comment = !line.includes("-->");
+      } else if (match !== null && !(match[1]![0] === "`" && match[2]!.includes("`"))) {
+        fence = match[1]!;
+      } else {
+        const opener = COMMENT_BLOCK.exec(line);
+        // From the opener's dashes, so `<!-->` closes itself.
+        comment = opener !== null && !line.includes("-->", opener[0].length - 2);
+      }
+    }
+    return fence !== null;
+  };
 }
 
 /** The length of a cell's text the preview lays out, never splitting a surrogate pair. */

@@ -84,7 +84,11 @@ const PUSH_COMMAND = new RegExp(
 // `"a "'`b`'" c"`.
 const SHELL_WRAPPER = /^\s*(?:\S*\/)?(?:ba|z|da|k)?sh\s+-l?c\s+(?=["'])([\s\S]*)$/u;
 const SHELL_WORD_PIECE = /"((?:\\[\s\S]|[^"\\])*)"|'([^']*)'|\\([\s\S])|(\S)/gu;
-const HEREDOC_OPENER = /<<-?[ \t]*(['"]?)(\w+)\1/uy;
+// Not `<<<`, a here-string.
+const HEREDOC_OPERATOR = /(?<!<)<<(?!<)(-?)[ \t]*/uy;
+// One piece of a heredoc delimiter word: `$'EOF'`, `'END-BODY'`, `"EOF"`, `\E` or `EOF`.
+const DELIMITER_PIECE =
+  /\$'((?:\\[\s\S]|[^'\\])*)'|'([^']*)'|\$?"((?:\\[\s\S]|[^"\\])*)"|\\([\s\S])|((?:[^\s;&|()<>'"\\$]|\$(?!['"]))+)/uy;
 const COMMAND_SEPARATOR = /&&|\|\||[;|\n]/u;
 const COMMAND_SEPARATORS = new RegExp(COMMAND_SEPARATOR, "gu");
 // Commands that print other change requests' URLs, so output beside them proves nothing.
@@ -104,51 +108,199 @@ function shellScript(input: string): string {
       ).join("");
 }
 
-/** Where a heredoc opened at `at` ends: after its terminator line, or at the end of the script. */
-function heredocEnd(script: string, at: number): number | undefined {
-  HEREDOC_OPENER.lastIndex = at;
-  const [opener, , tag] = HEREDOC_OPENER.exec(script) ?? [];
-  if (opener === undefined || tag === undefined) return undefined;
-  let lineStart = script.indexOf("\n", at + opener.length);
-  if (lineStart === -1) return undefined;
-  while (lineStart !== -1) {
-    const lineEnd = script.indexOf("\n", lineStart + 1);
-    const end = lineEnd === -1 ? script.length : lineEnd;
-    if (script.slice(lineStart + 1, end).trim() === tag) return end;
-    lineStart = lineEnd;
+type Heredoc = { readonly tag: string; readonly stripTabs: boolean };
+
+/** The heredoc opener at `at`: its length and how its terminator line reads. */
+function heredocOpener(script: string, at: number) {
+  HEREDOC_OPERATOR.lastIndex = at;
+  const operator = HEREDOC_OPERATOR.exec(script);
+  if (operator === null) return undefined;
+  const wordStart = at + operator[0].length;
+  let end = wordStart;
+  let tag = "";
+  DELIMITER_PIECE.lastIndex = end;
+  let piece = DELIMITER_PIECE.exec(script);
+  while (piece !== null) {
+    const [, ansiC, single, double, escaped, bare] = piece;
+    // A backslash before a newline joins the lines, outside single quotes.
+    tag +=
+      ansiC?.replace(/\\(['"\\])/gu, "$1") ??
+      single ??
+      double?.replace(/\\(?:\n|(["\\$`]))/gu, "$1") ??
+      (escaped === "\n" ? "" : escaped) ??
+      bare ??
+      "";
+    end = DELIMITER_PIECE.lastIndex;
+    piece = DELIMITER_PIECE.exec(script);
   }
-  return script.length;
+  return end === wordStart
+    ? undefined
+    : { length: end - at, heredoc: { tag, stripTabs: operator[1] === "-" } };
 }
 
-/** Where a double-quoted string opened at `at` ends. A heredoc that `$(` opens inside it is read first. */
-function doubleQuoteEnd(script: string, at: number): number {
-  let index = at + 1;
-  while (index < script.length) {
-    const char = script[index];
-    if (char === '"') return index + 1;
+/**
+ * Where the bodies of heredocs opened on a line end, read from the newline at `at` that ends it:
+ * after the last terminator line, or at the end of the script.
+ */
+function heredocBodiesEnd(script: string, at: number, heredocs: ReadonlyArray<Heredoc>): number {
+  let lineStart = at;
+  for (const { tag, stripTabs } of heredocs) {
+    for (;;) {
+      const lineEnd = script.indexOf("\n", lineStart + 1);
+      const end = lineEnd === -1 ? script.length : lineEnd;
+      const line = script.slice(lineStart + 1, end);
+      if ((stripTabs ? line.replace(/^\t+/u, "") : line) === tag) {
+        lineStart = end;
+        break;
+      }
+      if (lineEnd === -1) return script.length;
+      lineStart = lineEnd;
+    }
+  }
+  return lineStart;
+}
+
+/** Where the ANSI-C quote `$'...'` at `at` ends. */
+function ansiCQuoteEnd(script: string, at: number): number {
+  let end = at + 2;
+  while (end < script.length && script[end] !== "'") end += script[end] === "\\" ? 2 : 1;
+  return end + 1;
+}
+
+// What `constructEnd` remembers for a `((` that opens nested subshells, not arithmetic.
+const NOT_ARITHMETIC = -1;
+
+type Construct =
+  | { readonly kind: "quote"; readonly start: number }
+  // A `$(...)` command substitution, `depth` parentheses deep.
+  | {
+      readonly kind: "code";
+      readonly start: number;
+      depth: number;
+      readonly heredocs: Array<Heredoc>;
+    }
+  // A `((` read as arithmetic until it proves to be subshells; the scan then resumes at `retry`.
+  | {
+      readonly kind: "arithmetic";
+      readonly start: number;
+      readonly retry: number;
+      readonly opens: Array<number>;
+    };
+
+/**
+ * Where the double quote or arithmetic `((` (whose `<<` shifts) at `at` ends, or the script's end.
+ * A `((` whose inner parenthesis closes alone, as in `((echo a); echo b)`, is nested subshells to
+ * bash: `NOT_ARITHMETIC`. A `$(...)` in either is code with its own quotes, comments and heredocs.
+ * Iterative, since nesting is unbounded; `ends` keeps every construct read, so rereads stay linear.
+ */
+function constructEnd(script: string, at: number, ends: Map<number, number>): number {
+  const constructs: Array<Construct> = [];
+  let index = at;
+  let wordStart = false;
+  const enter = (construct: Construct, contentStart: number) => {
+    const end = ends.get(construct.start);
+    if (end === undefined) {
+      constructs.push(construct);
+      index = contentStart;
+      wordStart = construct.kind === "code";
+    } else {
+      index = end;
+      wordStart = false;
+    }
+  };
+  const close = (end: number) => {
+    const construct = constructs.pop();
+    if (construct !== undefined) ends.set(construct.start, end);
+    index = end;
+    wordStart = false;
+  };
+  // False when the `((` at `start` is known to be subshells.
+  const arithmetic = (start: number, retry: number) => {
+    if (ends.get(start) === NOT_ARITHMETIC) return false;
+    enter({ kind: "arithmetic", start, retry, opens: [] }, start + 2);
+    return true;
+  };
+  const substitution = () => {
+    if (!(script.startsWith("((", index + 1) && arithmetic(index + 1, index))) {
+      enter({ kind: "code", start: index, depth: 1, heredocs: [] }, index + 2);
+    }
+  };
+  const quoteAfter = (open: number) => {
+    const end = script.indexOf("'", open + 1);
+    index = end === -1 ? script.length : end + 1;
+  };
+  if (script[at] === '"') enter({ kind: "quote", start: at }, at + 1);
+  else arithmetic(at, at);
+  for (let construct = constructs.at(-1); construct !== undefined; construct = constructs.at(-1)) {
+    if (index >= script.length) {
+      for (const { start } of constructs) ends.set(start, script.length);
+      break;
+    }
+    const char = script[index] ?? "";
+    const atWordStart = wordStart;
+    wordStart = false;
     if (char === "\\") {
       index += 2;
-      continue;
-    }
-    if (script.startsWith("$(", index)) {
-      let opener = index + 2;
-      while (opener < script.length && !'"()'.includes(script[opener] ?? "")) {
-        if (script.startsWith("<<", opener)) break;
-        opener++;
+    } else if (construct.kind === "quote") {
+      if (script.startsWith("$(", index)) substitution();
+      else if (char === '"') close(index + 1);
+      else index++;
+    } else if (script.startsWith("$'", index)) {
+      index = ansiCQuoteEnd(script, index);
+    } else if (char === "'") {
+      quoteAfter(index);
+    } else if (char === '"') {
+      enter({ kind: "quote", start: index }, index + 1);
+    } else if (construct.kind === "arithmetic") {
+      if (script.startsWith("$(", index) && script[index + 2] !== "(") {
+        enter({ kind: "code", start: index, depth: 1, heredocs: [] }, index + 2);
+      } else if (char === "(") {
+        construct.opens.push(index);
+        index++;
+      } else if (char === ")") {
+        const doubled = script[index + 1] === ")";
+        const open = construct.opens.pop();
+        if (open !== undefined) {
+          // What the `((` just before this parenthesis is, read on its own.
+          if (script[open - 1] === "(") ends.set(open - 1, doubled ? index + 2 : NOT_ARITHMETIC);
+          index++;
+        } else if (doubled) close(index + 2);
+        else {
+          constructs.pop();
+          ends.set(construct.start, NOT_ARITHMETIC);
+          index = construct.retry;
+        }
+      } else index++;
+    } else if (script.startsWith("$(", index)) {
+      substitution();
+    } else if (char === "\n" && construct.heredocs.length > 0) {
+      index = heredocBodiesEnd(script, index, construct.heredocs.splice(0));
+    } else if (char === "#" && atWordStart) {
+      const lineEnd = script.indexOf("\n", index);
+      index = lineEnd === -1 ? script.length : lineEnd;
+    } else if (!(script.startsWith("((", index) && arithmetic(index, index))) {
+      const opener = char === "<" ? heredocOpener(script, index) : undefined;
+      if (opener !== undefined) {
+        construct.heredocs.push(opener.heredoc);
+        index += opener.length;
+      } else if (char === ")" && construct.depth === 1) {
+        close(index + 1);
+      } else {
+        if (char === "(") construct.depth++;
+        else if (char === ")") construct.depth--;
+        wordStart = /[\s;&|(]/u.test(char);
+        index++;
       }
-      const end = heredocEnd(script, opener);
-      index = end ?? index + 2;
-      continue;
     }
-    index++;
   }
-  return script.length;
+  return ends.get(at) ?? script.length;
 }
 
 type CarriedText = {
   readonly start: number;
   readonly end: number;
-  readonly kind: "escape" | "text" | "heredoc";
+  // A heredoc body starts at the newline that ends its opener's line, keeping them one command.
+  readonly kind: "escape" | "text" | "heredoc" | "body";
 };
 
 /**
@@ -158,6 +310,9 @@ type CarriedText = {
  */
 function carriedText(script: string): ReadonlyArray<CarriedText> {
   const pieces: Array<CarriedText> = [];
+  // Heredocs opened on the current line, whose bodies start after it.
+  const heredocs: Array<Heredoc> = [];
+  const ends = new Map<number, number>();
   let wordStart = true;
   let index = 0;
   const carry = (end: number, kind: CarriedText["kind"]) => {
@@ -168,21 +323,28 @@ function carriedText(script: string): ReadonlyArray<CarriedText> {
   while (index < script.length) {
     const char = script[index] ?? "";
     if (char === "\\") carry(index + 2, "escape");
-    else if (script.startsWith("$'", index)) {
-      let end = index + 2;
-      while (end < script.length && script[end] !== "'") end += script[end] === "\\" ? 2 : 1;
-      carry(end + 1, "text");
-    } else if (char === "'") {
+    else if (script.startsWith("$'", index)) carry(ansiCQuoteEnd(script, index), "text");
+    else if (char === "'") {
       const close = script.indexOf("'", index + 1);
       carry(close === -1 ? script.length : close + 1, "text");
-    } else if (char === '"') carry(doubleQuoteEnd(script, index), "text");
+    } else if (char === '"') carry(constructEnd(script, index, ends), "text");
     else if (char === "#" && wordStart) {
       const lineEnd = script.indexOf("\n", index);
       carry(lineEnd === -1 ? script.length : lineEnd, "text");
+    } else if (char === "\n" && heredocs.length > 0) {
+      carry(heredocBodiesEnd(script, index, heredocs.splice(0)), "body");
     } else {
-      const end = char === "<" ? heredocEnd(script, index) : undefined;
-      if (end !== undefined) carry(end, "heredoc");
-      else {
+      const arithmetic = script.startsWith("((", index)
+        ? constructEnd(script, index, ends)
+        : NOT_ARITHMETIC;
+      const opener = char === "<" ? heredocOpener(script, index) : undefined;
+      if (arithmetic !== NOT_ARITHMETIC) {
+        index = arithmetic;
+        wordStart = false;
+      } else if (opener !== undefined) {
+        heredocs.push(opener.heredoc);
+        carry(index + opener.length, "heredoc");
+      } else {
         wordStart = /[\s;&|(]/u.test(char);
         index++;
       }
@@ -205,7 +367,13 @@ function replaceCarriedText(script: string, replace: (piece: CarriedText) => str
 /** The commands a script runs, without the text it carries. */
 const shellCode = (script: string) =>
   replaceCarriedText(script, ({ start, end, kind }) =>
-    kind === "escape" ? script.slice(start, end) : kind === "heredoc" ? "<<" : "''",
+    kind === "escape"
+      ? script.slice(start, end)
+      : kind === "heredoc"
+        ? "<<"
+        : kind === "body"
+          ? "\n"
+          : "''",
   );
 
 /** A script split at the command separators in its code, leaving carried text intact. */

@@ -23,6 +23,11 @@ describe("commandProgramName", () => {
     ["bash -c $'ls\\nnpm test'", "ls"],
     ["bash -c $'\\x6e\\160m test'", "npm"],
     ['powershell -NoP -exec bypass -c "git status"', "git"],
+    ['pwsh -SettingsFile s.json -Command "npm test"', "npm"],
+    ['pwsh -ConfigurationFile c.pssc -c "npm test"', "npm"],
+    ["pwsh -CommandWithArgs 'npm test $args' --watch", "npm"],
+    ["pwsh -cwa 'git status'", "git"],
+    ['pwsh -cus oni -c "npm test"', "npm"],
   ])("unwraps shell scripts without executing them: %s", (command, program) => {
     expect(commandProgramName(command)).toBe(program);
   });
@@ -32,6 +37,8 @@ describe("commandProgramName", () => {
     ["zsh script.sh -c 'git status'", "zsh"],
     ["my-shell -c 'git status'", "my-shell"],
     ["$HOME/.bun/bin/bun test", "bun"],
+    ["pwsh -v", "pwsh"],
+    ["pwsh -Version", "pwsh"],
   ])("preserves ordinary programs and actual shell launches: %s", (command, program) => {
     expect(commandProgramName(command)).toBe(program);
   });
@@ -98,6 +105,8 @@ describe("commandProgramName", () => {
     ["sudo -n [ -d /opt ] && pytest", "pytest"],
     ["sudo [[ -f /etc/hosts ]] && git status", "git"],
     ["true && git --version", "git"],
+    ["sudo -- [ -f /etc/hosts ] && git status", "git"],
+    ["sudo -- test -f /etc/hosts && git status", "git"],
   ])("skips shell setup commands and uses the next useful program: %s", (command, program) => {
     expect(commandProgramName(command)).toBe(program);
   });
@@ -113,6 +122,14 @@ describe("commandProgramName", () => {
     ['env -vS "FOO=1 git status"', "git"],
     ['env -S"FOO=1" git status', "git"],
     ["env - git status", "git"],
+    ['env -vS "FOO=1" git status', "git"],
+    ['env -S "FOO=1" git status', "git"],
+    ['env -S"FOO=1" -u BAR git status', "git"],
+    ['env -S"FOO=1" -- git status', "git"],
+    ['env -S "-u DEBUG FOO=1" git status', "git"],
+    ['env -S "FOO=a;b" git status', "git"],
+    ["env -S 'FOO=1\\_git\\_status'", "git"],
+    ['env -S "FOO=1 # note" git status', "git"],
   ])("unwraps process-launch wrappers: %s", (command, program) => {
     expect(commandProgramName(command)).toBe(program);
   });
@@ -161,6 +178,8 @@ describe("commandProgramName", () => {
     ["whoami&>/dev/null", "whoami"],
     ["'my>tool' arg", "my>tool"],
     ["my\\>tool arg", "my>tool"],
+    [".\\tool.exe>out.txt", "tool.exe"],
+    [".\\tool.exe>/dev/null", "tool.exe"],
   ])("handles redirections around commands: %s", (command, program) => {
     expect(commandProgramName(command)).toBe(program);
   });
@@ -247,6 +266,7 @@ describe("commandDisplayText with Windows shell wrappers", () => {
     ],
     ['pwsh -v ignored -c "git status"', 'pwsh -v ignored -c "git status"'],
     ['powershell -v 5.1 -c "git status"', "git status"],
+    ["pwsh -cwa 'git status'", "git status"],
   ])("shows %j as %j", (input, expected) => {
     expect(commandDisplayText(input)).toBe(expected);
   });

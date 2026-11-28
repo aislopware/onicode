@@ -82,9 +82,16 @@ const ICON_SOURCE_FILES = [
 
 // A quote opens a value only right after `=`; the lookahead+backreference keeps it atomic so
 // backtracking cannot re-read the value as plain text.
-// A comment (to `-->`, `--!>` or the end) hides the links inside it, as in a browser.
-const HTML_LINK_RE =
-  /<!--(?:-?>|[\s\S]*?--!?>|[\s\S]*)|<link\b(?:[^<>=]|=(?=([\t\n\f\r ]*(?:"[^"]*"|'[^']*')|))\1)*>/gi;
+const LINK_TAG = String.raw`(?<link><link(?=[\t\n\f\r />])(?:[^<>=]|=(?=(?<value>[\t\n\f\r ]*(?:"[^"]*"|'[^']*')|))\k<value>)*>)`;
+const LINK_TAG_RE = new RegExp(LINK_TAG, "gi");
+// Other tags' attribute values, declarations, and raw text or RCDATA content are not markup, so a
+// `<!--` there hides nothing. Unclosed tags, values and comments run to the end, as in a browser,
+// which also keeps matching linear.
+const TAG_ATTRIBUTES = String.raw`(?:=[\t\n\f\r ]*(?:"[^"]*(?:"|$)|'[^']*(?:'|$)|[^\t\n\f\r >]*)|[^>])*(?:>|$)`;
+const HTML_LINK_RE = new RegExp(
+  String.raw`<!--(?:-?>|[\s\S]*?--!?>|[\s\S]*)|<(?<raw>script|style|title|textarea|xmp|iframe|noembed|noframes|noscript)(?=[\t\n\f\r />])${TAG_ATTRIBUTES}[\s\S]*?(?:<\/\k<raw>(?=[\t\n\f\r />])${TAG_ATTRIBUTES}|$)|<plaintext(?=[\t\n\f\r />])[\s\S]*|${LINK_TAG}|<\/?[a-z]${TAG_ATTRIBUTES}|<[!?/][^>]*(?:>|$)`,
+  "gi",
+);
 // `rel` is an unordered, whitespace-separated token list; any `icon` token marks an icon link.
 const ICON_REL_VALUE = String.raw`(?:"(?:[^"]*[\t\n\f\r ])?icon(?=[\t\n\f\r "])|'(?:[^']*[\t\n\f\r ])?icon(?=[\t\n\f\r ']))`;
 // HTML attribute syntax: a name, then an optional double-quoted, single-quoted, or unquoted value.
@@ -185,8 +192,10 @@ function decodeHtmlAttribute(value: string, html: boolean): string {
 }
 
 function* extractIconHrefs(source: string, html: boolean): Generator<string> {
-  for (const [tag] of source.matchAll(HTML_LINK_RE)) {
-    if (tag.startsWith("<!--")) continue;
+  // A source file has no HTML comments or raw text.
+  for (const { groups } of source.matchAll(html ? HTML_LINK_RE : LINK_TAG_RE)) {
+    const tag = groups?.link;
+    if (tag === undefined) continue;
     const attributes = new Map<string, { value: string; quoted: boolean }>();
     for (const [, name, doubleQuoted, singleQuoted, unquoted] of tag
       .slice("<link".length)

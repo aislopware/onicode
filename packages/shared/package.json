@@ -7,6 +7,10 @@
       "types": "./src/png.ts",
       "import": "./src/png.ts"
     },
+    "./markdownComments": {
+      "types": "./src/markdownComments.ts",
+      "import": "./src/markdownComments.ts"
+    },
     "./pullRequestAnchor": {
       "types": "./src/pullRequestAnchor.ts",
       "import": "./src/pullRequestAnchor.ts"
@@ -306,6 +310,10 @@
     "./threadLinks": {
       "types": "./src/threadLinks.ts",
       "import": "./src/threadLinks.ts"
+    },
+    "./firstLineTitle": {
+      "types": "./src/firstLineTitle.ts",
+      "import": "./src/firstLineTitle.ts"
     },
     "./composerContextReferences": {
       "types": "./src/composerContextReferences.ts",

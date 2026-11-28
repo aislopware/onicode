@@ -24,7 +24,10 @@ const POWERSHELL_SETUP_PROGRAMS = new Set(["pop-location", "push-location", "set
 // as long as its shortest unambiguous form, plus a few extra aliases.
 const POWERSHELL_PARAMETERS: ReadonlyArray<readonly [string, string, ...string[]]> = [
   ["command", "c"],
+  ["commandwithargs", "commandwithargs", "cwa"],
   ["configurationname", "config"],
+  ["configurationfile", "configurationfile"],
+  ["custompipename", "cus"],
   ["encodedcommand", "e", "ec"],
   ["executionpolicy", "ex", "ep"],
   ["file", "f"],
@@ -34,6 +37,7 @@ const POWERSHELL_PARAMETERS: ReadonlyArray<readonly [string, string, ...string[]
   ["noninteractive", "noni"],
   ["noprofile", "nop"],
   ["outputformat", "o", "of"],
+  ["settingsfile", "settings"],
   ["sta", "sta"],
   ["version", "v"],
   ["windowstyle", "w"],
@@ -41,10 +45,13 @@ const POWERSHELL_PARAMETERS: ReadonlyArray<readonly [string, string, ...string[]
 ];
 const POWERSHELL_FLAGS = new Set(["mta", "nologo", "noninteractive", "noprofile", "sta"]);
 const POWERSHELL_OPTIONS_WITH_VALUE = new Set([
+  "configurationfile",
   "configurationname",
+  "custompipename",
   "executionpolicy",
   "inputformat",
   "outputformat",
+  "settingsfile",
   "version",
   "windowstyle",
   "workingdirectory",
@@ -55,7 +62,12 @@ function isPwshVersion(shell: string, parameter: string | null): boolean {
   return parameter === "version" && shell.startsWith("pwsh");
 }
 
-function powerShellParameter(token: string): string | null {
+// pwsh 7.4+ also takes -CommandWithArgs, whose script reads the words after it as $args.
+function isPowerShellCommand(shell: string, parameter: string | null): boolean {
+  return parameter === "command" || (parameter === "commandwithargs" && shell.startsWith("pwsh"));
+}
+
+export function powerShellParameter(token: string): string | null {
   if (!token.startsWith("-")) return null;
   const key = token.slice(1).toLowerCase();
   for (const [name, shortest, ...aliases] of POWERSHELL_PARAMETERS) {
@@ -829,6 +841,40 @@ function indexAfterShellRedirection(tokens: ReadonlyArray<string>, index: number
   return tokens[index + 1] === undefined ? tokens.length + 1 : index + 2;
 }
 
+// env -S splits on whitespace and unquoted `\_`, honours quotes and backslashes, and ignores the
+// rest after a `#` that starts a word; `;`, `|` and `&` stay literal.
+function envSplitStringWords(payload: string): string[] | null {
+  const words: string[] = [];
+  let word: string | null = null;
+  let quote: string | null = null;
+  for (let index = 0; index < payload.length; index += 1) {
+    const character = payload[index]!;
+    if (quote === null && (/\s/u.test(character) || payload.startsWith("\\_", index))) {
+      if (character === "\\") index += 1;
+      if (word !== null) words.push(word);
+      word = null;
+      continue;
+    }
+    if (quote === null && word === null && character === "#") break;
+    word ??= "";
+    if (character === quote) {
+      quote = null;
+    } else if (quote === null && (character === '"' || character === "'")) {
+      quote = character;
+    } else if (character === "\\" && (quote !== "'" || /['\\]/u.test(payload[index + 1] ?? ""))) {
+      index += 1;
+      const escaped = payload[index];
+      if (escaped === undefined) return null;
+      word += escaped === "_" ? " " : escaped;
+    } else {
+      word += character;
+    }
+  }
+  if (quote !== null) return null;
+  if (word !== null) words.push(word);
+  return words;
+}
+
 function serializeShellTokens(tokens: ReadonlyArray<string>): string {
   return tokens.map((token) => `'${token.replaceAll("'", "'\\''")}'`).join(" ");
 }
@@ -1017,7 +1063,7 @@ function windowsShellPayloadProgramName(
   for (let index = start; index < tokens.length; index += 1) {
     const option = tokens[index]!;
     const parameter = powerShellParameter(option);
-    if (parameter === "command") {
+    if (isPowerShellCommand(shell, parameter)) {
       const payload = tokens[index + 1];
       return {
         matched: true,
@@ -1027,9 +1073,9 @@ function windowsShellPayloadProgramName(
     if (parameter === "file") {
       return { matched: true, program: staticProgramName(tokens[index + 1] ?? "") };
     }
-    if (parameter === "encodedcommand" || isPwshVersion(shell, parameter)) {
-      return { matched: true, program: null };
-    }
+    if (parameter === "encodedcommand") return { matched: true, program: null };
+    // pwsh only prints its version, so the executable itself is the label.
+    if (isPwshVersion(shell, parameter)) return { matched: false, program: null };
     if (parameter && POWERSHELL_OPTIONS_WITH_VALUE.has(parameter)) {
       index += 1;
       continue;
@@ -1283,7 +1329,7 @@ function parseCommandProgramName(
   );
   if (powerShellAssignment.matched) return powerShellAssignment.program;
   const windowsPath = commandSplit.firstCommand.match(
-    /^\s*((?:\.{1,2}|%[A-Za-z_][A-Za-z0-9_]*%|\$env:[A-Za-z_][A-Za-z0-9_]*)\\\S+)/iu,
+    /^\s*((?:\.{1,2}|%[A-Za-z_][A-Za-z0-9_]*%|\$env:[A-Za-z_][A-Za-z0-9_]*)\\[^\s<>&|;]+)/iu,
   )?.[1];
   if (windowsPath) return staticProgramName(windowsPath);
   const tokens = tokenizeShellCommand(withoutShellLineContinuations(commandSplit.firstCommand));
@@ -1305,6 +1351,8 @@ function parseCommandProgramName(
   }
   let index = 0;
   let wrapper: CommandWrapper | null = null;
+  // After `--` the wrapper reads no more options, but it still runs what follows.
+  let wrapperOptionsEnded = false;
   let executionContext = context;
   let sawAssignment = false;
   let sawRedirection = false;
@@ -1356,29 +1404,34 @@ function parseCommandProgramName(
     const isUnqualifiedToken = token === tokenProgram;
     if (tokenProgram === "env" || tokenProgram === "sudo") {
       wrapper = tokenProgram;
+      wrapperOptionsEnded = false;
       executionContext = "exec";
       index += 1;
       continue;
     }
-    if (wrapper !== null && token === "--") {
-      wrapper = null;
+    if (wrapper !== null && !wrapperOptionsEnded && token === "--") {
+      wrapperOptionsEnded = true;
       index += 1;
       continue;
     }
-    if (wrapper !== null && token.startsWith("-")) {
+    if (wrapper !== null && !wrapperOptionsEnded && token.startsWith("-")) {
+      // env reads the -S payload as more env arguments, placed before the ones that follow it.
+      const splitStringProgram = (payload: string | undefined, rest: number) => {
+        const words = payload === undefined ? null : envSplitStringWords(payload);
+        return words === null
+          ? null
+          : commandProgramNameInternal(
+              serializeShellTokens(["env", ...words, ...tokens.slice(rest)]),
+              depth + 1,
+              executionContext,
+              segmentsRemaining,
+            );
+      };
       if (wrapper === "env" && (token === "-S" || token === "--split-string")) {
-        const splitCommand = tokens[index + 1];
-        return splitCommand
-          ? commandProgramNameInternal(splitCommand, depth + 1, executionContext, segmentsRemaining)
-          : null;
+        return splitStringProgram(tokens[index + 1], index + 2);
       }
       if (wrapper === "env" && token.startsWith("--split-string=")) {
-        return commandProgramNameInternal(
-          token.slice("--split-string=".length),
-          depth + 1,
-          executionContext,
-          segmentsRemaining,
-        );
+        return splitStringProgram(token.slice("--split-string=".length), index + 1);
       }
       if (COMMAND_WRAPPER_OPTIONS_WITH_VALUE[wrapper].has(token)) {
         if (tokens[index + 1] === undefined) return null;
@@ -1402,26 +1455,9 @@ function parseCommandProgramName(
         for (const [optionIndex, option] of token.slice(1).split("").entries()) {
           const shortOption = `-${option}`;
           if (wrapper === "env" && shortOption === "-S") {
-            if (optionIndex === token.length - 2) {
-              const splitCommand = tokens[index + 1];
-              return splitCommand
-                ? commandProgramNameInternal(
-                    splitCommand,
-                    depth + 1,
-                    executionContext,
-                    segmentsRemaining,
-                  )
-                : null;
-            }
-            // An attached payload such as -S"FOO=1" can be followed by the program itself.
-            const payloadProgram = commandProgramNameInternal(
-              token.slice(optionIndex + 2),
-              depth + 1,
-              executionContext,
-              segmentsRemaining,
-            );
-            if (payloadProgram !== null) return payloadProgram;
-            break;
+            return optionIndex === token.length - 2
+              ? splitStringProgram(tokens[index + 1], index + 2)
+              : splitStringProgram(token.slice(optionIndex + 2), index + 1);
           }
           if (COMMAND_WRAPPER_OPTIONS_WITH_VALUE[wrapper].has(shortOption)) {
             consumesNextToken = optionIndex === token.length - 2;
@@ -1628,7 +1664,7 @@ function windowsShellScriptIndex(shell: string, tokens: ReadonlyArray<string>): 
       continue;
     }
     const parameter = powerShellParameter(option);
-    if (parameter === "command") return index + 1;
+    if (isPowerShellCommand(shell, parameter)) return index + 1;
     if (isPwshVersion(shell, parameter)) return null;
     if (parameter && POWERSHELL_OPTIONS_WITH_VALUE.has(parameter)) {
       index += 1;

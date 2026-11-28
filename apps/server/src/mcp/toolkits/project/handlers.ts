@@ -48,7 +48,7 @@ import {
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as OrchestrationMcp from "../../OrchestratorMcpService.ts";
-import { firstLineTitle } from "../../firstLineTitle.ts";
+import { firstLineTitle } from "@onicode/shared/firstLineTitle";
 import { newCommandId, readCaller, resolveProjectId, unavailable } from "../../threadAccess.ts";
 import { ProjectToolkit } from "./tools.ts";
 

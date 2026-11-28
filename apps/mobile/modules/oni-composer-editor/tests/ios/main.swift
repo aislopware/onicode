@@ -246,6 +246,9 @@ do {
   check(OniComposerClipboard.rtfLinks(board) == nil, "RTF without a link must keep the native paste")
   check(OniComposerClipboard.hasWebLink(#"<p><A HREF="https://example.com">x</A></p>"#), "Any anchor with an href is a web link")
   check(!OniComposerClipboard.hasWebLink("<a name=top>x</a>"), "An anchor without an href is not a web link")
+  check(OniComposerClipboard.hasThreadLink("See [T](oni-thread://v2/env/thread)"), "A v2 thread link must reach JS")
+  check(OniComposerClipboard.hasThreadLink("See [T](<oni-thread://v3/team%2Fa/work%20(1)>)"), "A v3 thread link must reach JS")
+  check(!OniComposerClipboard.hasThreadLink("See [T](oni-thread://v1/thread)"), "A v1 thread link is never a chip")
   UIPasteboard.remove(withName: board.name)
 }
 

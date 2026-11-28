@@ -45,6 +45,22 @@ describe("resolveProjectFaviconColorScheme", () => {
     expect(decode(resolveProjectFaviconColorScheme(svgDataUrl(icon), "light"))).toBe(
       `<svg color="blue" xmlns="http://www.w3.org/2000/svg" stroke="currentColor"><style>svg{color:blue}</style></svg>`,
     );
+    const quoted = `<svg xmlns="http://www.w3.org/2000/svg" data-x="a>b" color="red"><style>svg{color:blue}</style></svg>`;
+    expect(decode(resolveProjectFaviconColorScheme(svgDataUrl(quoted), "light"))).toBe(
+      `<svg color="blue" xmlns="http://www.w3.org/2000/svg" data-x="a>b"><style>svg{color:blue}</style></svg>`,
+    );
+  });
+
+  it("reads only style elements, whatever their attributes hold", () => {
+    const icon = `<svg xmlns="http://www.w3.org/2000/svg"><style-guide>:root{color:red}</style-guide><style data-x="a>b">:root{color:blue}</style></svg>`;
+
+    expect(decode(resolveProjectFaviconColorScheme(svgDataUrl(icon), "dark"))).toBe(
+      icon.replace("<svg ", '<svg color="blue" '),
+    );
+    const empty = `<svg xmlns="http://www.w3.org/2000/svg"><style/><path d="M0 0"/><style>:root{color:blue}</style></svg>`;
+    expect(decode(resolveProjectFaviconColorScheme(svgDataUrl(empty), "dark"))).toBe(
+      empty.replace("<svg ", '<svg color="blue" '),
+    );
   });
 
   it("takes the last root color declaration outside other at-rules", () => {

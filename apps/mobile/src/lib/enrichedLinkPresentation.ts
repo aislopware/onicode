@@ -58,6 +58,38 @@ export interface ThreadChipTarget {
   readonly link: boolean;
 }
 
+const THREAD_HREF = String.raw`oni-thread:\/\/v[123]\/`;
+const PUNCTUATION = String.raw`[!-\/:-@[-\x60{-~]`;
+const ESCAPED_PUNCTUATION = new RegExp(String.raw`\\(${PUNCTUATION})`, "g");
+const IS_PUNCTUATION = new RegExp(`^${PUNCTUATION}$`);
+// Keys are the destinations the renderer reports, angle brackets and escapes dropped: an inline
+// link's or a reference definition's, in a quote or list too. Bare ones are read by `bareDestination`.
+const THREAD_CHIP_HREF = new RegExp(
+  String.raw`(?:\]\([ \t]*(?:\r?\n[ \t>]*)?|^(?:[ \t>]|[-*+](?=[ \t])|\d{1,9}[.)](?=[ \t]))*\[[^\]\n]+\]:[ \t]*(?:\r?\n[ \t>]*)?)(?:<(${THREAD_HREF}[^\s<>]+)>|(?=${THREAD_HREF}))`,
+  "gm",
+);
+// md4c's limit on nested parentheses in a bare destination.
+const MAX_PARENTHESIS_DEPTH = 32;
+
+/** A bare destination from `start`: no space or control character, parentheses balanced or escaped. */
+function bareDestination(text: string, start: number): { href: string; end: number } | null {
+  let depth = 0;
+  let index = start;
+  for (; index < text.length; index += 1) {
+    const char = text[index]!;
+    if (char === "\\" && IS_PUNCTUATION.test(text[index + 1] ?? "")) index += 1;
+    else if (char <= " " || char === "\x7f") break;
+    else if (char === "(") {
+      depth += 1;
+      if (depth > MAX_PARENTHESIS_DEPTH) return null;
+    } else if (char === ")") {
+      if (depth === 0) break;
+      depth -= 1;
+    }
+  }
+  return depth === 0 ? { href: text.slice(start, index), end: index } : null;
+}
+
 export function threadChipTargets(
   environmentId: EnvironmentId,
   markdown: string,
@@ -65,7 +97,19 @@ export function threadChipTargets(
 ): ReadonlyArray<ThreadChipTarget> {
   const targets = new Map<string, ThreadChipTarget>();
   if (hasThreadLinks(markdown)) {
-    for (const [, href = ""] of markdown.matchAll(/\]\(<?(oni-thread:\/\/v[12]\/[^\s>)]+)>?\)/g)) {
+    for (const match of markdown.matchAll(THREAD_CHIP_HREF)) {
+      const [whole, angled] = match;
+      let destination = angled;
+      if (destination === undefined) {
+        const bare = bareDestination(markdown, match.index + whole.length);
+        // One that stops short of a space, or an inline link's `)`, never parsed.
+        const after = bare === null ? "" : markdown[bare.end];
+        const ends =
+          after === undefined || /\s/.test(after) || (after === ")" && whole.startsWith("]"));
+        if (bare === null || !ends) continue;
+        destination = bare.href;
+      }
+      const href = destination.replace(ESCAPED_PUNCTUATION, "$1");
       const link = parseThreadLinkHref(href);
       if (link) {
         targets.set(href, {

@@ -309,7 +309,7 @@ type WordStyleRunHidden = (id: string | undefined, ancestors: readonly XmlNode[]
 function xml(
   source: string,
   extension: string,
-  wordStyles?: WordStyleRunHidden | "definitions",
+  wordStyleRunHidden?: WordStyleRunHidden,
   odfTextStyles?: OdfTextStyles,
 ): XmlNode {
   const odf = [".odt", ".ods", ".odp"].includes(extension);
@@ -348,7 +348,7 @@ function xml(
     parent.children.push(node);
     stack.push(node);
     if (
-      wordStyles !== undefined &&
+      extension === ".docx" &&
       WORD_STYLE_ELEMENTS.has(node.name) &&
       WORDPROCESSINGML_NAMESPACES.has(namespaceOf(tag.name, stack) ?? "")
     ) {
@@ -407,11 +407,7 @@ function xml(
         ))
     )
       node.odfFloating = true;
-    if (
-      extension === ".odt" &&
-      node.name === "hidden-paragraph" &&
-      namespaceOf(tag.name, stack) === ODF_TEXT_NS
-    ) {
+    if (odf && node.name === "hidden-paragraph" && namespaceOf(tag.name, stack) === ODF_TEXT_NS) {
       const paragraph = stack.findLast(
         (ancestor) => ancestor.name === "p" || ancestor.name === "h",
       );
@@ -467,9 +463,7 @@ function xml(
       }
     }
     const isOdfHiddenText =
-      extension === ".odt" &&
-      node.name === "hidden-text" &&
-      namespaceOf(tag.name, [...stack, node]) === ODF_TEXT_NS;
+      odf && node.name === "hidden-text" && namespaceOf(tag.name, [...stack, node]) === ODF_TEXT_NS;
     if (extension === ".pptx" && node.name === "cNvPr") {
       const hidden = tag.attributes.hidden?.trim();
       const drawing = stack.at(-2);
@@ -495,15 +489,14 @@ function xml(
     if (parent.mathmlFirstChildSeen === false) parent.mathmlFirstChildSeen = true;
     let wordRunHidden = false;
     if (extension === ".docx" && node.name === "r") {
-      const properties = children(node).flatMap((child) =>
-        child.name === "rPr" ? children(child) : [],
+      const direct = wordVanish(
+        wordStyleChild(wordStyleChild(node, "rPr"), "vanish")?.wordStyleAttrs,
       );
-      const direct = wordVanish(properties.find((property) => property.name === "vanish")?.attrs);
       wordRunHidden =
         direct ??
-        (typeof wordStyles === "function" &&
+        (wordStyleRunHidden !== undefined &&
           WORDPROCESSINGML_NAMESPACES.has(namespaceOf(tag.name, [...stack, node]) ?? "") &&
-          wordStyles(
+          wordStyleRunHidden(
             wordStyleChild(wordStyleChild(node, "rPr"), "rStyle")?.wordStyleAttrs?.val,
             stack,
           ));
@@ -534,11 +527,12 @@ function xml(
         ((Object.hasOwn(tag.attributes, "hidden") &&
           !/^until-found$/i.test(String(tag.attributes.hidden))) ||
           hasImportantDisplayNone(tag.attributes.style ?? ""))) ||
+      // Word skips a foreign element's content (MCE Ignorable) or rejects the file.
       (extension === ".docx" && node.name === "del") ||
       wordRunHidden ||
       (odf && node.name === "annotation" && parent.name !== "semantics") ||
       (isOdfHiddenText && isHiddenOdfField(tag.attributes, [...stack, node])) ||
-      (extension === ".odt" &&
+      (odf &&
         node.name === "section" &&
         isHiddenOdfSection(tag.name, tag.attributes, [...stack, node])) ||
       (extension === ".pptx" &&
@@ -812,35 +806,38 @@ function wordStyleOutlineLevel(
 type WordStyleToggle = {
   vanish: boolean | undefined;
   basedOn: string | undefined;
-  toggled?: boolean | undefined;
+  resolved?: boolean | null | undefined;
 };
 
-// Each true vanish along a basedOn chain toggles the inherited state. A false value or a
-// cycle leaves the outcome uncertain, so the caller keeps the text. Results are cached on
-// every style of the chain so long chains resolve once.
-function wordStyleToggled(styles: Map<string, WordStyleToggle>, id: string): boolean | undefined {
+// Word reads a toggle property from the nearest style in a basedOn chain that sets it; only the
+// paragraph and character style levels toggle each other. Undefined means no style sets it and
+// null marks a cycle. Each style of the chain caches the result.
+function wordStyleVanish(
+  styles: Map<string, WordStyleToggle>,
+  id: string,
+): boolean | null | undefined {
   const chain = new Set<WordStyleToggle>();
-  let toggled: boolean | undefined = false;
+  let resolved: boolean | null | undefined;
   for (let current: string | undefined = id; current !== undefined;) {
     const style = styles.get(current);
     if (!style) break;
-    if ("toggled" in style) {
-      toggled = style.toggled;
+    if ("resolved" in style) {
+      resolved = style.resolved;
       break;
     }
-    if (chain.has(style) || style.vanish === false) {
-      toggled = undefined;
-      chain.add(style);
+    if (chain.has(style)) {
+      resolved = null;
       break;
     }
     chain.add(style);
+    if (style.vanish !== undefined) {
+      resolved = style.vanish;
+      break;
+    }
     current = style.basedOn;
   }
-  for (const style of [...chain].toReversed()) {
-    if (toggled !== undefined && style.vanish) toggled = !toggled;
-    style.toggled = toggled;
-  }
-  return toggled;
+  for (const style of chain) style.resolved = resolved;
+  return resolved;
 }
 
 function wordVanish(attrs: XmlNode["attrs"] | undefined): boolean | undefined {
@@ -884,8 +881,11 @@ function wordStyleVisibility(styles: XmlNode): WordStyleRunHidden | undefined {
   // pPr precedes a paragraph's runs, so the first run settles its style for the rest.
   const paragraphStyles = new WeakMap<XmlNode, string | undefined>();
   return (id, ancestors) => {
-    const characterToggles = id === undefined ? false : wordStyleToggled(character, id);
-    if (characterToggles === undefined || (!characterToggles && !paragraphCanToggle)) return false;
+    const characterVanish = id === undefined ? undefined : wordStyleVanish(character, id);
+    // A cycle is uncertain, and an explicit off may override the paragraph style: keep the text.
+    if (characterVanish === null || characterVanish === false) return false;
+    const characterToggles = characterVanish === true;
+    if (!characterToggles && !paragraphCanToggle) return false;
     // Table styles also toggle; leave those combinations to the editor.
     if (tableCanToggle && ancestors.some((ancestor) => ancestor.name === "tbl")) return false;
     const owner = ancestors.findLast(
@@ -897,9 +897,9 @@ function wordStyleVisibility(styles: XmlNode): WordStyleRunHidden | undefined {
       paragraphId = named && paragraph.has(named) ? named : defaultParagraph;
       if (owner) paragraphStyles.set(owner, paragraphId);
     }
-    const paragraphToggles =
-      paragraphId === undefined ? false : wordStyleToggled(paragraph, paragraphId);
-    return paragraphToggles !== undefined && paragraphToggles !== characterToggles;
+    const paragraphVanish =
+      paragraphId === undefined ? undefined : wordStyleVanish(paragraph, paragraphId);
+    return paragraphVanish !== null && (paragraphVanish === true) !== characterToggles;
   };
 }
 
@@ -1053,10 +1053,10 @@ function wordColumnSpan(properties: XmlNode | undefined) {
 function markWordMergeContinuations(table: XmlNode) {
   let previous = new Map<number, number>();
   let current = new Map<number, number>();
-  // Empty cells and rows still participate in the Word table grid.
-  for (const row of all(table, "tr")) {
+  // Empty cells and rows still take grid columns; those the table walk skips, like moves, do not.
+  for (const row of all(table, "tr", TABLE_ROW_SKIP)) {
     let column = wordSkippedColumns(row);
-    for (const cell of all(row, "tc")) {
+    for (const cell of all(row, "tc", HIDDEN)) {
       const properties = childNamed(cell, "tcPr");
       const span = wordColumnSpan(properties);
       const merge = childNamed(properties, "vMerge");
@@ -1432,14 +1432,14 @@ function rtfUnicodeDestination(
   if (end !== undefined) return { body, end };
 }
 
-const RTF_NESTED_CELL_END = Symbol("rtf-nested-cell-end");
+const RTF_SOFT_SPACE = Symbol("rtf-soft-space");
 
 function* rtf(source: string): Generator<TextPart, void> {
-  // \nestcell ends a nested cell without a delimiter; space it only from adjacent text.
+  // \nestcell and a text box edge in a cell have no delimiter; space them only from adjacent text.
   let last = "";
   let afterNestedCell = false;
   for (const part of rtfParts(source)) {
-    if (part === RTF_NESTED_CELL_END) {
+    if (part === RTF_SOFT_SPACE) {
       afterNestedCell = true;
       continue;
     }
@@ -1460,7 +1460,7 @@ function* rtf(source: string): Generator<TextPart, void> {
 function* rtfParts(
   source: string,
 ): Generator<
-  string | typeof RTF_NESTED_CELL_END | typeof RTF_NOTE_START | typeof RTF_NOTE_END,
+  string | typeof RTF_SOFT_SPACE | typeof LINE_START | typeof RTF_NOTE_START | typeof RTF_NOTE_END,
   void
 > {
   if (!source.startsWith("{\\rtf")) throw new Error("Invalid RTF document");
@@ -1469,6 +1469,9 @@ function* rtfParts(
     deleted: false,
     hiddenText: false,
     inTable: false,
+    // A footnote or text box in a cell resets its paragraphs with \pard but stays on the row.
+    inCell: false,
+    textBox: false,
     uc: 1,
     font: 0,
     fontTable: false,
@@ -1488,6 +1491,7 @@ function* rtfParts(
   const decoder = () =>
     fontCodePages.get(state.font) ?? fontCharsets.get(state.font) ?? state.decoder;
   const hidden = () => state.skip || state.deleted || state.hiddenText;
+  const onRow = () => state.inTable || state.inCell;
   let encoded: Uint8Array | undefined;
   let encodedLength = 0;
   let streaming = false;
@@ -1536,6 +1540,7 @@ function* rtfParts(
   let fallback = 0;
   let verifiedThrough = 0;
   const footnoteStart = /[\r\n]*(?:\\\*[\r\n]*)?\\footnote(?![a-zA-Z]|-?\d) ?/y;
+  const shapeInstructions = /\*[\r\n]*\\shpinst(?![a-z])/iy;
   let footnoteDepth: number | undefined;
   for (let i = 0; i < source.length; i++) {
     const char = source[i]!;
@@ -1548,6 +1553,7 @@ function* rtfParts(
       footnoteStart.lastIndex = i + 1;
       if (footnoteStart.test(source)) {
         i = footnoteStart.lastIndex - 1;
+        state.inCell ||= state.inTable;
         if (hidden() || footnoteDepth !== undefined) state.skip = true;
         else {
           footnoteDepth = stack.length;
@@ -1559,7 +1565,9 @@ function* rtfParts(
         footnoteDepth = undefined;
         yield RTF_NOTE_END;
       }
+      const textBox = state.textBox;
       state = stack.pop() ?? state;
+      if (textBox && !state.textBox && !hidden()) yield onRow() ? RTF_SOFT_SPACE : LINE_START;
     } else if (char === "\\") {
       const rest = source.slice(i + 1, i + 80);
       const hex = /^'([0-9a-f]{2})/i.exec(rest);
@@ -1639,8 +1647,14 @@ function* rtfParts(
           }
         }
         // \intbl is a paragraph property, so it lasts until \pard resets the paragraph.
-        if (control === "intbl") state.inTable = true;
+        if (control === "intbl") state.inTable = value !== 0;
         else if (control === "pard") state.inTable = false;
+        else if (control === "shptxt") {
+          // A text box holds its own paragraphs, apart from the text around its anchor.
+          state.inCell ||= state.inTable;
+          state.textBox = true;
+          if (!hidden()) yield onRow() ? RTF_SOFT_SPACE : LINE_START;
+        }
         if (control === "deleted") state.deleted = value !== 0;
         else if (control === "v") state.hiddenText = value !== 0;
         else if (control === "plain") {
@@ -1662,12 +1676,12 @@ function* rtfParts(
           fallback = state.uc;
         } else if (!hidden() && ["par", "line", "sect", "page", "column"].includes(control))
           // A cell's paragraphs share its column, as in DOCX and ODT tables.
-          yield state.inTable && (control === "par" || control === "line") ? " " : "\n";
+          yield onRow() && (control === "par" || control === "line") ? " " : "\n";
         else if (!hidden() && control === "tab") yield "\t";
         // Table structure survives tracked deletions; only the deleted cell text is dropped.
         else if (!state.skip && control === "row") yield "\n";
         else if (!state.skip && control === "cell") yield "\t";
-        else if (!state.skip && control === "nestcell") yield RTF_NESTED_CELL_END;
+        else if (!state.skip && control === "nestcell") yield RTF_SOFT_SPACE;
         else if (!hidden() && symbols.has(control)) yield symbols.get(control)!;
       } else {
         i++;
@@ -1677,10 +1691,10 @@ function* rtfParts(
         else {
           yield* flushBytes();
           // Shape instructions are an optional destination, but a text box keeps its text there.
-          if (rest[0] === "*" && !/^\*[\r\n]*\\shpinst(?![a-z])/i.test(rest)) state.skip = true;
+          shapeInstructions.lastIndex = i;
+          if (rest[0] === "*" && !shapeInstructions.test(source)) state.skip = true;
           // A backslash before a line break is \par; TextEdit ends paragraphs this way.
-          else if (!hidden() && (rest[0] === "\n" || rest[0] === "\r"))
-            yield state.inTable ? " " : "\n";
+          else if (!hidden() && (rest[0] === "\n" || rest[0] === "\r")) yield onRow() ? " " : "\n";
           else if (!hidden() && symbols.has(rest[0]!)) yield symbols.get(rest[0]!)!;
         }
       }
@@ -1710,13 +1724,13 @@ async function* document(path: string, extension: string): AsyncGenerator<TextPa
       notes.push(`\n[Skipped document part: ${name} (missing or invalid XML).]\n`);
     const read = (
       name: string,
-      wordStyles?: WordStyleRunHidden | "definitions",
+      wordStyleRunHidden?: WordStyleRunHidden,
       odfTextStyles?: OdfTextStyles,
     ): XmlNode => {
       try {
         const data = files.get(part(name));
         if (!data) throw new Error("Missing document part");
-        return xml(data, extension, wordStyles, odfTextStyles);
+        return xml(data, extension, wordStyleRunHidden, odfTextStyles);
       } catch (error) {
         if (error instanceof Truncation) throw error;
         skip(name);
@@ -1758,7 +1772,7 @@ async function* document(path: string, extension: string): AsyncGenerator<TextPa
       const stylesPath = NodePath.posix
         .resolve(dir, relationTarget("styles") || "styles.xml")
         .slice(1);
-      const styles = has(stylesPath) ? read(stylesPath, "definitions") : undefined;
+      const styles = has(stylesPath) ? read(stylesPath) : undefined;
       const styleRunHidden = styles && wordStyleVisibility(styles);
       const doc = read(main, styleRunHidden);
       // Footnotes and endnotes live in their own parts; put each inline where it is referenced.
@@ -1810,6 +1824,7 @@ async function* document(path: string, extension: string): AsyncGenerator<TextPa
       yield* paragraphs(doc);
     } else if ([".odt", ".ods", ".odp"].includes(extension)) {
       const odfFamily = (): OdfStyleFamily => ({ common: new Map(), automatic: new Map() });
+      // Calc and Impress text has no hidden character attribute, so they show styled-hidden spans.
       const odfTextStyles: OdfTextStyles | undefined =
         extension === ".odt" ? { text: odfFamily(), paragraph: odfFamily() } : undefined;
       if (odfTextStyles) {
@@ -1819,9 +1834,12 @@ async function* document(path: string, extension: string): AsyncGenerator<TextPa
             xml(namedStyles, extension, undefined, odfTextStyles);
           } catch {
             // A partial or oversized optional styles part must not hide otherwise readable text.
-            odfTextStyles.text = odfFamily();
-            odfTextStyles.paragraph = odfFamily();
+            odfTextStyles.text.common.clear();
+            odfTextStyles.paragraph.common.clear();
           }
+          // Automatic styles are local to their part; content.xml names its own.
+          odfTextStyles.text.automatic.clear();
+          odfTextStyles.paragraph.automatic.clear();
         }
       }
       const content = read("content.xml", undefined, odfTextStyles);

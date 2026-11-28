@@ -1,4 +1,5 @@
 import { SourceControlProviderKind } from "@onicode/contracts";
+import { rendersEmptyMarkdown } from "@onicode/shared/markdownComments";
 import { removeAgentCredits } from "@onicode/source-control-core/server/mergeMessage";
 import * as Cache from "effect/Cache";
 import * as Duration from "effect/Duration";
@@ -278,9 +279,6 @@ class SearchCoverage {
     return Hash.string(this.key);
   }
 }
-
-const rendersEmpty = (body: string): boolean =>
-  body.replace(/<!--[\s\S]*?-->/g, "").trim().length === 0;
 
 export const make = Effect.gen(function* () {
   const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
@@ -634,7 +632,7 @@ export const make = Effect.gen(function* () {
                 body:
                   comment.kind === "review" &&
                   comment.reviewState?.toUpperCase() === "DISMISSED" &&
-                  rendersEmpty(comment.body)
+                  rendersEmptyMarkdown(comment.body)
                     ? (reviewThreads.dismissalsByReviewId.get(comment.id) ?? comment.body)
                     : comment.body,
                 author: withAvatar(

@@ -6,7 +6,7 @@ enum OniComposerClipboard {
 
   // Pasted thread links become chips in JS; packages/shared/src/threadLinks.ts parses them.
   static func hasThreadLink(_ text: String) -> Bool {
-    text.contains("oni-thread://v2/")
+    text.contains("oni-thread://v2/") || text.contains("oni-thread://v3/")
   }
 
   // JS keeps a rich-text link's destination; packages/shared/src/pastedMarkdownLinks.ts restores it.

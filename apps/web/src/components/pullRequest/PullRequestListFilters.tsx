@@ -10,6 +10,7 @@ import type {
   PullRequestListState,
   SourceControlProviderKind,
 } from "@onicode/contracts";
+import { boundedPullRequestHostSearch } from "@onicode/shared/pullRequestComposerTrigger";
 import {
   CircleCheckIcon,
   CircleDashedIcon,
@@ -300,7 +301,7 @@ function useHostedFilterOptions(
   kind: PullRequestFilterOptionsInput["kind"],
   query: string,
 ) {
-  const typed = query.trim().slice(0, 100);
+  const typed = boundedPullRequestHostSearch(query.trim());
   const sent = useDebouncedValue(typed, OPTION_SEARCH_DEBOUNCE_MS);
   const hosted = usePullRequestFilterOptions(
     scope.map(({ environmentId, input }) => ({

@@ -526,6 +526,23 @@ describe("question answer paths", () => {
       "Shipping update.\nCall the dock manager\nbefore noon\nTrucks leave at six.",
     ],
     [
+      "text box shapes without a final paragraph",
+      String.raw`{\rtf1\ansi Shipping update.\par {\shp{\*` +
+        "\r\n".repeat(40) +
+        String.raw`\shpinst{\sp{\sn shapeType}{\sv 202}}{\shptxt \pard\plain Call the dock manager}}{\shprslt{\*\do\dobxcolumn{\*\dptxbxtext\pard Call the dock manager}}}}Trucks leave at six.\par}`,
+      "Shipping update.\nCall the dock manager\nTrucks leave at six.",
+    ],
+    [
+      "footnotes and text boxes in table cells",
+      String.raw`{\rtf1\ansi\trowd\cellx2000\cellx4000\pard\intbl Seals{\super\chftn}{\footnote\pard\plain\chftn Inspect.\par Reseal.}\cell Box{\shp{\*\shpinst{\shptxt\pard\plain Call\par the manager}}}\cell\row\pard After\par}`,
+      "Seals[Note: Inspect. Reseal.]\tBox Call the manager\t\nAfter",
+    ],
+    [
+      "paragraph out of a table",
+      String.raw`{\rtf1\ansi\intbl0 First\par Second\par}`,
+      "First\nSecond",
+    ],
+    [
       "table cells with several paragraphs",
       String.raw`{\rtf1\ansi Stock\par\trowd\cellx2000\cellx4000\pard\intbl Item\cell Qty\cell\row\trowd\cellx2000\cellx4000\pard\intbl Apples\par\pard\intbl green\cell 3\cell\row\pard After\par}`,
       "Stock\nItem\tQty\t\nApples green\t3\t\nAfter",
@@ -1689,11 +1706,16 @@ describe("question answer paths", () => {
               '<w:tr><w:tc><w:tcPr><w:gridSpan w:val="2"/><w:vMerge/></w:tcPr><w:p/></w:tc></w:tr>' +
               '<w:tr><w:tc><w:tcPr><w:gridSpan w:val="2"/><w:vMerge/></w:tcPr><w:p><w:r><w:t>Old central route</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>After blank rows</w:t></w:r></w:p></w:tc></w:tr>' +
               "<w:tr><w:tc><w:tcPr><w:vMerge/></w:tcPr><w:p><w:r><w:t>Width changes</w:t></w:r></w:p></w:tc></w:tr>" +
+              '<w:tr><w:tc><w:tcPr><w:vMerge w:val="restart"/></w:tcPr><w:p><w:r><w:t>Dock</w:t></w:r></w:p></w:tc></w:tr>' +
+              "<w:moveFrom><w:tr><w:tc><w:p><w:r><w:t>Moved row</w:t></w:r></w:p></w:tc></w:tr></w:moveFrom>" +
+              "<w:tr><w:tc><w:tcPr><w:vMerge/></w:tcPr><w:p><w:r><w:t>Old dock</w:t></w:r></w:p></w:tc></w:tr>" +
+              '<w:tr><w:tc><w:p><w:r><w:t>Bay</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:vMerge w:val="restart"/></w:tcPr><w:p><w:r><w:t>Gate</w:t></w:r></w:p></w:tc></w:tr>' +
+              "<w:tr><w:moveFrom><w:tc><w:p><w:r><w:t>Moved cell</w:t></w:r></w:p></w:tc></w:moveFrom><w:tc><w:p><w:r><w:t>Bay two</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:vMerge/></w:tcPr><w:p><w:r><w:t>Old gate</w:t></w:r></w:p></w:tc></w:tr>" +
               "</w:tbl></w:body></w:document>",
           },
           expected: [],
           exact:
-            "Current route\t\tStatus\n\t\tOpen\n\t\tConfirmed\nNext route\nOrphan route\n\t\tAfter blank rows\nWidth changes",
+            "Current route\t\tStatus\n\t\tOpen\n\t\tConfirmed\nNext route\nOrphan route\n\t\tAfter blank rows\nWidth changes\nDock\nBay\tGate\nBay two",
         },
         {
           ext: "pptx",
@@ -1771,9 +1793,9 @@ describe("question answer paths", () => {
           bounded: true,
           parts: {
             "word/document.xml":
-              '<w:document xmlns:w="urn:w" xmlns:m="urn:m"><w:body><w:p><w:r><w:t xml:space="preserve">Opening </w:t></w:r><m:oMath><m:r><m:rPr><m:sty m:val="p"/></m:rPr><w:rPr><w:vanish/></w:rPr><m:t>Formula</m:t></m:r></m:oMath><w:r><w:rPr><w:vanish/></w:rPr><w:t>Omitted</w:t></w:r><w:r><w:rPr><w:vanish w:val="0"/></w:rPr><w:t xml:space="preserve">Zero </w:t></w:r><w:r><w:rPr><w:vanish w:val="false"/></w:rPr><w:t xml:space="preserve">False </w:t></w:r><w:r><w:rPr><w:vanish w:val="off"/></w:rPr><w:t xml:space="preserve">Off </w:t></w:r><w:r><w:rPr><w:vanish w:val="true"/></w:rPr><w:t>Draft</w:t></w:r><w:r><w:rPr><w:vanish w:val="1"/></w:rPr><w:t>Note</w:t></w:r><w:r><w:rPr><w:vanish w:val="on"/></w:rPr><w:t>Aside</w:t></w:r><w:r><w:rPr><w:vanish w:val="1" xmlns:val="urn:x"/></w:rPr><w:t>Retracted</w:t></w:r><w:r><w:rPr><w:rPrChange><w:rPr><w:vanish/></w:rPr></w:rPrChange></w:rPr><w:t>Shown</w:t></w:r></w:p></w:body></w:document>',
+              '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:m="urn:m" xmlns:x="urn:x"><w:body><w:p><w:r><w:t xml:space="preserve">Opening </w:t></w:r><m:oMath><m:r><m:rPr><m:sty m:val="p"/></m:rPr><w:rPr><w:vanish/></w:rPr><m:t>Formula</m:t></m:r></m:oMath><w:r><w:rPr><w:vanish/></w:rPr><w:t>Omitted</w:t></w:r><w:r><w:rPr><w:vanish w:val="0"/></w:rPr><w:t xml:space="preserve">Zero </w:t></w:r><w:r><w:rPr><w:vanish w:val="false"/></w:rPr><w:t xml:space="preserve">False </w:t></w:r><w:r><w:rPr><w:vanish w:val="off"/></w:rPr><w:t xml:space="preserve">Off </w:t></w:r><w:r><w:rPr><x:vanish/></w:rPr><w:t xml:space="preserve">Extension </w:t></w:r><w:r><x:rPr><w:vanish/></x:rPr><w:t xml:space="preserve">Wrapped </w:t></w:r><w:r><w:rPr><w:vanish w:val="0" x:val="1"/></w:rPr><w:t xml:space="preserve">Foreign </w:t></w:r><w:r><w:rPr><w:vanish w:val="true"/></w:rPr><w:t>Draft</w:t></w:r><w:r><w:rPr><w:vanish w:val="1"/></w:rPr><w:t>Note</w:t></w:r><w:r><w:rPr><w:vanish w:val="on"/></w:rPr><w:t>Aside</w:t></w:r><w:r><w:rPr><w:vanish w:val="1" xmlns:val="urn:x"/></w:rPr><w:t>Retracted</w:t></w:r><w:r><w:rPr><w:rPrChange><w:rPr><w:vanish/></w:rPr></w:rPrChange></w:rPr><w:t>Shown</w:t></w:r></w:p></w:body></w:document>',
           },
-          expected: ["Opening Zero False Off Shown"],
+          expected: ["Opening Zero False Off Extension Wrapped Foreign Shown"],
           absent: ["Omitted", "Draft", "Note", "Aside", "Retracted", "Formula"],
         },
         {
@@ -1786,8 +1808,9 @@ describe("question answer paths", () => {
               '<w:p><w:r><w:rPr><w:rStyle w:val="VisibleChild"/></w:rPr><w:t>Current instructions</w:t></w:r></w:p>',
               '<w:p><w:r><w:rPr><w:rStyle w:val="Retired"/><w:vanish w:val="0"/></w:rPr><w:t>Bring your badge.</w:t></w:r></w:p>',
               '<w:p><w:pPr><w:pStyle w:val="WithToggle"/></w:pPr><w:r><w:rPr><w:rStyle w:val="Retired"/></w:rPr><w:t>Both style levels toggle</w:t></w:r></w:p>',
+              '<w:p><w:pPr><w:pStyle w:val="WithToggle"/></w:pPr><w:r><w:rPr><w:rStyle w:val="VisibleChild"/></w:rPr><w:t>Character style turned off</w:t></w:r></w:p>',
               '<w:p><w:r><w:rPr><w:rStyle w:val="CycleA"/></w:rPr><w:t>Unresolved cycle</w:t></w:r></w:p>',
-              '<w:p><w:r><w:rPr><w:rStyle w:val="DoubleToggle"/></w:rPr><w:t>Inherited toggles cancel</w:t></w:r></w:p>',
+              '<w:p><w:r><w:rPr><w:rStyle w:val="DoubleToggle"/></w:rPr><w:t>Restated hidden style</w:t></w:r></w:p>',
               '<w:tbl><w:tblPr><w:tblStyle w:val="ToggleTable"/></w:tblPr><w:tr><w:tc><w:p><w:r><w:rPr><w:rStyle w:val="Retired"/></w:rPr><w:t>Table style combination</w:t></w:r></w:p></w:tc></w:tr></w:tbl>',
               "</w:body></w:document>",
             ].join(""),
@@ -1808,7 +1831,8 @@ describe("question answer paths", () => {
           },
           expected: [],
           exact:
-            "Current instructions\nBring your badge.\nBoth style levels toggle\nUnresolved cycle\nInherited toggles cancel\nTable style combination",
+            // The restated hidden run leaves its paragraph mark, an empty line as in Word.
+            "Current instructions\nBring your badge.\nBoth style levels toggle\nCharacter style turned off\nUnresolved cycle\n\nTable style combination",
         },
         {
           ext: "docx",
@@ -1842,19 +1866,21 @@ describe("question answer paths", () => {
               '<w:p><w:pPr><w:pStyle w:val="Retired"/></w:pPr><w:r><w:rPr><w:vanish w:val="0"/></w:rPr><w:t>Visible run override</w:t></w:r></w:p>',
               '<w:p><w:pPr><w:pStyle w:val="Current"/></w:pPr><w:r><w:t>Current instructions</w:t></w:r></w:p>',
               '<w:p><w:pPr><x:pStyle x:val="Retired"/></w:pPr><w:r><w:t>Extension style reference</w:t></w:r></w:p>',
+              '<w:p><w:pPr><w:pStyle w:val="RestatedChild"/></w:pPr><w:r><w:t>Old gate code</w:t></w:r></w:p>',
               "</w:body></w:document>",
             ].join(""),
             "word/styles.xml": [
               '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:x="urn:extension" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="x">',
               '<w:style w:type="paragraph" w:styleId="Retired"><w:rPr><w:vanish/></w:rPr></w:style>',
               '<w:style w:type="paragraph" w:styleId="RetiredChild"><w:basedOn w:val="Retired"/></w:style>',
+              '<w:style w:type="paragraph" w:styleId="RestatedChild"><w:basedOn w:val="Retired"/><w:rPr><w:vanish/></w:rPr></w:style>',
               '<w:style w:type="paragraph" w:styleId="Current"><w:rPr><x:vanish/></w:rPr></w:style>',
               '<w:style w:type="character" w:styleId="Emphasis"><w:rPr><w:i/></w:rPr></w:style>',
               "</w:styles>",
             ].join(""),
           },
           expected: ["Visible run override\nCurrent instructions\nExtension style reference"],
-          absent: ["Old routing", "Old badge rules"],
+          absent: ["Old routing", "Old badge rules", "Old gate code"],
         },
         {
           ext: "docx",
@@ -2015,6 +2041,50 @@ describe("question answer paths", () => {
           exact:
             "North entrance\nKeep shared text.\nParagraph ignores text family.\nForeign display control.\nForeign style control.",
         },
+        {
+          ext: "odt",
+          parts: {
+            "styles.xml": [
+              '<office:document-styles xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0">',
+              '<office:styles><style:style style:name="Retired" style:family="text"><style:text-properties text:display="none"/></style:style></office:styles>',
+              '<office:automatic-styles><style:style style:name="Retired" style:family="text"><style:text-properties text:display="true"/></style:style>',
+              '<style:style style:name="T1" style:family="text"><style:text-properties text:display="none"/></style:style></office:automatic-styles>',
+              "</office:document-styles>",
+            ].join(""),
+            "content.xml":
+              '<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"><office:body><office:text><text:p>Bring your <text:span text:style-name="Retired">old </text:span>badge <text:span text:style-name="T1">today</text:span>.</text:p></office:text></office:body></office:document-content>',
+          },
+          expected: [],
+          exact: "Bring your badge today.",
+        },
+        ...[
+          {
+            ext: "ods",
+            open: '<office:spreadsheet><table:table table:name="Gates"><table:table-row><table:table-cell>',
+            close: "</table:table-cell></table:table-row></table:table></office:spreadsheet>",
+            exact: "## Sheet: Gates\nUse the north entrance.",
+          },
+          {
+            ext: "odp",
+            open: "<office:presentation><draw:page>",
+            close: "</draw:page></office:presentation>",
+            exact: "## Slide 1\nUse the north entrance.",
+          },
+        ].map(({ ext, open, close, exact }) => ({
+          ext,
+          parts: {
+            "content.xml":
+              '<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"><office:body>' +
+              open +
+              '<text:p>Use the <text:hidden-text text:is-hidden="true">obsolete west or </text:hidden-text><text:hidden-text text:string-value="north"/> entrance.</text:p>' +
+              '<text:p>Retired gate.<text:hidden-paragraph text:is-hidden="true"/></text:p>' +
+              '<text:section text:name="Draft" text:display="none"><text:p>Old timetable</text:p></text:section>' +
+              close +
+              "</office:body></office:document-content>",
+          },
+          expected: [],
+          exact,
+        })),
         ...["<mismatch>", "<nested>".repeat(129) + "</nested>".repeat(129)].map((trailer) => ({
           ext: "odt",
           parts: {

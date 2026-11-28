@@ -111,6 +111,9 @@ describe("pull request body segmentation", () => {
     for (const body of [
       '<video src="https://example.org/right.mp4" data-src="https://example.org/wrong.mp4"></video>',
       '<video data-src="https://example.org/wrong.mp4" src="https://example.org/right.mp4"></video>',
+      // A quote opens a value only after `=`.
+      `<video data-x=it's src="https://example.org/right.mp4"></video>`,
+      "<video title=a'src=https://example.org/wrong.mp4' src=https://example.org/right.mp4></video>",
     ]) {
       expect(split(body)).toEqual([
         {
@@ -350,12 +353,27 @@ describe("pull request body segmentation", () => {
       "```",
       "-->",
     ].join("\n");
-    for (const hidden of [comment, "<!-- template hint -->"]) {
+    for (const hidden of [
+      comment,
+      "<!-- template hint -->",
+      "<!-- one --> <!-- two\nhttps://example.org/hidden.mp4\n-->",
+      "Notes <!--\nhttps://example.org/hidden.mp4\n-->",
+      "<!-- one\n--> <!-- two\nhttps://example.org/hidden.mp4\n-->",
+      // After a comment closes, a code span still hides an opener, and a new one is inline.
+      "<!-- one\n--> Write `<!--` to start one",
+      "<!-- one\n--> Notes <!-- never closed",
+    ]) {
       expect(split(`${hidden}\n\nhttps://example.org/visible.mp4`)).toEqual([
         { id: "markdown:0", kind: "markdown", text: hidden, sourceOffset: 0 },
         visible,
       ]);
     }
+    // A code span closes only on a backtick run of its own length.
+    const span = "a ``` ` <!-- `";
+    expect(split(`${span}\nhttps://example.org/visible.mp4`)).toEqual([
+      { id: "markdown:0", kind: "markdown", text: span, sourceOffset: 0 },
+      visible,
+    ]);
   });
 
   it("leaves an unclosed video tag as prose without eating the rest of the body", () => {
@@ -371,6 +389,10 @@ describe("pull request body segmentation", () => {
     ["a whitespace run inside a line", `a${" ".repeat(1_000_000)}b`],
     ["a run of unclosed video tags", `${"<video ".repeat(150_000)}</video>`],
     ["a run of backticks before a line separator", `${"`".repeat(100_000)}\u2028x`],
+    [
+      "an unclosed backtick run before a comment opener",
+      `a${"`".repeat(100_000)}${"a".repeat(100_000)}<!--`,
+    ],
   ])("splits %s in one pass", (_case, body) => {
     expect(split(body)).toEqual([
       { id: "markdown:0", kind: "markdown", text: body, sourceOffset: 0 },
@@ -621,14 +643,16 @@ describe("media tables", () => {
     ]);
   });
 
-  it("keeps a quoted `>` inside a cell's attributes out of its text", () => {
-    const [table] = split(
-      `<table>\n<tr><td title="Before > after">Caption</td><td>\n\n${video}\n\n</td></tr>\n</table>`,
-    );
-    expect(table).toMatchObject({
-      kind: "table",
-      rows: [[{ segments: [{ kind: "markdown", text: "Caption" }] }, {}]],
-    });
+  it("keeps a cell's attributes out of its text, quoted `>` and unquoted `'` alike", () => {
+    for (const attributes of ['title="Before > after"', "data-x=it's"]) {
+      const [table] = split(
+        `<table>\n<tr><td ${attributes}>Caption</td><td>\n\n${video}\n\n</td></tr>\n</table>`,
+      );
+      expect(table).toMatchObject({
+        kind: "table",
+        rows: [[{ segments: [{ kind: "markdown", text: "Caption" }] }, {}]],
+      });
+    }
   });
 
   it("leaves a table without media links as markdown", () => {
