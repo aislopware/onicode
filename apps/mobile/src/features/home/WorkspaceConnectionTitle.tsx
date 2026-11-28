@@ -11,7 +11,7 @@ import { useAndroidControlSizing } from "../../components/ui/useAndroidControlSi
 import { useDeadlinePassed } from "../../lib/clock";
 import { type HostPressureAlert, hostPressureAlertAtom } from "../../state/presentation";
 import { useWorkspaceState } from "../../state/workspace";
-import { hostPressureAlertKind, hostPressureAlertTitle } from "./HostPressureBanner";
+import { hostPressureAlertKind, hostPressureAlertTitle } from "./hostPressureTitles";
 import {
   workspaceConnectionStatusPresentation,
   type WorkspaceConnectionStatusPresentation,
