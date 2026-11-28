@@ -267,6 +267,15 @@ describe("cloneUrlRepositoryPath", () => {
       "host.example/team/repo%20name",
     );
   });
+
+  it("derives ghq folders for absolute SCP paths", () => {
+    expect(cloneUrlRepositoryPath("git@forge.example:/team/repo.git")).toBe(
+      "forge.example/team/repo",
+    );
+    expect(cloneUrlRepositoryPath("forge.example:/team/repo.git")).toBe("forge.example/team/repo");
+    expect(cloneUrlRepositoryPath("git@forge.example:/")).toBeNull();
+    expect(cloneUrlRepositoryPath("git@forge.example:/team/../repo.git")).toBeNull();
+  });
 });
 
 describe("withoutRemoteUrlCredentials", () => {
