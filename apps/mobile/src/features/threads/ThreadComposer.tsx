@@ -379,6 +379,9 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     props.environmentId,
     AuthOrchestrationOperateScope,
   );
+  const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
+    reportFailure: false,
+  });
   const uploadStates = useAtomValue(composerAttachmentUploadsAtom);
   const attachmentsUploading =
     props.connectionState === "connected" &&
@@ -411,9 +414,6 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
       draftKey: composerDraftKey,
     });
   };
-  const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
-    reportFailure: false,
-  });
   const usageLimitsOffered =
     selectedProviderStatus !== null &&
     hasProviderUsageLimits(
