@@ -433,9 +433,13 @@ describe("pull request timeline", () => {
           body: "<!-- summarize by coderabbit.ai -->\nNeeds a test.",
           createdAt: "2026-07-04T00:00:00Z",
         },
+        { ...TIMELINE_SOURCE.comments[0]!, id: "c3", body: "<!-->" },
+        { ...TIMELINE_SOURCE.comments[0]!, id: "c4", body: "<!-- left open\nstill hidden" },
       ],
     });
-    expect(events.find((event) => event.id === "c1")?.body).toBeNull();
+    for (const id of ["c1", "c3", "c4"]) {
+      expect(events.find((event) => event.id === id)?.body).toBeNull();
+    }
     expect(events.find((event) => event.id === "c2")?.body).toBe(
       "<!-- summarize by coderabbit.ai -->\nNeeds a test.",
     );

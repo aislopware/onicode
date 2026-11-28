@@ -266,7 +266,7 @@ function parseGitConfigValue(raw: string): string {
   return trimGitWhitespace(out);
 }
 
-// Git trims only ASCII whitespace; String#trim would also drop U+2028/U+2029 from a value.
+// Git trims only ASCII whitespace; String#trim and `\s` would also drop U+00A0 and U+2028/U+2029.
 function trimGitWhitespace(value: string): string {
   let start = 0;
   let end = value.length;
@@ -296,15 +296,15 @@ export function isBareGitConfig(configText: string): boolean {
   let inCore = false;
   let bare = false;
   for (const rawLine of gitConfigLines(configText)) {
-    let line = rawLine.trim();
+    let line = trimGitWhitespace(rawLine);
     // Git accepts the first setting on the section header's own line.
-    const header = /^\[\s*([^\]]*?)\s*\](.*)$/.exec(line);
+    const header = /^\[([^\]]*)\](.*)$/s.exec(line);
     if (header !== null) {
-      inCore = header[1]!.toLowerCase() === "core";
-      line = header[2]!.trim();
+      inCore = /^[ \t]*core[ \t]*$/i.test(header[1]!);
+      line = trimGitWhitespace(header[2]!);
     }
     if (!inCore) continue;
-    const match = /^bare\s*(?:=(.*)|[#;].*)?$/i.exec(line);
+    const match = /^bare[ \t]*(?:=(.*)|[#;].*)?$/is.exec(line);
     if (match === null) continue;
     const value = match[1] === undefined ? "true" : parseGitConfigValue(match[1]).toLowerCase();
     bare = isTrueGitConfigValue(value);
@@ -321,7 +321,9 @@ export function parseOriginUrlFromGitConfig(configText: string): string | null {
     if (line.length === 0 || line.startsWith("#") || line.startsWith(";")) continue;
     // Git preserves case in quoted remote subsections but lowercases legacy dotted ones,
     // and accepts the first setting on the section header's own line.
-    const header = /^\[\s*remote(?:\s+"((?:\\.|[^"\\])+)"|\.([^\]\s]+))\s*\](.*)$/is.exec(line);
+    const header = /^\[[ \t]*remote(?:[ \t]+"((?:\\.|[^"\\])+)"|\.([^\] \t]+))[ \t]*\](.*)$/is.exec(
+      line,
+    );
     if (header) {
       section = header[1]?.replace(/\\(.)/g, "$1") ?? header[2]?.toLowerCase() ?? null;
       line = trimGitWhitespace(header[3]!);
@@ -330,7 +332,7 @@ export function parseOriginUrlFromGitConfig(configText: string): string | null {
       continue;
     }
     if (section === null) continue;
-    const match = /^url\s*=\s*(.*)$/is.exec(line);
+    const match = /^url[ \t]*=[ \t]*(.*)$/is.exec(line);
     if (!match) continue;
     const url = parseGitConfigValue(match[1] ?? "");
     if (url.length === 0) continue;
@@ -345,7 +347,7 @@ export function parseOriginUrlFromGitConfig(configText: string): string | null {
 
 // Replace only Git-rejected whitespace; nonbreaking spaces are valid ref characters.
 export function sanitizeNewRefName(rawName: string): string {
-  return rawName.trim().replace(/[ \t\n\r\f\v]+/g, "-");
+  return trimGitWhitespace(rawName).replace(/[ \t\n\r\f\v]+/g, "-");
 }
 
 export function dedupeRemoteBranchesWithLocalMatches(

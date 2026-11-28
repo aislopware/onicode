@@ -4,14 +4,20 @@ import * as Result from "effect/Result";
 import type { MobileThemeAppearance } from "./mobileTheme";
 
 const SVG_DATA_URL_PREFIX = "data:image/svg+xml;base64,";
-const STYLE_ELEMENT_RE = /<!--[\s\S]*?-->|(<style\b[^>]*>)([\s\S]*?)(<\/style>)/gi;
+// XML attribute values are always quoted and may hold `>`; a name runs on through `-`.
+const TAG_ATTRIBUTES = String.raw`(?=[\s/>])(?:[^>"']|"[^"]*"|'[^']*')*`;
+// A self-closing `<style/>` holds nothing and must not open one.
+const STYLE_ELEMENT_RE = new RegExp(
+  String.raw`<!--[\s\S]*?-->|<style${TAG_ATTRIBUTES}\/>|(<style${TAG_ATTRIBUTES}>)([\s\S]*?)(<\/style>)`,
+  "gi",
+);
 const CSS_COMMENT_RE = /\/\*[\s\S]*?\*\//g;
 const COLOR_SCHEME_MEDIA_RE = /@media\s*\(\s*prefers-color-scheme\s*:\s*(light|dark)\s*\)\s*\{/gi;
 const AT_RULE_BLOCK_RE = /@[^{};]*\{/g;
 const RULE_RE = /([^{}]*)\{([^{}]*)\}/g;
 const IMPORTANT_RE = /!\s*important$/i;
 const PLAIN_COLOR_RE = /^(?:#[\da-f]{3,8}|[a-z]+|(?:rgba?|hsla?)\([\d\s.,%/]+\))$/i;
-const COMMENT_OR_SVG_TAG_RE = /<!--[\s\S]*?-->|<svg\b[^>]*>/gi;
+const COMMENT_OR_SVG_TAG_RE = new RegExp(String.raw`<!--[\s\S]*?-->|<svg${TAG_ATTRIBUTES}>`, "gi");
 const COLOR_ATTRIBUTE_RE = /\s+color\s*=\s*(?:"[^"]*"|'[^']*')/i;
 const MEDIA_ATTRIBUTE_RE = /\s+media\s*=\s*(?:"([^"]*)"|'([^']*)')/i;
 const COLOR_SCHEME_CONDITION_RE = /^\(\s*prefers-color-scheme\s*:\s*(light|dark)\s*\)$/i;

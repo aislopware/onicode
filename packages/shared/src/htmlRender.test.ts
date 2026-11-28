@@ -57,6 +57,8 @@ describe("injectHtmlRenderBootstrap", () => {
     '<html><head data-condition="x > 0" data-label=\'it "works"\'>',
     "<html data-condition='x > 0'>",
     '<html data-condition="x > 0" data-label="it \'works\'">',
+    "<html><head data-x=it's>",
+    "<html data-x=it's>",
   ])("keeps the bootstrap after the complete opening tag: %s", (opening) => {
     const prefix = `<!doctype html>${opening}`;
     const head = opening.startsWith("<html><head") ? "" : "<head>";
@@ -82,6 +84,8 @@ describe("injectHtmlRenderBootstrap", () => {
     '<meta data-name="viewport" content="card">',
     '<meta name="viewport-fit" content="cover">',
     "<meta name=viewport-fit content=cover>",
+    '<meta name="viewport" content="width=600"',
+    '<script data-x="</script>"><meta name="viewport" content="width=600"></script>',
   ])("injects a default viewport when metadata is only viewport-like: %s", (fragment) => {
     const injected = injectHtmlRenderBootstrap(fragment);
     expect(injected).toContain(
@@ -95,6 +99,12 @@ describe("injectHtmlRenderBootstrap", () => {
     "<meta name=viewport />",
     '<meta data-x="1"name="viewport" content="width=600">',
     '<meta data-if="a>b" name="viewport" content="width=600">',
+    `<meta data-x=it's name="viewport" content="width=600">`,
+    '<!--><meta name="viewport" content="width=600"><p>a --> b</p>',
+    '<!---><meta name="viewport" content="width=600"><p>a --> b</p>',
+    '<!-- note --!><meta name="viewport" content="width=600"><p>a --> b</p>',
+    '<style-guide></style-guide><meta name="viewport" content="width=600">',
+    '<meta content="<!--"><meta name="viewport" content="width=600">',
   ])("preserves a genuine viewport declaration: %s", (fragment) => {
     const injected = injectHtmlRenderBootstrap(fragment);
     expect(injected).not.toContain(
@@ -116,6 +126,7 @@ describe("injectHtmlRenderBootstrap", () => {
     '<template><head><meta name="viewport"></head></template>',
     '<template><template>inner</template><head><meta name="viewport"></head></template>',
     '<template data-if="a<b"><head><meta name="viewport"></head></template>',
+    `<template data-x=it's><head><meta name="viewport"></head></template>`,
   ])("keeps the bootstrap outside inert template content: %s", (fragment) => {
     const injected = injectHtmlRenderBootstrap(fragment);
     expect(injected.startsWith("<!doctype html><head>")).toBe(true);
@@ -140,13 +151,13 @@ describe("injectHtmlRenderBootstrap", () => {
     expect(injected.endsWith(fragment)).toBe(true);
   });
 
-  it("ignores tags written inside comments and scripts", () => {
+  it("ignores tags written inside comments, scripts and attribute values", () => {
     const html =
-      '<!-- copy <head> and <meta name="viewport"> here --><html><head>' +
+      '<!-- copy <head> and <meta name="viewport"> here --><html data-note="<head>"><head>' +
       "<script>const tag = '<meta name=\"viewport\">';</script></head><body>x</body></html>";
     const injected = injectHtmlRenderBootstrap(html);
     expect(injected.indexOf('<style id="oni-theme">')).toBeGreaterThan(
-      injected.indexOf("<html><head>"),
+      injected.indexOf('"><head>'),
     );
     expect(injected).toContain('<meta name="viewport" content="width=device-width');
   });

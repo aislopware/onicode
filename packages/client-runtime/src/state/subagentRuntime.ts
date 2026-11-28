@@ -9,6 +9,7 @@ import type {
   RunId,
 } from "@onicode/contracts";
 import { isOrchestrationV2WorkActive, isProviderNativeSubagentThread } from "@onicode/contracts";
+import { firstLineTitle } from "@onicode/shared/firstLineTitle";
 import { resolveOniMcpToolDefinition } from "@onicode/shared/oniMcpToolPresentation";
 import { compactDynamicToolOutput } from "@onicode/shared/toolOutput";
 import { mFallback, msg } from "gt-i18n";
@@ -274,14 +275,15 @@ function workflowMembersToRuntime(
 }
 
 export function promptTitle(prompt: string): string {
-  if (prompt.length <= 80) return prompt;
+  const line = firstLineTitle(prompt) ?? "";
+  if (line.length <= 80) return line;
   let end = 77;
-  const previous = prompt.charCodeAt(end - 1);
-  const next = prompt.charCodeAt(end);
+  const previous = line.charCodeAt(end - 1);
+  const next = line.charCodeAt(end);
   if (previous >= 0xd800 && previous <= 0xdbff && next >= 0xdc00 && next <= 0xdfff) {
     end -= 1;
   }
-  return `${prompt.slice(0, end)}...`;
+  return `${line.slice(0, end)}...`;
 }
 
 export function workflowMemberModelSelection(

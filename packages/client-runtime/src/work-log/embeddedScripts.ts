@@ -10,6 +10,8 @@ import {
   type WordPart,
 } from "unbash";
 
+import { powerShellParameter } from "./commandLabel.ts";
+
 /** starts[i]..ends[i] spans the original spelling of text[i], including escapes. */
 export interface EmbeddedScript {
   readonly language: string;
@@ -42,8 +44,8 @@ interface Interpreter {
   readonly positionalScript?: number;
   readonly repeatable?: boolean;
   readonly subcommand?: string;
-  /** PowerShell matches parameters case-insensitively; the lists above are lowercase. */
-  readonly ignoreCase?: boolean;
+  /** Maps a flag to the spelling the lists above use. */
+  readonly canonicalFlag?: (flag: string) => string;
 }
 
 const MAX_DEPTH = 4;
@@ -86,6 +88,27 @@ const SQL_SHELL = {
   ]),
   stdin: "always",
   repeatable: true,
+} satisfies Omit<Interpreter, "inline">;
+
+// PowerShell takes parameters in any case and as abbreviations; the lists name them in full.
+const POWERSHELL = {
+  language: "powershell",
+  valueOptions: new Set([
+    "-configurationfile",
+    "-configurationname",
+    "-custompipename",
+    "-executionpolicy",
+    "-inputformat",
+    "-outputformat",
+    "-settingsfile",
+    "-windowstyle",
+    "-workingdirectory",
+  ]),
+  stdin: "never",
+  canonicalFlag: (flag: string) => {
+    const parameter = powerShellParameter(flag);
+    return parameter === null ? flag.toLowerCase() : `-${parameter}`;
+  },
 } satisfies Omit<Interpreter, "inline">;
 
 const INTERPRETERS: Record<string, Interpreter> = {
@@ -144,12 +167,16 @@ const INTERPRETERS: Record<string, Interpreter> = {
     stdin: "without-script-file",
   },
   pwsh: {
-    language: "powershell",
-    inline: flagIn("-c", "-command"),
-    valueOptions: new Set(["-executionpolicy", "-workingdirectory", "-windowstyle"]),
-    scriptFileOptions: new Set(["-f", "-file", "-encodedcommand"]),
-    stdin: "never",
-    ignoreCase: true,
+    ...POWERSHELL,
+    inline: flagIn("-command", "-commandwithargs"),
+    // pwsh -Version prints its version and exits without running anything.
+    scriptFileOptions: new Set(["-file", "-encodedcommand", "-version"]),
+  },
+  powershell: {
+    ...POWERSHELL,
+    inline: flagIn("-command"),
+    valueOptions: new Set([...POWERSHELL.valueOptions, "-version"]),
+    scriptFileOptions: new Set(["-file", "-encodedcommand"]),
   },
   psql: {
     ...SQL_SHELL,
@@ -165,7 +192,6 @@ const INTERPRETERS: Record<string, Interpreter> = {
     positionalScript: 1,
   },
 };
-INTERPRETERS.powershell = INTERPRETERS.pwsh!;
 INTERPRETERS.mariadb = INTERPRETERS.mysql!;
 
 const PROGRAM_WRAPPERS: Record<string, ReadonlySet<string>> = {
@@ -355,7 +381,7 @@ function interpreterArgs(
   let scriptFromFile = false;
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]!;
-    const flag = interpreter.ignoreCase ? arg.value.toLowerCase() : arg.value;
+    const flag = interpreter.canonicalFlag?.(arg.value) ?? arg.value;
     if (!optionsEnded && flag === "--") {
       optionsEnded = true;
       continue;

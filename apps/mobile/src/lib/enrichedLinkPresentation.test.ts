@@ -177,4 +177,44 @@ describe("Enriched link presentation", () => {
       },
     ]);
   });
+
+  it("finds v3 thread links whose ids hold parentheses, and reference definitions", () => {
+    const here = "env-here" as EnvironmentId;
+    const markdown =
+      "See [T](<oni-thread://v3/team%2Fa/work%20(1)>) and [Review][r].\n\n[r]: oni-thread://v2/env-there/thread_r";
+    expect(threadChipTargets(here, markdown)).toEqual([
+      {
+        href: "oni-thread://v3/team%2Fa/work%20(1)",
+        environmentId: "team/a",
+        threadId: "work (1)",
+        link: true,
+      },
+      {
+        href: "oni-thread://v2/env-there/thread_r",
+        environmentId: "env-there",
+        threadId: "thread_r",
+        link: true,
+      },
+    ]);
+  });
+
+  it("reads destinations as CommonMark does", () => {
+    const here = "env-here" as EnvironmentId;
+    const markdown = [
+      "[N](oni-thread://v2/env-here/work((1))) [E](oni-thread://v2/env-here/work\\(2) [S]( oni-thread://v2/env-here/spaced )",
+      "",
+      "[u]: oni-thread://v2/env-here/open(3",
+      "- [l]: oni-thread://v2/env-here/listed",
+      "[D](oni-thread://v2/env-here/deep(((3)))) [A](oni-thread://v2/env-here/a<b>)",
+      `[X](oni-thread://v2/env-here/${"(".repeat(33)}x${")".repeat(33)})`,
+    ].join("\n");
+    expect(threadChipTargets(here, markdown).map((target) => target.threadId)).toEqual([
+      "work((1))",
+      "work(2",
+      "spaced",
+      "listed",
+      "deep(((3)))",
+      "a<b>",
+    ]);
+  });
 });

@@ -56,6 +56,7 @@ import { m, type MessageResolver } from "~/i18n/messages";
 import { inferReviewCommentFenceLanguage, type ReviewCommentContext } from "~/reviewCommentContext";
 
 import { changeRequestTermKind } from "./changeRequestTerm";
+import { rendersEmptyMarkdown } from "@onicode/shared/markdownComments";
 
 export const PULL_REQUEST_MERGE_METHOD_LABELS: Record<PullRequestMergeMethod, string> = {
   merge: msg("Merge"),
@@ -547,7 +548,7 @@ export function groupPullRequestTimelineConversations(
 
 /** Marker-only bodies are empty; otherwise retain text, including fenced HTML comments. */
 export function visibleBody(body: string): string | null {
-  return body.replace(/<!--[\s\S]*?-->/gu, "").trim().length === 0 ? null : body.trim();
+  return rendersEmptyMarkdown(body) ? null : body.trim();
 }
 
 function commentTimelineEvent(comment: PullRequestComment): PullRequestTimelineEvent {

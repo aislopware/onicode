@@ -9,7 +9,8 @@ import { unified } from "unified";
 export const THREAD_LINK_PROTOCOL = "oni-thread";
 const V1_PREFIX = `${THREAD_LINK_PROTOCOL}://v1/`;
 const V2_PREFIX = `${THREAD_LINK_PROTOCOL}://v2/`;
-const THREAD_HREF = String.raw`oni-thread:\/\/v[12]\/`;
+const V3_PREFIX = `${THREAD_LINK_PROTOCOL}://v3/`;
+const THREAD_HREF = String.raw`oni-thread:\/\/v[123]\/`;
 // Unescaped brackets end a label, so consecutive unclosed brackets cannot restart a long scan.
 const LABEL = String.raw`(?:\\[^\n]|[^\\[\]\n])*`;
 const LIST_MARKERS = String.raw`(?:(?:[-*+]|\d{1,9}[.)])[ \t]+)*`;
@@ -148,34 +149,51 @@ function findCodeSpanEnd(
 const decodeThreadId = Schema.decodeUnknownOption(ThreadId);
 const decodeEnvironmentId = Schema.decodeUnknownOption(EnvironmentId);
 
-/** A v1 link names no environment; the message's own, or a unique match, stands in. */
+/**
+ * A v1 link names no environment; the message's own, or a unique match, stands in. `exact` ids came
+ * percent-encoded from a v3 link, so no other reading of them is tried.
+ */
 export interface ThreadLink {
   readonly environmentId: EnvironmentId | null;
   readonly threadId: ThreadId;
+  readonly exact?: true;
 }
 
-/** The ids as written. Thread ids can hold percent escapes of their own, so they are not decoded. */
+function percentDecoded(id: string): string | undefined {
+  try {
+    return decodeURIComponent(id);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * v1 and v2 ids are as written: thread ids hold percent escapes of their own. A v3 link, for an
+ * environment a v2 link cannot name, percent-encodes both ids.
+ */
 export function parseThreadLinkHref(href: string): ThreadLink | null {
   if (href.startsWith(V1_PREFIX)) {
     const threadId = Option.getOrNull(decodeThreadId(href.slice(V1_PREFIX.length)));
     return threadId === null ? null : { environmentId: null, threadId };
   }
-  if (!href.startsWith(V2_PREFIX)) return null;
+  const exact = href.startsWith(V3_PREFIX);
+  if (!exact && !href.startsWith(V2_PREFIX)) return null;
   const path = href.slice(V2_PREFIX.length);
   const slash = path.indexOf("/");
   if (slash < 0) return null;
-  const environmentId = Option.getOrNull(decodeEnvironmentId(path.slice(0, slash)));
-  const threadId = Option.getOrNull(decodeThreadId(path.slice(slash + 1)));
-  return environmentId === null || threadId === null ? null : { environmentId, threadId };
+  const id = (segment: string) => (exact ? percentDecoded(segment) : segment);
+  const environmentId = Option.getOrNull(decodeEnvironmentId(id(path.slice(0, slash))));
+  const threadId = Option.getOrNull(decodeThreadId(id(path.slice(slash + 1))));
+  if (environmentId === null || threadId === null) return null;
+  return exact ? { environmentId, threadId, exact } : { environmentId, threadId };
 }
 
-function percentDecodedThreadLinkId(threadId: ThreadId): ThreadId | null {
-  try {
-    const decoded = decodeURIComponent(threadId);
-    return decoded === threadId ? null : Option.getOrNull(decodeThreadId(decoded));
-  } catch {
-    return null;
-  }
+function percentDecodedThreadLinkId(link: ThreadLink): ThreadId | null {
+  if (link.exact) return null;
+  const decoded = percentDecoded(link.threadId);
+  return decoded === undefined || decoded === link.threadId
+    ? null
+    : Option.getOrNull(decodeThreadId(decoded));
 }
 
 /** The threads a link can name, in its own environment or else the message's: as written, then decoded. */
@@ -184,7 +202,7 @@ export function threadLinkCandidates(
   messageEnvironmentId: EnvironmentId,
 ): ReadonlyArray<ScopedThreadRef> {
   const environmentId = link.environmentId ?? messageEnvironmentId;
-  const decodedId = percentDecodedThreadLinkId(link.threadId);
+  const decodedId = percentDecodedThreadLinkId(link);
   const written = { environmentId, threadId: link.threadId };
   return decodedId === null ? [written] : [written, { environmentId, threadId: decodedId }];
 }
@@ -195,7 +213,7 @@ export function guessThreadLinkRef(
   refs: ReadonlyArray<ScopedThreadRef>,
 ): ScopedThreadRef | null {
   if (link.environmentId !== null) return null;
-  const decodedId = percentDecodedThreadLinkId(link.threadId);
+  const decodedId = percentDecodedThreadLinkId(link);
   for (const threadId of decodedId === null ? [link.threadId] : [link.threadId, decodedId]) {
     let match: ScopedThreadRef | null = null;
     for (const ref of refs) {
@@ -208,16 +226,17 @@ export function guessThreadLinkRef(
   return null;
 }
 
-// A Markdown destination cannot hold these verbatim. Such ids are percent-encoded: readers try the
-// id as written, then decoded.
+// A Markdown destination cannot hold these verbatim. v1 and v2 links percent-encode such a thread id,
+// and readers try it as written, then decoded.
 const UNSAFE_HREF = /[\s<>\\\p{Cc}]/u;
 const hrefId = (id: string) => (UNSAFE_HREF.test(id) ? encodeURIComponent(id) : id);
 
-function threadLinkHref({ environmentId, threadId }: ThreadLink): string {
-  // A v2 link splits at its first slash and never decodes its environment id, so an environment id
-  // it cannot hold verbatim falls back to a v1 link, which resolves in the message's environment.
-  return environmentId === null || environmentId.includes("/") || UNSAFE_HREF.test(environmentId)
-    ? V1_PREFIX + hrefId(threadId)
+function threadLinkHref({ environmentId, threadId, exact }: ThreadLink): string {
+  if (environmentId === null) return V1_PREFIX + hrefId(threadId);
+  // Older clients read no v3, so it is written only for ids a v2 link cannot name: an environment
+  // id holding a slash, where v2 splits, or one it would have to encode.
+  return exact || environmentId.includes("/") || UNSAFE_HREF.test(environmentId)
+    ? `${V3_PREFIX}${encodeURIComponent(environmentId)}/${encodeURIComponent(threadId)}`
     : `${V2_PREFIX}${environmentId}/${hrefId(threadId)}`;
 }
 
@@ -245,12 +264,14 @@ export function threadLinkRefs(
   messageEnvironmentId: EnvironmentId,
 ): ReadonlyArray<ScopedThreadRef> {
   const refs = new Map<string, ScopedThreadRef>();
-  replaceThreadLinks(markdown, (link) => {
+  const add = (link: ThreadLink) => {
     for (const ref of threadLinkCandidates(link, messageEnvironmentId)) {
-      refs.set(`${ref.environmentId}/${ref.threadId}`, ref);
+      refs.set(JSON.stringify([ref.environmentId, ref.threadId]), ref);
     }
     return undefined;
-  });
+  };
+  // A reference definition is never relabeled, but the links that use it still open its thread.
+  replaceThreadLinks(markdown, add, add);
   return [...refs.values()];
 }
 
@@ -271,7 +292,7 @@ const INDENTED_CODE_LINE = /^[ \t>*+\-\d.)]*(?: {4}|\t)/m;
 const FENCE_LIKE_LINE = /^[ \t>*+\-\d.)]*(?:`{3}|~{3})/m;
 const LIST_ITEM_LINE = /^[ \t>]*(?:[-*+]|\d{1,9}[.)])(?:[ \t]|\r?$)/m;
 
-function parsedSkippedRanges(markdown: string) {
+function parsedSkippedRanges(markdown: string, onDefinition?: (link: ThreadLink) => void) {
   // Parse only when an indented line could be code, when a list could end an unclosed fence,
   // or when a footnote or link reference definition may appear.
   if (
@@ -286,6 +307,10 @@ function parsedSkippedRanges(markdown: string) {
   const pending: Nodes[] = [parseMarkdown(markdown)];
   while (pending.length > 0) {
     const node = pending.pop()!;
+    if (node.type === "definition" && onDefinition) {
+      const link = parseThreadLinkHref(node.url);
+      if (link !== null) onDefinition(link);
+    }
     if (node.type === "code" || node.type === "inlineCode" || node.type === "definition") {
       const start = node.position?.start.offset;
       const end = node.position?.end.offset;
@@ -315,17 +340,21 @@ function readDestination(markdown: string, match: RegExpExecArray) {
   return { href: undefined, end: match.index + 1 };
 }
 
-/** Rewrites each link outside code `replace` answers for. `label` is a Markdown link's own text. */
+/**
+ * Rewrites each link outside code `replace` answers for. `label` is a Markdown link's own text.
+ * Reference definitions are never rewritten; `onDefinition` sees their thread links.
+ */
 export function replaceThreadLinks(
   markdown: string,
   replace: (link: ThreadLink, label: string | undefined) => string | undefined,
+  onDefinition?: (link: ThreadLink) => void,
 ): string {
   if (!hasThreadLinks(markdown)) return markdown;
   // A leading BOM is not content: Markdown blocks such as fences start after it.
   if (markdown.startsWith("\uFEFF"))
-    return `\uFEFF${replaceThreadLinks(markdown.slice(1), replace)}`;
+    return `\uFEFF${replaceThreadLinks(markdown.slice(1), replace, onDefinition)}`;
   // Hermes' matchAll yields matches without `groups`; exec keeps them.
-  const skippedRanges = parsedSkippedRanges(markdown);
+  const skippedRanges = parsedSkippedRanges(markdown, onDefinition);
   const pattern = new RegExp(skippedRanges ? THREAD_LINK : THREAD_LINK_OUTSIDE_CODE);
   const source = skippedRanges ? markdown : threadLinkSource(markdown);
   let result = "";

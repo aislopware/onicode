@@ -36,7 +36,7 @@ export function relabelThreadLinks(
       const current = title(ref, label);
       if (current === undefined) continue;
       return formatThreadLink(
-        { environmentId: written.environmentId, threadId: ref.threadId },
+        { ...written, threadId: ref.threadId },
         current.trim() || label || ref.threadId,
       );
     }

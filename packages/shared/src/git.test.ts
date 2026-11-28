@@ -225,6 +225,16 @@ describe("isBareGitConfig", () => {
     expect(isBareGitConfig('[core]\nbare = "true\\')).toBe(false);
     expect(isBareGitConfig('[core]\nbare = "true\\\n')).toBe(false);
   });
+
+  // A backtracking header match blocks for tens of seconds here, well past the test timeout.
+  it("rejects a long unclosed section header in linear time", () => {
+    expect(isBareGitConfig(`[core${" ".repeat(200_000)}x\nbare = true\n`)).toBe(false);
+  });
+
+  it("does not take Unicode spaces for the whitespace Git skips", () => {
+    expect(isBareGitConfig("[core]\n\u00a0bare = true\n")).toBe(false);
+    expect(isBareGitConfig("[core]\nbare\u2028= true\n")).toBe(false);
+  });
 });
 
 describe("parseOriginUrlFromGitConfig", () => {
@@ -290,10 +300,11 @@ describe("parseOriginUrlFromGitConfig", () => {
     ).toBe("https://github.com/acme/\t\trepo.git");
   });
 
-  it.each(["\u2028", "\u2029"])(
-    "preserves Unicode line separators in remote urls: %j",
+  // Git skips only ASCII whitespace around `=`, so a leading separator stays in the value.
+  it.each(["\u2028", "\u2029", "\u00a0"])(
+    "preserves Unicode separators in remote urls: %j",
     (separator) => {
-      const url = `ssh://git@forge.example/org/first${separator}last.git${separator}`;
+      const url = `${separator}ssh://git@forge.example/org/first${separator}last.git${separator}`;
       for (const gap of ["\n", "\r\n", " "]) {
         expect(parseOriginUrlFromGitConfig(`[remote "origin"]${gap}url = ${url}\n`)).toBe(url);
         expect(parseOriginUrlFromGitConfig(`[remote "origin"]${gap}url = "${url}"\n`)).toBe(url);

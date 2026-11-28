@@ -432,10 +432,24 @@ const BOOTSTRAP_SCRIPT = `(function(){var s=document.getElementById("oni-theme")
  */
 export const HTML_RENDER_NATIVE_OPEN_IMAGE_SCRIPT = `(function(){${openImageListener((message) => `window.ReactNativeWebView.postMessage(JSON.stringify(${message}))`)}})();true;`;
 
-// The tag patterns below stop at the next `<` outside a quoted value, so matching stays linear in
-// the length of the document.
+// A quote opens a value only right after `=`, so `data-x=it's` is unquoted. An unclosed tag or
+// quote runs through EOF, so the patterns never backtrack and stay linear. The `(>?)` after
+// TAG_ATTRIBUTES is empty when the tag never closes.
+const TAG_ATTRIBUTES = String.raw`(?:=\s*(?:"[^"]*(?:"|$)|'[^']*(?:'|$)|[^\s>]*)|[^>])*`;
+const META_TAG = new RegExp(String.raw`<meta(?=[\s/])(${TAG_ATTRIBUTES})(>?)`, "gi");
+const HEAD_OPEN = new RegExp(String.raw`<head(?=[\s/>])${TAG_ATTRIBUTES}(>?)`, "i");
+const HTML_OPEN = new RegExp(String.raw`<html(?=[\s/>])${TAG_ATTRIBUTES}(>?)`, "i");
+const TEMPLATE_TAG = new RegExp(String.raw`<(\/?)template(?=[\s/>])${TAG_ATTRIBUTES}>?`, "gi");
+
+/** The offset just past the first complete opening tag that `tag` matches. */
+function openingTagEnd(tag: RegExp, scan: string): number | undefined {
+  const match = tag.exec(scan);
+  return match?.[1] ? match.index + match[0].length : undefined;
+}
+
 function hasViewportMeta(markup: string): boolean {
-  for (const [, attrs = ""] of markup.matchAll(/<meta(?=[\s/])((?:[^"'<>]|"[^"]*"|'[^']*')*)>/gi)) {
+  for (const [, attrs = "", closed] of markup.matchAll(META_TAG)) {
+    if (!closed) continue;
     for (const [, attrName, doubleQuoted, singleQuoted, unquoted] of attrs.matchAll(
       /([^\s"'/<=>]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/g,
     )) {
@@ -466,17 +480,25 @@ function bootstrapMarkup(markup: string): string {
   ].join("");
 }
 
+// Comments and raw text are blanked; other tags are kept, minus any `<` in their attribute values,
+// and declarations such as `<!doctype>` end at their first `>`.
+const NON_MARKUP = new RegExp(
+  String.raw`<!--(?:-?>|[\s\S]*?(?:--!?>|$))|<(script|style|textarea|title|xmp|iframe|noembed|noframes|noscript)(?![^\s/>])${TAG_ATTRIBUTES}(?:>|$)[\s\S]*?(?:<\/\1(?![^\s/>])${TAG_ATTRIBUTES}(?:>|$)|$)|<plaintext(?![^\s/>])[\s\S]*$|(<\/?[a-z]${TAG_ATTRIBUTES}(?:>|$)|<[!?/][^>]*(?:>|$))`,
+  "gi",
+);
+
 // Blank inert content without shifting offsets so it cannot receive the bootstrap.
 const blankNonMarkup = (html: string) => {
   const scan = html.replace(
-    /<!--[\s\S]*?(?:-->|$)|<(script|style|textarea|title|xmp|iframe|noembed|noframes|noscript)\b[\s\S]*?(?:<\/\1\s*>|$)|<plaintext\b[\s\S]*$/gi,
-    (match) => " ".repeat(match.length),
+    NON_MARKUP,
+    (match: string, _raw: string | undefined, tag: string | undefined) =>
+      tag === undefined ? " ".repeat(match.length) : match[0] + match.slice(1).replaceAll("<", " "),
   );
   const parts: string[] = [];
   let depth = 0;
   let start = 0;
   let at = 0;
-  for (const match of scan.matchAll(/<(\/?)template(?:\s(?:[^"'<>]|"[^"]*"|'[^']*')*)?\/?>/gi)) {
+  for (const match of scan.matchAll(TEMPLATE_TAG)) {
     if (!match[1]) {
       if (depth++ === 0) start = match.index;
     } else if (depth > 0 && --depth === 0) {
@@ -493,7 +515,6 @@ const blankNonMarkup = (html: string) => {
   return parts.join("");
 };
 
-const HEAD_OPEN = /<head(?:\s(?:[^"'<>]|"[^"]*"|'[^']*')*)?>/i;
 // Every bootstrap since the first (t3-theme before the rebrand) has this shape, after the same optional metas;
 // none contains `</script>`.
 const STORED_BOOTSTRAP =
@@ -504,9 +525,9 @@ const STORED_BOOTSTRAP =
  * leading bytes decoded one character per byte, so serving can swap in the current one.
  */
 export function findStoredHtmlRenderBootstrap(head: string) {
-  const headOpen = HEAD_OPEN.exec(blankNonMarkup(head));
-  if (headOpen === null) return undefined;
-  STORED_BOOTSTRAP.lastIndex = headOpen.index + headOpen[0].length;
+  const headEnd = openingTagEnd(HEAD_OPEN, blankNonMarkup(head));
+  if (headEnd === undefined) return undefined;
+  STORED_BOOTSTRAP.lastIndex = headEnd;
   const match = STORED_BOOTSTRAP.exec(head);
   if (match === null || match[2] === BOOTSTRAP) return undefined;
   const start = match.index + match[1]!.length;
@@ -516,15 +537,11 @@ export function findStoredHtmlRenderBootstrap(head: string) {
 export function injectHtmlRenderBootstrap(html: string): string {
   const scan = blankNonMarkup(html);
   const markup = bootstrapMarkup(scan);
-  const headOpen = HEAD_OPEN.exec(scan);
-  if (headOpen) {
-    const at = headOpen.index + headOpen[0].length;
-    return html.slice(0, at) + markup + html.slice(at);
-  }
-  const htmlOpen = /<html(?:\s(?:[^"'<>]|"[^"]*"|'[^']*')*)?>/i.exec(scan);
-  if (htmlOpen) {
-    const at = htmlOpen.index + htmlOpen[0].length;
-    return `${html.slice(0, at)}<head>${markup}</head>${html.slice(at)}`;
+  const headEnd = openingTagEnd(HEAD_OPEN, scan);
+  if (headEnd !== undefined) return html.slice(0, headEnd) + markup + html.slice(headEnd);
+  const htmlEnd = openingTagEnd(HTML_OPEN, scan);
+  if (htmlEnd !== undefined) {
+    return `${html.slice(0, htmlEnd)}<head>${markup}</head>${html.slice(htmlEnd)}`;
   }
   const doctype = /^\s*<!doctype[^>]*>/i.exec(html);
   if (doctype) {

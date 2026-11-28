@@ -56,6 +56,7 @@ const VIDEO_TAG_MAX_LINES = 8;
 // A tab after up to three spaces still reaches the fourth column.
 const INDENTED_CODE_PATTERN = /^(?: {4}| {0,3}\t)/u;
 const HTML_COMMENT_START_PATTERN = /^ {0,3}<!--/u;
+const BACKTICK_RUN_PATTERN = /`+/gu;
 const BARE_URL_PATTERN = /^<?(https?:\/\/\S+?)>?$/u;
 const IMAGE_EXTENSION_PATTERN = /\.(?:png|jpe?g|gif|webp|avif|heic|heif|svg)$/iu;
 // A destination unescapes backslashed ASCII punctuation and decodes character references
@@ -64,9 +65,17 @@ const MARKDOWN_DESTINATION_TOKEN_PATTERN =
   /\\([!-/:-@[-`{-~])|&(?:#\d{1,7}|#[xX][\da-fA-F]{1,6}|[A-Za-z][A-Za-z\d]{1,31});/gu;
 const VIDEO_EXTENSION_PATTERN = /\.(?:mp4|webm|mov|m4v|ogv)$/iu;
 
-// Stops at the next `<`, so matching stays linear in the length of the line.
-const VIDEO_SOURCE_TAG_PATTERN = /<(?:video|source)(?=[\s/>])((?:[^<>"']|"[^"]*"|'[^']*')*)>/giu;
-const HTML_ATTRIBUTE_PATTERN = /([^\s"'=<>/]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'<>`]+)))?/gu;
+/**
+ * A tag's attributes, up to its `>`. A quote opens a value only after `=`, as in HTML, so
+ * `data-x=it's` is unquoted. Each piece starts on characters the others cannot and an unquoted
+ * run stops at the next `<`, so a run of unterminated tags stays linear.
+ */
+const TAG_ATTRIBUTES = String.raw`(?:[^<>=]|=\s*(?:"[^"]*"|'[^']*'|[^\s<>"'][^\s<>]*(?![^\s<>]))|=(?=\s*[<>]))*`;
+const VIDEO_SOURCE_TAG_PATTERN = new RegExp(
+  String.raw`<(?:video|source)(?=[\s/>])(${TAG_ATTRIBUTES})>`,
+  "giu",
+);
+const HTML_ATTRIBUTE_PATTERN = /([^\s"'=<>/]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/gu;
 const HTML_AMPERSAND_REFERENCE_PATTERN = /&(?:amp|AMP|#0*38|#[xX]0*26);/gu;
 
 function videoTagSource(html: string): string | undefined {
@@ -80,6 +89,57 @@ function videoTagSource(html: string): string | undefined {
   return undefined;
 }
 
+type OpenComment = "block" | "inline";
+
+/**
+ * The HTML comment still open after `line`, given the one open before it. Outside a comment a
+ * code span hides an opener, and as in CommonMark a span closes only on a run of its own length.
+ */
+function commentAfter(line: string, before: OpenComment | null): OpenComment | null {
+  if (before !== null && !line.includes("-->")) return before;
+  const runs = Array.from(line.matchAll(BACKTICK_RUN_PATTERN), (run) => ({
+    start: run.index,
+    end: run.index + run[0].length,
+  }));
+  // The next run of each run's length, found in one backward pass so pairing stays linear.
+  const closers: number[] = [];
+  const nextOfLength = new Map<number, number>();
+  for (let index = runs.length - 1; index >= 0; index -= 1) {
+    const length = runs[index]!.end - runs[index]!.start;
+    closers[index] = nextOfLength.get(length) ?? -1;
+    nextOfLength.set(length, index);
+  }
+  const blockAt =
+    before === null && HTML_COMMENT_START_PATTERN.test(line) ? line.indexOf("<!--") : -1;
+  let open = before;
+  let cursor = 0;
+  let run = 0;
+  let opener = -1;
+  for (;;) {
+    if (open !== null) {
+      const at = line.indexOf("-->", cursor);
+      if (at === -1) return open;
+      cursor = at + 3;
+      open = null;
+      continue;
+    }
+    if (opener < cursor) opener = line.indexOf("<!--", cursor);
+    if (opener === -1) return null;
+    while (run < runs.length && runs[run]!.start < cursor) run += 1;
+    if (run < runs.length && runs[run]!.start < opener) {
+      // A run with no closer is literal text.
+      const last = closers[run] === -1 ? run : closers[run]!;
+      cursor = runs[last]!.end;
+      run = last + 1;
+      continue;
+    }
+    // A comment that closed on this line ended its block, so a later opener is inline.
+    open = opener === blockAt ? "block" : "inline";
+    // From the opener's dashes, so `<!-->` closes itself as it does in HTML.
+    cursor = opener + 2;
+  }
+}
+
 const STANDALONE_VIDEO_TAG_PATTERN = /^\s*<video\b/iu;
 const VIDEO_TAG_END_PATTERN = /<\/video>\s*$/iu;
 const VIDEO_TAG_CLOSE_PATTERN = /<\/video>/iu;
@@ -90,12 +150,11 @@ const TABLE_START_PATTERN = /^\s*<table\b/iu;
 const TABLE_END_PATTERN = /<\/table>\s*$/iu;
 const TABLE_OPEN_PATTERN = /<table\b/giu;
 const TABLE_CLOSE_PATTERN = /<\/table\s*>/giu;
-/**
- * Quoted attribute values may hold `>`. The alternatives start on disjoint characters and an
- * unquoted run stops at the next `<`, so a run of unterminated tags stays linear.
- */
-const TABLE_STRUCTURE_TAG_PATTERN =
-  /<(\/?)(table|thead|tbody|tfoot|tr|td|th)\b((?:[^<>"']|"[^"]*"|'[^']*')*)>/giu;
+/** Quoted attribute values may hold `>`. */
+const TABLE_STRUCTURE_TAG_PATTERN = new RegExp(
+  String.raw`<(\/?)(table|thead|tbody|tfoot|tr|td|th)\b(${TAG_ATTRIBUTES})>`,
+  "giu",
+);
 /** Rows are laid out independently, so a spanning cell would shift the cells after it. */
 const CELL_SPAN_PATTERN = /\b(?:col|row)span\b/iu;
 
@@ -339,7 +398,8 @@ function splitBodyAt(body: string, baseOffset: number): ReadonlyArray<PullReques
     /** Columns of a list item the fence opened in; a less indented line ends the item and fence. */
     readonly itemIndent: number;
   } | null = null;
-  let openComment = false;
+  // A comment opened mid-line is inline HTML, so it hides nothing past the end of its paragraph.
+  let openComment: OpenComment | null = null;
 
   // Blank lines around a run are dropped, but never leading spaces: four of them open an
   // indented code block, so trimming a run would silently turn code into prose.
@@ -364,10 +424,11 @@ function splitBodyAt(body: string, baseOffset: number): ReadonlyArray<PullReques
   for (let index = 0; index < lines.length; lineStart += lines[index]!.length + 1, index += 1) {
     const line = lines[index]!;
     if (markdown.length === 0) markdownStart = lineStart;
-    if (openComment) {
-      if (line.includes("-->")) {
-        openComment = false;
-      }
+    if (openComment !== null) {
+      openComment =
+        openComment === "inline" && line.trim().length === 0
+          ? null
+          : commentAfter(line, openComment);
       markdown.push(line);
       continue;
     }
@@ -423,10 +484,12 @@ function splitBodyAt(body: string, baseOffset: number): ReadonlyArray<PullReques
       markdown.push(line);
       continue;
     }
-    if (HTML_COMMENT_START_PATTERN.test(line)) {
-      openComment = !line.includes("-->");
-      markdown.push(line);
-      continue;
+    if (line.includes("<!--")) {
+      openComment = commentAfter(line, null);
+      if (openComment !== null || HTML_COMMENT_START_PATTERN.test(line)) {
+        markdown.push(line);
+        continue;
+      }
     }
 
     if (index > tableScannedThrough && TABLE_START_PATTERN.test(line)) {

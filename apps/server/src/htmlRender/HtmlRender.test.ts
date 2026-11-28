@@ -94,6 +94,7 @@ describe("HtmlRender", () => {
           `<!--><img src="${png}"><!-- note --!><img src="${png}">`,
           `<script>const marker = '<!--'; const shots = ['${png}', \`${svg}\`, '${literalPercent}'];</script>`,
           ...kept.map((src) => `<img src="${src}">`),
+          `<div data-x=it's>${commented}</div>`,
           "</body></html>",
         ].join(""),
       );
@@ -139,6 +140,10 @@ describe("HtmlRender", () => {
         "<style>.x\\'y{height:100vh;--label:'ok'}</style>",
         `<main style="--a:&quot;'&quot;;height:100vh;--b:&quot;'&quot;">x</main>`,
         `<script>document.write("<style>" + 'main{height:100vh}' + "</style>");</script>`,
+        "<!--><style>main{height:100vh}</style>",
+        "<!-- note --!><style>main{height:100vh}</style>",
+        '<style title="a>/*">main{height:100vh}</style>',
+        "<script>document.write('<!--><style>main{height:100vh}</style>');</script>",
       ]) {
         const error = yield* htmlRender.prepare(page).pipe(Effect.flip);
         expect(error).toBeInstanceOf(HtmlRender.HtmlRenderViewportHeightError);
@@ -163,6 +168,7 @@ describe("HtmlRender", () => {
       );
       yield* htmlRender.prepare(`<style>${"1".repeat(200_000)}vx</style>`);
       yield* htmlRender.prepare(`<style>p::after{content:"\\"100vh\\""}</style><p>Unit: </p>`);
+      yield* htmlRender.prepare("<style>main{background:url(a\\)100vh.png)}</style>");
     }).pipe(Effect.provide(layerTest)),
   );
 

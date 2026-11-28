@@ -105,15 +105,22 @@ export class HtmlRenderViewportHeightError extends Schema.TaggedError<HtmlRender
 
 // Check stylesheets, style attributes, and scripts (which may write either); skip comments whole.
 // Consume unclosed comments, tags, or quotes through EOF to keep every pattern linear.
-const HTML_CSS_SOURCE =
-  /<!--[\s\S]*?(?:-->|$)|<script(?=[\s/>])((?:=\s*(?:"[^"]*(?:"|$)|'[^']*(?:'|$)|[^\s>]*)|[^>])*)(?:>|$)([\s\S]*?)(?:<\/script\s*>|$)|<style(?=[\s/>])[^>]*(?:>|$)([\s\S]*?)(?:<\/style\s*>|$)|<[a-z]((?:=\s*(?:"[^"]*(?:"|$)|'[^']*(?:'|$)|[^\s>]*)|[^>])*)/gi;
+// A quote opens an attribute value only right after `=`, so `data-x=it's` is unquoted.
+const TAG_ATTRIBUTES = String.raw`(?:=\s*(?:"[^"]*(?:"|$)|'[^']*(?:'|$)|[^\s>]*)|[^>])*`;
+const HTML_COMMENT = String.raw`<!--(?:-?>|[\s\S]*?(?:--!?>|$))`;
+const HTML_CSS_SOURCE = new RegExp(
+  String.raw`${HTML_COMMENT}|<script(?=[\s/>])(${TAG_ATTRIBUTES})(?:>|$)([\s\S]*?)(?:<\/script\s*>|$)|<style(?=[\s/>])${TAG_ATTRIBUTES}(?:>|$)([\s\S]*?)(?:<\/style\s*>|$)|<[a-z](${TAG_ATTRIBUTES})`,
+  "gi",
+);
 // Inside a tag, skip other attributes' quoted values, such as a title that mentions style=.
 // A quote opens a value only right after `=`; an unquoted value such as `it's` or `a="b` runs to a space.
 const TAG_STYLE =
   /\sstyle\s*=\s*(?:"([^"]*)(?:"|$)|'([^']*)(?:'|$)|([^\s>]+))|=\s*(?:"[^"]*(?:"|$)|'[^']*(?:'|$)|[^\s>]*)/gi;
 // A script is not markup, so take any style block or attribute it spells out.
-const SCRIPT_STYLE =
-  /<!--[\s\S]*?(?:-->|$)|<style(?=[\s/>])[^>]*(?:>|$)([\s\S]*?)(?:<\/style\s*>|$)|\sstyle\s*=\s*(?:"([^"]*)(?:"|$)|'([^']*)(?:'|$)|([^\s>]+))/gi;
+const SCRIPT_STYLE = new RegExp(
+  String.raw`${HTML_COMMENT}|<style(?=[\s/>])${TAG_ATTRIBUTES}(?:>|$)([\s\S]*?)(?:<\/style\s*>|$)|\sstyle\s*=\s*(?:"([^"]*)(?:"|$)|'([^']*)(?:'|$)|([^\s>]+))`,
+  "gi",
+);
 // vb and vmax follow the frame height too; vmin stays, as the frame width caps it.
 // The lookbehind skips base64 runs, such as an inlined image that happens to contain "1vh",
 // and identifiers such as `.h-100vmax` or `.h\+100vh`, while signed and scientific-notation lengths still count.
@@ -123,7 +130,7 @@ const VIEWPORT_HEIGHT_UNIT =
 // Escapes and unquoted url() bodies go first: there a quote or `/*` is plain text.
 // An unclosed string ends at a newline, as CSS ends it there.
 const CSS_VIEWPORT_HEIGHT_UNIT = new RegExp(
-  String.raw`\\[\s\S]|url\((?!\s*["'])[^)]*\)?|\/\*[\s\S]*?(?:\*\/|$)|"(?:\\(?:\r\n|[\s\S])|[^"\\\r\n\f])*"?|'(?:\\(?:\r\n|[\s\S])|[^'\\\r\n\f])*'?|(${VIEWPORT_HEIGHT_UNIT.source})`,
+  String.raw`\\[\s\S]|url\((?!\s*["'])(?:\\[\s\S]|[^)\\])*\)?|\/\*[\s\S]*?(?:\*\/|$)|"(?:\\(?:\r\n|[\s\S])|[^"\\\r\n\f])*"?|'(?:\\(?:\r\n|[\s\S])|[^'\\\r\n\f])*'?|(${VIEWPORT_HEIGHT_UNIT.source})`,
   "gi",
 );
 
@@ -240,9 +247,9 @@ const LOCAL_IMAGE_PATTERN = new RegExp(
     String.raw`|url\(\s*(${ABSOLUTE_PATH}[^\s"'\x60()]{0,2048}?\.(?:${IMAGE_EXTENSIONS}))(?:(?<=\.svg)#[^\s"'\x60()]{0,2048})?\s*\)`,
   "gid",
 );
-const HTML_TAG_END = String.raw`(?:[^"'<>]|"[^"]*(?:"|$)|'[^']*(?:'|$))*(?:>|$)`;
+const HTML_TAG_END = String.raw`${TAG_ATTRIBUTES}(?:>|$)`;
 const HTML_COMMENT_CONTEXT = new RegExp(
-  String.raw`<!--(?:-?>|[\s\S]*?(?:--!?>|$))|<(script|style|textarea|title|xmp|iframe|noembed|noframes|noscript)(?=[\s/>])${HTML_TAG_END}[\s\S]*?(?:</\1(?=[\s/>])${HTML_TAG_END}|$)|<plaintext(?=[\s/>])[\s\S]*$|<[a-z!/]${HTML_TAG_END}`,
+  String.raw`${HTML_COMMENT}|<(script|style|textarea|title|xmp|iframe|noembed|noframes|noscript)(?=[\s/>])${HTML_TAG_END}[\s\S]*?(?:</\1(?=[\s/>])${HTML_TAG_END}|$)|<plaintext(?=[\s/>])[\s\S]*$|<[a-z!/]${HTML_TAG_END}`,
   "gi",
 );
 

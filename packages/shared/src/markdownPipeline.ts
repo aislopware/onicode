@@ -54,7 +54,9 @@ type MarkdownImageHastNode = {
 };
 
 // Whole tags, attributes, and comments, so closing-anchor text inside them never counts as a tag.
-const RAW_HTML_TAG_PATTERN = /<!--[\s\S]*?(?:-->|$)|<\/?[A-Za-z](?:[^"'<>]|"[^"]*"|'[^']*')*>/g;
+// A quote opens a value only right after `=`; the lookahead and backreference keep a value atomic.
+const RAW_HTML_TAG_PATTERN =
+  /<!--(?:-?>|[\s\S]*?(?:--!?>|$))|<\/?[A-Za-z](?:[^<>=]|=(?=(\s*(?!\s)(?:"[^"]*"|'[^']*'|(?!["'])[^\s<>]*)))\1)*>/g;
 
 /**
  * Follows raw anchors the way the browser will: a bare `<a>` that never closes stays text, and
@@ -86,7 +88,9 @@ function scanRawHtmlAnchors(rawType: "raw" | "html") {
           const opening = /^<([a-z]+)(?:\s|\/?>)/i.exec(tag)?.[1]?.toLowerCase();
           if (
             opening &&
-            /^(?:script|style|textarea|title|xmp|iframe|noembed|noframes|plaintext)$/.test(opening)
+            /^(?:script|style|textarea|title|xmp|iframe|noembed|noframes|noscript|plaintext)$/.test(
+              opening,
+            )
           ) {
             rawTextTag = opening;
           } else if (opening === "a") {

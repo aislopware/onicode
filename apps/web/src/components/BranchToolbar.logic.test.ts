@@ -420,6 +420,7 @@ describe("sanitizeNewRefName", () => {
   it("preserves whitespace that git accepts", () => {
     expect(sanitizeNewRefName("new\u00a0branch")).toBe("new\u00a0branch");
     expect(sanitizeNewRefName("new\u2009branch")).toBe("new\u2009branch");
+    expect(sanitizeNewRefName(" \u00a0new branch\u3000\t")).toBe("\u00a0new-branch\u3000");
   });
 
   it("does not collapse dashes the user typed", () => {

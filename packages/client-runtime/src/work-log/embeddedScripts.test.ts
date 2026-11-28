@@ -90,6 +90,8 @@ describe("embeddedScripts", () => {
     [`perl -I lib -Mstrict -pe 's/foo/bar/' input.txt`, "perl", "s/foo/bar/"],
     [`sqlite3 app.db "select * from users"`, "sql", "select * from users"],
     [`pwsh -NoProfile -Command "Get-ChildItem"`, "powershell", "Get-ChildItem"],
+    [`powershell -NoP -Comm "Get-ChildItem"`, "powershell", "Get-ChildItem"],
+    [`pwsh -cwa 'Get-ChildItem $args' -Recurse`, "powershell", "Get-ChildItem $args"],
     [`env FOO=1 sudo -u bob python3 -c 'print(1)'`, "python", "print(1)"],
     [`env -- FOO=1 python3 -c 'print(1)'`, "python", "print(1)"],
     [`timeout 30 python3 -c 'print(1)'`, "python", "print(1)"],
@@ -146,6 +148,7 @@ describe("embeddedScripts", () => {
     ["a perl -i backup suffix of e", `perl -pie 's/foo/bar/' input.txt`],
     ["a ruby -i backup suffix of e", `ruby -ie 'puts 1' input.txt`],
     ["a python -W value of c", `python3 -Wc 'print(1)'`],
+    ["pwsh printing its version", `pwsh -v -c 'Get-ChildItem'`],
     ["a shell whose -c has no script, before a heredoc", `sh -c -- <<'EOF'\necho hi\nEOF`],
     ["a heredoc `cat` sends to stdout while stderr goes to a file", `cat 2>log.ts <<'EOF'\nx\nEOF`],
   ])("finds nothing for %s", (_case, command) => {

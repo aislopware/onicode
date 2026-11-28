@@ -418,6 +418,51 @@ it.layer(layerTest)("ProjectFaviconResolverLive", (it) => {
         yield* writeTextFile(cwd, "public/vite.svg", "<svg>vite</svg>");
         yield* writeTextFile(cwd, "public/brand.png", "png");
         expect(yield* resolver.resolvePath(cwd)).toBe(path.join(cwd, "public", "brand.png"));
+
+        // A `<!--` in a script, an attribute, RCDATA or a source file is text and hides nothing; a
+        // real unclosed one hides the rest. A custom element is not a link.
+        for (const [file, source, resolved] of [
+          [
+            "index.html",
+            '<script>document.write("<!--")</script>\n<link rel="icon" href="/brand.png">',
+            true,
+          ],
+          [
+            "index.html",
+            '<script>const s = "<!--";</script>\n<link rel="icon" href="/brand.png">\n<SCRIPT>const e = "-->";</SCRIPT>',
+            true,
+          ],
+          [
+            "index.html",
+            '<meta content="<!--"><link rel="icon" href="/brand.png"><script>const e = "-->";</script>',
+            true,
+          ],
+          [
+            "index.html",
+            '<title>Write <!-- here</title><link rel="icon" href="/brand.png"><p>--></p>',
+            true,
+          ],
+          [
+            "index.html",
+            '<script></script data-x="<!--"><link rel="icon" href="/brand.png">',
+            true,
+          ],
+          ["index.html", '<?xml-stylesheet href="<!--"?><link rel="icon" href="/brand.png">', true],
+          [
+            "src/routes/__root.tsx",
+            'const marker = "<!--";\nconst icon = <link rel="icon" href="/brand.png" />;',
+            true,
+          ],
+          ["index.html", '<!-- old head\n<link rel="icon" href="/brand.png">', false],
+          ["index.html", '<link-preview rel="icon" href="/brand.png">', false],
+        ] as const) {
+          const scanned = yield* makeTempDir;
+          yield* writeTextFile(scanned, file, source);
+          yield* writeTextFile(scanned, "public/brand.png", "png");
+          expect(yield* resolver.resolvePath(scanned)).toBe(
+            resolved ? path.join(scanned, "public", "brand.png") : null,
+          );
+        }
       }),
     );
 

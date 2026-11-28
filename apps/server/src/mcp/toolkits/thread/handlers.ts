@@ -22,7 +22,7 @@ import {
   readThread,
   unavailable,
 } from "../../threadAccess.ts";
-import { firstLineTitle } from "../../firstLineTitle.ts";
+import { firstLineTitle } from "@onicode/shared/firstLineTitle";
 import type * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as ThreadMessageIntake from "../../../orchestration-v2/ThreadMessageIntake.ts";
 import * as ThreadSearch from "../../../orchestration-v2/ThreadSearch.ts";

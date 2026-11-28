@@ -107,6 +107,12 @@ describe("GitLab change request URLs", () => {
       "https://gitlab.com",
       "ssh://git@altssh.gitlab.com:443/group/sub/project.git",
     ],
+    ["ALTSSH.GITLAB.COM", "https://gitlab.com", "git@altssh.gitlab.com:group/sub/project.git"],
+    [
+      "altssh.gitlab.com:443",
+      "https://gitlab.com",
+      "ssh://git@altssh.gitlab.com:443/group/sub/project.git",
+    ],
     [
       "altssh.gitlab.example.com",
       "https://altssh.gitlab.example.com",
@@ -222,6 +228,9 @@ describe("GitLab repository keys", () => {
   it("matches merge requests for a key saved under altssh.gitlab.com", () => {
     const canonicalKey = "altssh.gitlab.com/group/sub/project";
     expect(registry.canonicalRepositoryKey(canonicalKey)).toBe("gitlab.com/group/sub/project");
+    expect(registry.canonicalRepositoryKey("ALTSSH.GITLAB.COM/group/sub/project")).toBe(
+      "gitlab.com/group/sub/project",
+    );
     const identity = {
       canonicalKey,
       displayName: "group/sub/project",

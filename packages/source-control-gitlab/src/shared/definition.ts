@@ -44,7 +44,7 @@ function isProjectPath(repository: string, host: string): boolean {
 }
 
 // GitLab.com also serves SSH on port 443 from this host but names every project on `gitlab.com`.
-const ALT_SSH_HOST_KEY = /^altssh\.gitlab\.com\/(.+)$/u;
+const ALT_SSH_HOST_KEY = /^altssh\.gitlab\.com\/(.+)$/iu;
 
 function canonicalRepositoryKey(key: string): string | null {
   const repository = ALT_SSH_HOST_KEY.exec(key)?.[1];
@@ -63,8 +63,9 @@ function withCanonicalKey<Identity extends { readonly canonicalKey: string }>(
   return canonicalKey === null ? identity : { ...identity, canonicalKey };
 }
 
+// Its port, if given, is the SSH one, not where the web pages are.
 function webHost(host: string): string {
-  return host === "altssh.gitlab.com" ? "gitlab.com" : host;
+  return /^altssh\.gitlab\.com(?::\d+)?$/iu.test(host) ? "gitlab.com" : host;
 }
 
 export const definition = defineSourceControl({

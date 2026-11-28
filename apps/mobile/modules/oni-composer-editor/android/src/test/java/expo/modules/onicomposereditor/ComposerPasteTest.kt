@@ -339,6 +339,13 @@ class ComposerPasteTest {
   }
 
   @Test
+  fun threadLinksThatBecomeChipsReachJs() {
+    assertTrue(OniComposerClipboard.hasThreadLink("See [T](oni-thread://v2/env/thread)"))
+    assertTrue(OniComposerClipboard.hasThreadLink("See [T](<oni-thread://v3/team%2Fa/work%20(1)>)"))
+    assertFalse(OniComposerClipboard.hasThreadLink("See [T](oni-thread://v1/thread)"))
+  }
+
+  @Test
   fun readOnlyShortcutDoesNotPasteOrEmitAnEvent() {
     clipboard.setPrimaryClip(ClipData.newPlainText("test", "x".repeat(120_001)))
     editor.setText("unchanged")
