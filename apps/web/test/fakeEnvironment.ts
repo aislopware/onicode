@@ -832,6 +832,36 @@ async function offerProjectRepositoryIdentity(
   );
 }
 
+// Offers the identity change, then waits until the client's project shows it.
+async function offerAndAwaitRepositoryIdentity(
+  repositoryIdentity: OrchestrationProjectShell["repositoryIdentity"] | null,
+): Promise<void> {
+  // Imported here: at module load it would pull the app's state into every fake environment.
+  const { readProjects, subscribeProjects } = await import("~/state/entities");
+  const want = repositoryIdentity !== null;
+  // A test that ended before subscribing only needs the next fake environment to start clean.
+  if (shellSubscriber === null && !want) {
+    projects = projects.map((entry) =>
+      entry.id === PROJECT_ID ? { ...entry, repositoryIdentity: null } : entry,
+    );
+    return;
+  }
+  const settled = (list: ReadonlyArray<{ id: string; repositoryIdentity?: unknown }>) =>
+    list.some((entry) => entry.id === PROJECT_ID && Boolean(entry.repositoryIdentity) === want);
+  let unsubscribe = () => {};
+  const reached = new Promise<void>((resolve) => {
+    unsubscribe = subscribeProjects((list) => {
+      if (settled(list)) resolve();
+    });
+  });
+  try {
+    await offerProjectRepositoryIdentity(repositoryIdentity);
+    if (!settled(readProjects())) await reached;
+  } finally {
+    unsubscribe();
+  }
+}
+
 /**
  * Sends the project's repository identity as the server's enrichment refresh does, after the
  * snapshot. Disposing clears it again: the client keeps a learned identity across snapshots.
@@ -839,28 +869,9 @@ async function offerProjectRepositoryIdentity(
 export async function emitProjectRepositoryIdentity(
   repositoryIdentity: NonNullable<OrchestrationProjectShell["repositoryIdentity"]>,
 ): Promise<AsyncDisposable> {
-  await offerProjectRepositoryIdentity(repositoryIdentity);
+  await offerAndAwaitRepositoryIdentity(repositoryIdentity);
   return {
-    [Symbol.asyncDispose]: async () => {
-      if (shellSubscriber === null) {
-        projects = projects.map((entry) => ({ ...entry, repositoryIdentity: null }));
-        return;
-      }
-      // Imported here: at module load it would pull the app's state into every fake environment.
-      const { readProjects, subscribeProjects } = await import("~/state/entities");
-      const learned = (list: ReadonlyArray<{ id: string; repositoryIdentity?: unknown }>) =>
-        list.some((entry) => entry.id === PROJECT_ID && entry.repositoryIdentity);
-      // The client keeps the identity until its shell stream has read the reset.
-      let unsubscribe = () => {};
-      const cleared = new Promise<void>((resolve) => {
-        unsubscribe = subscribeProjects((list) => {
-          if (!learned(list)) resolve();
-        });
-      });
-      await offerProjectRepositoryIdentity(null);
-      if (learned(readProjects())) await cleared;
-      unsubscribe();
-    },
+    [Symbol.asyncDispose]: () => offerAndAwaitRepositoryIdentity(null),
   };
 }
 

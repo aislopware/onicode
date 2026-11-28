@@ -5,13 +5,22 @@ import { cn } from "~/lib/utils";
 
 const HOVER_CARD_CLASS_NAME = "max-w-80 text-left whitespace-normal";
 
-// Shift, not flip: a card that grows under the pointer (Show more, a live status) keeps covering
-// it, so it does not close under a hand that never moved.
+// Align shifts, not flips: a card that grows under the pointer (Show more, a live status) keeps
+// covering it, so it does not close under a hand that never moved.
 export const HOVER_CARD_COLLISION = { side: "flip", align: "shift" } as const;
 
-export function ThreadHoverCardPopup({ className, ...props }: ComponentProps<typeof TooltipPopup>) {
+export function ThreadHoverCardPopup({
+  className,
+  collisionAvoidance = HOVER_CARD_COLLISION,
+  ...props
+}: ComponentProps<typeof TooltipPopup>) {
   return (
-    <TooltipPopup {...props} variant="glass" className={cn(HOVER_CARD_CLASS_NAME, className)} />
+    <TooltipPopup
+      {...props}
+      collisionAvoidance={collisionAvoidance}
+      variant="glass"
+      className={cn(HOVER_CARD_CLASS_NAME, className)}
+    />
   );
 }
 

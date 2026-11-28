@@ -1,5 +1,5 @@
 import { beforeEach } from "vite-plus/test";
-import { commands, page, server } from "vite-plus/test/browser";
+import { cdp, commands, page, server } from "vite-plus/test/browser";
 
 import { initializeI18n } from "../src/i18n/initializeI18n";
 
@@ -13,7 +13,7 @@ declare module "vite-plus/test/browser" {
     pointerDown: () => Promise<void>;
     /** Defined in vite.config.ts. Releases the primary button. */
     pointerUp: () => Promise<void>;
-    /** Defined in vite.config.ts. Releases a held button, parks the mouse, clears emulated media. */
+    /** Defined in vite.config.ts. Releases a held button and parks the mouse off the page. */
     resetPage: () => Promise<void>;
   }
 }
@@ -44,6 +44,8 @@ const { viewport } = server.config.browser;
 // running and can move the mouse after its own afterEach.
 beforeEach(async () => {
   await commands.resetPage();
+  // Emulation belongs to the CDP session that set it, the same cached one tests get from cdp().
+  await cdp().send("Emulation.setEmulatedMedia", { features: [] });
   if (window.innerWidth !== viewport.width || window.innerHeight !== viewport.height)
     await page.viewport(viewport.width, viewport.height);
 });

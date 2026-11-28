@@ -81,6 +81,20 @@ function setAriaDescribedBy(element: HTMLElement, id: string, present: boolean) 
 
 const SharedTooltipContext = createContext<SharedTooltipApi | null>(null);
 
+type CollisionAvoidance = SharedTooltipContent["collisionAvoidance"];
+
+// Triggers pass inline objects, so compare by value.
+function sameCollisionAvoidance(a: CollisionAvoidance, b: CollisionAvoidance) {
+  return (
+    a === b ||
+    (a !== undefined &&
+      b !== undefined &&
+      a.side === b.side &&
+      a.align === b.align &&
+      a.fallbackAxisSide === b.fallbackAxisSide)
+  );
+}
+
 /**
  * One tooltip for many triggers: a long message would otherwise mount a Base UI tooltip per
  * link and file chip, and almost none of them are ever hovered.
@@ -182,8 +196,7 @@ export function SharedTooltipProvider({ children }: { children: ReactNode }) {
           active.contentKey === content.contentKey &&
           active.side === content.side &&
           active.align === content.align &&
-          JSON.stringify(active.collisionAvoidance) ===
-            JSON.stringify(content.collisionAvoidance) &&
+          sameCollisionAvoidance(active.collisionAvoidance, content.collisionAvoidance) &&
           active.sideOffset === content.sideOffset &&
           active.variant === content.variant &&
           active.className === content.className &&
