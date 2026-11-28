@@ -209,6 +209,7 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceEntries", (it) => {
             NodeFSP.symlink("\\\\attacker.invalid\\share", path.join(cwd, "nas"), "dir"),
           );
           const stat = vi.mocked(NodeFSP.stat).mockClear();
+          const realpath = vi.spyOn(NodeFSP, "realpath");
           const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
 
           const root = yield* workspaceEntries.list({ cwd, directoryPath: "" });
@@ -219,8 +220,9 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceEntries", (it) => {
           expect(error._tag).toBe("WorkspaceEntriesReadDirectoryError");
           const browsed = yield* workspaceEntries.browse({ partialPath: `${cwd}${path.sep}` });
           expect(browsed.entries.map((entry) => entry.name)).not.toContain("nas");
-          const touched = stat.mock.calls.map(([target]) => String(target));
-          expect(touched.filter((target) => target.split(path.sep).includes("nas"))).toEqual([]);
+          const throughLink = (target: unknown) => String(target).split(path.sep).includes("nas");
+          expect(stat.mock.calls.map(([target]) => target).filter(throughLink)).toEqual([]);
+          expect(realpath.mock.calls.map(([target]) => target).filter(throughLink)).toEqual([]);
         }),
     );
 

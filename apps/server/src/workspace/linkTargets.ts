@@ -6,7 +6,6 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import type * as Path from "effect/Path";
 
-import { isWithinRoot } from "./KnownWorkspaces.ts";
 import { networkPathReachedBy } from "./networkLinks.ts";
 
 // A link to an unresponsive network share must not hold up the local entries beside it.
@@ -20,19 +19,30 @@ export const LINK_PROBE_TIMED_OUT = "link-probe-timed-out";
 /** A timed-out caller that only waited behind probes still expected to answer. */
 export const LINK_PROBE_CROWDED = "crowded";
 
+// Windows takes `/` as a separator too.
+const SEPARATOR = NodePath.sep === "\\" ? /[\\/]/ : /\//;
 const isAtOrUnder = (target: string, root: string) =>
-  target === root || target.startsWith(root.endsWith(NodePath.sep) ? root : root + NodePath.sep);
+  target.startsWith(root) &&
+  (target.length === root.length ||
+    SEPARATOR.test(target[root.length]!) ||
+    SEPARATOR.test(root.at(-1) ?? ""));
 
 /**
  * Runs `probe` with at most `max` in flight, one per `target` (a link's first hop). A full pool
  * queues callers until their signal aborts: `undefined`, or `LINK_PROBE_CROWDED` on a timeout. A
  * probe that outlived a timeout answers `undefined` at once for its target and anything below it.
+ * Only callers whose `options` are `sameOptions` share a probe's answer.
  */
-export function makeLinkTargetProbe<A>(
-  probe: (fullPath: string) => Promise<A>,
+export function makeLinkTargetProbe<A, O = undefined>(
+  probe: (fullPath: string, options: O | undefined) => Promise<A>,
   max = MAX_PENDING_LINK_TARGET_PROBES,
+  sameOptions: (left: O | undefined, right: O | undefined) => boolean = Object.is,
 ) {
-  type Entry = { readonly result: Promise<A | undefined>; stuck: boolean };
+  type Entry = {
+    readonly result: Promise<A | undefined>;
+    readonly options: O | undefined;
+    stuck: boolean;
+  };
   const pending = new Map<string, Entry>();
   // First in, first woken for a free slot; a woken caller that starts no probe passes its wake
   // on. Callers queued for a target whose probe starts join it, and ones at or below a target
@@ -81,6 +91,7 @@ export function makeLinkTargetProbe<A>(
     fullPath: string,
     signal: AbortSignal,
     target = fullPath,
+    options?: O,
   ): Promise<A | undefined | typeof LINK_PROBE_CROWDED> => {
     let woken = false;
     let queued = false;
@@ -100,7 +111,13 @@ export function makeLinkTargetProbe<A>(
       const shared = pending.get(target);
       if (shared) {
         passOn();
-        return shared.stuck ? undefined : awaitProbe(target, shared, signal);
+        if (shared.stuck) return undefined;
+        if (sameOptions(shared.options, options)) return awaitProbe(target, shared, signal);
+        // Its answer is not this caller's, so it waits the probe out and then asks for itself.
+        woken = false;
+        queued = false;
+        await awaitProbe(target, shared, signal);
+        continue;
       }
       if (behindStuck(target)) {
         passOn();
@@ -123,12 +140,13 @@ export function makeLinkTargetProbe<A>(
       woken = waiter.reason === "slot";
     }
     const entry: Entry = {
-      result: probe(fullPath)
+      result: probe(fullPath, options)
         .catch(() => undefined)
         .finally(() => {
           pending.delete(target);
           wakeNext();
         }),
+      options,
       stuck: false,
     };
     pending.set(target, entry);
@@ -143,13 +161,32 @@ interface LinkTarget {
   readonly kind: "directory" | "file";
 }
 
+interface LinkTargetOptions {
+  /** A symlink listed in a folder already read, whose first hop can key the probe. */
+  readonly link?: boolean;
+  /** A target on a network share outside `root` resolves to null, before anything touches it. */
+  readonly within?: { readonly path: Path.Path; readonly root: string };
+}
+
 // One pool for the process: browsing, the Files list and every search index share libuv's workers.
-const probeLinkTarget = makeLinkTargetProbe(async (fullPath): Promise<LinkTarget | null> => {
-  const stats = await NodeFSP.stat(fullPath).catch(() => undefined);
-  const kind = stats?.isDirectory() ? "directory" : stats?.isFile() ? "file" : undefined;
-  if (kind === undefined) return null;
-  return { realPath: await NodeFSP.realpath(fullPath).catch(() => undefined), kind };
-});
+// The link walk runs in it too, since its readlinks hang on a dead share like a stat does.
+const probeLinkTarget = makeLinkTargetProbe(
+  async (fullPath, within: LinkTargetOptions["within"]): Promise<LinkTarget | null> => {
+    if (within !== undefined) {
+      const reached = await networkPathReachedBy(within.path, fullPath, {
+        allowedRoot: within.root,
+      }).catch(() => fullPath);
+      if (reached !== null) return null;
+    }
+    const stats = await NodeFSP.stat(fullPath).catch(() => undefined);
+    const kind = stats?.isDirectory() ? "directory" : stats?.isFile() ? "file" : undefined;
+    if (kind === undefined) return null;
+    return { realPath: await NodeFSP.realpath(fullPath).catch(() => undefined), kind };
+  },
+  MAX_PENDING_LINK_TARGET_PROBES,
+  // The walk refuses by root.
+  (left, right) => left === right || (left?.root === right?.root && left?.path === right?.path),
+);
 
 // Links into one share key to the same target. Reading a link in a folder already read does not
 // touch where it leads; any other path is its own key, since reading it may reach a stalled mount.
@@ -164,34 +201,6 @@ const firstHopTarget = (fullPath: string, link: boolean, signal: AbortSignal) =>
       })
     : Promise.resolve(NodePath.resolve(fullPath));
 
-interface LinkTargetOptions {
-  /** A symlink listed in a folder already read, whose first hop can key the probe. */
-  readonly link?: boolean;
-  /** A target on a network share outside `root` resolves to null, before anything touches it. */
-  readonly within?: { readonly path: Path.Path; readonly root: string };
-}
-
-// Undefined once aborted.
-const reachesNetworkPath = (
-  fullPath: string,
-  within: LinkTargetOptions["within"],
-  signal: AbortSignal,
-) =>
-  within === undefined
-    ? Promise.resolve(false)
-    : new Promise<boolean | undefined>((resolve) => {
-        signal.addEventListener("abort", () => resolve(undefined), { once: true });
-        const inside = isWithinRoot(within.path, fullPath, within.root);
-        void networkPathReachedBy(
-          within.path,
-          inside ? within.path.relative(within.root, fullPath) : fullPath,
-          inside ? { from: within.root, allowedRoot: within.root } : { allowedRoot: within.root },
-        ).then(
-          (reached) => resolve(reached !== null),
-          () => resolve(true),
-        );
-      });
-
 /**
  * Like `resolveLinkTarget`, but a caller whose time ran out while it only waited behind probes
  * still expected to answer gets `LINK_PROBE_CROWDED`: its target was never asked.
@@ -200,16 +209,10 @@ export const resolveLinkTargetOrCrowded = (fullPath: string, options?: LinkTarge
   Effect.suspend(() => {
     const caller = new AbortController();
     // Every wait inside settles once the caller aborts, so the timeout can read the answer.
-    const answer = reachesNetworkPath(fullPath, options?.within, caller.signal).then((refused) =>
-      refused === undefined
+    const answer = firstHopTarget(fullPath, options?.link === true, caller.signal).then((target) =>
+      target === undefined || caller.signal.aborted
         ? undefined
-        : refused
-          ? null
-          : firstHopTarget(fullPath, options?.link === true, caller.signal).then((target) =>
-              target === undefined || caller.signal.aborted
-                ? undefined
-                : probeLinkTarget(fullPath, caller.signal, target),
-            ),
+        : probeLinkTarget(fullPath, caller.signal, target, options?.within),
     );
     return Effect.promise(() => answer).pipe(
       Effect.timeoutOrElse({
@@ -234,8 +237,8 @@ export const resolveLinkTarget = (fullPath: string, options?: LinkTargetOptions)
   );
 
 // A crowded answer says nothing of the folder, so it queues again a bounded number of times.
-const resolveUncrowded = (fullPath: string) =>
-  Effect.repeat(resolveLinkTargetOrCrowded(fullPath), {
+const resolveUncrowded = (fullPath: string, within: LinkTargetOptions["within"]) =>
+  Effect.repeat(resolveLinkTargetOrCrowded(fullPath, within === undefined ? {} : { within }), {
     while: (target) => target === LINK_PROBE_CROWDED,
     times: 2,
   }).pipe(Effect.map((target) => (target === LINK_PROBE_CROWDED ? undefined : target)));
@@ -244,11 +247,17 @@ const resolveUncrowded = (fullPath: string) =>
  * A folder's state and real path, from probes bounded like a link's: `undefined` when the folder
  * or its `.git` did not answer in time, as on a stalled mount.
  */
-export const probeFolder = Effect.fn("linkTargets.probeFolder")(function* (folder: string) {
-  const target = yield* resolveUncrowded(folder);
+export const probeFolder = Effect.fn("linkTargets.probeFolder")(function* (
+  folder: string,
+  within?: LinkTargetOptions["within"],
+) {
+  const target = yield* resolveUncrowded(folder, within);
   if (target === undefined) return undefined;
   if (target === null) return { state: "missing" as const, realPath: folder };
-  const git = yield* resolveUncrowded(NodePath.join(folder, ".git"));
+  const git = yield* resolveUncrowded(
+    within === undefined ? NodePath.join(folder, ".git") : within.path.join(folder, ".git"),
+    within,
+  );
   if (git === undefined) return undefined;
   return {
     state: git === null ? ("plain" as const) : ("git" as const),

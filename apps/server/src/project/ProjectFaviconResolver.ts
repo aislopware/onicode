@@ -15,6 +15,7 @@ import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
+import { networkPathReachedBy } from "../workspace/networkLinks.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as OniProjectFileLoader from "./OniProjectFileLoader.ts";
 
@@ -248,6 +249,17 @@ export const make = Effect.gen(function* () {
   const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
   const projectFileLoader = yield* OniProjectFileLoader.OniProjectFileLoader;
 
+  // stat and open of a path a link carries onto a share would sign in to it first.
+  const reachesShare = Effect.fn("ProjectFaviconResolver.reachesShare")(function* (
+    projectCwd: string,
+    absolutePath: string,
+  ) {
+    const reached = yield* Effect.promise(() =>
+      networkPathReachedBy(path, absolutePath, { allowedRoot: projectCwd }),
+    );
+    return reached !== null;
+  });
+
   const resolveIconHref = (href: string, sourceFile: string): ReadonlyArray<string> => {
     // `data:`, `https:` and `//host` icons name no project file, and a long data URL fails `stat`.
     if (/^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(href.trim())) return [];
@@ -286,7 +298,10 @@ export const make = Effect.gen(function* () {
             ),
         }),
       );
-      if (Option.isNone(candidate)) {
+      if (
+        Option.isNone(candidate) ||
+        (yield* reachesShare(projectCwd, candidate.value.absolutePath))
+      ) {
         continue;
       }
       const stats = yield* optionOnMissing(fileSystem.stat(candidate.value.absolutePath)).pipe(
@@ -328,6 +343,9 @@ export const make = Effect.gen(function* () {
             }),
         ),
       );
+    if (yield* reachesShare(projectCwd, sourcePath.absolutePath)) {
+      return null;
+    }
     const stats = yield* optionOnMissing(fileSystem.stat(sourcePath.absolutePath)).pipe(
       Effect.mapError(
         (cause) =>
@@ -463,17 +481,20 @@ export const make = Effect.gen(function* () {
       return null;
     }
 
-    const stats = yield* optionOnMissing(fileSystem.stat(cached)).pipe(
-      Effect.mapError(
-        (cause) =>
-          new ProjectFaviconResolutionError({
-            operation: "stat-candidate",
-            workspaceRoot: cwd,
-            absolutePath: cached,
-            cause,
-          }),
-      ),
-    );
+    // A folder on the path can have become a link onto a share since it was cached.
+    const stats = (yield* reachesShare(cwd, cached))
+      ? Option.none()
+      : yield* optionOnMissing(fileSystem.stat(cached)).pipe(
+          Effect.mapError(
+            (cause) =>
+              new ProjectFaviconResolutionError({
+                operation: "stat-candidate",
+                workspaceRoot: cwd,
+                absolutePath: cached,
+                cause,
+              }),
+          ),
+        );
     if (Option.isSome(stats) && stats.value.type === "File") {
       return cached;
     }

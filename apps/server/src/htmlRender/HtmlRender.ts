@@ -309,17 +309,26 @@ const afterDoctype = (text: string, from: number) => {
 
 const inlineLocalImages = Effect.fn("HtmlRender.inlineLocalImages")(function* (html: string) {
   const fileSystem = yield* FileSystem.FileSystem;
+  const pathService = yield* Path.Path;
   const references = findLocalImages(html);
   const files = yield* Effect.forEach(
     [...new Set(references.map((reference) => reference.path))],
     (path) =>
-      fileSystem.stat(filePathFor(path)).pipe(
-        Effect.map((info) => ({
+      Effect.gen(function* () {
+        // stat through a link onto a share would sign in to it first.
+        const reached = yield* Effect.promise(() =>
+          networkPathReachedBy(pathService, filePathFor(path)),
+        );
+        const info =
+          reached === null
+            ? yield* fileSystem.stat(filePathFor(path)).pipe(Effect.option)
+            : Option.none();
+        return {
           path,
-          size: info.type === "File" ? Number(info.size) : undefined,
-        })),
-        Effect.orElseSucceed(() => ({ path, size: undefined })),
-      ),
+          size:
+            Option.isSome(info) && info.value.type === "File" ? Number(info.value.size) : undefined,
+        };
+      }),
     { concurrency: 8 },
   );
   const oversized = files.find((file) => file.size !== undefined && file.size > MAX_IMAGE_BYTES);
@@ -490,7 +499,11 @@ const make = Effect.gen(function* () {
     const realPath = yield* fileSystem
       .realPath(filePath)
       .pipe(Effect.mapError((cause) => new HtmlRenderFileError({ path: filePath, cause })));
-    if (!HTML_FILE_EXTENSION.test(realPath) || (yield* isServerInternalPath(realPath))) {
+    if (
+      isNetworkPath(realPath) ||
+      !HTML_FILE_EXTENSION.test(realPath) ||
+      (yield* isServerInternalPath(realPath))
+    ) {
       return yield* unreadable;
     }
     // Open without following links and recheck the path, so a link or FIFO swapped in is refused.

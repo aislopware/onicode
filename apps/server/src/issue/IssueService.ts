@@ -260,6 +260,16 @@ function toIssueError(operation: string): (error: IssueTrackerError) => IssueErr
 const isNotFound = (error: IssueError) =>
   error._tag === "IssueOperationError" && error.reason === "not-found";
 
+/**
+ * Why a link failed across accounts: a refusal such as a rate limit over a miss, and an account
+ * that lacks the issue over one that is signed out. The first of equals stays.
+ */
+const moreTelling = (kept: IssueError | null, next: IssueError): IssueError => {
+  const weight = (error: IssueError) =>
+    error._tag === "IssueUnavailableError" ? 0 : isNotFound(error) ? 1 : 2;
+  return kept === null || weight(next) > weight(kept) ? next : kept;
+};
+
 const readOnly = (operation: string) =>
   new IssueOperationError({
     operation,
@@ -456,6 +466,24 @@ const make = Effect.gen(function* () {
       }),
     );
 
+  const standaloneAccountIds = (api: StandaloneIssueTrackerApi) =>
+    bindings.listAccounts.pipe(
+      Effect.mapError(
+        (cause) =>
+          new IssueOperationError({
+            operation: "listProjects",
+            detail: "The issue tracker accounts could not be read.",
+            cause,
+          }),
+      ),
+      Effect.map((added) => [
+        null,
+        ...added
+          .filter((account) => account.tracker === api.kind)
+          .map((account) => account.accountId),
+      ]),
+    );
+
   /**
    * A project with no binding for a standalone tracker, the No project included, serves its
    * references with the environment's credentials, as the first account that reaches the issue.
@@ -464,8 +492,8 @@ const make = Effect.gen(function* () {
   const requireStandaloneProject = (
     ref: IssueScopeRef,
     api: StandaloneIssueTrackerApi,
-    /** Accounts already known not to reach the reference. */
-    skip: ReadonlySet<IssueTrackerAccountId | null> = new Set(),
+    /** The accounts to try, when the caller has already ruled some out. */
+    accountIds?: ReadonlyArray<IssueTrackerAccountId | null>,
   ): Effect.Effect<SupportedProject & { readonly writable: boolean }, IssueError> => {
     const host = ref.host?.trim().toLowerCase();
     if (host !== undefined && host !== api.standalone.host) {
@@ -482,32 +510,15 @@ const make = Effect.gen(function* () {
             }),
         ),
       ),
-      bindings.listAccounts.pipe(
-        Effect.mapError(
-          (cause) =>
-            new IssueOperationError({
-              operation: "listProjects",
-              detail: "The issue tracker accounts could not be read.",
-              cause,
-            }),
-        ),
-      ),
+      accountIds === undefined ? standaloneAccountIds(api) : Effect.succeed(accountIds),
     ]).pipe(
-      Effect.flatMap(([shell, added]) =>
+      Effect.flatMap(([shell, reaching]) =>
         Option.match(shell, {
           onNone: () => Effect.fail(new IssueUnavailableError({ reason: "tracker-unsupported" })),
           onSome: (project) =>
             Effect.succeed({
               project,
-              api: asFirstReachingAccount(
-                api,
-                [
-                  null,
-                  ...added
-                    .filter((account) => account.tracker === api.kind)
-                    .map((account) => account.accountId),
-                ].filter((accountId) => !skip.has(accountId)),
-              ),
+              api: asFirstReachingAccount(api, reaching),
               accountId: null,
               tracker: ref.tracker,
               host: api.standalone.host,
@@ -1151,8 +1162,7 @@ const make = Effect.gen(function* () {
           })
           .pipe(Effect.mapError(toIssueError("resolveUrl")), Effect.result);
         if (read._tag === "Failure") {
-          // Another workspace's account not having the key is a miss, not why the link failed.
-          if (failure === null || isNotFound(failure)) failure = read.failure;
+          failure = moreTelling(failure, read.failure);
           continue;
         }
         const canonicalUrl = parseUrl(read.success.url);
@@ -1167,11 +1177,17 @@ const make = Effect.gen(function* () {
       // is why it failed.
       const missed =
         failure === null || isNotFound(failure) || failure._tag === "IssueUnavailableError";
-      if (callerUnbound && missed) {
+      const untried =
+        callerUnbound && missed
+          ? (yield* standaloneAccountIds(standalone.api)).filter(
+              (accountId) => !tried.has(accountId),
+            )
+          : [];
+      if (callerUnbound && untried.length > 0) {
         const served = yield* requireStandaloneProject(
           { projectId: preferredProjectId, tracker, scope: link.scope },
           standalone.api,
-          tried,
+          untried,
         );
         const issue = yield* served.api
           .getIssue({
@@ -1181,7 +1197,10 @@ const make = Effect.gen(function* () {
             key: link.key,
             workspace: standalone.link.workspace,
           })
-          .pipe(Effect.mapError(toIssueError("resolveUrl")));
+          .pipe(
+            Effect.mapError(toIssueError("resolveUrl")),
+            Effect.mapError((error) => moreTelling(failure, error)),
+          );
         const canonicalUrl = parseUrl(issue.url);
         const canonical = canonicalUrl === null ? null : standalone.api.parseIssueUrl(canonicalUrl);
         return {

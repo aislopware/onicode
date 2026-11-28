@@ -211,6 +211,11 @@ function IssueLabelPicker({
       emptyLabel={gt("This tracker has no labels.")}
       noMatchLabel={gt("No label matches that.")}
       errorLabel={gt("The labels could not be read.")}
+      errorAction={
+        <Button size="xs" variant="ghost-muted" onClick={candidatesQuery.refresh}>
+          {gt("Retry")}
+        </Button>
+      }
       truncated={candidatesQuery.data?.truncated === true}
       truncatedLabel={gt("More labels exist than are listed here.")}
       candidateKey={(candidate) => candidate.name}
@@ -345,6 +350,15 @@ function IssueAssigneePicker({
       emptyLabel={gt("Nobody can be assigned here.")}
       noMatchLabel={gt("Nobody matches that.")}
       errorLabel={gt("The people could not be read.")}
+      errorAction={
+        <Button
+          size="xs"
+          variant="ghost-muted"
+          onClick={candidatesQuery.data === null ? candidatesQuery.refresh : search.refresh}
+        >
+          {gt("Retry")}
+        </Button>
+      }
       truncated={searchFailed || view.truncated}
       truncatedLabel={
         searchFailed

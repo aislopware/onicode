@@ -1,6 +1,27 @@
-import { describe, expect, it } from "@effect/vitest";
+// @effect-diagnostics nodeBuiltinImport:off
+import * as NodeFSP from "node:fs/promises";
 
-import { LINK_PROBE_TIMED_OUT, makeLinkTargetProbe } from "./linkTargets.ts";
+import * as NodePath from "@effect/platform-node/NodePath";
+import { describe, expect, it } from "@effect/vitest";
+import * as Deferred from "effect/Deferred";
+import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
+import * as Path from "effect/Path";
+import * as TestClock from "effect/testing/TestClock";
+import { vi } from "vite-plus/test";
+
+import { LINK_PROBE_TIMED_OUT, makeLinkTargetProbe, resolveLinkTarget } from "./linkTargets.ts";
+import { ATTACKER_SHARE, fakeWindowsTree } from "./networkLinks.testkit.ts";
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return {
+    ...actual,
+    readlink: vi.fn(actual.readlink),
+    realpath: vi.fn(actual.realpath),
+    stat: vi.fn(actual.stat),
+  };
+});
 
 describe("makeLinkTargetProbe", () => {
   const fakeProbes = () => {
@@ -39,6 +60,24 @@ describe("makeLinkTargetProbe", () => {
     fake.answer("/links/share");
     expect(await Promise.all([first, second, fourth])).toEqual([true, true, true]);
     expect(fake.calls).toEqual(["/links/share"]);
+  });
+
+  it("asks again for a caller whose options would answer differently", async () => {
+    const fake = fakeProbes();
+    const sameRoot = (left?: string, right?: string) => left === right;
+    const isDirectory = makeLinkTargetProbe(fake.stat, 2, sameRoot);
+    const signal = new AbortController().signal;
+    const first = isDirectory("/links/a", signal, "/mnt/share", "/root-a");
+    const other = isDirectory("/links/b", signal, "/mnt/share", "/root-b");
+    const same = isDirectory("/links/c", signal, "/mnt/share", "/root-a");
+    fake.answer("/links/a");
+    expect(await Promise.all([first, same])).toEqual([true, true]);
+    // Its own probe starts once the other one ends, rather than taking that one's answer.
+    const shared = other.then(() => "shared");
+    expect(await Promise.race([fake.started("/links/b").then(() => "own"), shared])).toBe("own");
+    fake.answer("/links/b");
+    expect(await other).toBe(true);
+    expect(fake.calls).toEqual(["/links/a", "/links/b"]);
   });
 
   it("waits for a slot, and gives up without a stat when its timeout aborts", async () => {
@@ -171,4 +210,64 @@ describe("makeLinkTargetProbe", () => {
     expect(await Promise.all([busy, first, second])).toEqual([true, true, true]);
     expect(fake.calls).toEqual(["/links/busy", "/links/share"]);
   });
+});
+
+describe("resolveLinkTarget", () => {
+  const errno = (code: string) => Object.assign(new Error(code), { code });
+
+  it.effect("expands the links before a root it is given, not just those below it", () =>
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      // `shortcut\up` is `a\b\up`, and its `..` leads to `a\nas`, not to `nas` beside `shortcut`.
+      const fake = fakeWindowsTree({
+        links: {
+          "C:\\repo\\a\\nas": ATTACKER_SHARE,
+          "C:\\repo\\a\\b\\up": "..\\nas",
+          "C:\\repo\\shortcut": "a\\b",
+        },
+      });
+      vi.mocked(NodeFSP.readlink).mockImplementation(fake.readlink);
+      vi.mocked(NodeFSP.realpath).mockImplementation(fake.realpath);
+      vi.mocked(NodeFSP.stat).mockImplementation(fake.stat);
+
+      expect(
+        yield* resolveLinkTarget("C:\\repo\\shortcut\\up", {
+          within: { path, root: "C:\\repo\\shortcut" },
+        }),
+      ).toBeNull();
+      expect(fake.reachedShare()).toEqual([]);
+    }).pipe(Effect.provide(NodePath.layerWin32)),
+  );
+
+  it.effect("holds a pool slot for a link walk that hangs on a dead share, as for a stat", () =>
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      const within = { path, root: "\\\\dead.invalid\\share\\project" };
+      const link = "\\\\dead.invalid\\share\\project\\link";
+      const readStarted = yield* Deferred.make<void>();
+      const read: Array<string> = [];
+      const releases: Array<() => void> = [];
+      vi.mocked(NodeFSP.readlink).mockImplementation(((target: string) => {
+        read.push(target);
+        Deferred.doneUnsafe(readStarted, Effect.void);
+        return new Promise((_, reject) => releases.push(() => reject(errno("ENOENT"))));
+      }) as typeof NodeFSP.readlink);
+      vi.mocked(NodeFSP.stat).mockRejectedValue(errno("ENOENT"));
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          for (const release of releases) release();
+        }),
+      );
+
+      const first = yield* Effect.forkChild(resolveLinkTarget(link, { within }));
+      yield* Deferred.await(readStarted);
+      yield* TestClock.adjust("1 second");
+      expect(yield* Fiber.join(first)).toBeUndefined();
+      // The stuck walk answers for its target at once, instead of hanging another worker.
+      const second = yield* Effect.forkChild(resolveLinkTarget(link, { within }));
+      yield* TestClock.adjust("1 second");
+      expect(yield* Fiber.join(second)).toBeUndefined();
+      expect(read).toEqual(["\\\\dead.invalid\\share\\project"]);
+    }).pipe(Effect.scoped, Effect.provide(NodePath.layerWin32)),
+  );
 });

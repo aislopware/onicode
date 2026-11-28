@@ -16,6 +16,7 @@ import { makeFakeWslHost } from "../testUtils/fakeWsl.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as KnownWorkspaces from "./KnownWorkspaces.ts";
+import { ATTACKER_SHARE, fakeWindowsTree } from "./networkLinks.testkit.ts";
 import * as WorkspaceEntries from "./WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
@@ -25,7 +26,12 @@ import { vi } from "vite-plus/test";
 
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof NodeFSP>();
-  return { ...actual, realpath: vi.fn(actual.realpath), open: vi.fn(actual.open) };
+  return {
+    ...actual,
+    readlink: vi.fn(actual.readlink),
+    realpath: vi.fn(actual.realpath),
+    open: vi.fn(actual.open),
+  };
 });
 
 const injectShortReads = Effect.fn("injectShortReads")(function* (target: string) {
@@ -55,6 +61,35 @@ const layerKnownWorkspacesTest = Layer.mock(KnownWorkspaces.KnownWorkspaces)({
     cwd.includes(UNKNOWN_WORKSPACE_PREFIX)
       ? Effect.fail(new KnownWorkspaces.UnknownWorkspaceError({ cwd }))
       : Effect.void,
+});
+
+// A win32 service over an in-memory Windows tree, so Windows path handling runs on any host.
+const onWindowsTree = Effect.fn("onWindowsTree")(function* (
+  tree: Parameters<typeof fakeWindowsTree>[0],
+) {
+  const native = yield* Effect.promise(() => vi.importActual<typeof NodeFSP>("node:fs/promises"));
+  const fake = fakeWindowsTree(tree);
+  const readlink = vi.mocked(NodeFSP.readlink).mockImplementation(fake.readlink);
+  const realpath = vi.mocked(NodeFSP.realpath).mockImplementation(fake.realpath);
+  const opened: Array<string> = [];
+  const open = vi.mocked(NodeFSP.open).mockImplementation(async (target) => {
+    opened.push(String(target));
+    throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+  });
+  yield* Effect.addFinalizer(() =>
+    Effect.sync(() => {
+      readlink.mockImplementation(native.readlink);
+      realpath.mockImplementation(native.realpath);
+      open.mockImplementation(native.open);
+    }),
+  );
+  const service = yield* WorkspaceFileSystem.make.pipe(
+    Effect.provide(Layer.merge(layerKnownWorkspacesTest, NodePath.layerWin32)),
+  );
+  // Git Bash drive paths are the only ones a Windows host rewrites; nothing spawns wslpath.
+  const onWindows = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    effect.pipe(Effect.provideService(HostProcess.Platform, "win32"));
+  return { fake, service, opened, onWindows };
 });
 
 const layerProject = WorkspaceFileSystem.layer.pipe(
@@ -594,13 +629,70 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
               .writeFile({ cwd, relativePath: "nas/b.md", contents: "# nope\n" })
               .pipe(Effect.flip),
           ).toBeInstanceOf(WorkspaceFileSystem.WorkspaceFilePathEscapeError);
+          const fs = yield* FileSystem.FileSystem;
+          const statted: Array<string> = [];
+          const recording = yield* WorkspaceFileSystem.make.pipe(
+            Effect.provideService(
+              FileSystem.FileSystem,
+              FileSystem.FileSystem.of({
+                ...fs,
+                stat: (requestedPath) => {
+                  statted.push(requestedPath);
+                  return fs.stat(requestedPath);
+                },
+              }),
+            ),
+            Effect.provide(layerKnownWorkspacesTest),
+          );
           expect(
-            (yield* workspaceFileSystem.getMetadata({ paths: [path.join(cwd, "nas", "a.md")] }))
-              .entries,
+            (yield* recording.getMetadata({ paths: [path.join(cwd, "nas", "a.md")] })).entries,
           ).toEqual([null]);
-          const resolved = realpath.mock.calls.map(([target]) => String(target));
-          expect(resolved.filter((target) => target.split(path.sep).includes("nas"))).toEqual([]);
+          const throughLink = (target: string) => target.split(path.sep).includes("nas");
+          expect(realpath.mock.calls.map(([target]) => String(target)).filter(throughLink)).toEqual(
+            [],
+          );
+          expect(statted.filter(throughLink)).toEqual([]);
         }),
+    );
+
+    it.effect("reads a share by its own name when the workspace root links to it", () =>
+      Effect.gen(function* () {
+        const { service, onWindows } = yield* onWindowsTree({
+          links: { "C:\\root-link": "\\\\nas.test\\proj" },
+          directories: ["\\\\nas.test\\proj"],
+        });
+
+        const result = yield* onWindows(
+          service.readFile({
+            cwd: "C:\\root-link",
+            relativePath: "\\\\nas.test\\proj\\missing.md",
+            allowMissing: true,
+          }),
+        );
+
+        expect(result.exists).toBe(false);
+      }),
+    );
+
+    it.effect("refuses an absolute path that resolves onto a share, as a mapped drive does", () =>
+      Effect.gen(function* () {
+        const { fake, service, opened, onWindows } = yield* onWindowsTree({
+          directories: ["C:\\ws"],
+          files: { "Z:\\docs\\a.md": "" },
+        });
+        // A mapped drive is no link: only realpath tells it is a share.
+        vi.mocked(NodeFSP.realpath).mockImplementation((async (target: string) =>
+          target.startsWith("Z:\\")
+            ? `${ATTACKER_SHARE}${target.slice(2)}`
+            : fake.realpath(target)) as typeof NodeFSP.realpath);
+
+        const error = yield* onWindows(
+          service.readFile({ cwd: "C:\\ws", relativePath: "Z:\\docs\\a.md" }),
+        ).pipe(Effect.flip);
+
+        expect(error).toBeInstanceOf(WorkspacePaths.WorkspacePathOutsideRootError);
+        expect(opened).toEqual([]);
+      }),
     );
 
     it.effect("drops a multibyte character split by the read limit", () =>
@@ -869,7 +961,10 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
             "# Plan\n",
           );
           expect(yield* fileSystem.readFileString(path.join(cwd, "docs/README.md"))).toBe("new\n");
-          expect(yield* fileSystem.readLink(path.join(cwd, "README.md"))).toBe("docs/README.md");
+          // Windows stores a relative link target with its own separator.
+          expect(yield* fileSystem.readLink(path.join(cwd, "README.md"))).toBe(
+            path.join("docs", "README.md"),
+          );
           expect(yield* fileSystem.readFileString(path.join(cwd, "notes.md"))).toBe("notes\n");
           expect(yield* fileSystem.readFileString(path.join(cwd, "dotdot.md"))).toBe("dotdot\n");
         }),

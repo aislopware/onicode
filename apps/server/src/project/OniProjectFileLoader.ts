@@ -9,6 +9,8 @@ import * as Schema from "effect/Schema";
 import { ONICODE_PROJECT_FILE_NAME, type OniProjectFile } from "@onicode/contracts";
 import { OniProjectFileFromJson } from "@onicode/shared/oniProjectFile";
 
+import { networkPathReachedBy } from "../workspace/networkLinks.ts";
+
 const decodeOniProjectFileJson = Schema.decodeEffect(OniProjectFileFromJson);
 
 export class OniProjectFileLoadError extends Schema.TaggedError<OniProjectFileLoadError>()(
@@ -51,6 +53,13 @@ export const make = Effect.gen(function* () {
   const load: OniProjectFileLoader["Service"]["load"] = Effect.fn("OniProjectFileLoader.load")(
     function* (workspaceRoot) {
       const filePath = path.join(workspaceRoot, ONICODE_PROJECT_FILE_NAME);
+      // Reading through a link onto a share would sign in to it first.
+      const reached = yield* Effect.promise(() =>
+        networkPathReachedBy(path, filePath, { allowedRoot: workspaceRoot }),
+      );
+      if (reached !== null) {
+        return Option.none<OniProjectFile>();
+      }
       const raw = yield* fileSystem.readFileString(filePath).pipe(
         Effect.asSome,
         Effect.catchTags({

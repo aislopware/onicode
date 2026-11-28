@@ -267,29 +267,25 @@ export const make = Effect.gen(function* () {
       requestedPath.startsWith("~/") || requestedPath.startsWith("~\\")
         ? expandHomePath(requestedPath, yield* HostProcess.HomeDirectory)
         : yield* toHostPath(requestedPath);
-    if (
-      isNetworkPath(hostPath) &&
-      !KnownWorkspaces.isWithinRoot(path, path.resolve(hostPath), path.resolve(input.cwd))
-    ) {
-      return yield* new WorkspacePaths.WorkspacePathOutsideRootError({
+    const outsideRootError = () =>
+      new WorkspacePaths.WorkspacePathOutsideRootError({
         workspaceRoot: input.cwd,
         relativePath: input.relativePath,
       });
-    }
+    // POSIX reads `\\host\share` as a relative name, which no one means; the walk checks the rest.
+    if (isNetworkPath(hostPath) && !path.isAbsolute(hostPath)) return yield* outsideRootError();
     if (path.isAbsolute(hostPath)) {
       // Native realpath hands Windows a `\\?\` path as written, `..` included,
-      // so a network path must be the resolved one the check above approved.
+      // so a network path must be the resolved one the walk below approves.
       // Others keep POSIX `link/..` semantics, which resolving first would change.
       const absolutePath = isNetworkPath(hostPath) ? path.resolve(hostPath) : hostPath;
+      // POSIX resolves `//host` to `/host`, so it checks the path as written.
       const reached = yield* Effect.promise(() =>
-        networkPathReachedBy(path, absolutePath, { allowedRoot: input.cwd }),
+        networkPathReachedBy(path, path.sep === "\\" ? absolutePath : hostPath, {
+          allowedRoot: input.cwd,
+        }),
       );
-      if (reached !== null) {
-        return yield* new WorkspacePaths.WorkspacePathOutsideRootError({
-          workspaceRoot: input.cwd,
-          relativePath: input.relativePath,
-        });
-      }
+      if (reached !== null) return yield* outsideRootError();
       const realTargetPath = yield* Effect.tryPromise({
         try: () => NodeFSP.realpath(absolutePath),
         catch: (cause) =>
@@ -308,6 +304,15 @@ export const make = Effect.gen(function* () {
           () => Effect.succeed(null),
         ),
       );
+      // A mapped drive resolves to its share only here, past the link walk.
+      if (realTargetPath !== null && isNetworkPath(realTargetPath)) {
+        const realWorkspaceRoot = yield* Effect.promise(() =>
+          NodeFSP.realpath(path.resolve(input.cwd)).catch(() => path.resolve(input.cwd)),
+        );
+        if (!isInsideRealRoot(realWorkspaceRoot, realTargetPath)) {
+          return yield* outsideRootError();
+        }
+      }
       return { relativePath: requestedPath, realTargetPath, outsideRoot: false };
     }
 
