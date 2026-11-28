@@ -1,10 +1,15 @@
 import { createFileRoute, useLocation, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
+import { EnvironmentId } from "@onicode/contracts";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 
 import { NoProjectsHero } from "../components/NoProjectsHero";
 import { WelcomePage } from "../components/onboarding/WelcomePage";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
+
+const decodeEnvironmentId = Schema.decodeOption(EnvironmentId);
 
 export const Route = createFileRoute("/welcome")({
   component: WelcomeRouteView,
@@ -12,9 +17,21 @@ export const Route = createFileRoute("/welcome")({
 
 function WelcomeRouteView() {
   const navigate = useNavigate();
-  const environmentId = usePrimaryEnvironmentId();
-  const { isReady } = useEnvironments();
-  const waitingForCatalog = !isReady && environmentId === null;
+  const hash = useLocation({ select: (location) => location.hash });
+  const reviewProjects = hash.startsWith("projects:");
+  // A project import shortcut carries the computer it was opened for.
+  const importEnvironmentId = reviewProjects
+    ? Option.getOrUndefined(decodeEnvironmentId(hash.slice("projects:".length)))
+    : undefined;
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const { environments, isReady } = useEnvironments();
+  // Trust the id only once the catalog has it.
+  const waitingForCatalog = !isReady && (reviewProjects || primaryEnvironmentId === null);
+  // An import shortcut must never silently switch to a different computer.
+  const environmentId = reviewProjects
+    ? (environments.find((environment) => environment.environmentId === importEnvironmentId)
+        ?.environmentId ?? null)
+    : primaryEnvironmentId;
   // The root can remount this pending outlet after navigation; do not reopen setup.
   const isWelcomeRoute = useLocation({ select: (location) => location.pathname === "/welcome" });
   const [dismissed, setDismissed] = useState(false);
@@ -25,6 +42,7 @@ function WelcomeRouteView() {
     <WelcomePage
       key={environmentId}
       environmentId={environmentId}
+      reviewProjects={reviewProjects}
       onDone={async (projectRef) => {
         setDismissed(true);
         if (projectRef !== undefined) {

@@ -4836,3 +4836,4 @@ dff313a7ca	take	conflict: Onicode builds file menu items async; added canOpenPre
 fd5bae05e5	take	conflict: kept Onicode's extraRoots, passed cwd through
 a91808a108	take	taken as is; desktop only
 5fe9961bd4	take	adapted: Onicode has no hosted links; unsafe v2 thread ids are percent-encoded (readers try decoded), unsafe environment ids fall back to v1
+85d855bd82	take	adapted: no agents:/hosted resume in Onicode's welcome route, only the projects: shortcut; T3 Connect doc line dropped
